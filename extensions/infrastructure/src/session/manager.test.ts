@@ -281,6 +281,9 @@ describe("InfrastructureSessionManager", () => {
 
       const originalExpiry = session.expiresAt;
 
+      // Wait a bit to ensure time has passed
+      await new Promise((r) => setTimeout(r, 10));
+
       await manager.touchSession(session.id, { extend: true });
       const updated = await manager.getSession(session.id);
 
