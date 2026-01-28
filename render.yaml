@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: espada
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: SETUP_PASSWORD
+        sync: false
+      - key: ESPADA_STATE_DIR
+        value: /data/.espada
+      - key: ESPADA_WORKSPACE_DIR
+        value: /data/workspace
+      - key: ESPADA_GATEWAY_TOKEN
+        generateValue: true
+    disk:
+      name: espada-data
+      mountPath: /data
+      sizeGB: 1

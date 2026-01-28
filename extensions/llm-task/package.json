@@ -1,0 +1,11 @@
+{
+  "name": "@espada/llm-task",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada JSON-only LLM task plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

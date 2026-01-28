@@ -1,0 +1,11 @@
+{
+  "name": "@espada/discord",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada Discord channel plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

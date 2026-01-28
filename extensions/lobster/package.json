@@ -1,0 +1,11 @@
+{
+  "name": "@espada/lobster",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Lobster workflow tool plugin (typed pipelines + resumable approvals)",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

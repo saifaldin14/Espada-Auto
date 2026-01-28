@@ -1,0 +1,11 @@
+{
+  "name": "@espada/google-antigravity-auth",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada Google Antigravity OAuth provider plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

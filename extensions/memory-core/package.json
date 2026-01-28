@@ -1,0 +1,17 @@
+{
+  "name": "@espada/memory-core",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada core memory search plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "peerDependencies": {
+    "espada": ">=2026.1.26"
+  },
+  "devDependencies": {
+    "espada": "workspace:*"
+  }
+}

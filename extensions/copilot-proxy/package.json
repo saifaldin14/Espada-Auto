@@ -1,0 +1,11 @@
+{
+  "name": "@espada/copilot-proxy",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada Copilot Proxy provider plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

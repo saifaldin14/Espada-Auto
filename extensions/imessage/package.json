@@ -1,0 +1,11 @@
+{
+  "name": "@espada/imessage",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada iMessage channel plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}

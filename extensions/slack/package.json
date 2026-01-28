@@ -1,0 +1,11 @@
+{
+  "name": "@espada/slack",
+  "version": "2026.1.27-beta.1",
+  "type": "module",
+  "description": "Espada Slack channel plugin",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
