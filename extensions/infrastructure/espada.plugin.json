@@ -1,0 +1,63 @@
+{
+  "id": "infrastructure",
+  "name": "Infrastructure Extension Framework",
+  "description": "Unified infrastructure provider interface for cloud and DevOps automation",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "infrastructure",
+  "capabilities": [
+    "provider-management",
+    "command-validation",
+    "session-state",
+    "lifecycle-hooks",
+    "plugin-discovery"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "providers": {
+        "type": "array",
+        "description": "List of enabled infrastructure providers",
+        "items": {
+          "type": "string"
+        }
+      },
+      "defaultProvider": {
+        "type": "string",
+        "description": "Default infrastructure provider to use"
+      },
+      "sessionTimeout": {
+        "type": "number",
+        "description": "Session timeout in milliseconds",
+        "default": 3600000
+      },
+      "commandValidation": {
+        "type": "object",
+        "properties": {
+          "strict": {
+            "type": "boolean",
+            "default": true
+          },
+          "allowDryRun": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      },
+      "logging": {
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": ["trace", "debug", "info", "warn", "error", "fatal"],
+            "default": "info"
+          },
+          "includeTimestamps": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    }
+  }
+}
