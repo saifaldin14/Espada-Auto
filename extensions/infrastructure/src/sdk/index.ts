@@ -22,6 +22,10 @@ import type {
 import { BaseInfrastructureProvider, type HealthCheckItem } from "../provider.js";
 import { createInfrastructureLogger, type InfrastructureLogger } from "../logging/logger.js";
 
+// Re-export types that SDK users may need
+export type { CommandExecutionResult, CommandExecutionContext, InfrastructureCommand } from "../types.js";
+export type { InfrastructureLogger } from "../logging/logger.js";
+
 // =============================================================================
 // Provider Builder
 // =============================================================================

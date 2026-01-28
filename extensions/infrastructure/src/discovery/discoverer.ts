@@ -301,8 +301,11 @@ export class InfrastructurePluginDiscoverer {
     raw: Record<string, unknown>,
     pluginDir: string,
   ): InfrastructurePluginManifest | null {
+    // Type guard for espada field
+    const espada = raw.espada as Record<string, unknown> | undefined;
+    
     // Check for explicit infrastructure plugin format
-    if (raw.type === "infrastructure-plugin" || raw.espada?.type === "infrastructure") {
+    if (raw.type === "infrastructure-plugin" || espada?.type === "infrastructure") {
       return {
         id: (raw.id as string) ?? (raw.name as string) ?? pluginDir.split("/").pop() ?? "unknown",
         name: (raw.name as string) ?? (raw.id as string) ?? "Unknown Plugin",
@@ -320,7 +323,7 @@ export class InfrastructurePluginDiscoverer {
     }
 
     // Check for infrastructure section in package.json
-    const infraSection = raw.espada?.infrastructure ?? raw.infrastructure;
+    const infraSection = espada?.infrastructure ?? raw.infrastructure;
     if (infraSection && typeof infraSection === "object") {
       const infra = infraSection as Record<string, unknown>;
       return {

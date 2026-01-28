@@ -12,7 +12,6 @@ import type {
   ProviderAuthConfig,
   ResourceState,
   SessionConfig,
-  SessionContext,
   SessionHistoryEntry,
   SessionState,
 } from "../types.js";

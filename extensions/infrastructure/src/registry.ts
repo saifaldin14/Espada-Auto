@@ -10,16 +10,17 @@ import type {
   InfrastructureConfigSchema,
   InfrastructureProviderMeta,
   ProviderAuthConfig,
-} from "../types.js";
+} from "./types.js";
 import type {
   InfrastructureProvider,
   InfrastructureProviderFactory,
   ProviderFactoryOptions,
-} from "../provider.js";
-import type { InfrastructureLogger } from "../logging/logger.js";
-import { InfrastructureLifecycleManager, type LifecycleManagerOptions } from "../lifecycle/manager.js";
-import { InfrastructureSessionManager, type SessionConfig } from "../session/manager.js";
-import { InfrastructurePluginDiscoverer, type PluginDiscoveryOptions } from "../discovery/discoverer.js";
+} from "./provider.js";
+import type { InfrastructureLogger } from "./logging/logger.js";
+import { InfrastructureLifecycleManager, type LifecycleManagerOptions } from "./lifecycle/manager.js";
+import { InfrastructureSessionManager } from "./session/manager.js";
+import type { SessionConfig } from "./types.js";
+import { InfrastructurePluginDiscoverer, type PluginDiscoveryOptions } from "./discovery/discoverer.js";
 
 // =============================================================================
 // Registry Types

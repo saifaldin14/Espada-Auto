@@ -68,7 +68,7 @@ const parameterTypeSchemas = {
   number: z.number(),
   boolean: z.boolean(),
   array: z.array(z.unknown()),
-  object: z.record(z.unknown()),
+  object: z.record(z.string(), z.unknown()),
   file: z.string().min(1, "File path cannot be empty"),
   secret: z.string().min(1, "Secret value cannot be empty"),
   "resource-ref": z.string().regex(/^[a-z0-9-]+:[a-z0-9-]+$/, "Invalid resource reference format"),
@@ -168,7 +168,7 @@ export class InfrastructureCommandValidator {
       customValidators: options.customValidators ?? [],
     };
     this.logger = logger;
-    this.customValidators = this.options.customValidators;
+    this.customValidators = this.options.customValidators ?? [];
   }
 
   /**
@@ -454,7 +454,7 @@ export const builtInValidators: CommandValidator[] = [
   },
   {
     name: "capability-check",
-    validate: async (command, _parameters, context) => {
+    validate: async (command, _parameters, _context) => {
       const errors: ValidationError[] = [];
       const warnings: ValidationWarning[] = [];
 

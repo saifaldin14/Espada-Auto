@@ -7,9 +7,9 @@ import {
   InfrastructureSessionManager,
   InMemorySessionStorage,
   createSessionManager,
-} from "../src/session/manager.js";
-import type { InfrastructureProviderMeta, ProviderAuthConfig, SessionConfig } from "../src/types.js";
-import { createInfrastructureLogger } from "../src/logging/logger.js";
+} from "./manager.js";
+import type { InfrastructureProviderMeta, ProviderAuthConfig, SessionConfig } from "../types.js";
+import { createInfrastructureLogger } from "../logging/logger.js";
 
 describe("InfrastructureSessionManager", () => {
   let manager: InfrastructureSessionManager;

@@ -15,7 +15,6 @@ import type {
   LifecycleHookName,
   LifecycleHookRegistration,
   ProviderAuthConfig,
-  ProviderHealthStatus,
   ProviderLifecycleState,
 } from "../types.js";
 import type { InfrastructureProvider, ProviderHealthCheck } from "../provider.js";

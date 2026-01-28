@@ -6,9 +6,9 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   InfrastructureCommandValidator,
   validateCommand,
-} from "../src/validation/command-validator.js";
-import type { CommandExecutionContext, InfrastructureCommand } from "../src/types.js";
-import { createInfrastructureLogger } from "../src/logging/logger.js";
+} from "./command-validator.js";
+import type { CommandExecutionContext, InfrastructureCommand } from "../types.js";
+import { createInfrastructureLogger } from "../logging/logger.js";
 
 describe("InfrastructureCommandValidator", () => {
   let validator: InfrastructureCommandValidator;

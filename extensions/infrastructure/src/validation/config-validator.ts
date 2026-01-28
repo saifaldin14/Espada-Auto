@@ -8,11 +8,6 @@
 import { z } from "zod";
 import type {
   InfrastructureConfigSchema,
-  LoggingConfig,
-  SecurityConfig,
-  SessionConfig,
-  CommandConfig,
-  ProviderConfigEntry,
 } from "../types.js";
 
 // =============================================================================
@@ -32,7 +27,7 @@ export const providerAuthConfigSchema = z.object({
     "token",
     "custom",
   ]),
-  credentials: z.record(z.string()).optional(),
+  credentials: z.record(z.string(), z.string()).optional(),
   profile: z.string().optional(),
   region: z.string().optional(),
   endpoint: z.string().url().optional(),
@@ -46,8 +41,8 @@ export const providerConfigEntrySchema = z.object({
   id: z.string().min(1),
   enabled: z.boolean(),
   auth: providerAuthConfigSchema,
-  settings: z.record(z.unknown()),
-  resourceDefaults: z.record(z.record(z.unknown())).optional(),
+  settings: z.record(z.string(), z.unknown()),
+  resourceDefaults: z.record(z.string(), z.record(z.string(), z.unknown())).optional(),
 });
 
 /**
@@ -89,7 +84,7 @@ export const commandConfigSchema = z.object({
  */
 export const logDestinationSchema = z.object({
   type: z.enum(["console", "file", "remote"]),
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   filter: z
     .object({
       minLevel: z.string().optional(),
@@ -152,7 +147,7 @@ export const infrastructureConfigSchema = z.object({
  */
 export function validateInfrastructureConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, InfrastructureConfigSchema> {
+): ReturnType<typeof infrastructureConfigSchema.safeParse> {
   return infrastructureConfigSchema.safeParse(config);
 }
 
@@ -161,7 +156,7 @@ export function validateInfrastructureConfig(
  */
 export function validateProviderConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, ProviderConfigEntry> {
+): ReturnType<typeof providerConfigEntrySchema.safeParse> {
   return providerConfigEntrySchema.safeParse(config);
 }
 
@@ -170,7 +165,7 @@ export function validateProviderConfig(
  */
 export function validateSessionConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, SessionConfig> {
+): ReturnType<typeof sessionConfigSchema.safeParse> {
   return sessionConfigSchema.safeParse(config);
 }
 
@@ -179,7 +174,7 @@ export function validateSessionConfig(
  */
 export function validateCommandConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, CommandConfig> {
+): ReturnType<typeof commandConfigSchema.safeParse> {
   return commandConfigSchema.safeParse(config);
 }
 
@@ -188,7 +183,7 @@ export function validateCommandConfig(
  */
 export function validateLoggingConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, LoggingConfig> {
+): ReturnType<typeof loggingConfigSchema.safeParse> {
   return loggingConfigSchema.safeParse(config);
 }
 
@@ -197,7 +192,7 @@ export function validateLoggingConfig(
  */
 export function validateSecurityConfig(
   config: unknown,
-): z.SafeParseReturnType<unknown, SecurityConfig> {
+): ReturnType<typeof securityConfigSchema.safeParse> {
   return securityConfigSchema.safeParse(config);
 }
 

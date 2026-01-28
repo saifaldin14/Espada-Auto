@@ -10,8 +10,12 @@ import {
   success,
   failure,
   validation,
-} from "../src/sdk/index.js";
-import { createInfrastructureLogger } from "../src/logging/logger.js";
+  type CommandExecutionResult,
+  type CommandExecutionContext,
+  type InfrastructureCommand,
+  type InfrastructureLogger,
+} from "./index.js";
+import { createInfrastructureLogger } from "../logging/logger.js";
 
 describe("SDK Builders", () => {
   describe("defineProvider", () => {
@@ -164,11 +168,16 @@ describe("SimpleInfrastructureProvider", () => {
         async onHealthCheck() {
           return [{ name: "test", status: "healthy" }];
         },
-        async onExecuteCommand(cmd, params) {
+        async onExecuteCommand<T>(
+          cmd: InfrastructureCommand,
+          params: Record<string, unknown>,
+          _context: CommandExecutionContext,
+          _logger: InfrastructureLogger,
+        ): Promise<CommandExecutionResult<T>> {
           if (cmd.id === "test-command") {
-            return success({ echo: params.input }, []);
+            return success({ echo: params.input } as T, []) as CommandExecutionResult<T>;
           }
-          return failure("UNKNOWN_COMMAND", "Unknown command");
+          return failure("UNKNOWN_COMMAND", "Unknown command") as CommandExecutionResult<T>;
         },
       },
       createInfrastructureLogger("simple-test"),

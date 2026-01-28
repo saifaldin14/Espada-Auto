@@ -5,7 +5,22 @@
  * framework with the Espada ecosystem.
  */
 
-import type { EspadaPluginApi } from "espada/plugin-sdk";
+// Define CLI command type
+interface CliCommand {
+  command(name: string): CliCommand;
+  description(desc: string): CliCommand;
+  action(fn: () => Promise<void>): CliCommand;
+}
+
+interface CliContext {
+  program: {
+    command(name: string): CliCommand;
+  };
+}
+
+// Plugin API type for Espada integration
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type EspadaPluginApi = any;
 
 import {
   createProviderRegistry,
@@ -129,7 +144,7 @@ const plugin = {
 
     // Register CLI commands
     api.registerCli(
-      (ctx) => {
+      (ctx: CliContext) => {
         const infra = ctx.program
           .command("infra")
           .description("Infrastructure provider management");
