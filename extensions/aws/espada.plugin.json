@@ -1,18 +1,23 @@
 {
   "id": "aws",
   "name": "AWS Core Services",
-  "description": "Comprehensive AWS infrastructure management with EC2, IAM, CloudTrail, and more",
+  "description": "Comprehensive AWS infrastructure management with EC2, RDS, IAM, CloudTrail, and more",
   "version": "1.0.0",
   "author": "Espada Team",
   "category": "infrastructure",
   "capabilities": [
     "ec2-management",
+    "rds-management",
     "security-groups",
     "cloudtrail-audit",
     "service-discovery",
     "resource-tagging",
     "auto-scaling",
-    "load-balancing"
+    "load-balancing",
+    "database-snapshots",
+    "performance-monitoring",
+    "multi-az-failover",
+    "read-replicas"
   ],
   "configSchema": {
     "type": "object",

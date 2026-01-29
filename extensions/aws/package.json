@@ -46,6 +46,10 @@
     "./ec2": {
       "import": "./dist/ec2/index.js",
       "types": "./dist/ec2/index.d.ts"
+    },
+    "./rds": {
+      "import": "./dist/rds/index.js",
+      "types": "./dist/rds/index.d.ts"
     }
   },
   "scripts": {
@@ -63,6 +67,8 @@
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.500.0",
     "@aws-sdk/client-iam": "^3.500.0",
     "@aws-sdk/client-organizations": "^3.500.0",
+    "@aws-sdk/client-pi": "^3.500.0",
+    "@aws-sdk/client-rds": "^3.500.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.500.0",
     "@aws-sdk/client-sts": "^3.500.0",
     "@aws-sdk/credential-providers": "^3.500.0",

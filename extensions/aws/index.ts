@@ -41,6 +41,11 @@ import {
   type AWSCLIWrapper,
 } from "./src/index.js";
 
+import {
+  createRDSManager,
+  type RDSManager,
+} from "./src/rds/index.js";
+
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
 let contextManager: AWSContextManager | null = null;
@@ -48,6 +53,7 @@ let serviceDiscovery: AWSServiceDiscovery | null = null;
 let taggingManager: AWSTaggingManager | null = null;
 let cloudTrailManager: AWSCloudTrailManager | null = null;
 let ec2Manager: AWSEC2Manager | null = null;
+let rdsManager: RDSManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -223,6 +229,11 @@ const plugin = {
       credentialsManager,
       config.defaultRegion,
     );
+
+    // Initialize RDS manager
+    rdsManager = createRDSManager({
+      region: config.defaultRegion,
+    });
 
     // Register CLI commands
     api.registerCli(
@@ -1507,6 +1518,1138 @@ const plugin = {
       { name: "aws_discover" },
     );
 
+    // AWS RDS Management Tool
+    api.registerTool(
+      {
+        name: "aws_rds",
+        label: "AWS RDS Management",
+        description:
+          "Manage AWS RDS database instances. Create, modify, snapshot, monitor, and manage RDS instances, read replicas, and Multi-AZ deployments.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_instances",
+                "get_instance",
+                "create_instance",
+                "modify_instance",
+                "delete_instance",
+                "start_instance",
+                "stop_instance",
+                "reboot_instance",
+                "list_snapshots",
+                "create_snapshot",
+                "delete_snapshot",
+                "restore_from_snapshot",
+                "restore_point_in_time",
+                "list_parameter_groups",
+                "create_parameter_group",
+                "modify_parameter_group",
+                "delete_parameter_group",
+                "get_parameters",
+                "list_subnet_groups",
+                "create_subnet_group",
+                "modify_subnet_group",
+                "delete_subnet_group",
+                "get_metrics",
+                "enable_performance_insights",
+                "disable_performance_insights",
+                "get_backup_config",
+                "set_backup_config",
+                "get_maintenance_config",
+                "set_maintenance_config",
+                "create_read_replica",
+                "promote_read_replica",
+                "list_read_replicas",
+                "get_replica_status",
+                "force_failover",
+                "enable_multi_az",
+                "disable_multi_az",
+                "get_multi_az_status",
+                "list_events",
+                "list_log_files",
+                "download_log_portion",
+              ],
+              description: "The RDS operation to perform",
+            },
+            dbInstanceIdentifier: {
+              type: "string",
+              description: "The DB instance identifier",
+            },
+            dbSnapshotIdentifier: {
+              type: "string",
+              description: "The DB snapshot identifier",
+            },
+            dbParameterGroupName: {
+              type: "string",
+              description: "The DB parameter group name",
+            },
+            dbSubnetGroupName: {
+              type: "string",
+              description: "The DB subnet group name",
+            },
+            dbInstanceClass: {
+              type: "string",
+              description: "The DB instance class (e.g., db.t3.micro)",
+            },
+            engine: {
+              type: "string",
+              enum: ["mysql", "mariadb", "postgres", "oracle-ee", "oracle-se2", "sqlserver-ee", "sqlserver-se", "sqlserver-web", "aurora-mysql", "aurora-postgresql"],
+              description: "The database engine",
+            },
+            masterUsername: {
+              type: "string",
+              description: "The master username for the database",
+            },
+            masterUserPassword: {
+              type: "string",
+              description: "The master password for the database",
+            },
+            allocatedStorage: {
+              type: "number",
+              description: "The allocated storage in GB",
+            },
+            storageType: {
+              type: "string",
+              enum: ["gp2", "gp3", "io1", "io2", "standard"],
+              description: "The storage type",
+            },
+            multiAZ: {
+              type: "boolean",
+              description: "Whether to enable Multi-AZ deployment",
+            },
+            publiclyAccessible: {
+              type: "boolean",
+              description: "Whether the instance is publicly accessible",
+            },
+            backupRetentionPeriod: {
+              type: "number",
+              description: "The backup retention period in days (0-35)",
+            },
+            preferredBackupWindow: {
+              type: "string",
+              description: "The preferred backup window (e.g., 05:00-06:00)",
+            },
+            preferredMaintenanceWindow: {
+              type: "string",
+              description: "The preferred maintenance window (e.g., sun:05:00-sun:06:00)",
+            },
+            subnetIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Subnet IDs for subnet group",
+            },
+            description: {
+              type: "string",
+              description: "Description for parameter/subnet group",
+            },
+            dbParameterGroupFamily: {
+              type: "string",
+              description: "Parameter group family (e.g., mysql8.0, postgres14)",
+            },
+            parameters: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  parameterName: { type: "string" },
+                  parameterValue: { type: "string" },
+                  applyMethod: { type: "string", enum: ["immediate", "pending-reboot"] },
+                },
+              },
+              description: "Parameters to modify",
+            },
+            sourceDBInstanceIdentifier: {
+              type: "string",
+              description: "Source DB instance for read replica or point-in-time restore",
+            },
+            restoreTime: {
+              type: "string",
+              description: "Restore time in ISO 8601 format",
+            },
+            useLatestRestorableTime: {
+              type: "boolean",
+              description: "Use the latest restorable time",
+            },
+            startTime: {
+              type: "string",
+              description: "Start time for metrics/events in ISO 8601 format",
+            },
+            endTime: {
+              type: "string",
+              description: "End time for metrics/events in ISO 8601 format",
+            },
+            logFileName: {
+              type: "string",
+              description: "Log file name to download",
+            },
+            skipFinalSnapshot: {
+              type: "boolean",
+              description: "Skip final snapshot when deleting",
+            },
+            finalDBSnapshotIdentifier: {
+              type: "string",
+              description: "Final snapshot identifier when deleting",
+            },
+            forceFailover: {
+              type: "boolean",
+              description: "Force failover during reboot",
+            },
+            applyImmediately: {
+              type: "boolean",
+              description: "Apply changes immediately vs. next maintenance window",
+            },
+            region: {
+              type: "string",
+              description: "AWS region",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!rdsManager) {
+            return {
+              content: [{ type: "text", text: "Error: RDS manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+          const region = params.region as string | undefined;
+
+          try {
+            switch (action) {
+              // Instance operations
+              case "list_instances": {
+                const instances = await rdsManager.listInstances({ region });
+                const summary = instances.length === 0
+                  ? "No RDS instances found."
+                  : instances.map(i =>
+                      `• ${i.dbInstanceIdentifier} (${i.engine} ${i.engineVersion}) - ${i.status} - ${i.dbInstanceClass}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `RDS Instances:\n\n${summary}` }],
+                  details: { count: instances.length, instances },
+                };
+              }
+
+              case "get_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const instance = await rdsManager.getInstance(id, region);
+                if (!instance) {
+                  return {
+                    content: [{ type: "text", text: `Instance '${id}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const info = [
+                  `DB Instance: ${instance.dbInstanceIdentifier}`,
+                  `Engine: ${instance.engine} ${instance.engineVersion}`,
+                  `Status: ${instance.status}`,
+                  `Class: ${instance.dbInstanceClass}`,
+                  `Storage: ${instance.allocatedStorage}GB (${instance.storageType})`,
+                  `Multi-AZ: ${instance.multiAZ ? "Yes" : "No"}`,
+                  instance.endpoint ? `Endpoint: ${instance.endpoint.address}:${instance.endpoint.port}` : "",
+                  `Backup Retention: ${instance.backupRetentionPeriod} days`,
+                ].filter(Boolean).join("\n");
+
+                return {
+                  content: [{ type: "text", text: info }],
+                  details: { instance },
+                };
+              }
+
+              case "create_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                const dbClass = params.dbInstanceClass as string;
+                const engine = params.engine as string;
+                const username = params.masterUsername as string;
+                const password = params.masterUserPassword as string;
+                const storage = params.allocatedStorage as number;
+
+                if (!id || !dbClass || !engine || !username || !password || !storage) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier, dbInstanceClass, engine, masterUsername, masterUserPassword, and allocatedStorage are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.createInstance({
+                  dbInstanceIdentifier: id,
+                  dbInstanceClass: dbClass,
+                  engine: engine as Parameters<typeof rdsManager.createInstance>[0]["engine"],
+                  masterUsername: username,
+                  masterUserPassword: password,
+                  allocatedStorage: storage,
+                  storageType: params.storageType as "gp2" | "gp3" | "io1" | "io2" | "standard" | undefined,
+                  multiAZ: params.multiAZ as boolean | undefined,
+                  publiclyAccessible: params.publiclyAccessible as boolean | undefined,
+                  backupRetentionPeriod: params.backupRetentionPeriod as number | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "modify_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.modifyInstance({
+                  dbInstanceIdentifier: id,
+                  dbInstanceClass: params.dbInstanceClass as string | undefined,
+                  allocatedStorage: params.allocatedStorage as number | undefined,
+                  storageType: params.storageType as "gp2" | "gp3" | "io1" | "io2" | "standard" | undefined,
+                  multiAZ: params.multiAZ as boolean | undefined,
+                  backupRetentionPeriod: params.backupRetentionPeriod as number | undefined,
+                  preferredBackupWindow: params.preferredBackupWindow as string | undefined,
+                  preferredMaintenanceWindow: params.preferredMaintenanceWindow as string | undefined,
+                  applyImmediately: params.applyImmediately as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.deleteInstance(id, {
+                  skipFinalSnapshot: params.skipFinalSnapshot as boolean | undefined,
+                  finalDBSnapshotIdentifier: params.finalDBSnapshotIdentifier as string | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "start_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.startInstance(id, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "stop_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.stopInstance(id, { region });
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "reboot_instance": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.rebootInstance({
+                  dbInstanceIdentifier: id,
+                  forceFailover: params.forceFailover as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Snapshot operations
+              case "list_snapshots": {
+                const snapshots = await rdsManager.listSnapshots({
+                  dbInstanceIdentifier: params.dbInstanceIdentifier as string | undefined,
+                  region,
+                });
+
+                const summary = snapshots.length === 0
+                  ? "No snapshots found."
+                  : snapshots.map(s =>
+                      `• ${s.dbSnapshotIdentifier} (${s.dbInstanceIdentifier}) - ${s.status} - ${s.snapshotType}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `RDS Snapshots:\n\n${summary}` }],
+                  details: { count: snapshots.length, snapshots },
+                };
+              }
+
+              case "create_snapshot": {
+                const snapshotId = params.dbSnapshotIdentifier as string;
+                const instanceId = params.dbInstanceIdentifier as string;
+                if (!snapshotId || !instanceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbSnapshotIdentifier and dbInstanceIdentifier are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.createSnapshot({
+                  dbSnapshotIdentifier: snapshotId,
+                  dbInstanceIdentifier: instanceId,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_snapshot": {
+                const snapshotId = params.dbSnapshotIdentifier as string;
+                if (!snapshotId) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbSnapshotIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.deleteSnapshot(snapshotId, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "restore_from_snapshot": {
+                const instanceId = params.dbInstanceIdentifier as string;
+                const snapshotId = params.dbSnapshotIdentifier as string;
+                if (!instanceId || !snapshotId) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier and dbSnapshotIdentifier are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.restoreFromSnapshot({
+                  dbInstanceIdentifier: instanceId,
+                  dbSnapshotIdentifier: snapshotId,
+                  dbInstanceClass: params.dbInstanceClass as string | undefined,
+                  multiAZ: params.multiAZ as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "restore_point_in_time": {
+                const targetId = params.dbInstanceIdentifier as string;
+                const sourceId = params.sourceDBInstanceIdentifier as string;
+                if (!targetId) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier (target) is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.restoreToPointInTime({
+                  targetDBInstanceIdentifier: targetId,
+                  sourceDBInstanceIdentifier: sourceId,
+                  restoreTime: params.restoreTime ? new Date(params.restoreTime as string) : undefined,
+                  useLatestRestorableTime: params.useLatestRestorableTime as boolean | undefined,
+                  dbInstanceClass: params.dbInstanceClass as string | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Parameter group operations
+              case "list_parameter_groups": {
+                const groups = await rdsManager.listParameterGroups({ region });
+                const summary = groups.length === 0
+                  ? "No parameter groups found."
+                  : groups.map(g =>
+                      `• ${g.dbParameterGroupName} (${g.dbParameterGroupFamily}) - ${g.description}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `RDS Parameter Groups:\n\n${summary}` }],
+                  details: { count: groups.length, groups },
+                };
+              }
+
+              case "create_parameter_group": {
+                const name = params.dbParameterGroupName as string;
+                const family = params.dbParameterGroupFamily as string;
+                const desc = params.description as string;
+                if (!name || !family || !desc) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbParameterGroupName, dbParameterGroupFamily, and description are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.createParameterGroup({
+                  dbParameterGroupName: name,
+                  dbParameterGroupFamily: family,
+                  description: desc,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "modify_parameter_group": {
+                const name = params.dbParameterGroupName as string;
+                const parameters = params.parameters as Array<{
+                  parameterName: string;
+                  parameterValue: string;
+                  applyMethod?: "immediate" | "pending-reboot";
+                }>;
+                if (!name || !parameters || parameters.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbParameterGroupName and parameters are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.modifyParameterGroup({
+                  dbParameterGroupName: name,
+                  parameters,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_parameter_group": {
+                const name = params.dbParameterGroupName as string;
+                if (!name) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbParameterGroupName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.deleteParameterGroup(name, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_parameters": {
+                const name = params.dbParameterGroupName as string;
+                if (!name) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbParameterGroupName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const parameters = await rdsManager.getParameters({
+                  dbParameterGroupName: name,
+                  region,
+                });
+
+                const modifiable = parameters.filter(p => p.isModifiable && p.parameterValue);
+                const summary = modifiable.length === 0
+                  ? "No modifiable parameters with values found."
+                  : modifiable.slice(0, 20).map(p =>
+                      `• ${p.parameterName} = ${p.parameterValue}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Parameters for '${name}':\n\n${summary}\n\n(${parameters.length} total, ${modifiable.length} modifiable with values)` }],
+                  details: { total: parameters.length, modifiable: modifiable.length, parameters },
+                };
+              }
+
+              // Subnet group operations
+              case "list_subnet_groups": {
+                const groups = await rdsManager.listSubnetGroups({ region });
+                const summary = groups.length === 0
+                  ? "No subnet groups found."
+                  : groups.map(g =>
+                      `• ${g.dbSubnetGroupName} (VPC: ${g.vpcId}) - ${g.subnets.length} subnets`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `RDS Subnet Groups:\n\n${summary}` }],
+                  details: { count: groups.length, groups },
+                };
+              }
+
+              case "create_subnet_group": {
+                const name = params.dbSubnetGroupName as string;
+                const desc = params.description as string;
+                const subnetIds = params.subnetIds as string[];
+                if (!name || !desc || !subnetIds || subnetIds.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbSubnetGroupName, description, and subnetIds are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.createSubnetGroup({
+                  dbSubnetGroupName: name,
+                  dbSubnetGroupDescription: desc,
+                  subnetIds,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "modify_subnet_group": {
+                const name = params.dbSubnetGroupName as string;
+                const subnetIds = params.subnetIds as string[];
+                if (!name || !subnetIds || subnetIds.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbSubnetGroupName and subnetIds are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.modifySubnetGroup({
+                  dbSubnetGroupName: name,
+                  subnetIds,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_subnet_group": {
+                const name = params.dbSubnetGroupName as string;
+                if (!name) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbSubnetGroupName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.deleteSubnetGroup(name, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Monitoring operations
+              case "get_metrics": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const endTime = params.endTime ? new Date(params.endTime as string) : new Date();
+                const startTime = params.startTime ? new Date(params.startTime as string) : new Date(endTime.getTime() - 3600000);
+
+                const metrics = await rdsManager.getInstanceMetrics({
+                  dbInstanceIdentifier: id,
+                  startTime,
+                  endTime,
+                  region,
+                });
+
+                const metricLines = Object.entries(metrics.metrics)
+                  .filter(([, v]) => v !== undefined)
+                  .map(([k, v]) => `• ${k}: ${typeof v === "number" ? v.toFixed(2) : v}`)
+                  .join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Metrics for '${id}':\n\n${metricLines || "No metrics available"}` }],
+                  details: metrics,
+                };
+              }
+
+              case "enable_performance_insights": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.enablePerformanceInsights({
+                  dbInstanceIdentifier: id,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "disable_performance_insights": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.disablePerformanceInsights(id, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Backup configuration
+              case "get_backup_config": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const config = await rdsManager.getBackupConfiguration(id, region);
+                if (!config) {
+                  return {
+                    content: [{ type: "text", text: `Instance '${id}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const info = [
+                  `Backup Retention: ${config.backupRetentionPeriod} days`,
+                  `Backup Window: ${config.preferredBackupWindow}`,
+                  `Copy Tags to Snapshots: ${config.copyTagsToSnapshot ? "Yes" : "No"}`,
+                  config.latestRestorableTime ? `Latest Restorable: ${config.latestRestorableTime.toISOString()}` : "",
+                ].filter(Boolean).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Backup Configuration for '${id}':\n\n${info}` }],
+                  details: config,
+                };
+              }
+
+              case "set_backup_config": {
+                const id = params.dbInstanceIdentifier as string;
+                const retention = params.backupRetentionPeriod as number;
+                if (!id || retention === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier and backupRetentionPeriod are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.setBackupConfiguration({
+                  dbInstanceIdentifier: id,
+                  backupRetentionPeriod: retention,
+                  preferredBackupWindow: params.preferredBackupWindow as string | undefined,
+                  applyImmediately: params.applyImmediately as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_maintenance_config": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const config = await rdsManager.getMaintenanceConfiguration(id, region);
+                if (!config) {
+                  return {
+                    content: [{ type: "text", text: `Instance '${id}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const pending = config.pendingMaintenanceActions.length > 0
+                  ? "\n\nPending Actions:\n" + config.pendingMaintenanceActions.map(a =>
+                      `• ${a.action}: ${a.description || "No description"}`
+                    ).join("\n")
+                  : "";
+
+                const info = [
+                  `Maintenance Window: ${config.preferredMaintenanceWindow}`,
+                  `Auto Minor Version Upgrade: ${config.autoMinorVersionUpgrade ? "Yes" : "No"}`,
+                ].join("\n") + pending;
+
+                return {
+                  content: [{ type: "text", text: `Maintenance Configuration for '${id}':\n\n${info}` }],
+                  details: config,
+                };
+              }
+
+              case "set_maintenance_config": {
+                const id = params.dbInstanceIdentifier as string;
+                const window = params.preferredMaintenanceWindow as string;
+                if (!id || !window) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier and preferredMaintenanceWindow are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.setMaintenanceConfiguration({
+                  dbInstanceIdentifier: id,
+                  preferredMaintenanceWindow: window,
+                  applyImmediately: params.applyImmediately as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Read replica operations
+              case "create_read_replica": {
+                const id = params.dbInstanceIdentifier as string;
+                const sourceId = params.sourceDBInstanceIdentifier as string;
+                if (!id || !sourceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier (target) and sourceDBInstanceIdentifier are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.createReadReplica({
+                  dbInstanceIdentifier: id,
+                  sourceDBInstanceIdentifier: sourceId,
+                  dbInstanceClass: params.dbInstanceClass as string | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "promote_read_replica": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.promoteReadReplica({
+                  dbInstanceIdentifier: id,
+                  backupRetentionPeriod: params.backupRetentionPeriod as number | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "list_read_replicas": {
+                const sourceId = params.sourceDBInstanceIdentifier as string;
+                if (!sourceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: sourceDBInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const replicas = await rdsManager.listReadReplicas(sourceId, region);
+                const summary = replicas.length === 0
+                  ? "No read replicas found."
+                  : replicas.map(r =>
+                      `• ${r.dbInstanceIdentifier} - ${r.status} - ${r.dbInstanceClass}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Read Replicas for '${sourceId}':\n\n${summary}` }],
+                  details: { count: replicas.length, replicas },
+                };
+              }
+
+              case "get_replica_status": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const status = await rdsManager.getReplicaStatus(id, region);
+                if (!status) {
+                  return {
+                    content: [{ type: "text", text: `Instance '${id}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const info = status.isReplica
+                  ? `'${id}' is a read replica of '${status.sourceDBInstanceIdentifier}'\nStatus: ${status.status}\nMode: ${status.replicaMode || "standard"}`
+                  : `'${id}' is not a read replica`;
+
+                return {
+                  content: [{ type: "text", text: info }],
+                  details: status,
+                };
+              }
+
+              // Multi-AZ operations
+              case "force_failover": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.forceFailover(id, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "enable_multi_az": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.enableMultiAZ(id, {
+                  applyImmediately: params.applyImmediately as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "disable_multi_az": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await rdsManager.disableMultiAZ(id, {
+                  applyImmediately: params.applyImmediately as boolean | undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_multi_az_status": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const status = await rdsManager.getMultiAZStatus(id, region);
+                if (!status) {
+                  return {
+                    content: [{ type: "text", text: `Instance '${id}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const info = status.multiAZ
+                  ? `'${id}' is Multi-AZ enabled\nPrimary AZ: ${status.primaryAvailabilityZone}\nSecondary AZ: ${status.secondaryAvailabilityZone}`
+                  : `'${id}' is not Multi-AZ enabled (Single-AZ)`;
+
+                return {
+                  content: [{ type: "text", text: info }],
+                  details: status,
+                };
+              }
+
+              // Events and logs
+              case "list_events": {
+                const events = await rdsManager.listEvents({
+                  sourceIdentifier: params.dbInstanceIdentifier as string | undefined,
+                  sourceType: params.dbInstanceIdentifier ? "db-instance" : undefined,
+                  startTime: params.startTime ? new Date(params.startTime as string) : undefined,
+                  endTime: params.endTime ? new Date(params.endTime as string) : undefined,
+                  region,
+                });
+
+                const summary = events.length === 0
+                  ? "No events found."
+                  : events.slice(0, 20).map(e =>
+                      `• [${e.date?.toISOString() || "unknown"}] ${e.sourceIdentifier}: ${e.message}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `RDS Events:\n\n${summary}` }],
+                  details: { count: events.length, events },
+                };
+              }
+
+              case "list_log_files": {
+                const id = params.dbInstanceIdentifier as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const logs = await rdsManager.listLogFiles({
+                  dbInstanceIdentifier: id,
+                  region,
+                });
+
+                const summary = logs.length === 0
+                  ? "No log files found."
+                  : logs.map(l =>
+                      `• ${l.logFileName} (${(l.size / 1024).toFixed(2)} KB)`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Log Files for '${id}':\n\n${summary}` }],
+                  details: { count: logs.length, logs },
+                };
+              }
+
+              case "download_log_portion": {
+                const id = params.dbInstanceIdentifier as string;
+                const logFile = params.logFileName as string;
+                if (!id || !logFile) {
+                  return {
+                    content: [{ type: "text", text: "Error: dbInstanceIdentifier and logFileName are required" }],
+                    details: { error: "missing_parameters" },
+                  };
+                }
+
+                const result = await rdsManager.downloadLogFilePortion({
+                  dbInstanceIdentifier: id,
+                  logFileName: logFile,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: `Log content (${result.additionalDataPending ? "partial" : "complete"}):\n\n${result.logFileData.slice(0, 4000)}${result.logFileData.length > 4000 ? "\n... (truncated)" : ""}` }],
+                  details: result,
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `RDS error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_rds" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -1533,6 +2676,7 @@ const plugin = {
         taggingManager = null;
         cloudTrailManager = null;
         ec2Manager = null;
+        rdsManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -1555,6 +2699,7 @@ export function getAWSManagers() {
     tagging: taggingManager,
     cloudTrail: cloudTrailManager,
     ec2: ec2Manager,
+    rds: rdsManager,
     cli: cliWrapper,
   };
 }
