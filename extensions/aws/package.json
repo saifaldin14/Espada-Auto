@@ -50,6 +50,10 @@
     "./rds": {
       "import": "./dist/rds/index.js",
       "types": "./dist/rds/index.d.ts"
+    },
+    "./lambda": {
+      "import": "./dist/lambda/index.js",
+      "types": "./dist/lambda/index.d.ts"
     }
   },
   "scripts": {
@@ -63,9 +67,11 @@
     "@aws-sdk/client-auto-scaling": "^3.500.0",
     "@aws-sdk/client-cloudtrail": "^3.500.0",
     "@aws-sdk/client-cloudwatch": "^3.500.0",
+    "@aws-sdk/client-cloudwatch-logs": "^3.500.0",
     "@aws-sdk/client-ec2": "^3.500.0",
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.500.0",
     "@aws-sdk/client-iam": "^3.500.0",
+    "@aws-sdk/client-lambda": "^3.500.0",
     "@aws-sdk/client-organizations": "^3.500.0",
     "@aws-sdk/client-pi": "^3.500.0",
     "@aws-sdk/client-rds": "^3.500.0",

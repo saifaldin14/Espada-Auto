@@ -46,6 +46,12 @@ import {
   type RDSManager,
 } from "./src/rds/index.js";
 
+import {
+  createLambdaManager,
+  type LambdaManager,
+  type LambdaRuntime,
+} from "./src/lambda/index.js";
+
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
 let contextManager: AWSContextManager | null = null;
@@ -54,6 +60,7 @@ let taggingManager: AWSTaggingManager | null = null;
 let cloudTrailManager: AWSCloudTrailManager | null = null;
 let ec2Manager: AWSEC2Manager | null = null;
 let rdsManager: RDSManager | null = null;
+let lambdaManager: LambdaManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -232,6 +239,11 @@ const plugin = {
 
     // Initialize RDS manager
     rdsManager = createRDSManager({
+      region: config.defaultRegion,
+    });
+
+    // Initialize Lambda manager
+    lambdaManager = createLambdaManager({
       region: config.defaultRegion,
     });
 
@@ -2650,6 +2662,1451 @@ const plugin = {
       { name: "aws_rds" },
     );
 
+    // Register Lambda agent tool
+    api.registerTool(
+      {
+        description: `Manage AWS Lambda functions with comprehensive operations including:
+- List and get Lambda functions
+- Create, update, and delete functions
+- Deploy function code from S3 or zip
+- Manage function configuration (memory, timeout, environment)
+- Manage event source mappings (triggers) for SQS, Kinesis, DynamoDB, etc.
+- Add/remove permissions for API Gateway, S3, and other services
+- Manage Lambda layers (create, publish, delete versions)
+- Manage versions and aliases for deployment strategies
+- Monitor with CloudWatch metrics and logs
+- Optimize cold starts with reserved/provisioned concurrency
+- Invoke functions synchronously or asynchronously
+- Manage function URLs for HTTP endpoints`,
+        inputSchema: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              description: "The Lambda operation to perform",
+              enum: [
+                // Function operations
+                "list_functions",
+                "get_function",
+                "create_function",
+                "update_function_code",
+                "update_function_configuration",
+                "delete_function",
+                "invoke_function",
+                // Environment variable operations
+                "get_environment_variables",
+                "set_environment_variables",
+                "update_environment_variables",
+                "remove_environment_variables",
+                // Trigger/Event source operations
+                "list_event_source_mappings",
+                "create_event_source_mapping",
+                "update_event_source_mapping",
+                "delete_event_source_mapping",
+                "add_permission",
+                "remove_permission",
+                "get_policy",
+                // Layer operations
+                "list_layers",
+                "list_layer_versions",
+                "get_layer_version",
+                "publish_layer_version",
+                "delete_layer_version",
+                "add_layers_to_function",
+                "remove_layers_from_function",
+                // Version and alias operations
+                "publish_version",
+                "list_versions",
+                "create_alias",
+                "update_alias",
+                "delete_alias",
+                "list_aliases",
+                // Monitoring operations
+                "get_metrics",
+                "get_logs",
+                "get_recent_log_streams",
+                // Cold start optimization operations
+                "set_reserved_concurrency",
+                "delete_reserved_concurrency",
+                "get_reserved_concurrency",
+                "set_provisioned_concurrency",
+                "delete_provisioned_concurrency",
+                "list_provisioned_concurrency_configs",
+                "analyze_cold_starts",
+                "warmup_function",
+                // Function URL operations
+                "create_function_url",
+                "update_function_url",
+                "delete_function_url",
+                "get_function_url",
+                "list_function_urls",
+                // Account operations
+                "get_account_settings",
+              ],
+            },
+            // Common parameters
+            functionName: {
+              type: "string",
+              description: "Lambda function name or ARN",
+            },
+            qualifier: {
+              type: "string",
+              description: "Function version or alias",
+            },
+            region: {
+              type: "string",
+              description: "AWS region",
+            },
+            // Create function parameters
+            runtime: {
+              type: "string",
+              description: "Runtime (nodejs20.x, python3.11, java21, etc.)",
+              enum: [
+                "nodejs18.x", "nodejs20.x", "nodejs22.x",
+                "python3.9", "python3.10", "python3.11", "python3.12", "python3.13",
+                "java11", "java17", "java21",
+                "dotnet6", "dotnet8",
+                "ruby3.2", "ruby3.3",
+                "provided.al2", "provided.al2023",
+              ],
+            },
+            role: {
+              type: "string",
+              description: "IAM role ARN for the function",
+            },
+            handler: {
+              type: "string",
+              description: "Handler specification (e.g., index.handler)",
+            },
+            codeS3Bucket: {
+              type: "string",
+              description: "S3 bucket containing deployment package",
+            },
+            codeS3Key: {
+              type: "string",
+              description: "S3 key for deployment package",
+            },
+            description: {
+              type: "string",
+              description: "Function description",
+            },
+            timeout: {
+              type: "number",
+              description: "Function timeout in seconds (1-900)",
+            },
+            memorySize: {
+              type: "number",
+              description: "Memory size in MB (128-10240)",
+            },
+            // Environment variables
+            environment: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Environment variables",
+            },
+            environmentKeys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Environment variable keys to remove",
+            },
+            // Event source mapping parameters
+            uuid: {
+              type: "string",
+              description: "Event source mapping UUID",
+            },
+            eventSourceArn: {
+              type: "string",
+              description: "Event source ARN (SQS, Kinesis, DynamoDB, etc.)",
+            },
+            batchSize: {
+              type: "number",
+              description: "Batch size for event source mapping",
+            },
+            enabled: {
+              type: "boolean",
+              description: "Whether the event source mapping is enabled",
+            },
+            startingPosition: {
+              type: "string",
+              description: "Starting position for streams",
+              enum: ["TRIM_HORIZON", "LATEST", "AT_TIMESTAMP"],
+            },
+            // Permission parameters
+            statementId: {
+              type: "string",
+              description: "Statement ID for permission",
+            },
+            permissionAction: {
+              type: "string",
+              description: "Lambda action to allow (e.g., lambda:InvokeFunction)",
+            },
+            principal: {
+              type: "string",
+              description: "AWS service or account allowed to invoke",
+            },
+            sourceArn: {
+              type: "string",
+              description: "ARN of the invoking resource",
+            },
+            // Layer parameters
+            layerName: {
+              type: "string",
+              description: "Lambda layer name",
+            },
+            layerArns: {
+              type: "array",
+              items: { type: "string" },
+              description: "Layer ARNs to add/remove",
+            },
+            versionNumber: {
+              type: "number",
+              description: "Layer version number",
+            },
+            compatibleRuntimes: {
+              type: "array",
+              items: { type: "string" },
+              description: "Compatible runtimes for layer",
+            },
+            // Alias parameters
+            aliasName: {
+              type: "string",
+              description: "Alias name",
+            },
+            functionVersion: {
+              type: "string",
+              description: "Function version for alias",
+            },
+            routingWeight: {
+              type: "number",
+              description: "Traffic weight for additional version (0-1)",
+            },
+            additionalVersion: {
+              type: "string",
+              description: "Additional version for traffic splitting",
+            },
+            // Monitoring parameters
+            startTime: {
+              type: "number",
+              description: "Start time (epoch milliseconds) for metrics/logs",
+            },
+            endTime: {
+              type: "number",
+              description: "End time (epoch milliseconds) for metrics/logs",
+            },
+            filterPattern: {
+              type: "string",
+              description: "CloudWatch Logs filter pattern",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results",
+            },
+            // Concurrency parameters
+            reservedConcurrency: {
+              type: "number",
+              description: "Reserved concurrent executions",
+            },
+            provisionedConcurrency: {
+              type: "number",
+              description: "Provisioned concurrent executions",
+            },
+            warmupConcurrency: {
+              type: "number",
+              description: "Number of concurrent warmup invocations",
+            },
+            // Invocation parameters
+            payload: {
+              type: "string",
+              description: "JSON payload for function invocation",
+            },
+            invocationType: {
+              type: "string",
+              description: "Invocation type",
+              enum: ["RequestResponse", "Event", "DryRun"],
+            },
+            // Function URL parameters
+            authType: {
+              type: "string",
+              description: "Authentication type for function URL",
+              enum: ["NONE", "AWS_IAM"],
+            },
+            allowOrigins: {
+              type: "array",
+              items: { type: "string" },
+              description: "CORS allowed origins",
+            },
+            allowMethods: {
+              type: "array",
+              items: { type: "string" },
+              description: "CORS allowed methods",
+            },
+            // VPC configuration
+            subnetIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "VPC subnet IDs",
+            },
+            securityGroupIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "VPC security group IDs",
+            },
+            // Architecture
+            architectures: {
+              type: "array",
+              items: { type: "string", enum: ["x86_64", "arm64"] },
+              description: "Function architectures",
+            },
+            // Layers for function
+            layers: {
+              type: "array",
+              items: { type: "string" },
+              description: "Layer ARNs to attach to function",
+            },
+            // Tags
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!lambdaManager) {
+            return {
+              content: [{ type: "text", text: "Error: Lambda manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+          const region = params.region as string | undefined;
+
+          try {
+            switch (action) {
+              // Function operations
+              case "list_functions": {
+                const functions = await lambdaManager.listFunctions({ region });
+                const summary = functions.length === 0
+                  ? "No Lambda functions found."
+                  : functions.map(f =>
+                      `• ${f.functionName} (${f.runtime}) - ${f.state || 'Active'} - ${f.memorySize}MB`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Lambda Functions:\n\n${summary}` }],
+                  details: { count: functions.length, functions },
+                };
+              }
+
+              case "get_function": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const fn = await lambdaManager.getFunction(functionName, params.qualifier as string, region);
+                if (!fn) {
+                  return {
+                    content: [{ type: "text", text: `Function '${functionName}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+                const details = [
+                  `Function: ${fn.functionName}`,
+                  `ARN: ${fn.functionArn}`,
+                  `Runtime: ${fn.runtime}`,
+                  `Handler: ${fn.handler}`,
+                  `Memory: ${fn.memorySize}MB`,
+                  `Timeout: ${fn.timeout}s`,
+                  `State: ${fn.state || 'Active'}`,
+                  `Code Size: ${Math.round(fn.codeSize / 1024)}KB`,
+                  `Last Modified: ${fn.lastModified}`,
+                  fn.description ? `Description: ${fn.description}` : null,
+                ].filter(Boolean).join("\n");
+                return {
+                  content: [{ type: "text", text: details }],
+                  details: { function: fn },
+                };
+              }
+
+              case "create_function": {
+                const functionName = params.functionName as string;
+                const runtime = params.runtime as string;
+                const role = params.role as string;
+                const handler = params.handler as string;
+                const codeS3Bucket = params.codeS3Bucket as string;
+                const codeS3Key = params.codeS3Key as string;
+
+                if (!functionName || !runtime || !role || !handler || !codeS3Bucket || !codeS3Key) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName, runtime, role, handler, codeS3Bucket, and codeS3Key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.createFunction({
+                  functionName,
+                  runtime: runtime as Parameters<typeof lambdaManager.createFunction>[0]["runtime"],
+                  role,
+                  handler,
+                  code: { s3Bucket: codeS3Bucket, s3Key: codeS3Key },
+                  description: params.description as string,
+                  timeout: params.timeout as number,
+                  memorySize: params.memorySize as number,
+                  environment: params.environment as Record<string, string>,
+                  vpcConfig: params.subnetIds ? {
+                    subnetIds: params.subnetIds as string[],
+                    securityGroupIds: params.securityGroupIds as string[],
+                  } : undefined,
+                  layers: params.layers as string[],
+                  architectures: params.architectures as Array<'x86_64' | 'arm64'>,
+                  tags: params.tags as Record<string, string>,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "update_function_code": {
+                const functionName = params.functionName as string;
+                const codeS3Bucket = params.codeS3Bucket as string;
+                const codeS3Key = params.codeS3Key as string;
+
+                if (!functionName || !codeS3Bucket || !codeS3Key) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName, codeS3Bucket, and codeS3Key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.updateFunctionCode({
+                  functionName,
+                  code: { s3Bucket: codeS3Bucket, s3Key: codeS3Key },
+                  architectures: params.architectures as Array<'x86_64' | 'arm64'>,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "update_function_configuration": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.updateFunctionConfiguration({
+                  functionName,
+                  runtime: params.runtime as Parameters<typeof lambdaManager.updateFunctionConfiguration>[0]["runtime"],
+                  role: params.role as string,
+                  handler: params.handler as string,
+                  description: params.description as string,
+                  timeout: params.timeout as number,
+                  memorySize: params.memorySize as number,
+                  environment: params.environment as Record<string, string>,
+                  vpcConfig: params.subnetIds ? {
+                    subnetIds: params.subnetIds as string[],
+                    securityGroupIds: params.securityGroupIds as string[],
+                  } : undefined,
+                  layers: params.layers as string[],
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_function": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteFunction(functionName, params.qualifier as string, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "invoke_function": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.invoke({
+                  functionName,
+                  payload: params.payload as string,
+                  invocationType: (params.invocationType as 'RequestResponse' | 'Event' | 'DryRun') || 'RequestResponse',
+                  qualifier: params.qualifier as string,
+                  logType: 'Tail',
+                  region,
+                });
+
+                const output = [
+                  `Status Code: ${result.statusCode}`,
+                  result.executedVersion ? `Executed Version: ${result.executedVersion}` : null,
+                  result.functionError ? `Function Error: ${result.functionError}` : null,
+                  result.payload ? `Response:\n${result.payload}` : null,
+                ].filter(Boolean).join("\n");
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result,
+                };
+              }
+
+              // Environment variable operations
+              case "get_environment_variables": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const vars = await lambdaManager.getEnvironmentVariables(functionName, region);
+                if (vars === null) {
+                  return {
+                    content: [{ type: "text", text: `Function '${functionName}' not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                const summary = Object.keys(vars).length === 0
+                  ? "No environment variables set."
+                  : Object.entries(vars).map(([k, v]) => `• ${k}: ${v}`).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Environment Variables for ${functionName}:\n\n${summary}` }],
+                  details: { variables: vars },
+                };
+              }
+
+              case "set_environment_variables": {
+                const functionName = params.functionName as string;
+                const environment = params.environment as Record<string, string>;
+                if (!functionName || !environment) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and environment are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.setEnvironmentVariables(functionName, environment, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "update_environment_variables": {
+                const functionName = params.functionName as string;
+                const environment = params.environment as Record<string, string>;
+                if (!functionName || !environment) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and environment are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.updateEnvironmentVariables(functionName, environment, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "remove_environment_variables": {
+                const functionName = params.functionName as string;
+                const keys = params.environmentKeys as string[];
+                if (!functionName || !keys || keys.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and environmentKeys are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.removeEnvironmentVariables(functionName, keys, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Event source mapping operations
+              case "list_event_source_mappings": {
+                const functionName = params.functionName as string;
+                const mappings = await lambdaManager.listEventSourceMappings({
+                  functionName,
+                  eventSourceArn: params.eventSourceArn as string,
+                  region,
+                });
+
+                const summary = mappings.length === 0
+                  ? "No event source mappings found."
+                  : mappings.map(m =>
+                      `• ${m.uuid} - ${m.eventSourceArn || 'N/A'} - ${m.state}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Event Source Mappings:\n\n${summary}` }],
+                  details: { count: mappings.length, mappings },
+                };
+              }
+
+              case "create_event_source_mapping": {
+                const functionName = params.functionName as string;
+                const eventSourceArn = params.eventSourceArn as string;
+                if (!functionName || !eventSourceArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and eventSourceArn are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.createEventSourceMapping({
+                  functionName,
+                  eventSourceArn,
+                  batchSize: params.batchSize as number,
+                  enabled: params.enabled as boolean,
+                  startingPosition: params.startingPosition as 'TRIM_HORIZON' | 'LATEST' | 'AT_TIMESTAMP',
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "update_event_source_mapping": {
+                const uuid = params.uuid as string;
+                if (!uuid) {
+                  return {
+                    content: [{ type: "text", text: "Error: uuid is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.updateEventSourceMapping({
+                  uuid,
+                  functionName: params.functionName as string,
+                  enabled: params.enabled as boolean,
+                  batchSize: params.batchSize as number,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_event_source_mapping": {
+                const uuid = params.uuid as string;
+                if (!uuid) {
+                  return {
+                    content: [{ type: "text", text: "Error: uuid is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteEventSourceMapping(uuid, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "add_permission": {
+                const functionName = params.functionName as string;
+                const statementId = params.statementId as string;
+                const principal = params.principal as string;
+                if (!functionName || !statementId || !principal) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName, statementId, and principal are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.addPermission({
+                  functionName,
+                  statementId,
+                  action: (params.permissionAction as string) || 'lambda:InvokeFunction',
+                  principal,
+                  sourceArn: params.sourceArn as string,
+                  qualifier: params.qualifier as string,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "remove_permission": {
+                const functionName = params.functionName as string;
+                const statementId = params.statementId as string;
+                if (!functionName || !statementId) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and statementId are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.removePermission({
+                  functionName,
+                  statementId,
+                  qualifier: params.qualifier as string,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_policy": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const policy = await lambdaManager.getPolicy(functionName, params.qualifier as string, region);
+                if (!policy) {
+                  return {
+                    content: [{ type: "text", text: `No policy found for '${functionName}'` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `Policy for ${functionName}:\n\n${policy.policy}` }],
+                  details: policy,
+                };
+              }
+
+              // Layer operations
+              case "list_layers": {
+                const layers = await lambdaManager.listLayers({
+                  compatibleRuntime: params.runtime as LambdaRuntime | undefined,
+                  region,
+                });
+
+                const summary = layers.length === 0
+                  ? "No layers found."
+                  : layers.map(l =>
+                      `• ${l.layerName} - v${l.latestMatchingVersion?.version || 'N/A'}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Lambda Layers:\n\n${summary}` }],
+                  details: { count: layers.length, layers },
+                };
+              }
+
+              case "list_layer_versions": {
+                const layerName = params.layerName as string;
+                if (!layerName) {
+                  return {
+                    content: [{ type: "text", text: "Error: layerName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const versions = await lambdaManager.listLayerVersions({
+                  layerName,
+                  compatibleRuntime: params.runtime as LambdaRuntime | undefined,
+                  region,
+                });
+
+                const summary = versions.length === 0
+                  ? "No versions found."
+                  : versions.map(v =>
+                      `• Version ${v.version} - ${v.description || 'No description'}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Layer Versions for ${layerName}:\n\n${summary}` }],
+                  details: { count: versions.length, versions },
+                };
+              }
+
+              case "get_layer_version": {
+                const layerName = params.layerName as string;
+                const versionNumber = params.versionNumber as number;
+                if (!layerName || versionNumber === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: layerName and versionNumber are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const version = await lambdaManager.getLayerVersion(layerName, versionNumber, region);
+                if (!version) {
+                  return {
+                    content: [{ type: "text", text: `Layer version not found` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `Layer: ${layerName} v${version.version}\nARN: ${version.layerVersionArn}\nDescription: ${version.description || 'N/A'}\nCreated: ${version.createdDate}` }],
+                  details: { version },
+                };
+              }
+
+              case "publish_layer_version": {
+                const layerName = params.layerName as string;
+                const codeS3Bucket = params.codeS3Bucket as string;
+                const codeS3Key = params.codeS3Key as string;
+                if (!layerName || !codeS3Bucket || !codeS3Key) {
+                  return {
+                    content: [{ type: "text", text: "Error: layerName, codeS3Bucket, and codeS3Key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.publishLayerVersion({
+                  layerName,
+                  description: params.description as string,
+                  content: { s3Bucket: codeS3Bucket, s3Key: codeS3Key },
+                  compatibleRuntimes: params.compatibleRuntimes as Parameters<typeof lambdaManager.publishLayerVersion>[0]["compatibleRuntimes"],
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_layer_version": {
+                const layerName = params.layerName as string;
+                const versionNumber = params.versionNumber as number;
+                if (!layerName || versionNumber === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: layerName and versionNumber are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteLayerVersion(layerName, versionNumber, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "add_layers_to_function": {
+                const functionName = params.functionName as string;
+                const layerArns = params.layerArns as string[];
+                if (!functionName || !layerArns || layerArns.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and layerArns are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.addLayersToFunction(functionName, layerArns, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "remove_layers_from_function": {
+                const functionName = params.functionName as string;
+                const layerArns = params.layerArns as string[];
+                if (!functionName || !layerArns || layerArns.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and layerArns are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.removeLayersFromFunction(functionName, layerArns, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Version and alias operations
+              case "publish_version": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.publishVersion({
+                  functionName,
+                  description: params.description as string,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "list_versions": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const versions = await lambdaManager.listVersions({ functionName, region });
+                const summary = versions.map(v =>
+                  `• Version ${v.version} - ${v.description || 'No description'}`
+                ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Versions for ${functionName}:\n\n${summary}` }],
+                  details: { count: versions.length, versions },
+                };
+              }
+
+              case "create_alias": {
+                const functionName = params.functionName as string;
+                const aliasName = params.aliasName as string;
+                const functionVersion = params.functionVersion as string;
+                if (!functionName || !aliasName || !functionVersion) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName, aliasName, and functionVersion are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const routingConfig = params.additionalVersion && params.routingWeight !== undefined
+                  ? { additionalVersionWeights: { [params.additionalVersion as string]: params.routingWeight as number } }
+                  : undefined;
+
+                const result = await lambdaManager.createAlias({
+                  functionName,
+                  name: aliasName,
+                  functionVersion,
+                  description: params.description as string,
+                  routingConfig,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "update_alias": {
+                const functionName = params.functionName as string;
+                const aliasName = params.aliasName as string;
+                if (!functionName || !aliasName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and aliasName are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const routingConfig = params.additionalVersion && params.routingWeight !== undefined
+                  ? { additionalVersionWeights: { [params.additionalVersion as string]: params.routingWeight as number } }
+                  : undefined;
+
+                const result = await lambdaManager.updateAlias({
+                  functionName,
+                  name: aliasName,
+                  functionVersion: params.functionVersion as string,
+                  description: params.description as string,
+                  routingConfig,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_alias": {
+                const functionName = params.functionName as string;
+                const aliasName = params.aliasName as string;
+                if (!functionName || !aliasName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and aliasName are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteAlias(functionName, aliasName, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "list_aliases": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const aliases = await lambdaManager.listAliases({
+                  functionName,
+                  functionVersion: params.functionVersion as string,
+                  region,
+                });
+
+                const summary = aliases.length === 0
+                  ? "No aliases found."
+                  : aliases.map(a =>
+                      `• ${a.name} -> v${a.functionVersion}${a.routingConfig ? ` (traffic split)` : ''}`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Aliases for ${functionName}:\n\n${summary}` }],
+                  details: { count: aliases.length, aliases },
+                };
+              }
+
+              // Monitoring operations
+              case "get_metrics": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const now = Date.now();
+                const metrics = await lambdaManager.getMetrics({
+                  functionName,
+                  startTime: params.startTime ? new Date(params.startTime as number) : new Date(now - 3600000),
+                  endTime: params.endTime ? new Date(params.endTime as number) : new Date(now),
+                  region,
+                });
+
+                const summary = Object.entries(metrics.metrics)
+                  .map(([k, v]) => `• ${k}: ${v}`)
+                  .join("\n") || "No metrics available.";
+
+                return {
+                  content: [{ type: "text", text: `Metrics for ${functionName}:\n\n${summary}` }],
+                  details: metrics,
+                };
+              }
+
+              case "get_logs": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const now = Date.now();
+                const logs = await lambdaManager.getLogs({
+                  functionName,
+                  startTime: params.startTime as number || (now - 3600000),
+                  endTime: params.endTime as number || now,
+                  filterPattern: params.filterPattern as string,
+                  limit: params.limit as number || 50,
+                  region,
+                });
+
+                const summary = logs.length === 0
+                  ? "No logs found."
+                  : logs.map(l => `[${new Date(l.timestamp || 0).toISOString()}] ${l.message}`).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Logs for ${functionName}:\n\n${summary}` }],
+                  details: { count: logs.length, logs },
+                };
+              }
+
+              case "get_recent_log_streams": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const streams = await lambdaManager.getRecentLogStreams(
+                  functionName,
+                  params.limit as number || 5,
+                  region
+                );
+
+                const summary = streams.length === 0
+                  ? "No log streams found."
+                  : streams.map(s => `• ${s.logStreamName}`).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Recent Log Streams for ${functionName}:\n\n${summary}` }],
+                  details: { count: streams.length, streams },
+                };
+              }
+
+              // Cold start optimization operations
+              case "set_reserved_concurrency": {
+                const functionName = params.functionName as string;
+                const reservedConcurrency = params.reservedConcurrency as number;
+                if (!functionName || reservedConcurrency === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and reservedConcurrency are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.setReservedConcurrency(functionName, reservedConcurrency, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_reserved_concurrency": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteReservedConcurrency(functionName, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_reserved_concurrency": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const config = await lambdaManager.getReservedConcurrency(functionName, region);
+                if (!config) {
+                  return {
+                    content: [{ type: "text", text: `No reserved concurrency configured for '${functionName}'` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `Reserved Concurrency for ${functionName}: ${config.reservedConcurrentExecutions}` }],
+                  details: config,
+                };
+              }
+
+              case "set_provisioned_concurrency": {
+                const functionName = params.functionName as string;
+                const qualifier = params.qualifier as string;
+                const provisionedConcurrency = params.provisionedConcurrency as number;
+                if (!functionName || !qualifier || provisionedConcurrency === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName, qualifier, and provisionedConcurrency are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.setProvisionedConcurrency({
+                  functionName,
+                  qualifier,
+                  provisionedConcurrentExecutions: provisionedConcurrency,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_provisioned_concurrency": {
+                const functionName = params.functionName as string;
+                const qualifier = params.qualifier as string;
+                if (!functionName || !qualifier) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and qualifier are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteProvisionedConcurrency(functionName, qualifier, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "list_provisioned_concurrency_configs": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const configs = await lambdaManager.listProvisionedConcurrencyConfigs({ functionName, region });
+                const summary = configs.length === 0
+                  ? "No provisioned concurrency configurations found."
+                  : configs.map(c =>
+                      `• ${c.qualifier}: ${c.requestedProvisionedConcurrentExecutions} requested, ${c.availableProvisionedConcurrentExecutions || 0} available (${c.status})`
+                    ).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Provisioned Concurrency for ${functionName}:\n\n${summary}` }],
+                  details: { count: configs.length, configs },
+                };
+              }
+
+              case "analyze_cold_starts": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const analysis = await lambdaManager.analyzeColdStarts(functionName, region);
+                const summary = [
+                  `Cold Start Analysis for ${functionName}`,
+                  `Optimization Score: ${analysis.optimizationScore}/100`,
+                  "",
+                  "Recommendations:",
+                  ...analysis.recommendations.map(r => `• ${r}`),
+                ].join("\n");
+
+                return {
+                  content: [{ type: "text", text: summary }],
+                  details: analysis,
+                };
+              }
+
+              case "warmup_function": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.warmupFunction({
+                  functionName,
+                  concurrency: params.warmupConcurrency as number || 1,
+                  payload: params.payload as string,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Function URL operations
+              case "create_function_url": {
+                const functionName = params.functionName as string;
+                const authType = params.authType as 'NONE' | 'AWS_IAM';
+                if (!functionName || !authType) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName and authType are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.createFunctionUrl({
+                  functionName,
+                  qualifier: params.qualifier as string,
+                  authType,
+                  cors: params.allowOrigins ? {
+                    allowOrigins: params.allowOrigins as string[],
+                    allowMethods: params.allowMethods as string[],
+                  } : undefined,
+                  region,
+                });
+
+                const urlData = result.data as { functionUrl?: string } | undefined;
+                return {
+                  content: [{ type: "text", text: result.message + (urlData?.functionUrl ? `\nURL: ${urlData.functionUrl}` : '') }],
+                  details: result,
+                };
+              }
+
+              case "update_function_url": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.updateFunctionUrl({
+                  functionName,
+                  qualifier: params.qualifier as string,
+                  authType: params.authType as 'NONE' | 'AWS_IAM',
+                  cors: params.allowOrigins ? {
+                    allowOrigins: params.allowOrigins as string[],
+                    allowMethods: params.allowMethods as string[],
+                  } : undefined,
+                  region,
+                });
+
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_function_url": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const result = await lambdaManager.deleteFunctionUrl(functionName, params.qualifier as string, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "get_function_url": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const url = await lambdaManager.getFunctionUrl(functionName, params.qualifier as string, region);
+                if (!url) {
+                  return {
+                    content: [{ type: "text", text: `No function URL configured for '${functionName}'` }],
+                    details: { error: "not_found" },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `Function URL: ${url.functionUrl}\nAuth Type: ${url.authType}` }],
+                  details: { url },
+                };
+              }
+
+              case "list_function_urls": {
+                const functionName = params.functionName as string;
+                if (!functionName) {
+                  return {
+                    content: [{ type: "text", text: "Error: functionName is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                const urls = await lambdaManager.listFunctionUrls({ functionName, region });
+                const summary = urls.length === 0
+                  ? "No function URLs found."
+                  : urls.map(u => `• ${u.functionUrl} (${u.authType})`).join("\n");
+
+                return {
+                  content: [{ type: "text", text: `Function URLs for ${functionName}:\n\n${summary}` }],
+                  details: { count: urls.length, urls },
+                };
+              }
+
+              // Account operations
+              case "get_account_settings": {
+                const settings = await lambdaManager.getAccountSettings(region);
+                const summary = [
+                  "Lambda Account Settings:",
+                  "",
+                  "Limits:",
+                  `• Concurrent Executions: ${settings.accountLimit?.concurrentExecutions}`,
+                  `• Unreserved Concurrent Executions: ${settings.accountLimit?.unreservedConcurrentExecutions}`,
+                  `• Total Code Size: ${Math.round((settings.accountLimit?.totalCodeSize || 0) / 1024 / 1024 / 1024)}GB`,
+                  "",
+                  "Usage:",
+                  `• Function Count: ${settings.accountUsage?.functionCount}`,
+                  `• Total Code Size: ${Math.round((settings.accountUsage?.totalCodeSize || 0) / 1024 / 1024)}MB`,
+                ].join("\n");
+
+                return {
+                  content: [{ type: "text", text: summary }],
+                  details: settings,
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Lambda error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_lambda" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -2677,6 +4134,7 @@ const plugin = {
         cloudTrailManager = null;
         ec2Manager = null;
         rdsManager = null;
+        lambdaManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -2700,6 +4158,7 @@ export function getAWSManagers() {
     cloudTrail: cloudTrailManager,
     ec2: ec2Manager,
     rds: rdsManager,
+    lambda: lambdaManager,
     cli: cliWrapper,
   };
 }
