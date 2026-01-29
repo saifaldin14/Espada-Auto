@@ -15,25 +15,30 @@ import type { InfrastructureCommand } from "../types.js";
 import type { InfrastructureLogger } from "../logging/logger.js";
 
 const mockLogger: InfrastructureLogger = {
+  subsystem: "test",
+  trace: vi.fn(),
   debug: vi.fn(),
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
+  fatal: vi.fn(),
   child: () => mockLogger,
+  withContext: () => mockLogger,
   setLevel: vi.fn(),
-  flush: vi.fn().mockResolvedValue(undefined),
+  getLevel: () => "info",
+  isLevelEnabled: () => true,
 };
 
 const mockCommand: InfrastructureCommand = {
   id: "test-deploy",
   name: "Test Deploy",
   description: "Test deployment command",
-  category: "deployment",
-  provider: "test",
-  riskLevel: "medium",
-  requiresApproval: false,
+  category: "provision",
   parameters: [],
-  execute: vi.fn().mockResolvedValue({ success: true, data: {} }),
+  requiredCapabilities: ["provision"],
+  supportsDryRun: true,
+  dangerous: false,
+  examples: [],
 };
 
 describe("Risk Scoring", () => {
@@ -51,7 +56,7 @@ describe("Risk Scoring", () => {
 
   it("should identify high-risk commands", () => {
     const scorer = createRiskScorer();
-    const deleteCommand: InfrastructureCommand = { ...mockCommand, id: "delete-all", name: "Delete All", riskLevel: "critical", category: "delete" };
+    const deleteCommand: InfrastructureCommand = { ...mockCommand, id: "delete-all", name: "Delete All", category: "provision", dangerous: true };
     const context: RiskContext = { command: deleteCommand, parameters: {}, environment: "production", userId: "user1" };
 
     const risk = scorer.assessRisk(context);
@@ -456,7 +461,7 @@ describe("Security Facade", () => {
       justification: "Emergency fix needed",
     });
 
-    const criticalCommand: InfrastructureCommand = { ...mockCommand, riskLevel: "critical" };
+    const criticalCommand: InfrastructureCommand = { ...mockCommand, dangerous: true };
     const result = await facade.checkOperation({
       userId: "dev1",
       userName: "Developer",

@@ -47,8 +47,8 @@ const createSampleMeta = (id: string): InfrastructureProviderMeta => ({
   description: `Test provider ${id}`,
   version: "1.0.0",
   category: "cloud",
-  capabilities: ["compute", "storage"],
-  supportedResources: ["vm", "disk"],
+  capabilities: ["provision", "monitor"],
+  supportedResources: ["compute", "storage"],
   authMethods: ["api-key"],
 });
 
@@ -65,11 +65,11 @@ const createMockProviderFactory = (
     healthCheck: vi.fn().mockResolvedValue({
       status: "healthy",
       timestamp: new Date(),
-      details: {},
+      checks: [],
     }),
-    listCommands: vi.fn().mockReturnValue([]),
+    getCommands: vi.fn().mockReturnValue([]),
     executeCommand: vi.fn().mockResolvedValue({ success: true, data: {} }),
-  });
+  } as unknown as InfrastructureProvider);
 };
 
 describe("InfrastructureProviderRegistry", () => {
@@ -80,7 +80,6 @@ describe("InfrastructureProviderRegistry", () => {
   beforeEach(() => {
     mockLogger = createMockLogger();
     defaultOptions = {
-      defaultEnvironment: "development",
       autoDiscover: false,
       autoStart: false,
     };
@@ -193,6 +192,7 @@ describe("InfrastructureProviderRegistry", () => {
       const plugin: DiscoveredPlugin = {
         path: "/plugins/test",
         source: "local",
+        loadedAt: new Date(),
         manifest: {
           id: "test-plugin",
           name: "Test Plugin",
@@ -200,7 +200,7 @@ describe("InfrastructureProviderRegistry", () => {
           description: "Test",
           providers: [meta],
           dependencies: {},
-          engines: { node: ">=18.0.0" },
+          commands: [],
         },
       };
       
@@ -325,7 +325,7 @@ describe("InfrastructureProviderRegistry", () => {
 
     it("should pass auth to initialization", async () => {
       const auth: ProviderAuthConfig = {
-        method: "oauth",
+        method: "oauth2",
         credentials: { token: "oauth-token" },
       };
       
@@ -509,17 +509,17 @@ describe("Provider Factory Registration Details", () => {
       description: "A detailed test provider",
       version: "2.1.0",
       category: "kubernetes",
-      capabilities: ["pods", "services", "deployments"],
-      supportedResources: ["pod", "service", "deployment", "configmap"],
-      authMethods: ["kubeconfig", "service-account"],
+      capabilities: ["provision", "scale", "monitor"],
+      supportedResources: ["container", "cluster", "network"],
+      authMethods: ["service-account", "token"],
     };
     
     registry.registerFactory(meta, createMockProviderFactory(meta));
     
     const registered = registry.getFactory("detailed-provider");
     expect(registered?.meta).toEqual(meta);
-    expect(registered?.meta.capabilities).toContain("pods");
-    expect(registered?.meta.authMethods).toContain("kubeconfig");
+    expect(registered?.meta.capabilities).toContain("provision");
+    expect(registered?.meta.authMethods).toContain("service-account");
   });
 
   it("should log registration with provider details", () => {

@@ -61,8 +61,8 @@ const createMockProvider = (
     description: `Test provider ${id}`,
     version: "1.0.0",
     category: "cloud",
-    capabilities: ["compute"],
-    supportedResources: ["vm"],
+    capabilities: ["provision", "monitor"],
+    supportedResources: ["compute", "storage"],
     authMethods: ["api-key"],
   };
 
@@ -83,9 +83,9 @@ const createMockProvider = (
     healthCheck: vi.fn().mockResolvedValue({
       status: healthStatus,
       timestamp: new Date(),
-      details: {},
+      checks: [],
     } as ProviderHealthCheck),
-    listCommands: vi.fn().mockReturnValue([]),
+    getCommands: vi.fn().mockReturnValue([]),
     executeCommand: vi.fn().mockResolvedValue({ success: true, data: {} }),
   };
 };
@@ -165,7 +165,7 @@ describe("InfrastructureLifecycleManager", () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.unregisterProvider("test-1");
@@ -179,7 +179,7 @@ describe("InfrastructureLifecycleManager", () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       expect(provider.initialize).toHaveBeenCalled();
       expect(manager.getProviderState("test-1")).toBe("ready");
@@ -187,7 +187,7 @@ describe("InfrastructureLifecycleManager", () => {
 
     it("should throw when initializing non-existent provider", async () => {
       await expect(
-        manager.initializeProvider("non-existent", { type: "none" }),
+        manager.initializeProvider("non-existent", { method: "api-key" }),
       ).rejects.toThrow(/not found/);
     });
 
@@ -195,10 +195,10 @@ describe("InfrastructureLifecycleManager", () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       await expect(
-        manager.initializeProvider("test-1", { type: "none" }),
+        manager.initializeProvider("test-1", { method: "api-key" }),
       ).rejects.toThrow(/already initialized/);
     });
 
@@ -207,7 +207,7 @@ describe("InfrastructureLifecycleManager", () => {
       manager.registerProvider(provider);
       
       await expect(
-        manager.initializeProvider("test-1", { type: "none" }),
+        manager.initializeProvider("test-1", { method: "api-key" }),
       ).rejects.toThrow();
       
       expect(manager.getProviderState("test-1")).toBe("error");
@@ -217,7 +217,7 @@ describe("InfrastructureLifecycleManager", () => {
       const provider = createMockProvider("test-1", { initDelay: 10 });
       manager.registerProvider(provider);
       
-      const initPromise = manager.initializeProvider("test-1", { type: "none" });
+      const initPromise = manager.initializeProvider("test-1", { method: "api-key" });
       
       await initPromise;
       const stateAfter = manager.getProviderState("test-1");
@@ -230,7 +230,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should start an initialized provider", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       await manager.startProvider("test-1");
       
@@ -240,7 +240,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should stop a running provider", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.stopProvider("test-1");
@@ -251,7 +251,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should handle start failure", async () => {
       const provider = createMockProvider("test-1", { startSuccess: false });
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       await expect(manager.startProvider("test-1")).rejects.toThrow();
       
@@ -261,7 +261,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should restart a provider", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.restartProvider("test-1");
@@ -274,7 +274,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should destroy a provider", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       await manager.destroyProvider("test-1");
       
@@ -285,7 +285,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should stop running provider before destroying", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.destroyProvider("test-1");
@@ -303,7 +303,7 @@ describe("InfrastructureLifecycleManager", () => {
       const hookFn = vi.fn();
       manager.registerHook("beforeInit", hookFn);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       expect(hookFn).toHaveBeenCalled();
     });
@@ -317,7 +317,7 @@ describe("InfrastructureLifecycleManager", () => {
       manager.registerHook("beforeInit", async () => { order.push(2); }, { priority: 50 });
       manager.registerHook("beforeInit", async () => { order.push(1); }, { priority: 100 });
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       // Higher priority runs first
       expect(order).toEqual([1, 2]);
@@ -331,7 +331,7 @@ describe("InfrastructureLifecycleManager", () => {
       
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       expect(hookFn).not.toHaveBeenCalled();
     });
@@ -364,7 +364,7 @@ describe("InfrastructureLifecycleManager", () => {
       const eventHandler = vi.fn();
       manager.on("provider:initialized", eventHandler);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       
       // Events are emitted asynchronously
       await new Promise(r => setTimeout(r, 10));
@@ -378,7 +378,7 @@ describe("InfrastructureLifecycleManager", () => {
       
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await new Promise(r => setTimeout(r, 10));
@@ -390,7 +390,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should check provider health", async () => {
       const provider = createMockProvider("test-1", { healthStatus: "healthy" });
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       const health = await manager.checkProviderHealth("test-1");
@@ -402,7 +402,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should store health check result", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.checkProviderHealth("test-1");
@@ -419,7 +419,7 @@ describe("InfrastructureLifecycleManager", () => {
       for (let i = 1; i <= 3; i++) {
         const provider = createMockProvider(`test-${i}`);
         manager.registerProvider(provider);
-        await manager.initializeProvider(`test-${i}`, { type: "none" });
+        await manager.initializeProvider(`test-${i}`, { method: "api-key" });
       }
       
       await manager.startAll();
@@ -433,7 +433,7 @@ describe("InfrastructureLifecycleManager", () => {
       for (let i = 1; i <= 3; i++) {
         const provider = createMockProvider(`test-${i}`);
         manager.registerProvider(provider);
-        await manager.initializeProvider(`test-${i}`, { type: "none" });
+        await manager.initializeProvider(`test-${i}`, { method: "api-key" });
       }
       await manager.startAll();
       
@@ -452,7 +452,7 @@ describe("InfrastructureLifecycleManager", () => {
       manager.registerProvider(p1);
       manager.registerProvider(p2);
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       const stats = manager.getStatistics();
@@ -485,7 +485,7 @@ describe("InfrastructureLifecycleManager", () => {
     it("should shutdown cleanly", async () => {
       const provider = createMockProvider("test-1");
       manager.registerProvider(provider);
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       await manager.startProvider("test-1");
       
       await manager.shutdown();
@@ -512,7 +512,7 @@ describe("InfrastructureLifecycleManager", () => {
       for (let i = 1; i <= 3; i++) {
         const provider = createMockProvider(`test-${i}`);
         manager.registerProvider(provider);
-        await manager.initializeProvider(`test-${i}`, { type: "none" });
+        await manager.initializeProvider(`test-${i}`, { method: "api-key" });
       }
       await manager.startProvider("test-1");
     });
@@ -550,7 +550,7 @@ describe("InfrastructureLifecycleManager", () => {
       
       expect(manager.getProviderState("test-1")).toBe("uninitialized");
       
-      await manager.initializeProvider("test-1", { type: "none" });
+      await manager.initializeProvider("test-1", { method: "api-key" });
       expect(manager.getProviderState("test-1")).toBe("ready");
       
       await manager.startProvider("test-1");

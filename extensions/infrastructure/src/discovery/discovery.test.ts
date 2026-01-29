@@ -40,13 +40,13 @@ const createSampleManifest = (id: string): InfrastructurePluginManifest => ({
       description: "Test provider",
       version: "1.0.0",
       category: "cloud",
-      capabilities: ["compute", "storage"],
-      supportedResources: ["vm", "disk"],
+      capabilities: ["provision", "monitor"],
+      supportedResources: ["compute", "storage"],
       authMethods: ["api-key"],
     },
   ],
   dependencies: {},
-  engines: { node: ">=18.0.0" },
+  commands: [],
 });
 
 describe("InfrastructurePluginDiscoverer", () => {
@@ -280,15 +280,15 @@ describe("Plugin Manifest Validation", () => {
       displayName: "Second Provider",
       description: "Another test provider",
       version: "1.0.0",
-      category: "networking",
-      capabilities: ["vpc", "firewall"],
-      supportedResources: ["network", "rule"],
-      authMethods: ["oauth"],
+      category: "network",
+      capabilities: ["provision", "monitor"],
+      supportedResources: ["network", "load-balancer"],
+      authMethods: ["oauth2"],
     });
 
     expect(manifest.providers.length).toBe(2);
     expect(manifest.providers[0].category).toBe("cloud");
-    expect(manifest.providers[1].category).toBe("networking");
+    expect(manifest.providers[1].category).toBe("network");
   });
 
   it("should validate semantic versioning", () => {

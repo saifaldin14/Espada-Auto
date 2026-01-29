@@ -458,7 +458,7 @@ export class InfrastructureLoggerImpl implements InfrastructureLogger {
  */
 export function createInfrastructureLogger(
   subsystem: string,
-  config?: LoggingConfig,
+  config?: Partial<LoggingConfig>,
 ): InfrastructureLogger {
   const transports: LogTransport[] = [];
 
