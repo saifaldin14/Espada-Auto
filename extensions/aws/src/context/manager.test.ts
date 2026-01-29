@@ -25,27 +25,32 @@ const createMockCredentialsManager = () => ({
     secretAccessKey: "tempSecretKey123456789abcdefghijklmno",
     sessionToken: "tempSessionToken123456789abcdefghijkl",
     source: "assumed-role",
-    expiresAt: new Date(Date.now() + 3600000),
+    expiration: new Date(Date.now() + 3600000),
   }),
 });
 
 let mockCredentialsManager: ReturnType<typeof createMockCredentialsManager>;
 
 // Mock AWS SDK clients
-vi.mock("@aws-sdk/client-sts", () => ({
-  STSClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
+vi.mock("@aws-sdk/client-sts", () => {
+  const MockSTSClient = class {
+    send = vi.fn().mockResolvedValue({
       Account: "123456789012",
       Arn: "arn:aws:iam::123456789012:user/testuser",
       UserId: "AIDAIOSFODNN7EXAMPLE",
-    }),
-  })),
-  GetCallerIdentityCommand: vi.fn(),
-}));
+    });
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+  return {
+    STSClient: MockSTSClient,
+    GetCallerIdentityCommand: vi.fn(),
+  };
+});
 
-vi.mock("@aws-sdk/client-ec2", () => ({
-  EC2Client: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
+vi.mock("@aws-sdk/client-ec2", () => {
+  const MockEC2Client = class {
+    send = vi.fn().mockResolvedValue({
       Regions: [
         { RegionName: "us-east-1", Endpoint: "ec2.us-east-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
         { RegionName: "us-east-2", Endpoint: "ec2.us-east-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
@@ -58,23 +63,33 @@ vi.mock("@aws-sdk/client-ec2", () => ({
         { RegionName: "ap-southeast-1", Endpoint: "ec2.ap-southeast-1.amazonaws.com", OptInStatus: "not-opted-in" },
         { RegionName: "af-south-1", Endpoint: "ec2.af-south-1.amazonaws.com", OptInStatus: "not-opted-in" },
       ],
-    }),
-  })),
-  DescribeRegionsCommand: vi.fn(),
-}));
+    });
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+  return {
+    EC2Client: MockEC2Client,
+    DescribeRegionsCommand: vi.fn(),
+  };
+});
 
-vi.mock("@aws-sdk/client-iam", () => ({
-  IAMClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
+vi.mock("@aws-sdk/client-iam", () => {
+  const MockIAMClient = class {
+    send = vi.fn().mockResolvedValue({
       AccountAliases: ["my-account-alias"],
-    }),
-  })),
-  ListAccountAliasesCommand: vi.fn(),
-}));
+    });
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+  return {
+    IAMClient: MockIAMClient,
+    ListAccountAliasesCommand: vi.fn(),
+  };
+});
 
-vi.mock("@aws-sdk/client-organizations", () => ({
-  OrganizationsClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
+vi.mock("@aws-sdk/client-organizations", () => {
+  const MockOrganizationsClient = class {
+    send = vi.fn().mockResolvedValue({
       Account: {
         Id: "123456789012",
         Name: "Test Account",
@@ -85,11 +100,16 @@ vi.mock("@aws-sdk/client-organizations", () => ({
         Id: "o-1234567890",
         MasterAccountId: "111111111111",
       },
-    }),
-  })),
-  DescribeAccountCommand: vi.fn(),
-  DescribeOrganizationCommand: vi.fn(),
-}));
+    });
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+  return {
+    OrganizationsClient: MockOrganizationsClient,
+    DescribeAccountCommand: vi.fn(),
+    DescribeOrganizationCommand: vi.fn(),
+  };
+});
 
 describe("AWSContextManager", () => {
   let contextManager: AWSContextManager;

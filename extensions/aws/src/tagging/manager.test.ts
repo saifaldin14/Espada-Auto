@@ -22,37 +22,45 @@ const mockCredentialsManager = {
 } as unknown as AWSCredentialsManager;
 
 // Mock Resource Groups Tagging API client
-vi.mock("@aws-sdk/client-resource-groups-tagging-api", () => ({
-  ResourceGroupsTaggingAPIClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockImplementation((command) => {
-      if (command?.input?.ResourceARNList) {
-        // TagResources or UntagResources
-        return Promise.resolve({
-          FailedResourcesMap: {},
-        });
-      }
-      if (command?.input?.TagFilters !== undefined || command?.input?.ResourceTypeFilters !== undefined) {
-        // GetResources
-        return Promise.resolve({
-          ResourceTagMappingList: [
-            {
-              ResourceARN: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
-              Tags: [
-                { Key: "Name", Value: "test-instance" },
-                { Key: "Environment", Value: "production" },
-              ],
-            },
-          ],
-          PaginationToken: undefined,
-        });
-      }
-      return Promise.resolve({});
-    }),
-  })),
-  TagResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
-  UntagResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
-  GetResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
-}));
+vi.mock("@aws-sdk/client-resource-groups-tagging-api", () => {
+  const mockTaggingSend = vi.fn().mockImplementation((command) => {
+    if (command?.input?.ResourceARNList) {
+      // TagResources or UntagResources
+      return Promise.resolve({
+        FailedResourcesMap: {},
+      });
+    }
+    if (command?.input?.TagFilters !== undefined || command?.input?.ResourceTypeFilters !== undefined) {
+      // GetResources
+      return Promise.resolve({
+        ResourceTagMappingList: [
+          {
+            ResourceARN: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+            Tags: [
+              { Key: "Name", Value: "test-instance" },
+              { Key: "Environment", Value: "production" },
+            ],
+          },
+        ],
+        PaginationToken: undefined,
+      });
+    }
+    return Promise.resolve({});
+  });
+
+  const MockResourceGroupsTaggingAPIClient = class {
+    send = mockTaggingSend;
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+
+  return {
+    ResourceGroupsTaggingAPIClient: MockResourceGroupsTaggingAPIClient,
+    TagResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
+    UntagResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
+    GetResourcesCommand: vi.fn().mockImplementation((input) => ({ input })),
+  };
+});
 
 describe("AWSTagValidator", () => {
   describe("constructor", () => {

@@ -21,137 +21,158 @@ const mockCredentialsManager = {
 } as unknown as AWSCredentialsManager;
 
 // Mock AWS SDK clients
-vi.mock("@aws-sdk/client-ec2", () => ({
-  EC2Client: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockImplementation((command) => {
-      // DescribeRegions
-      if (command?.input?.AllRegions !== undefined) {
-        return Promise.resolve({
-          Regions: [
-            { RegionName: "us-east-1", Endpoint: "ec2.us-east-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "us-east-2", Endpoint: "ec2.us-east-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "us-west-1", Endpoint: "ec2.us-west-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "us-west-2", Endpoint: "ec2.us-west-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "eu-west-1", Endpoint: "ec2.eu-west-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "eu-west-2", Endpoint: "ec2.eu-west-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "eu-central-1", Endpoint: "ec2.eu-central-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "ap-northeast-1", Endpoint: "ec2.ap-northeast-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
-            { RegionName: "ap-southeast-1", Endpoint: "ec2.ap-southeast-1.amazonaws.com", OptInStatus: "opted-in" },
-            { RegionName: "af-south-1", Endpoint: "ec2.af-south-1.amazonaws.com", OptInStatus: "not-opted-in" },
-          ],
-        });
-      }
-      // DescribeInstances
-      if (command?.input?.Filters !== undefined || command?.input?.InstanceIds !== undefined || command?.input?.MaxResults !== undefined) {
-        return Promise.resolve({
-          Reservations: [
-            {
-              Instances: [
-                {
-                  InstanceId: "i-1234567890abcdef0",
-                  InstanceType: "t3.micro",
-                  State: { Name: "running", Code: 16 },
-                  Tags: [
-                    { Key: "Name", Value: "web-server-1" },
-                    { Key: "Environment", Value: "production" },
-                  ],
-                  LaunchTime: new Date("2024-01-01T00:00:00Z"),
-                  PrivateIpAddress: "10.0.1.10",
-                  PublicIpAddress: "54.123.45.67",
-                  VpcId: "vpc-12345678",
-                  SubnetId: "subnet-12345678",
-                  SecurityGroups: [{ GroupId: "sg-12345678", GroupName: "web-sg" }],
-                  ImageId: "ami-12345678",
-                },
-                {
-                  InstanceId: "i-0987654321fedcba0",
-                  InstanceType: "t3.small",
-                  State: { Name: "stopped", Code: 80 },
-                  Tags: [
-                    { Key: "Name", Value: "dev-server" },
-                    { Key: "Environment", Value: "development" },
-                  ],
-                  LaunchTime: new Date("2024-01-15T00:00:00Z"),
-                  PrivateIpAddress: "10.0.2.20",
-                  VpcId: "vpc-12345678",
-                  SubnetId: "subnet-87654321",
-                },
-              ],
-            },
-          ],
-        });
-      }
-      // DescribeVpcs
+vi.mock("@aws-sdk/client-ec2", () => {
+  const mockEC2Send = vi.fn().mockImplementation((command) => {
+    // DescribeRegions
+    if (command?.input?.AllRegions !== undefined) {
       return Promise.resolve({
-        Vpcs: [
+        Regions: [
+          { RegionName: "us-east-1", Endpoint: "ec2.us-east-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "us-east-2", Endpoint: "ec2.us-east-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "us-west-1", Endpoint: "ec2.us-west-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "us-west-2", Endpoint: "ec2.us-west-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "eu-west-1", Endpoint: "ec2.eu-west-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "eu-west-2", Endpoint: "ec2.eu-west-2.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "eu-central-1", Endpoint: "ec2.eu-central-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "ap-northeast-1", Endpoint: "ec2.ap-northeast-1.amazonaws.com", OptInStatus: "opt-in-not-required" },
+          { RegionName: "ap-southeast-1", Endpoint: "ec2.ap-southeast-1.amazonaws.com", OptInStatus: "opted-in" },
+          { RegionName: "af-south-1", Endpoint: "ec2.af-south-1.amazonaws.com", OptInStatus: "not-opted-in" },
+        ],
+      });
+    }
+    // DescribeInstances
+    if (command?.input?.Filters !== undefined || command?.input?.InstanceIds !== undefined || command?.input?.MaxResults !== undefined) {
+      return Promise.resolve({
+        Reservations: [
           {
-            VpcId: "vpc-12345678",
-            CidrBlock: "10.0.0.0/16",
-            State: "available",
-            IsDefault: true,
-            Tags: [{ Key: "Name", Value: "main-vpc" }],
-            DhcpOptionsId: "dopt-12345678",
-            InstanceTenancy: "default",
-          },
-          {
-            VpcId: "vpc-87654321",
-            CidrBlock: "172.16.0.0/16",
-            State: "available",
-            IsDefault: false,
-            Tags: [{ Key: "Name", Value: "secondary-vpc" }],
-            DhcpOptionsId: "dopt-87654321",
-            InstanceTenancy: "default",
+            Instances: [
+              {
+                InstanceId: "i-1234567890abcdef0",
+                InstanceType: "t3.micro",
+                State: { Name: "running", Code: 16 },
+                Tags: [
+                  { Key: "Name", Value: "web-server-1" },
+                  { Key: "Environment", Value: "production" },
+                ],
+                LaunchTime: new Date("2024-01-01T00:00:00Z"),
+                PrivateIpAddress: "10.0.1.10",
+                PublicIpAddress: "54.123.45.67",
+                VpcId: "vpc-12345678",
+                SubnetId: "subnet-12345678",
+                SecurityGroups: [{ GroupId: "sg-12345678", GroupName: "web-sg" }],
+                ImageId: "ami-12345678",
+              },
+              {
+                InstanceId: "i-0987654321fedcba0",
+                InstanceType: "t3.small",
+                State: { Name: "stopped", Code: 80 },
+                Tags: [
+                  { Key: "Name", Value: "dev-server" },
+                  { Key: "Environment", Value: "development" },
+                ],
+                LaunchTime: new Date("2024-01-15T00:00:00Z"),
+                PrivateIpAddress: "10.0.2.20",
+                VpcId: "vpc-12345678",
+                SubnetId: "subnet-87654321",
+              },
+            ],
           },
         ],
       });
-    }),
-  })),
-  DescribeRegionsCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
-  DescribeInstancesCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
-  DescribeVpcsCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
-}));
+    }
+    // DescribeVpcs
+    return Promise.resolve({
+      Vpcs: [
+        {
+          VpcId: "vpc-12345678",
+          CidrBlock: "10.0.0.0/16",
+          State: "available",
+          IsDefault: true,
+          Tags: [{ Key: "Name", Value: "main-vpc" }],
+          DhcpOptionsId: "dopt-12345678",
+          InstanceTenancy: "default",
+        },
+        {
+          VpcId: "vpc-87654321",
+          CidrBlock: "172.16.0.0/16",
+          State: "available",
+          IsDefault: false,
+          Tags: [{ Key: "Name", Value: "secondary-vpc" }],
+          DhcpOptionsId: "dopt-87654321",
+          InstanceTenancy: "default",
+        },
+      ],
+    });
+  });
 
-vi.mock("@aws-sdk/client-sts", () => ({
-  STSClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
+  const MockEC2Client = class {
+    send = mockEC2Send;
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+
+  return {
+    EC2Client: MockEC2Client,
+    DescribeRegionsCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
+    DescribeInstancesCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
+    DescribeVpcsCommand: vi.fn().mockImplementation((input) => ({ input: input ?? {} })),
+  };
+});
+
+vi.mock("@aws-sdk/client-sts", () => {
+  const MockSTSClient = class {
+    send = vi.fn().mockResolvedValue({
       Account: "123456789012",
       Arn: "arn:aws:iam::123456789012:user/testuser",
       UserId: "AIDAIOSFODNN7EXAMPLE",
-    }),
-  })),
-  GetCallerIdentityCommand: vi.fn(),
-}));
+    });
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+  return {
+    STSClient: MockSTSClient,
+    GetCallerIdentityCommand: vi.fn(),
+  };
+});
 
-vi.mock("@aws-sdk/client-resource-groups-tagging-api", () => ({
-  ResourceGroupsTaggingAPIClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockResolvedValue({
-      ResourceTagMappingList: [
-        {
-          ResourceARN: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
-          Tags: [
-            { Key: "Name", Value: "web-server-1" },
-            { Key: "Environment", Value: "production" },
-          ],
-        },
-        {
-          ResourceARN: "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-12345678",
-          Tags: [
-            { Key: "Name", Value: "main-vpc" },
-          ],
-        },
-        {
-          ResourceARN: "arn:aws:s3:::my-bucket",
-          Tags: [
-            { Key: "Name", Value: "my-bucket" },
-            { Key: "Purpose", Value: "storage" },
-          ],
-        },
-      ],
-      PaginationToken: undefined,
-    }),
-  })),
-  GetResourcesCommand: vi.fn(),
-}));
+vi.mock("@aws-sdk/client-resource-groups-tagging-api", () => {
+  const mockTaggingSend = vi.fn().mockResolvedValue({
+    ResourceTagMappingList: [
+      {
+        ResourceARN: "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+        Tags: [
+          { Key: "Name", Value: "web-server-1" },
+          { Key: "Environment", Value: "production" },
+        ],
+      },
+      {
+        ResourceARN: "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-12345678",
+        Tags: [
+          { Key: "Name", Value: "main-vpc" },
+        ],
+      },
+      {
+        ResourceARN: "arn:aws:s3:::my-bucket",
+        Tags: [
+          { Key: "Name", Value: "my-bucket" },
+          { Key: "Purpose", Value: "storage" },
+        ],
+      },
+    ],
+    PaginationToken: undefined,
+  });
+
+  const MockResourceGroupsTaggingAPIClient = class {
+    send = mockTaggingSend;
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+
+  return {
+    ResourceGroupsTaggingAPIClient: MockResourceGroupsTaggingAPIClient,
+    GetResourcesCommand: vi.fn(),
+  };
+});
 
 describe("AWSServiceDiscovery", () => {
   let discovery: AWSServiceDiscovery;

@@ -86,39 +86,47 @@ vi.mock("@aws-sdk/credential-providers", () => ({
 }));
 
 // Mock STS client
-vi.mock("@aws-sdk/client-sts", () => ({
-  STSClient: vi.fn().mockImplementation(() => ({
-    send: vi.fn().mockImplementation((command) => {
-      // Check if it's an AssumeRole command by checking constructor name
-      if (command?.constructor?.name === "AssumeRoleCommand" || command?.RoleArn) {
-        // AssumeRole command
-        return Promise.resolve({
-          Credentials: {
-            AccessKeyId: "ASIAASSUMEDKEY123456",
-            SecretAccessKey: "assumedSecretKey123456789abcdefghij",
-            SessionToken: "assumedSessionToken123456789abcdefgh",
-            Expiration: new Date(Date.now() + 3600000),
-          },
-          AssumedRoleUser: {
-            AssumedRoleId: "AROA3XFRBF535PLBIFPI4:session-name",
-            Arn: "arn:aws:sts::123456789012:assumed-role/TestRole/session-name",
-          },
-        });
-      }
-      // GetCallerIdentity command
+vi.mock("@aws-sdk/client-sts", () => {
+  const mockSTSSend = vi.fn().mockImplementation((command) => {
+    // Check if it's an AssumeRole command by checking constructor name
+    if (command?.constructor?.name === "AssumeRoleCommand" || command?.RoleArn) {
+      // AssumeRole command
       return Promise.resolve({
-        Account: "123456789012",
-        Arn: "arn:aws:iam::123456789012:user/testuser",
-        UserId: "AIDAIOSFODNN7EXAMPLE",
+        Credentials: {
+          AccessKeyId: "ASIAASSUMEDKEY123456",
+          SecretAccessKey: "assumedSecretKey123456789abcdefghij",
+          SessionToken: "assumedSessionToken123456789abcdefgh",
+          Expiration: new Date(Date.now() + 3600000),
+        },
+        AssumedRoleUser: {
+          AssumedRoleId: "AROA3XFRBF535PLBIFPI4:session-name",
+          Arn: "arn:aws:sts::123456789012:assumed-role/TestRole/session-name",
+        },
       });
-    }),
-  })),
-  GetCallerIdentityCommand: vi.fn(),
-  AssumeRoleCommand: vi.fn().mockImplementation((input) => ({
-    RoleArn: input?.RoleArn,
-    constructor: { name: "AssumeRoleCommand" },
-  })),
-}));
+    }
+    // GetCallerIdentity command
+    return Promise.resolve({
+      Account: "123456789012",
+      Arn: "arn:aws:iam::123456789012:user/testuser",
+      UserId: "AIDAIOSFODNN7EXAMPLE",
+    });
+  });
+
+  const MockSTSClient = class {
+    send = mockSTSSend;
+    destroy = vi.fn();
+    constructor(public config: unknown) {}
+  };
+
+  return {
+    STSClient: MockSTSClient,
+    GetCallerIdentityCommand: vi.fn(),
+    AssumeRoleCommand: vi.fn().mockImplementation((input) => ({
+      RoleArn: input?.RoleArn,
+      constructor: { name: "AssumeRoleCommand" },
+    })),
+  };
+});
 
 describe("AWSCredentialsManager", () => {
   let manager: AWSCredentialsManager;
