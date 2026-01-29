@@ -340,10 +340,11 @@ describe("doctor legacy state migrations", () => {
 
     const targetDir = path.join(root, ".espada");
     expect(fs.existsSync(path.join(targetDir, "foo.txt"))).toBe(true);
+    // Since LEGACY_STATE_DIRNAME and NEW_STATE_DIRNAME are both ".espada",
+    // the legacyDir and targetDir are the same path - no migration needed
     const legacyStat = fs.lstatSync(legacyDir);
-    expect(legacyStat.isSymbolicLink()).toBe(true);
-    expect(fs.realpathSync(legacyDir)).toBe(fs.realpathSync(targetDir));
-    expect(result.migrated).toBe(true);
+    expect(legacyStat.isDirectory()).toBe(true);
+    expect(result.migrated).toBe(false);
   });
 
   it("skips state dir migration when target exists", async () => {
@@ -351,7 +352,8 @@ describe("doctor legacy state migrations", () => {
     const legacyDir = path.join(root, ".espada");
     const targetDir = path.join(root, ".espada");
     fs.mkdirSync(legacyDir, { recursive: true });
-    fs.mkdirSync(targetDir, { recursive: true });
+    // Since legacyDir and targetDir are the same path when
+    // LEGACY_STATE_DIRNAME === NEW_STATE_DIRNAME, no migration is attempted
 
     const result = await autoMigrateLegacyStateDir({
       env: {} as NodeJS.ProcessEnv,
@@ -359,7 +361,8 @@ describe("doctor legacy state migrations", () => {
     });
 
     expect(result.migrated).toBe(false);
-    expect(result.warnings.length).toBeGreaterThan(0);
+    // No warnings because no migration was attempted (same paths)
+    expect(result.warnings.length).toBe(0);
   });
 
   it("skips state dir migration when env override is set", async () => {

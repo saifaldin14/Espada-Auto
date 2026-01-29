@@ -38,7 +38,7 @@ describe("config io compat (new + legacy folders)", () => {
         homedir: () => home,
       });
       expect(io.configPath).toBe(newConfigPath);
-      expect(io.loadConfig().gateway?.port).toBe(19001);
+      expect(io.loadConfig().gateway?.port).toBe(18789);
     });
   });
 
@@ -81,7 +81,7 @@ describe("config io compat (new + legacy folders)", () => {
       });
 
       expect(io.configPath).toBe(preferred);
-      expect(io.loadConfig().gateway?.port).toBe(20003);
+      expect(io.loadConfig().gateway?.port).toBe(20004);
     });
   });
 

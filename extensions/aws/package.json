@@ -1,8 +1,13 @@
 {
   "name": "@espada/aws",
-  "version": "1.0.0",
+  "version": "2026.1.27-beta.1",
   "description": "AWS Core Services plugin for Espada infrastructure management",
   "type": "module",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
@@ -37,6 +42,10 @@
     "./cloudtrail": {
       "import": "./dist/cloudtrail/index.js",
       "types": "./dist/cloudtrail/index.d.ts"
+    },
+    "./ec2": {
+      "import": "./dist/ec2/index.js",
+      "types": "./dist/ec2/index.d.ts"
     }
   },
   "scripts": {
@@ -47,8 +56,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-auto-scaling": "^3.500.0",
     "@aws-sdk/client-cloudtrail": "^3.500.0",
+    "@aws-sdk/client-cloudwatch": "^3.500.0",
     "@aws-sdk/client-ec2": "^3.500.0",
+    "@aws-sdk/client-elastic-load-balancing-v2": "^3.500.0",
     "@aws-sdk/client-iam": "^3.500.0",
     "@aws-sdk/client-organizations": "^3.500.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.500.0",

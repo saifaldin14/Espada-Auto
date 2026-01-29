@@ -157,7 +157,8 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
     const basename = path.basename(snapshot.path);
     if (basename === "espada.json") {
       const canonicalPath = path.join(path.dirname(snapshot.path), "espada.json");
-      if (!fs.existsSync(canonicalPath)) {
+      // Only migrate if the paths are actually different (avoid copying file to itself)
+      if (canonicalPath !== snapshot.path && !fs.existsSync(canonicalPath)) {
         moveLegacyConfigFile(snapshot.path, canonicalPath);
         note(`- Config: ${snapshot.path} → ${canonicalPath}`, "Doctor changes");
         snapshot = await readConfigFileSnapshot();
@@ -196,9 +197,7 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
       // Legacy migration (2026-01-02, commit: 16420e5b) — normalize per-provider allowlists; move WhatsApp gating into channels.whatsapp.allowFrom.
       if (migrated) cfg = migrated;
     } else {
-      fixHints.push(
-        `Run "${formatCliCommand("espada doctor --fix")}" to apply legacy migrations.`,
-      );
+      fixHints.push(`Run "${formatCliCommand("espada doctor --fix")}" to apply legacy migrations.`);
     }
   }
 

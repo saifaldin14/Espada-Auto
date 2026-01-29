@@ -132,6 +132,42 @@ export {
 } from "./cloudtrail/index.js";
 
 // =============================================================================
+// EC2 Module
+// =============================================================================
+
+export {
+  AWSEC2Manager,
+  createEC2Manager,
+} from "./ec2/index.js";
+
+// EC2 Types
+export type {
+  EC2Instance,
+  EC2InstanceState,
+  EC2SecurityGroup,
+  EC2SecurityGroupRule,
+  EC2KeyPair,
+  EC2AMI,
+  EC2LaunchTemplate,
+  EC2LaunchTemplateOptions,
+  EC2SecurityGroupOptions,
+  EC2KeyPairOptions,
+  EC2AMIOptions,
+  EC2InstanceMetrics,
+  MetricDatapoint,
+  EC2MetricOptions,
+  EC2CreateInstanceOptions,
+  EC2InstanceLifecycleOptions,
+  EC2OperationResult,
+  AutoScalingGroupInfo,
+  AutoScalingGroupOptions,
+  LoadBalancerInfo,
+  LoadBalancerOptions,
+  TargetGroupInfo,
+  TargetGroupOptions,
+} from "./ec2/types.js";
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 
@@ -148,6 +184,7 @@ import { AWSContextManager, createContextManager } from "./context/index.js";
 import { AWSServiceDiscovery, createServiceDiscovery } from "./discovery/index.js";
 import { AWSTaggingManager, createTaggingManager } from "./tagging/index.js";
 import { AWSCloudTrailManager, createCloudTrailManager } from "./cloudtrail/index.js";
+import { AWSEC2Manager, createEC2Manager } from "./ec2/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
 
 export interface AWSPluginOptions {
@@ -189,6 +226,7 @@ export class AWSPlugin {
   readonly discovery: AWSServiceDiscovery;
   readonly tagging: AWSTaggingManager;
   readonly cloudtrail: AWSCloudTrailManager;
+  readonly ec2: AWSEC2Manager;
 
   private defaultRegion: string;
 
@@ -229,6 +267,12 @@ export class AWSPlugin {
 
     // Initialize CloudTrail manager
     this.cloudtrail = createCloudTrailManager(
+      this.credentials,
+      options.defaultRegion,
+    );
+
+    // Initialize EC2 manager
+    this.ec2 = createEC2Manager(
       this.credentials,
       options.defaultRegion,
     );

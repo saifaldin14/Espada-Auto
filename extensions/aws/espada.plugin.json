@@ -1,0 +1,63 @@
+{
+  "id": "aws",
+  "name": "AWS Core Services",
+  "description": "Comprehensive AWS infrastructure management with EC2, IAM, CloudTrail, and more",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "infrastructure",
+  "capabilities": [
+    "ec2-management",
+    "security-groups",
+    "cloudtrail-audit",
+    "service-discovery",
+    "resource-tagging",
+    "auto-scaling",
+    "load-balancing"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "defaultRegion": {
+        "type": "string",
+        "description": "Default AWS region",
+        "default": "us-east-1"
+      },
+      "defaultProfile": {
+        "type": "string",
+        "description": "Default AWS profile name"
+      },
+      "credentialSources": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Credential sources in order of preference"
+      },
+      "tagConfig": {
+        "type": "object",
+        "description": "Standard tag configuration",
+        "properties": {
+          "requiredTags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags that must be present on all resources"
+          },
+          "optionalTags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Tags that are optional but recommended"
+          }
+        }
+      },
+      "defaultTags": {
+        "type": "array",
+        "description": "Default tags to apply to all resources",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string" },
+            "value": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
