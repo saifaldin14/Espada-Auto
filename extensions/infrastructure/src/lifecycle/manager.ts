@@ -341,6 +341,13 @@ export class InfrastructureLifecycleManager {
   }
 
   /**
+   * Get provider state (convenience method)
+   */
+  getProviderState(providerId: string): ProviderLifecycleState | null {
+    return this.providers.get(providerId)?.state ?? null;
+  }
+
+  /**
    * Get all registered providers
    */
   getAllProviders(): ProviderRegistration[] {

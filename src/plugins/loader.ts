@@ -210,7 +210,6 @@ export function loadEspadaPlugins(options: PluginLoadOptions = {}): PluginRegist
       ? {
           alias: {
             "espada/plugin-sdk": pluginSdkAlias,
-            "espada/plugin-sdk": pluginSdkAlias,
           },
         }
       : {}),

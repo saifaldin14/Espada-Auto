@@ -37,7 +37,7 @@ describe("Nix integration (U3, U5, U9)", () => {
   describe("U5: CONFIG_PATH and STATE_DIR env var overrides", () => {
     it("STATE_DIR defaults to ~/.espada when env not set", async () => {
       await withEnvOverride(
-        { ESPADA_STATE_DIR: undefined, ESPADA_STATE_DIR: undefined },
+        { ESPADA_STATE_DIR: undefined },
         async () => {
           const { STATE_DIR } = await import("./config.js");
           expect(STATE_DIR).toMatch(/\.espada$/);
@@ -47,7 +47,7 @@ describe("Nix integration (U3, U5, U9)", () => {
 
     it("STATE_DIR respects ESPADA_STATE_DIR override", async () => {
       await withEnvOverride(
-        { ESPADA_STATE_DIR: undefined, ESPADA_STATE_DIR: "/custom/state/dir" },
+        { ESPADA_STATE_DIR: "/custom/state/dir" },
         async () => {
           const { STATE_DIR } = await import("./config.js");
           expect(STATE_DIR).toBe(path.resolve("/custom/state/dir"));
@@ -57,7 +57,7 @@ describe("Nix integration (U3, U5, U9)", () => {
 
     it("STATE_DIR prefers ESPADA_STATE_DIR over legacy override", async () => {
       await withEnvOverride(
-        { ESPADA_STATE_DIR: "/custom/new", ESPADA_STATE_DIR: "/custom/legacy" },
+        { ESPADA_STATE_DIR: "/custom/new" },
         async () => {
           const { STATE_DIR } = await import("./config.js");
           expect(STATE_DIR).toBe(path.resolve("/custom/new"));
@@ -70,8 +70,6 @@ describe("Nix integration (U3, U5, U9)", () => {
         {
           ESPADA_CONFIG_PATH: undefined,
           ESPADA_STATE_DIR: undefined,
-          ESPADA_CONFIG_PATH: undefined,
-          ESPADA_STATE_DIR: undefined,
         },
         async () => {
           const { CONFIG_PATH } = await import("./config.js");
@@ -82,7 +80,7 @@ describe("Nix integration (U3, U5, U9)", () => {
 
     it("CONFIG_PATH respects ESPADA_CONFIG_PATH override", async () => {
       await withEnvOverride(
-        { ESPADA_CONFIG_PATH: undefined, ESPADA_CONFIG_PATH: "/nix/store/abc/espada.json" },
+        { ESPADA_CONFIG_PATH: "/nix/store/abc/espada.json" },
         async () => {
           const { CONFIG_PATH } = await import("./config.js");
           expect(CONFIG_PATH).toBe(path.resolve("/nix/store/abc/espada.json"));
@@ -94,7 +92,6 @@ describe("Nix integration (U3, U5, U9)", () => {
       await withEnvOverride(
         {
           ESPADA_CONFIG_PATH: "/nix/store/new/espada.json",
-          ESPADA_CONFIG_PATH: "/nix/store/legacy/espada.json",
         },
         async () => {
           const { CONFIG_PATH } = await import("./config.js");
@@ -106,7 +103,7 @@ describe("Nix integration (U3, U5, U9)", () => {
     it("CONFIG_PATH expands ~ in ESPADA_CONFIG_PATH override", async () => {
       await withTempHome(async (home) => {
         await withEnvOverride(
-          { ESPADA_CONFIG_PATH: undefined, ESPADA_CONFIG_PATH: "~/.espada/custom.json" },
+          { ESPADA_CONFIG_PATH: "~/.espada/custom.json" },
           async () => {
             const { CONFIG_PATH } = await import("./config.js");
             expect(CONFIG_PATH).toBe(path.join(home, ".espada", "custom.json"));
@@ -118,8 +115,6 @@ describe("Nix integration (U3, U5, U9)", () => {
     it("CONFIG_PATH uses STATE_DIR when only state dir is overridden", async () => {
       await withEnvOverride(
         {
-          ESPADA_CONFIG_PATH: undefined,
-          ESPADA_STATE_DIR: undefined,
           ESPADA_CONFIG_PATH: undefined,
           ESPADA_STATE_DIR: "/custom/state",
         },

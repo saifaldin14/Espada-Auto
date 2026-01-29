@@ -40,7 +40,6 @@ describe("state + config path candidates", () => {
   it("prefers ESPADA_STATE_DIR over legacy state dir env", () => {
     const env = {
       ESPADA_STATE_DIR: "/new/state",
-      ESPADA_STATE_DIR: "/legacy/state",
     } as NodeJS.ProcessEnv;
 
     expect(resolveStateDir(env, () => "/home/test")).toBe(path.resolve("/new/state"));
@@ -74,8 +73,6 @@ describe("state + config path candidates", () => {
     const previousHomeDrive = process.env.HOMEDRIVE;
     const previousHomePath = process.env.HOMEPATH;
     const previousEspadaConfig = process.env.ESPADA_CONFIG_PATH;
-    const previousEspadaConfig = process.env.ESPADA_CONFIG_PATH;
-    const previousEspadaState = process.env.ESPADA_STATE_DIR;
     const previousEspadaState = process.env.ESPADA_STATE_DIR;
     try {
       const legacyDir = path.join(root, ".espada");

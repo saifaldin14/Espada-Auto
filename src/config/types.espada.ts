@@ -102,9 +102,7 @@ export type ConfigValidationIssue = {
   message: string;
 };
 
-// Legacy aliases for backward compatibility
-export type EspadaConfig = EspadaConfig;
-export type EspadaConfig = EspadaConfig;
+// Legacy aliases are handled by the main EspadaConfig type definition above
 
 export type LegacyConfigIssue = {
   path: string;

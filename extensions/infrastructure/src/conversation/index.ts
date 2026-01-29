@@ -123,22 +123,6 @@ export {
   type OperationTracking,
 } from "./status-updater.js";
 
-import type {
-  ConversationMessage,
-  ConversationContext,
-  InfrastructureIntent,
-  ExtractedParameters,
-  ResolvedResource,
-  InfrastructureStateSnapshot,
-  ConfirmationRequest,
-  HumanizedError,
-  StatusUpdate,
-  ResourceReference,
-  ErrorContext,
-  ActiveOperation,
-  OperationProgress,
-  IntentClassificationResult,
-} from "./types.js";
 import { InfrastructureIntentClassifier, type IntentClassifierConfig } from "./intent-classifier.js";
 import { InfrastructureParameterExtractor, type ParameterExtractionConfig } from "./parameter-extractor.js";
 import { InfrastructureResourceResolver, type ResourceResolverConfig } from "./resource-resolver.js";
@@ -147,6 +131,7 @@ import { InfrastructureConfirmationWorkflow, type ConfirmationConfig } from "./c
 import { InfrastructureErrorHumanizer, type ErrorHumanizerConfig } from "./error-humanizer.js";
 import { InfrastructureStatusUpdater, type StatusUpdateConfig } from "./status-updater.js";
 import type { Environment } from "../security/types.js";
+import { ActiveOperation, ConfirmationRequest, ConversationContext, ConversationMessage, ErrorContext, ExtractedParameters, HumanizedError, InfrastructureIntent, InfrastructureStateSnapshot, IntentClassificationResult, OperationProgress, ResolvedResource, ResourceReference, StatusUpdate } from "../index.js";
 
 /**
  * Configuration for the conversation manager
@@ -406,7 +391,7 @@ export class InfrastructureConversationManager {
     const resources: ResolvedResource[] = [];
 
     // Extract resource references from parameters
-    const resourceParams = parameters.parameters.filter(p =>
+    const resourceParams = parameters.parameters.filter((p: { name: string; value: unknown }) =>
       p.name === "resourceName" || p.name === "resourceId"
     );
 

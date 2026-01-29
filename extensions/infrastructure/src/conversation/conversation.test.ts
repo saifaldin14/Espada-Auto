@@ -152,75 +152,75 @@ describe("InfrastructureParameterExtractor", () => {
   describe("extract", () => {
     it("should extract resource name", () => {
       const result = extractor.extract("create database named users-db");
-      const nameParam = result.parameters.find(p => p.name === "resourceName");
+      const nameParam = result.parameters.find((p: { name: string; }) => p.name === "resourceName");
       expect(nameParam).toBeDefined();
       expect(nameParam?.value).toBe("users-db");
     });
 
     it("should extract instance count", () => {
       const result = extractor.extract("scale to 5 instances");
-      const countParam = result.parameters.find(p => p.name === "count");
+      const countParam = result.parameters.find((p: { name: string; }) => p.name === "count");
       expect(countParam).toBeDefined();
       expect(countParam?.value).toBe(5);
     });
 
     it("should extract size with units", () => {
       const result = extractor.extract("create volume with 100GB storage");
-      const sizeParam = result.parameters.find(p => p.name === "size");
+      const sizeParam = result.parameters.find((p: { name: string; }) => p.name === "size");
       expect(sizeParam).toBeDefined();
       expect(sizeParam?.value).toEqual({ value: 100, unit: "GB" });
     });
 
     it("should extract memory", () => {
       const result = extractor.extract("create instance with 16GB memory");
-      const memParam = result.parameters.find(p => p.name === "memory");
+      const memParam = result.parameters.find((p: { name: string; }) => p.name === "memory");
       expect(memParam).toBeDefined();
     });
 
     it("should extract CPU", () => {
       const result = extractor.extract("create instance with 4 vcpu");
-      const cpuParam = result.parameters.find(p => p.name === "cpu");
+      const cpuParam = result.parameters.find((p: { name: string; }) => p.name === "cpu");
       expect(cpuParam).toBeDefined();
       expect(cpuParam?.value).toBe(4);
     });
 
     it("should extract duration", () => {
       const result = extractor.extract("set timeout 30 minutes");
-      const durationParam = result.parameters.find(p => p.name === "duration");
+      const durationParam = result.parameters.find((p: { name: string; }) => p.name === "duration");
       expect(durationParam).toBeDefined();
     });
 
     it("should extract environment", () => {
       const result = extractor.extract("deploy to production");
-      const envParam = result.parameters.find(p => p.name === "environment");
+      const envParam = result.parameters.find((p: { name: string; }) => p.name === "environment");
       expect(envParam).toBeDefined();
       expect(envParam?.value).toBe("production");
     });
 
     it("should extract region", () => {
       const result = extractor.extract("create in us-east-1");
-      const regionParam = result.parameters.find(p => p.name === "region");
+      const regionParam = result.parameters.find((p: { name: string; }) => p.name === "region");
       expect(regionParam).toBeDefined();
       expect(regionParam?.value).toBe("us-east-1");
     });
 
     it("should extract boolean flags", () => {
       const result = extractor.extract("delete dry-run the resources");
-      const dryRunParam = result.parameters.find(p => p.name === "dryRun");
+      const dryRunParam = result.parameters.find((p: { name: string; }) => p.name === "dryRun");
       expect(dryRunParam).toBeDefined();
       expect(dryRunParam?.value).toBe(true);
     });
 
     it("should extract force flag", () => {
       const result = extractor.extract("delete force the database");
-      const forceParam = result.parameters.find(p => p.name === "force");
+      const forceParam = result.parameters.find((p: { name: string; }) => p.name === "force");
       expect(forceParam).toBeDefined();
       expect(forceParam?.value).toBe(true);
     });
 
     it("should extract version", () => {
       const result = extractor.extract("deploy version 1.2.3");
-      const versionParam = result.parameters.find(p => p.name === "version");
+      const versionParam = result.parameters.find((p: { name: string; }) => p.name === "version");
       expect(versionParam).toBeDefined();
       expect(versionParam?.value).toBe("1.2.3");
     });
@@ -240,14 +240,14 @@ describe("InfrastructureParameterExtractor", () => {
 
     it("should extract instance type", () => {
       const result = extractor.extract("create using t3.medium");
-      const typeParam = result.parameters.find(p => p.name === "instanceType");
+      const typeParam = result.parameters.find((p: { name: string; }) => p.name === "instanceType");
       expect(typeParam).toBeDefined();
       expect(typeParam?.value).toBe("t3.medium");
     });
 
     it("should extract percentage", () => {
       const result = extractor.extract("scale to 80%");
-      const percentParam = result.parameters.find(p => p.name === "percentage");
+      const percentParam = result.parameters.find((p: { name: string; }) => p.name === "percentage");
       expect(percentParam).toBeDefined();
       expect(percentParam?.value).toBe(80);
     });

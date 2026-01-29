@@ -507,7 +507,7 @@ export class InfrastructureConfirmationWorkflow {
 
     if (impact.cascadingEffects && impact.cascadingEffects.length > 0) {
       prompt += `\nCascading effects:\n`;
-      impact.cascadingEffects.forEach(e => {
+      impact.cascadingEffects.forEach((e: string) => {
         prompt += `• ${e}\n`;
       });
     }

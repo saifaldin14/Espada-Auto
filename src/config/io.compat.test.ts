@@ -16,9 +16,9 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
 
 async function writeConfig(
   home: string,
-  dirname: ".espada" | ".espada",
+  dirname: ".espada",
   port: number,
-  filename: "espada.json" | "espada.json" = "espada.json",
+  filename: "espada.json" = "espada.json",
 ) {
   const dir = path.join(home, dirname);
   await fs.mkdir(dir, { recursive: true });
