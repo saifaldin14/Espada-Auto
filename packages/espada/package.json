@@ -1,5 +1,5 @@
 {
-  "name": "clawdbot",
+  "name": "espada",
   "version": "2026.1.26",
   "type": "module",
   "description": "Compatibility shim that forwards to espada",

@@ -1,0 +1,82 @@
+{
+  "name": "@espada/aws",
+  "version": "1.0.0",
+  "description": "AWS Core Services plugin for Espada infrastructure management",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./credentials": {
+      "import": "./dist/credentials/index.js",
+      "types": "./dist/credentials/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli/index.js",
+      "types": "./dist/cli/index.d.ts"
+    },
+    "./client-pool": {
+      "import": "./dist/client-pool/index.js",
+      "types": "./dist/client-pool/index.d.ts"
+    },
+    "./context": {
+      "import": "./dist/context/index.js",
+      "types": "./dist/context/index.d.ts"
+    },
+    "./discovery": {
+      "import": "./dist/discovery/index.js",
+      "types": "./dist/discovery/index.d.ts"
+    },
+    "./tagging": {
+      "import": "./dist/tagging/index.js",
+      "types": "./dist/tagging/index.d.ts"
+    },
+    "./cloudtrail": {
+      "import": "./dist/cloudtrail/index.js",
+      "types": "./dist/cloudtrail/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudtrail": "^3.500.0",
+    "@aws-sdk/client-ec2": "^3.500.0",
+    "@aws-sdk/client-iam": "^3.500.0",
+    "@aws-sdk/client-organizations": "^3.500.0",
+    "@aws-sdk/client-resource-groups-tagging-api": "^3.500.0",
+    "@aws-sdk/client-sts": "^3.500.0",
+    "@aws-sdk/credential-providers": "^3.500.0",
+    "@smithy/types": "^2.9.0",
+    "ini": "^4.1.1"
+  },
+  "devDependencies": {
+    "@types/ini": "^4.1.0",
+    "@types/node": "^20.10.0",
+    "espada": "workspace:*",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "espada": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "espada",
+    "aws",
+    "infrastructure",
+    "cloud",
+    "plugin"
+  ],
+  "license": "MIT"
+}
