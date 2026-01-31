@@ -66,6 +66,10 @@
     "./cost": {
       "import": "./dist/cost/index.js",
       "types": "./dist/cost/index.d.ts"
+    },
+    "./security": {
+      "import": "./dist/security/index.js",
+      "types": "./dist/security/index.d.ts"
     }
   },
   "scripts": {
@@ -76,6 +80,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@aws-sdk/client-accessanalyzer": "^3.980.0",
     "@aws-sdk/client-auto-scaling": "^3.500.0",
     "@aws-sdk/client-budgets": "^3.500.0",
     "@aws-sdk/client-cloudfront": "^3.500.0",
@@ -85,13 +90,17 @@
     "@aws-sdk/client-cost-explorer": "^3.500.0",
     "@aws-sdk/client-ec2": "^3.500.0",
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.500.0",
+    "@aws-sdk/client-guardduty": "^3.980.0",
     "@aws-sdk/client-iam": "^3.500.0",
+    "@aws-sdk/client-kms": "^3.980.0",
     "@aws-sdk/client-lambda": "^3.500.0",
     "@aws-sdk/client-organizations": "^3.500.0",
     "@aws-sdk/client-pi": "^3.500.0",
     "@aws-sdk/client-rds": "^3.500.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.500.0",
     "@aws-sdk/client-s3": "^3.500.0",
+    "@aws-sdk/client-secrets-manager": "^3.980.0",
+    "@aws-sdk/client-securityhub": "^3.980.0",
     "@aws-sdk/client-sts": "^3.500.0",
     "@aws-sdk/credential-providers": "^3.500.0",
     "@aws-sdk/s3-request-presigner": "^3.500.0",

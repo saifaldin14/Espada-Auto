@@ -65,6 +65,11 @@ import {
   type S3Manager,
 } from "./src/s3/index.js";
 
+import {
+  createSecurityManager,
+  type SecurityManager,
+} from "./src/security/index.js";
+
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
 let contextManager: AWSContextManager | null = null;
@@ -77,6 +82,7 @@ let lambdaManager: LambdaManager | null = null;
 let s3Manager: S3Manager | null = null;
 let iacManager: IaCManager | null = null;
 let costManager: CostManager | null = null;
+let securityManager: SecurityManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -6661,6 +6667,1238 @@ Use this tool to:
       { name: "aws_cost" },
     );
 
+    // =========================================================================
+    // AWS SECURITY AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_security",
+        label: "AWS Security & IAM Management",
+        description: `Manage AWS IAM roles, policies, and security services including Security Hub, GuardDuty, KMS, Secrets Manager, and Access Analyzer.
+
+CAPABILITIES:
+- IAM role and user management (create, list, delete, attach policies)
+- IAM policy management with predefined templates
+- Policy simulation for permission testing
+- Security Hub findings and compliance standards
+- GuardDuty threat detection and findings
+- KMS key management with rotation
+- Secrets Manager for secure credential storage
+- Access Analyzer for external access findings
+- Security posture overview across all services
+
+Use this tool to:
+- Create IAM roles for Lambda, EC2, ECS with best practices
+- Manage IAM policies and test permissions
+- View and remediate Security Hub findings
+- Monitor GuardDuty threat detections
+- Manage KMS encryption keys
+- Store and rotate secrets securely
+- Find publicly accessible resources
+- Get overall security posture summary`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_roles",
+                "get_role",
+                "create_role",
+                "delete_role",
+                "attach_role_policy",
+                "detach_role_policy",
+                "list_users",
+                "get_user",
+                "create_user",
+                "delete_user",
+                "list_policies",
+                "get_policy",
+                "create_policy",
+                "delete_policy",
+                "simulate_policy",
+                "get_policy_template",
+                "list_security_findings",
+                "update_security_findings",
+                "enable_security_hub",
+                "disable_security_hub",
+                "list_security_standards",
+                "enable_security_standard",
+                "list_guardduty_findings",
+                "get_guardduty_detector",
+                "enable_guardduty",
+                "disable_guardduty",
+                "archive_guardduty_findings",
+                "list_kms_keys",
+                "get_kms_key",
+                "create_kms_key",
+                "schedule_key_deletion",
+                "enable_key_rotation",
+                "disable_key_rotation",
+                "list_secrets",
+                "get_secret",
+                "get_secret_value",
+                "create_secret",
+                "update_secret",
+                "delete_secret",
+                "rotate_secret",
+                "list_access_analyzers",
+                "list_access_analyzer_findings",
+                "create_access_analyzer",
+                "delete_access_analyzer",
+                "archive_access_analyzer_finding",
+                "get_security_posture",
+              ],
+              description: "The security operation to perform",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region (defaults to configured region)",
+            },
+            // IAM Role options
+            role_name: {
+              type: "string",
+              description: "Name of the IAM role",
+            },
+            trust_policy: {
+              type: "object",
+              description: "Trust policy document for the role (who can assume it)",
+            },
+            // IAM User options
+            user_name: {
+              type: "string",
+              description: "Name of the IAM user",
+            },
+            create_access_key: {
+              type: "boolean",
+              description: "Whether to create an access key for the user",
+            },
+            create_login_profile: {
+              type: "boolean",
+              description: "Whether to create a login profile (console access) for the user",
+            },
+            // IAM Policy options
+            policy_name: {
+              type: "string",
+              description: "Name of the IAM policy",
+            },
+            policy_arn: {
+              type: "string",
+              description: "ARN of the IAM policy",
+            },
+            policy_document: {
+              type: "object",
+              description: "IAM policy document with Version and Statement",
+            },
+            // Policy template options
+            template: {
+              type: "string",
+              enum: [
+                "lambda-basic",
+                "lambda-vpc",
+                "lambda-s3-read",
+                "lambda-s3-write",
+                "lambda-dynamodb",
+                "lambda-sqs",
+                "lambda-sns",
+                "ec2-ssm",
+                "ecs-task",
+                "eks-node",
+                "s3-read-only",
+                "s3-full-access",
+                "dynamodb-read-only",
+                "dynamodb-full-access",
+                "cloudwatch-logs",
+                "xray-tracing",
+                "secrets-read",
+                "kms-encrypt-decrypt",
+                "assume-role",
+                "cross-account-access",
+              ],
+              description: "Predefined policy template name",
+            },
+            template_variables: {
+              type: "object",
+              description: "Variables to substitute in the policy template (e.g., BUCKET_NAME, TABLE_NAME)",
+            },
+            // Policy simulation options
+            policy_source_arn: {
+              type: "string",
+              description: "ARN of the principal to simulate (user, role, group)",
+            },
+            action_names: {
+              type: "array",
+              items: { type: "string" },
+              description: "Actions to simulate (e.g., s3:GetObject, ec2:DescribeInstances)",
+            },
+            resource_arns: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource ARNs to test against",
+            },
+            // Security Hub options
+            finding_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Security Hub finding IDs to update",
+            },
+            workflow_status: {
+              type: "string",
+              enum: ["NEW", "NOTIFIED", "RESOLVED", "SUPPRESSED"],
+              description: "Workflow status to set for findings",
+            },
+            severities: {
+              type: "array",
+              items: { type: "string", enum: ["INFORMATIONAL", "LOW", "MEDIUM", "HIGH", "CRITICAL"] },
+              description: "Filter by severity levels",
+            },
+            standard_arn: {
+              type: "string",
+              description: "ARN of the security standard to enable",
+            },
+            // GuardDuty options
+            detector_id: {
+              type: "string",
+              description: "GuardDuty detector ID",
+            },
+            guardduty_finding_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "GuardDuty finding IDs to archive",
+            },
+            // KMS options
+            key_id: {
+              type: "string",
+              description: "KMS key ID or ARN",
+            },
+            key_description: {
+              type: "string",
+              description: "Description for the KMS key",
+            },
+            key_usage: {
+              type: "string",
+              enum: ["ENCRYPT_DECRYPT", "SIGN_VERIFY", "GENERATE_VERIFY_MAC"],
+              description: "KMS key usage",
+            },
+            enable_rotation: {
+              type: "boolean",
+              description: "Enable automatic key rotation",
+            },
+            pending_window_days: {
+              type: "number",
+              description: "Days before key deletion (7-30)",
+            },
+            // Secrets Manager options
+            secret_id: {
+              type: "string",
+              description: "Secret ID or ARN",
+            },
+            secret_name: {
+              type: "string",
+              description: "Name for the new secret",
+            },
+            secret_value: {
+              type: "string",
+              description: "Secret value (as JSON string for structured secrets)",
+            },
+            kms_key_id: {
+              type: "string",
+              description: "KMS key ID for encrypting the secret",
+            },
+            rotation_lambda_arn: {
+              type: "string",
+              description: "ARN of Lambda function for secret rotation",
+            },
+            force_delete: {
+              type: "boolean",
+              description: "Force delete secret without recovery window",
+            },
+            // Access Analyzer options
+            analyzer_name: {
+              type: "string",
+              description: "Name of the Access Analyzer",
+            },
+            analyzer_arn: {
+              type: "string",
+              description: "ARN of the Access Analyzer",
+            },
+            analyzer_type: {
+              type: "string",
+              enum: ["ACCOUNT", "ORGANIZATION"],
+              description: "Type of Access Analyzer",
+            },
+            access_analyzer_finding_id: {
+              type: "string",
+              description: "Access Analyzer finding ID",
+            },
+            // Common options
+            description: {
+              type: "string",
+              description: "Description for the resource",
+            },
+            tags: {
+              type: "object",
+              description: "Tags to apply to the resource",
+            },
+            max_results: {
+              type: "number",
+              description: "Maximum number of results to return",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: Record<string, unknown>) {
+          const action = params.action as string;
+          const region = params.region as string | undefined;
+
+          // Initialize security manager if needed
+          if (!securityManager) {
+            securityManager = createSecurityManager({
+              defaultRegion: region || "us-east-1",
+            });
+          }
+
+          try {
+            switch (action) {
+              // IAM Role operations
+              case "list_roles": {
+                const result = await securityManager.listRoles({
+                  pathPrefix: params.path_prefix as string,
+                  includeAttachedPolicies: true,
+                  includeInlinePolicies: true,
+                  maxItems: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list roles: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} IAM roles:\n\n` +
+                      result.data!.map(r =>
+                        `• **${r.roleName}**\n  ARN: ${r.arn}\n  Created: ${r.createDate.toISOString()}\n  Attached policies: ${r.attachedPolicies.length}`
+                      ).join("\n\n"),
+                  }],
+                  details: { roles: result.data },
+                };
+              }
+
+              case "get_role": {
+                const roleName = params.role_name as string;
+                if (!roleName) {
+                  return {
+                    content: [{ type: "text", text: "role_name is required" }],
+                    details: { error: "missing_role_name" },
+                  };
+                }
+                const result = await securityManager.getRole(roleName);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get role: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const role = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**IAM Role: ${role.roleName}**\n\n` +
+                      `ARN: ${role.arn}\n` +
+                      `Created: ${role.createDate.toISOString()}\n` +
+                      `Max Session Duration: ${role.maxSessionDuration} seconds\n\n` +
+                      `**Attached Policies (${role.attachedPolicies.length}):**\n` +
+                      (role.attachedPolicies.length > 0
+                        ? role.attachedPolicies.map(p => `• ${p.policyName}`).join("\n")
+                        : "None") +
+                      `\n\n**Inline Policies (${role.inlinePolicies.length}):**\n` +
+                      (role.inlinePolicies.length > 0
+                        ? role.inlinePolicies.map(p => `• ${p}`).join("\n")
+                        : "None") +
+                      `\n\n**Trust Policy:**\n\`\`\`json\n${role.assumeRolePolicyDocument}\n\`\`\``,
+                  }],
+                  details: { role },
+                };
+              }
+
+              case "create_role": {
+                const roleName = params.role_name as string;
+                const trustPolicy = params.trust_policy as object;
+                if (!roleName || !trustPolicy) {
+                  return {
+                    content: [{ type: "text", text: "role_name and trust_policy are required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await securityManager.createRole({
+                  roleName,
+                  trustPolicy: trustPolicy as any,
+                  description: params.description as string,
+                  tags: params.tags as Record<string, string>,
+                  managedPolicyArns: params.policy_arns as string[],
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create role: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Created IAM role **${result.data!.roleName}**\n\nARN: ${result.data!.arn}` }],
+                  details: { role: result.data },
+                };
+              }
+
+              case "delete_role": {
+                const roleName = params.role_name as string;
+                if (!roleName) {
+                  return {
+                    content: [{ type: "text", text: "role_name is required" }],
+                    details: { error: "missing_role_name" },
+                  };
+                }
+                const result = await securityManager.deleteRole(roleName);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete role: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Deleted IAM role **${roleName}**` }],
+                  details: { deleted: roleName },
+                };
+              }
+
+              case "attach_role_policy": {
+                const roleName = params.role_name as string;
+                const policyArn = params.policy_arn as string;
+                if (!roleName || !policyArn) {
+                  return {
+                    content: [{ type: "text", text: "role_name and policy_arn are required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await securityManager.attachRolePolicy(roleName, policyArn);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to attach policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Attached policy to role **${roleName}**` }],
+                  details: { roleName, policyArn },
+                };
+              }
+
+              case "detach_role_policy": {
+                const roleName = params.role_name as string;
+                const policyArn = params.policy_arn as string;
+                if (!roleName || !policyArn) {
+                  return {
+                    content: [{ type: "text", text: "role_name and policy_arn are required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await securityManager.detachRolePolicy(roleName, policyArn);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to detach policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Detached policy from role **${roleName}**` }],
+                  details: { roleName, policyArn },
+                };
+              }
+
+              // IAM User operations
+              case "list_users": {
+                const result = await securityManager.listUsers({
+                  includeAttachedPolicies: true,
+                  includeAccessKeys: true,
+                  includeMFADevices: true,
+                  maxItems: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list users: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} IAM users:\n\n` +
+                      result.data!.map(u =>
+                        `• **${u.userName}**\n  MFA: ${u.mfaDevices.length > 0 ? "✅" : "❌"}\n  Access Keys: ${u.accessKeys.length}\n  Policies: ${u.attachedPolicies.length}`
+                      ).join("\n\n"),
+                  }],
+                  details: { users: result.data },
+                };
+              }
+
+              case "get_user": {
+                const userName = params.user_name as string;
+                if (!userName) {
+                  return {
+                    content: [{ type: "text", text: "user_name is required" }],
+                    details: { error: "missing_user_name" },
+                  };
+                }
+                const result = await securityManager.getUser(userName);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get user: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const user = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**IAM User: ${user.userName}**\n\n` +
+                      `ARN: ${user.arn}\n` +
+                      `Created: ${user.createDate.toISOString()}\n` +
+                      `MFA Enabled: ${user.mfaDevices.length > 0 ? "✅ Yes" : "❌ No"}\n` +
+                      `Access Keys: ${user.accessKeys.length}\n` +
+                      `Groups: ${user.groups.length > 0 ? user.groups.join(", ") : "None"}\n\n` +
+                      `**Attached Policies:**\n` +
+                      (user.attachedPolicies.length > 0
+                        ? user.attachedPolicies.map(p => `• ${p.policyName}`).join("\n")
+                        : "None"),
+                  }],
+                  details: { user },
+                };
+              }
+
+              case "create_user": {
+                const userName = params.user_name as string;
+                if (!userName) {
+                  return {
+                    content: [{ type: "text", text: "user_name is required" }],
+                    details: { error: "missing_user_name" },
+                  };
+                }
+                const result = await securityManager.createUser({
+                  userName,
+                  createAccessKey: params.create_access_key as boolean,
+                  createLoginProfile: params.create_login_profile as boolean,
+                  tags: params.tags as Record<string, string>,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create user: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                let message = `✅ Created IAM user **${result.data!.user.userName}**\n\nARN: ${result.data!.user.arn}`;
+                if (result.data!.accessKey) {
+                  message += `\n\n**Access Key Created:**\nAccess Key ID: ${result.data!.accessKey.accessKeyId}\nSecret Access Key: ${result.data!.accessKey.secretAccessKey}\n\n⚠️ Save these credentials securely - the secret key won't be shown again!`;
+                }
+                if (result.data!.loginProfile) {
+                  message += `\n\n**Console Login Created:**\nTemporary Password: ${result.data!.loginProfile.password}\nPassword Reset Required: ${result.data!.loginProfile.passwordResetRequired}`;
+                }
+                return {
+                  content: [{ type: "text", text: message }],
+                  details: { result: result.data },
+                };
+              }
+
+              case "delete_user": {
+                const userName = params.user_name as string;
+                if (!userName) {
+                  return {
+                    content: [{ type: "text", text: "user_name is required" }],
+                    details: { error: "missing_user_name" },
+                  };
+                }
+                const result = await securityManager.deleteUser(userName);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete user: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Deleted IAM user **${userName}**` }],
+                  details: { deleted: userName },
+                };
+              }
+
+              // IAM Policy operations
+              case "list_policies": {
+                const result = await securityManager.listPolicies({
+                  scope: "Local",
+                  maxItems: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list policies: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} customer-managed policies:\n\n` +
+                      result.data!.map(p =>
+                        `• **${p.policyName}**\n  ARN: ${p.arn}\n  Attachments: ${p.attachmentCount}`
+                      ).join("\n\n"),
+                  }],
+                  details: { policies: result.data },
+                };
+              }
+
+              case "get_policy": {
+                const policyArn = params.policy_arn as string;
+                if (!policyArn) {
+                  return {
+                    content: [{ type: "text", text: "policy_arn is required" }],
+                    details: { error: "missing_policy_arn" },
+                  };
+                }
+                const result = await securityManager.getPolicy(policyArn);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const policy = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**IAM Policy: ${policy.policyName}**\n\n` +
+                      `ARN: ${policy.arn}\n` +
+                      `Attachments: ${policy.attachmentCount}\n\n` +
+                      `**Policy Document:**\n\`\`\`json\n${JSON.stringify(policy.document, null, 2)}\n\`\`\``,
+                  }],
+                  details: { policy },
+                };
+              }
+
+              case "create_policy": {
+                const policyName = params.policy_name as string;
+                const policyDocument = params.policy_document as object;
+                if (!policyName || !policyDocument) {
+                  return {
+                    content: [{ type: "text", text: "policy_name and policy_document are required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await securityManager.createPolicy({
+                  policyName,
+                  policyDocument: policyDocument as any,
+                  description: params.description as string,
+                  tags: params.tags as Record<string, string>,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Created IAM policy **${result.data!.policyName}**\n\nARN: ${result.data!.arn}` }],
+                  details: { policy: result.data },
+                };
+              }
+
+              case "delete_policy": {
+                const policyArn = params.policy_arn as string;
+                if (!policyArn) {
+                  return {
+                    content: [{ type: "text", text: "policy_arn is required" }],
+                    details: { error: "missing_policy_arn" },
+                  };
+                }
+                const result = await securityManager.deletePolicy(policyArn);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Deleted IAM policy` }],
+                  details: { deleted: policyArn },
+                };
+              }
+
+              case "get_policy_template": {
+                const template = params.template as string;
+                if (!template) {
+                  return {
+                    content: [{ type: "text", text: "template is required. Available templates: lambda-basic, lambda-vpc, lambda-s3-read, lambda-s3-write, lambda-dynamodb, lambda-sqs, lambda-sns, ec2-ssm, ecs-task, eks-node, s3-read-only, s3-full-access, dynamodb-read-only, dynamodb-full-access, cloudwatch-logs, xray-tracing, secrets-read, kms-encrypt-decrypt, assume-role, cross-account-access" }],
+                    details: { error: "missing_template" },
+                  };
+                }
+                try {
+                  const variables = params.template_variables as Record<string, string>;
+                  const policyDoc = securityManager.getPolicyTemplate(template as any, variables);
+                  return {
+                    content: [{
+                      type: "text",
+                      text: `**Policy Template: ${template}**\n\n\`\`\`json\n${JSON.stringify(policyDoc, null, 2)}\n\`\`\``,
+                    }],
+                    details: { template, policyDocument: policyDoc },
+                  };
+                } catch (error) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get template: ${error}` }],
+                    details: { error: String(error) },
+                  };
+                }
+              }
+
+              case "simulate_policy": {
+                const actionNames = params.action_names as string[];
+                if (!actionNames || actionNames.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "action_names is required" }],
+                    details: { error: "missing_action_names" },
+                  };
+                }
+                const result = await securityManager.simulatePolicy({
+                  policySourceArn: params.policy_source_arn as string,
+                  actionNames,
+                  resourceArns: params.resource_arns as string[],
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to simulate policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Policy Simulation Results:**\n\n` +
+                      result.data!.map(r =>
+                        `• **${r.evalActionName}**: ${r.evalDecision === "allowed" ? "✅ Allowed" : "❌ Denied"}`
+                      ).join("\n"),
+                  }],
+                  details: { results: result.data },
+                };
+              }
+
+              // Security Hub operations
+              case "list_security_findings": {
+                const result = await securityManager.listSecurityFindings({
+                  region,
+                  severities: params.severities as any[],
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list findings: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const findings = result.data!;
+                const bySeverity = {
+                  CRITICAL: findings.filter(f => f.severity.label === "CRITICAL").length,
+                  HIGH: findings.filter(f => f.severity.label === "HIGH").length,
+                  MEDIUM: findings.filter(f => f.severity.label === "MEDIUM").length,
+                  LOW: findings.filter(f => f.severity.label === "LOW").length,
+                };
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Security Hub Findings Summary:**\n\n` +
+                      `🔴 Critical: ${bySeverity.CRITICAL}\n` +
+                      `🟠 High: ${bySeverity.HIGH}\n` +
+                      `🟡 Medium: ${bySeverity.MEDIUM}\n` +
+                      `🟢 Low: ${bySeverity.LOW}\n\n` +
+                      `**Recent Findings:**\n\n` +
+                      findings.slice(0, 10).map(f =>
+                        `• **[${f.severity.label}]** ${f.title}\n  ${f.description.substring(0, 100)}...`
+                      ).join("\n\n"),
+                  }],
+                  details: { findings, summary: bySeverity },
+                };
+              }
+
+              case "enable_security_hub": {
+                const result = await securityManager.enableSecurityHub(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to enable Security Hub: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: "✅ Security Hub enabled" }],
+                  details: { enabled: true },
+                };
+              }
+
+              case "disable_security_hub": {
+                const result = await securityManager.disableSecurityHub(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to disable Security Hub: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: "✅ Security Hub disabled" }],
+                  details: { disabled: true },
+                };
+              }
+
+              case "list_security_standards": {
+                const result = await securityManager.listSecurityStandards(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list standards: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Security Standards:**\n\n` +
+                      result.data!.map(s =>
+                        `• **${s.name}** ${s.enabled ? "✅ Enabled" : "❌ Disabled"}\n  ${s.description || ""}`
+                      ).join("\n\n"),
+                  }],
+                  details: { standards: result.data },
+                };
+              }
+
+              // GuardDuty operations
+              case "list_guardduty_findings": {
+                const result = await securityManager.listGuardDutyFindings({
+                  region,
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list GuardDuty findings: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const findings = result.data!;
+                const bySeverity = {
+                  High: findings.filter(f => f.severityLabel === "High").length,
+                  Medium: findings.filter(f => f.severityLabel === "Medium").length,
+                  Low: findings.filter(f => f.severityLabel === "Low").length,
+                };
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**GuardDuty Findings Summary:**\n\n` +
+                      `🔴 High: ${bySeverity.High}\n` +
+                      `🟠 Medium: ${bySeverity.Medium}\n` +
+                      `🟡 Low: ${bySeverity.Low}\n\n` +
+                      `**Recent Threats:**\n\n` +
+                      findings.slice(0, 10).map(f =>
+                        `• **[${f.severityLabel}]** ${f.type}\n  ${f.title}\n  ${f.description.substring(0, 100)}...`
+                      ).join("\n\n"),
+                  }],
+                  details: { findings, summary: bySeverity },
+                };
+              }
+
+              case "get_guardduty_detector": {
+                const result = await securityManager.getGuardDutyDetector(
+                  params.detector_id as string,
+                  region
+                );
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get detector: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const detector = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**GuardDuty Detector: ${detector.detectorId}**\n\n` +
+                      `Status: ${detector.status === "ENABLED" ? "✅ Enabled" : "❌ Disabled"}\n` +
+                      `Finding Frequency: ${detector.findingPublishingFrequency}\n\n` +
+                      `**Data Sources:**\n` +
+                      `• CloudTrail: ${detector.dataSources.cloudTrail.status}\n` +
+                      `• DNS Logs: ${detector.dataSources.dnsLogs.status}\n` +
+                      `• Flow Logs: ${detector.dataSources.flowLogs.status}\n` +
+                      `• S3 Logs: ${detector.dataSources.s3Logs.status}`,
+                  }],
+                  details: { detector },
+                };
+              }
+
+              case "enable_guardduty": {
+                const result = await securityManager.enableGuardDuty(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to enable GuardDuty: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ GuardDuty enabled with detector ID: ${result.data}` }],
+                  details: { detectorId: result.data },
+                };
+              }
+
+              case "disable_guardduty": {
+                const detectorId = params.detector_id as string;
+                if (!detectorId) {
+                  return {
+                    content: [{ type: "text", text: "detector_id is required" }],
+                    details: { error: "missing_detector_id" },
+                  };
+                }
+                const result = await securityManager.disableGuardDuty(detectorId, region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to disable GuardDuty: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: "✅ GuardDuty disabled" }],
+                  details: { disabled: true },
+                };
+              }
+
+              // KMS operations
+              case "list_kms_keys": {
+                const result = await securityManager.listKMSKeys({
+                  region,
+                  includeAliases: true,
+                  includeTags: true,
+                  includeRotationStatus: true,
+                  keyManager: "CUSTOMER",
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list KMS keys: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} customer-managed KMS keys:\n\n` +
+                      result.data!.map(k =>
+                        `• **${k.aliases.length > 0 ? k.aliases[0] : k.keyId}**\n  State: ${k.keyState}\n  Usage: ${k.keyUsage}\n  Rotation: ${k.rotationEnabled ? "✅" : "❌"}`
+                      ).join("\n\n"),
+                  }],
+                  details: { keys: result.data },
+                };
+              }
+
+              case "create_kms_key": {
+                const result = await securityManager.createKMSKey({
+                  region,
+                  description: params.key_description as string || params.description as string,
+                  keyUsage: params.key_usage as any,
+                  enableKeyRotation: params.enable_rotation as boolean,
+                  tags: params.tags as Record<string, string>,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create KMS key: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Created KMS key\n\nKey ID: ${result.data!.keyId}\nARN: ${result.data!.arn}` }],
+                  details: { key: result.data },
+                };
+              }
+
+              case "enable_key_rotation": {
+                const keyId = params.key_id as string;
+                if (!keyId) {
+                  return {
+                    content: [{ type: "text", text: "key_id is required" }],
+                    details: { error: "missing_key_id" },
+                  };
+                }
+                const result = await securityManager.enableKeyRotation(keyId, region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to enable key rotation: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Enabled automatic rotation for KMS key ${keyId}` }],
+                  details: { keyId },
+                };
+              }
+
+              // Secrets Manager operations
+              case "list_secrets": {
+                const result = await securityManager.listSecrets({
+                  region,
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list secrets: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} secrets:\n\n` +
+                      result.data!.map(s =>
+                        `• **${s.name}**\n  Rotation: ${s.rotationEnabled ? "✅ Enabled" : "❌ Disabled"}\n  Last Changed: ${s.lastChangedDate?.toISOString() || "N/A"}`
+                      ).join("\n\n"),
+                  }],
+                  details: { secrets: result.data },
+                };
+              }
+
+              case "get_secret_value": {
+                const secretId = params.secret_id as string;
+                if (!secretId) {
+                  return {
+                    content: [{ type: "text", text: "secret_id is required" }],
+                    details: { error: "missing_secret_id" },
+                  };
+                }
+                const result = await securityManager.getSecretValue(secretId, undefined, region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get secret value: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Secret: ${result.data!.name}**\n\nVersion: ${result.data!.versionId}\n\n**Value:**\n\`\`\`\n${result.data!.secretString || "(binary)"}\n\`\`\``,
+                  }],
+                  details: { secret: { ...result.data, secretString: "[REDACTED]" } },
+                };
+              }
+
+              case "create_secret": {
+                const secretName = params.secret_name as string;
+                const secretValue = params.secret_value as string;
+                if (!secretName || !secretValue) {
+                  return {
+                    content: [{ type: "text", text: "secret_name and secret_value are required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await securityManager.createSecret({
+                  region,
+                  name: secretName,
+                  secretString: secretValue,
+                  description: params.description as string,
+                  kmsKeyId: params.kms_key_id as string,
+                  tags: params.tags as Record<string, string>,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create secret: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Created secret **${result.data!.name}**\n\nARN: ${result.data!.arn}` }],
+                  details: { secret: result.data },
+                };
+              }
+
+              case "rotate_secret": {
+                const secretId = params.secret_id as string;
+                if (!secretId) {
+                  return {
+                    content: [{ type: "text", text: "secret_id is required" }],
+                    details: { error: "missing_secret_id" },
+                  };
+                }
+                const result = await securityManager.rotateSecret({
+                  secretId,
+                  region,
+                  rotationLambdaArn: params.rotation_lambda_arn as string,
+                  rotateImmediately: true,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to rotate secret: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Initiated rotation for secret ${secretId}` }],
+                  details: { secretId },
+                };
+              }
+
+              case "delete_secret": {
+                const secretId = params.secret_id as string;
+                if (!secretId) {
+                  return {
+                    content: [{ type: "text", text: "secret_id is required" }],
+                    details: { error: "missing_secret_id" },
+                  };
+                }
+                const result = await securityManager.deleteSecret(
+                  secretId,
+                  params.force_delete as boolean,
+                  30,
+                  region
+                );
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete secret: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: result.message || `✅ Deleted secret ${secretId}` }],
+                  details: { deleted: secretId },
+                };
+              }
+
+              // Access Analyzer operations
+              case "list_access_analyzers": {
+                const result = await securityManager.listAccessAnalyzers(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list Access Analyzers: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${result.data!.length} Access Analyzers:\n\n` +
+                      result.data!.map(a =>
+                        `• **${a.analyzerName}** (${a.type})\n  Status: ${a.status}`
+                      ).join("\n\n"),
+                  }],
+                  details: { analyzers: result.data },
+                };
+              }
+
+              case "list_access_analyzer_findings": {
+                const result = await securityManager.listAccessAnalyzerFindings({
+                  region,
+                  analyzerArn: params.analyzer_arn as string,
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list findings: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const findings = result.data!;
+                const publicFindings = findings.filter(f => f.isPublic);
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Access Analyzer Findings:**\n\n` +
+                      `🌐 Public Resources: ${publicFindings.length}\n` +
+                      `📊 Total Findings: ${findings.length}\n\n` +
+                      `**Public Resources:**\n\n` +
+                      publicFindings.slice(0, 10).map(f =>
+                        `• **${f.resourceType}**: ${f.resource}`
+                      ).join("\n"),
+                  }],
+                  details: { findings },
+                };
+              }
+
+              case "create_access_analyzer": {
+                const analyzerName = params.analyzer_name as string;
+                if (!analyzerName) {
+                  return {
+                    content: [{ type: "text", text: "analyzer_name is required" }],
+                    details: { error: "missing_analyzer_name" },
+                  };
+                }
+                const result = await securityManager.createAccessAnalyzer({
+                  region,
+                  analyzerName,
+                  type: (params.analyzer_type as "ACCOUNT" | "ORGANIZATION") || "ACCOUNT",
+                  tags: params.tags as Record<string, string>,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create Access Analyzer: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                return {
+                  content: [{ type: "text", text: `✅ Created Access Analyzer **${result.data!.analyzerName}**` }],
+                  details: { analyzer: result.data },
+                };
+              }
+
+              // Security Posture
+              case "get_security_posture": {
+                const result = await securityManager.getSecurityPosture(region);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get security posture: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+                const posture = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Security Posture Summary**\n\n` +
+                      `**IAM:**\n` +
+                      `• Roles: ${posture.iamSummary.totalRoles}\n` +
+                      `• Users: ${posture.iamSummary.totalUsers}\n` +
+                      `• Users without MFA: ${posture.iamSummary.usersWithoutMFA > 0 ? "⚠️ " : ""}${posture.iamSummary.usersWithoutMFA}\n` +
+                      `• Old Access Keys (>90 days): ${posture.iamSummary.accessKeysOlderThan90Days > 0 ? "⚠️ " : ""}${posture.iamSummary.accessKeysOlderThan90Days}\n\n` +
+                      `**Security Hub:** ${posture.securityHubSummary.enabled ? "✅ Enabled" : "❌ Disabled"}\n` +
+                      `• Critical: ${posture.securityHubSummary.criticalFindings > 0 ? "🔴 " : ""}${posture.securityHubSummary.criticalFindings}\n` +
+                      `• High: ${posture.securityHubSummary.highFindings > 0 ? "🟠 " : ""}${posture.securityHubSummary.highFindings}\n` +
+                      `• Medium: ${posture.securityHubSummary.mediumFindings}\n` +
+                      `• Low: ${posture.securityHubSummary.lowFindings}\n\n` +
+                      `**GuardDuty:** ${posture.guardDutySummary.enabled ? "✅ Enabled" : "❌ Disabled"}\n` +
+                      `• High Severity Threats: ${posture.guardDutySummary.highSeverityFindings > 0 ? "🔴 " : ""}${posture.guardDutySummary.highSeverityFindings}\n\n` +
+                      `**Access Analyzer:** ${posture.accessAnalyzerSummary.enabled ? "✅ Enabled" : "❌ Disabled"}\n` +
+                      `• Public Resources: ${posture.accessAnalyzerSummary.publicResources > 0 ? "⚠️ " : ""}${posture.accessAnalyzerSummary.publicResources}\n\n` +
+                      `**KMS Keys:** ${posture.kmsSummary.customerManagedKeys}\n` +
+                      `• Without Rotation: ${posture.kmsSummary.keysWithoutRotation > 0 ? "⚠️ " : ""}${posture.kmsSummary.keysWithoutRotation}\n\n` +
+                      `**Secrets Manager:** ${posture.secretsManagerSummary.totalSecrets}\n` +
+                      `• Without Rotation: ${posture.secretsManagerSummary.secretsWithoutRotation > 0 ? "⚠️ " : ""}${posture.secretsManagerSummary.secretsWithoutRotation}`,
+                  }],
+                  details: { posture },
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Security error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_security" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -6692,6 +7930,7 @@ Use this tool to:
         s3Manager = null;
         iacManager = null;
         costManager = null;
+        securityManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -6719,6 +7958,7 @@ export function getAWSManagers() {
     s3: s3Manager,
     iac: iacManager,
     cost: costManager,
+    security: securityManager,
     cli: cliWrapper,
   };
 }
