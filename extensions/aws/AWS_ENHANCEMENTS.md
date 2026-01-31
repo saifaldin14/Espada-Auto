@@ -15,11 +15,13 @@ The AWS extension provides comprehensive infrastructure management through:
 | **S3** | Buckets, objects, versioning, encryption, lifecycle, CloudFront |
 | **CloudTrail** | Audit logging and security events |
 | **Service Discovery** | Resource enumeration and tagging |
+| **IaC** | Terraform/CloudFormation generation (✅ Implemented) |
+| **Cost Management** | Cost analysis, optimization, budgets (✅ Implemented) |
 
 ### Current Interfaces
 - **CLI commands**: `espada aws ...`
 - **Gateway methods**: Programmatic API access
-- **Agent Tools**: AI-driven conversational access
+- **Agent Tools**: AI-driven conversational access (`aws_ec2`, `aws_rds`, `aws_lambda`, `aws_s3`, `aws_iac`, `aws_cost`)
 
 ---
 
@@ -74,17 +76,18 @@ User: "Check if there's any drift between my Terraform state and AWS"
 
 ---
 
-### 2. Cost Management & Optimization
+### 2. Cost Management & Optimization ✅ IMPLEMENTED
 
-**Current Gap**: No cost visibility or optimization recommendations
+**Current Gap**: ~~No cost visibility or optimization recommendations~~ **RESOLVED**
 
-**Proposed Capabilities**:
-- Cost Explorer integration for spend analysis
-- Right-sizing recommendations (EC2, RDS instances)
-- Reserved instance and Savings Plan recommendations
-- Resource scheduling (stop dev resources at night)
-- Unused resource detection (EBS volumes, EIPs, snapshots)
-- Budget alerts and forecasting
+**Implemented Capabilities**:
+- ✅ Cost Explorer integration for spend analysis
+- ✅ Right-sizing recommendations (EC2, RDS instances)
+- ✅ Reserved instance and Savings Plan recommendations
+- ✅ Resource scheduling (stop dev resources at night)
+- ✅ Unused resource detection (EBS volumes, EIPs, snapshots, load balancers, Lambda functions)
+- ✅ Budget creation and management with alerts
+- ✅ Cost forecasting with comparison to previous periods
 
 **New Tool**: `aws_cost`
 
@@ -92,10 +95,13 @@ User: "Check if there's any drift between my Terraform state and AWS"
 |--------|-------------|
 | `get_cost_summary` | Get cost breakdown by service, tag, or account |
 | `forecast_costs` | Predict future costs based on current usage |
-| `get_optimization_recommendations` | Right-sizing and savings recommendations |
-| `find_unused_resources` | Detect orphaned EBS, EIPs, snapshots |
-| `schedule_resources` | Schedule start/stop for dev resources |
+| `get_optimization_recommendations` | Right-sizing, RI, and Savings Plans recommendations |
+| `find_unused_resources` | Detect orphaned EBS, EIPs, snapshots, idle instances |
+| `schedule_resources` | Schedule start/stop for dev resources (EC2/RDS) |
+| `execute_schedule_action` | Immediately start/stop scheduled resources |
 | `create_budget` | Create cost budget with alerts |
+| `list_budgets` | List all budgets with status |
+| `delete_budget` | Delete a budget |
 | `get_savings_plan_recommendations` | Recommend Savings Plans or RIs |
 
 **Example Conversations**:
@@ -108,6 +114,14 @@ User: "Schedule all dev instances to stop at 6 PM and start at 8 AM"
 
 User: "How much could I save with Reserved Instances?"
 ```
+
+**Implementation Files**:
+- `src/cost/types.ts` - Comprehensive type definitions for cost operations
+- `src/cost/manager.ts` - CostManager class with full AWS Cost Explorer/Budgets integration
+- `src/cost/manager.test.ts` - Comprehensive test suite (23 tests)
+- `src/cost/index.ts` - Module exports
+- `index.ts` - `aws_cost` tool registration with 10 actions
+- `package.json` - Added @aws-sdk/client-cost-explorer and @aws-sdk/client-budgets dependencies
 
 ---
 

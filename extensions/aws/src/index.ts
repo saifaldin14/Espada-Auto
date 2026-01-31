@@ -188,6 +188,56 @@ export type {
   IaCOperationResult,
 } from "./iac/index.js";
 
+// =============================================================================
+// Cost Management Module
+// =============================================================================
+
+export {
+  CostManager,
+  createCostManager,
+} from "./cost/index.js";
+
+// Cost Types
+export type {
+  CostManagerConfig,
+  CostGranularity,
+  CostDimension,
+  CostMetric,
+  UnusedResourceType,
+  RecommendationType,
+  ScheduleAction,
+  TimePeriod,
+  CostFilter,
+  GetCostSummaryOptions,
+  CostSummaryResult,
+  CostDataPoint,
+  GroupedCostData,
+  ForecastCostOptions,
+  CostForecastResult,
+  GetOptimizationRecommendationsOptions,
+  OptimizationRecommendationsResult,
+  RightsizingRecommendation,
+  ReservedInstanceRecommendation,
+  SavingsPlanRecommendation,
+  FindUnusedResourcesOptions,
+  UnusedResourcesResult,
+  UnusedResource,
+  ResourceSchedule,
+  ScheduleResourcesOptions,
+  ScheduleResourcesResult,
+  ScheduledResource,
+  BudgetType,
+  BudgetTimeUnit,
+  AlertThresholdType,
+  AlertNotificationType,
+  BudgetAlert,
+  CreateBudgetOptions,
+  CreateBudgetResult,
+  BudgetInfo,
+  ListBudgetsResult,
+  CostOperationResult,
+} from "./cost/index.js";
+
 // EC2 Types
 export type {
   EC2Instance,

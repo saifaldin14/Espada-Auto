@@ -33,6 +33,7 @@ import {
   createEC2Manager,
   createCLIWrapper,
   createIaCManager,
+  createCostManager,
   type AWSCredentialsManager,
   type AWSContextManager,
   type AWSServiceDiscovery,
@@ -41,6 +42,7 @@ import {
   type AWSEC2Manager,
   type AWSCLIWrapper,
   type IaCManager,
+  type CostManager,
   type InfrastructureTemplate,
   type IaCResourceDefinition,
   type AWSResourceType,
@@ -75,6 +77,7 @@ let rdsManager: RDSManager | null = null;
 let lambdaManager: LambdaManager | null = null;
 let s3Manager: S3Manager | null = null;
 let iacManager: IaCManager | null = null;
+let costManager: CostManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -270,6 +273,11 @@ const plugin = {
     iacManager = createIaCManager({
       defaultRegion: config.defaultRegion,
       defaultTags: config.defaultTags?.reduce((acc, t) => ({ ...acc, [t.key]: t.value }), {}),
+    });
+
+    // Initialize Cost manager
+    costManager = createCostManager({
+      defaultRegion: config.defaultRegion,
     });
 
     // Register CLI commands
@@ -5919,6 +5927,741 @@ Use this tool to:
       { name: "aws_iac" },
     );
 
+    // =========================================================================
+    // AWS COST MANAGEMENT AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_cost",
+        label: "AWS Cost Management",
+        description: `Analyze and optimize AWS costs with comprehensive cost management capabilities.
+
+CAPABILITIES:
+- Get cost summaries and breakdowns by service, account, region
+- Forecast future AWS spending based on historical trends
+- Get rightsizing, Reserved Instance, and Savings Plan recommendations
+- Find unused resources (EBS volumes, Elastic IPs, snapshots, etc.)
+- Schedule EC2/RDS instances for cost savings (start/stop schedules)
+- Create and manage AWS budgets with alerts
+
+Use this tool to:
+- Answer questions about AWS spending ("How much did we spend on EC2 last month?")
+- Identify cost optimization opportunities
+- Find and eliminate waste from unused resources
+- Set up automated schedules to stop non-production resources after hours
+- Create budget alerts to prevent overspending`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "get_cost_summary",
+                "forecast_costs",
+                "get_optimization_recommendations",
+                "find_unused_resources",
+                "schedule_resources",
+                "execute_schedule_action",
+                "create_budget",
+                "list_budgets",
+                "delete_budget",
+                "get_savings_plan_recommendations",
+              ],
+              description: "The cost management operation to perform",
+            },
+            // Time period options
+            start_date: {
+              type: "string",
+              description: "Start date for cost query (YYYY-MM-DD format)",
+            },
+            end_date: {
+              type: "string",
+              description: "End date for cost query (YYYY-MM-DD format)",
+            },
+            // Cost summary options
+            granularity: {
+              type: "string",
+              enum: ["DAILY", "MONTHLY", "HOURLY"],
+              description: "Granularity for cost data (default: DAILY)",
+            },
+            group_by: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  type: { type: "string", enum: ["DIMENSION", "TAG", "COST_CATEGORY"] },
+                  key: { type: "string" },
+                },
+              },
+              description: "Group costs by dimensions (SERVICE, REGION, LINKED_ACCOUNT, etc.) or tags",
+            },
+            metric: {
+              type: "string",
+              enum: ["BlendedCost", "UnblendedCost", "AmortizedCost", "NetAmortizedCost"],
+              description: "Cost metric to use (default: UnblendedCost)",
+            },
+            // Filter options
+            filter_dimension: {
+              type: "string",
+              description: "Dimension to filter by (SERVICE, REGION, LINKED_ACCOUNT, etc.)",
+            },
+            filter_values: {
+              type: "array",
+              items: { type: "string" },
+              description: "Values to filter by",
+            },
+            // Optimization options
+            recommendation_types: {
+              type: "array",
+              items: { type: "string", enum: ["rightsizing", "reserved_instances", "savings_plans"] },
+              description: "Types of recommendations to get",
+            },
+            min_monthly_savings: {
+              type: "number",
+              description: "Minimum monthly savings threshold for recommendations",
+            },
+            // Unused resources options
+            resource_types: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["ebs_volume", "eip", "snapshot", "load_balancer", "ec2_instance", "lambda_function"],
+              },
+              description: "Resource types to check for unused resources",
+            },
+            min_age_days: {
+              type: "number",
+              description: "Minimum age in days to consider a resource unused (default: 30)",
+            },
+            // Scheduling options
+            resource_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource IDs to schedule or act upon",
+            },
+            resource_type: {
+              type: "string",
+              enum: ["ec2", "rds", "asg"],
+              description: "Type of resource for scheduling",
+            },
+            schedule_name: {
+              type: "string",
+              description: "Name for the schedule",
+            },
+            start_cron: {
+              type: "string",
+              description: "Cron expression for start time (e.g., '0 8 * * 1-5' for 8am Mon-Fri)",
+            },
+            stop_cron: {
+              type: "string",
+              description: "Cron expression for stop time (e.g., '0 18 * * 1-5' for 6pm Mon-Fri)",
+            },
+            timezone: {
+              type: "string",
+              description: "Timezone for schedule (default: UTC)",
+            },
+            schedule_action: {
+              type: "string",
+              enum: ["start", "stop"],
+              description: "Action to execute immediately (for execute_schedule_action)",
+            },
+            // Budget options
+            budget_name: {
+              type: "string",
+              description: "Name for the budget",
+            },
+            budget_type: {
+              type: "string",
+              enum: ["COST", "USAGE", "RI_UTILIZATION", "RI_COVERAGE", "SAVINGS_PLANS_UTILIZATION", "SAVINGS_PLANS_COVERAGE"],
+              description: "Type of budget to create",
+            },
+            limit_amount: {
+              type: "number",
+              description: "Budget limit amount in dollars",
+            },
+            time_unit: {
+              type: "string",
+              enum: ["DAILY", "MONTHLY", "QUARTERLY", "ANNUALLY"],
+              description: "Budget time unit",
+            },
+            alert_thresholds: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  threshold: { type: "number" },
+                  threshold_type: { type: "string", enum: ["PERCENTAGE", "ABSOLUTE_VALUE"] },
+                  notification_type: { type: "string", enum: ["ACTUAL", "FORECASTED"] },
+                  email_addresses: { type: "array", items: { type: "string" } },
+                },
+              },
+              description: "Alert configuration for budget notifications",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region (use 'all' for multi-region operations)",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!costManager) {
+            return {
+              content: [{ type: "text", text: "Error: Cost manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+          const region = params.region as string | undefined;
+
+          try {
+            switch (action) {
+              case "get_cost_summary": {
+                const startDate = params.start_date as string;
+                const endDate = params.end_date as string;
+
+                if (!startDate || !endDate) {
+                  // Default to last 30 days
+                  const now = new Date();
+                  const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                  const defaultStartDate = thirtyDaysAgo.toISOString().split("T")[0];
+                  const defaultEndDate = now.toISOString().split("T")[0];
+
+                  const result = await costManager.getCostSummary({
+                    timePeriod: {
+                      start: startDate || defaultStartDate,
+                      end: endDate || defaultEndDate,
+                    },
+                    granularity: (params.granularity as "DAILY" | "MONTHLY" | "HOURLY") || "DAILY",
+                    groupBy: params.group_by as Array<{ type: "DIMENSION" | "TAG" | "COST_CATEGORY"; key: string }>,
+                    filter: params.filter_dimension
+                      ? {
+                          dimension: params.filter_dimension as any,
+                          values: params.filter_values as string[],
+                        }
+                      : undefined,
+                    metrics: params.metric ? [params.metric as any] : undefined,
+                    region,
+                  });
+
+                  if (!result.success) {
+                    return {
+                      content: [{ type: "text", text: `Failed to get cost summary: ${result.error}` }],
+                      details: result,
+                    };
+                  }
+
+                  let output = `💰 AWS Cost Summary\n\n`;
+                  output += `📅 Period: ${result.data!.timePeriod.start} to ${result.data!.timePeriod.end}\n`;
+                  output += `💵 Total Cost: $${result.data!.totalCost.toFixed(2)} ${result.data!.currency}\n\n`;
+
+                  if (result.data!.topServices && result.data!.topServices.length > 0) {
+                    output += `📊 Top Services:\n`;
+                    for (const svc of result.data!.topServices.slice(0, 5)) {
+                      output += `  • ${svc.service}: $${svc.cost.toFixed(2)} (${svc.percentage.toFixed(1)}%)\n`;
+                    }
+                  }
+
+                  if (result.data!.groups && result.data!.groups.length > 0) {
+                    output += `\n📈 Breakdown:\n`;
+                    for (const group of result.data!.groups.slice(0, 10)) {
+                      output += `  • ${group.key}: $${group.total.toFixed(2)}\n`;
+                    }
+                  }
+
+                  return {
+                    content: [{ type: "text", text: output }],
+                    details: result.data,
+                  };
+                }
+
+                const result = await costManager.getCostSummary({
+                  timePeriod: { start: startDate, end: endDate },
+                  granularity: (params.granularity as "DAILY" | "MONTHLY" | "HOURLY") || "DAILY",
+                  groupBy: params.group_by as Array<{ type: "DIMENSION" | "TAG" | "COST_CATEGORY"; key: string }>,
+                  filter: params.filter_dimension
+                    ? {
+                        dimension: params.filter_dimension as any,
+                        values: params.filter_values as string[],
+                      }
+                    : undefined,
+                  metrics: params.metric ? [params.metric as any] : undefined,
+                  region,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get cost summary: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `💰 AWS Cost Summary\n\n`;
+                output += `📅 Period: ${result.data!.timePeriod.start} to ${result.data!.timePeriod.end}\n`;
+                output += `💵 Total Cost: $${result.data!.totalCost.toFixed(2)} ${result.data!.currency}\n\n`;
+
+                if (result.data!.topServices && result.data!.topServices.length > 0) {
+                  output += `📊 Top Services:\n`;
+                  for (const svc of result.data!.topServices.slice(0, 5)) {
+                    output += `  • ${svc.service}: $${svc.cost.toFixed(2)} (${svc.percentage.toFixed(1)}%)\n`;
+                  }
+                }
+
+                if (result.data!.groups && result.data!.groups.length > 0) {
+                  output += `\n📈 Breakdown:\n`;
+                  for (const group of result.data!.groups.slice(0, 10)) {
+                    output += `  • ${group.key}: $${group.total.toFixed(2)}\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "forecast_costs": {
+                let startDate = params.start_date as string;
+                let endDate = params.end_date as string;
+
+                // Default forecast period: next 30 days
+                if (!startDate) {
+                  const now = new Date();
+                  startDate = now.toISOString().split("T")[0];
+                }
+                if (!endDate) {
+                  const now = new Date();
+                  now.setDate(now.getDate() + 30);
+                  endDate = now.toISOString().split("T")[0];
+                }
+
+                const result = await costManager.forecastCosts({
+                  startDate,
+                  endDate,
+                  granularity: (params.granularity as "DAILY" | "MONTHLY") || "MONTHLY",
+                  metric: params.metric as any,
+                  region,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to forecast costs: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `📈 AWS Cost Forecast\n\n`;
+                output += `📅 Period: ${result.data!.timePeriod.start} to ${result.data!.timePeriod.end}\n`;
+                output += `🔮 Forecasted Cost: $${result.data!.forecastedTotal.toFixed(2)} ${result.data!.currency}\n`;
+                output += `📊 Confidence: ${result.data!.predictionIntervalLevel}%\n`;
+
+                if (result.data!.comparison) {
+                  const trend = result.data!.comparison.trend;
+                  const trendEmoji = trend === "increasing" ? "📈" : trend === "decreasing" ? "📉" : "➡️";
+                  output += `\n${trendEmoji} Trend: ${trend} (${result.data!.comparison.percentageChange.toFixed(1)}% vs previous period)\n`;
+                  output += `   Previous period: $${result.data!.comparison.previousPeriodCost.toFixed(2)}\n`;
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "get_optimization_recommendations": {
+                const result = await costManager.getOptimizationRecommendations({
+                  types: params.recommendation_types as any[],
+                  minMonthlySavings: params.min_monthly_savings as number,
+                  region,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get recommendations: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `💡 Cost Optimization Recommendations\n\n`;
+                output += `💰 Total Potential Monthly Savings: $${result.data!.totalPotentialMonthlySavings.toFixed(2)}\n\n`;
+
+                // Rightsizing
+                if (result.data!.rightsizing.length > 0) {
+                  output += `📐 Rightsizing Recommendations (${result.data!.summary.rightsizingCount}):\n`;
+                  output += `   Potential savings: $${result.data!.summary.rightsizingSavings.toFixed(2)}/month\n`;
+                  for (const rec of result.data!.rightsizing.slice(0, 5)) {
+                    output += `   • ${rec.resourceId}: ${rec.currentInstanceType} → ${rec.recommendedInstanceType}\n`;
+                    output += `     Save $${rec.estimatedMonthlySavings.toFixed(2)}/month (${rec.savingsPercentage.toFixed(0)}%)\n`;
+                  }
+                  output += `\n`;
+                }
+
+                // Reserved Instances
+                if (result.data!.reservedInstances.length > 0) {
+                  output += `📋 Reserved Instance Recommendations (${result.data!.summary.reservedInstancesCount}):\n`;
+                  output += `   Potential savings: $${result.data!.summary.reservedInstancesSavings.toFixed(2)}/month\n`;
+                  for (const rec of result.data!.reservedInstances.slice(0, 5)) {
+                    output += `   • ${rec.instanceType || rec.instanceTypeFamily} (${rec.region}): ${rec.recommendedQuantity} units\n`;
+                    output += `     Save $${rec.estimatedMonthlySavings.toFixed(2)}/month (${rec.savingsPercentage.toFixed(0)}%)\n`;
+                  }
+                  output += `\n`;
+                }
+
+                // Savings Plans
+                if (result.data!.savingsPlans.length > 0) {
+                  output += `💳 Savings Plans Recommendations (${result.data!.summary.savingsPlansCount}):\n`;
+                  output += `   Potential savings: $${result.data!.summary.savingsPlansSavings.toFixed(2)}/month\n`;
+                  for (const rec of result.data!.savingsPlans.slice(0, 3)) {
+                    output += `   • ${rec.savingsPlanType} ${rec.term}: $${rec.hourlyCommitment.toFixed(2)}/hour commitment\n`;
+                    output += `     Save $${rec.estimatedMonthlySavings.toFixed(2)}/month (${rec.savingsPercentage.toFixed(0)}%)\n`;
+                  }
+                }
+
+                if (result.warnings && result.warnings.length > 0) {
+                  output += `\n⚠️ Warnings:\n`;
+                  for (const w of result.warnings) {
+                    output += `   • ${w}\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "find_unused_resources": {
+                const result = await costManager.findUnusedResources({
+                  resourceTypes: params.resource_types as any[],
+                  minAgeDays: params.min_age_days as number,
+                  region: region || "us-east-1",
+                  includeCostEstimates: true,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to find unused resources: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `🗑️ Unused Resources\n\n`;
+                output += `📊 Found: ${result.data!.totalCount} unused resources\n`;
+                output += `💰 Estimated Monthly Cost: $${result.data!.totalEstimatedMonthlyCost.toFixed(2)}\n\n`;
+
+                // By type
+                output += `📦 By Resource Type:\n`;
+                for (const [type, info] of Object.entries(result.data!.byType)) {
+                  if (info.count > 0) {
+                    output += `   • ${type}: ${info.count} ($${info.estimatedMonthlyCost.toFixed(2)}/month)\n`;
+                  }
+                }
+
+                // Top unused resources
+                if (result.data!.resources.length > 0) {
+                  output += `\n🔍 Top Unused Resources:\n`;
+                  for (const resource of result.data!.resources.slice(0, 10)) {
+                    output += `   • ${resource.resourceId} (${resource.resourceType})\n`;
+                    output += `     ${resource.reason}\n`;
+                    if (resource.estimatedMonthlyCost) {
+                      output += `     Cost: $${resource.estimatedMonthlyCost.toFixed(2)}/month\n`;
+                    }
+                    output += `     Action: ${resource.recommendedAction}\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "schedule_resources": {
+                const resourceIds = params.resource_ids as string[];
+                const resourceType = params.resource_type as "ec2" | "rds" | "asg";
+                const scheduleName = params.schedule_name as string;
+
+                if (!resourceIds || resourceIds.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_ids array is required" }],
+                    details: { error: "missing_resource_ids" },
+                  };
+                }
+
+                if (!resourceType) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_type is required (ec2, rds, or asg)" }],
+                    details: { error: "missing_resource_type" },
+                  };
+                }
+
+                if (!scheduleName) {
+                  return {
+                    content: [{ type: "text", text: "Error: schedule_name is required" }],
+                    details: { error: "missing_schedule_name" },
+                  };
+                }
+
+                const result = await costManager.scheduleResources({
+                  resourceIds,
+                  resourceType,
+                  schedule: {
+                    name: scheduleName,
+                    startCron: params.start_cron as string,
+                    stopCron: params.stop_cron as string,
+                    timezone: (params.timezone as string) || "UTC",
+                    enabled: true,
+                  },
+                  region,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to schedule resources: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `⏰ Resource Scheduling Result\n\n`;
+                output += `✅ Scheduled: ${result.data!.scheduledResources.length} resources\n`;
+                output += `💰 Estimated Monthly Savings: $${result.data!.totalEstimatedMonthlySavings.toFixed(2)}\n\n`;
+
+                for (const sr of result.data!.scheduledResources) {
+                  output += `• ${sr.resourceId} (${sr.resourceType})\n`;
+                  output += `  Schedule: ${sr.scheduleName}\n`;
+                  if (sr.nextStartTime) {
+                    output += `  Next start: ${sr.nextStartTime.toISOString()}\n`;
+                  }
+                  if (sr.nextStopTime) {
+                    output += `  Next stop: ${sr.nextStopTime.toISOString()}\n`;
+                  }
+                }
+
+                if (result.data!.failedResources.length > 0) {
+                  output += `\n❌ Failed (${result.data!.failedResources.length}):\n`;
+                  for (const failed of result.data!.failedResources) {
+                    output += `• ${failed.resourceId}: ${failed.error}\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "execute_schedule_action": {
+                const resourceIds = params.resource_ids as string[] | undefined;
+                const resourceId = resourceIds?.[0];
+                const resourceType = params.resource_type as "ec2" | "rds";
+                const scheduleAction = params.schedule_action as "start" | "stop";
+
+                if (!resourceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_ids[0] is required" }],
+                    details: { error: "missing_resource_id" },
+                  };
+                }
+
+                if (!resourceType || !["ec2", "rds"].includes(resourceType)) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_type must be 'ec2' or 'rds'" }],
+                    details: { error: "invalid_resource_type" },
+                  };
+                }
+
+                if (!scheduleAction || !["start", "stop"].includes(scheduleAction)) {
+                  return {
+                    content: [{ type: "text", text: "Error: schedule_action must be 'start' or 'stop'" }],
+                    details: { error: "invalid_action" },
+                  };
+                }
+
+                const result = await costManager.executeScheduleAction(
+                  resourceId,
+                  resourceType,
+                  scheduleAction,
+                  region
+                );
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to ${scheduleAction} resource: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                const emoji = scheduleAction === "start" ? "▶️" : "⏹️";
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${emoji} ${result.message}\n\nResource: ${result.data!.resourceId}\nAction: ${result.data!.action}\nNew State: ${result.data!.newState}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "create_budget": {
+                const budgetName = params.budget_name as string;
+                const budgetType = params.budget_type as any;
+                const limitAmount = params.limit_amount as number;
+                const timeUnit = params.time_unit as any;
+
+                if (!budgetName) {
+                  return {
+                    content: [{ type: "text", text: "Error: budget_name is required" }],
+                    details: { error: "missing_budget_name" },
+                  };
+                }
+
+                if (!limitAmount) {
+                  return {
+                    content: [{ type: "text", text: "Error: limit_amount is required" }],
+                    details: { error: "missing_limit_amount" },
+                  };
+                }
+
+                const alertThresholds = params.alert_thresholds as Array<{
+                  threshold: number;
+                  threshold_type: string;
+                  notification_type: string;
+                  email_addresses?: string[];
+                }>;
+
+                const result = await costManager.createBudget({
+                  name: budgetName,
+                  budgetType: budgetType || "COST",
+                  limitAmount,
+                  timeUnit: timeUnit || "MONTHLY",
+                  alerts: alertThresholds?.map(a => ({
+                    threshold: a.threshold,
+                    thresholdType: a.threshold_type as any,
+                    notificationType: a.notification_type as any,
+                    comparisonOperator: "GREATER_THAN" as const,
+                    emailAddresses: a.email_addresses,
+                  })),
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create budget: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Budget Created\n\nName: ${result.data!.budget!.name}\nType: ${result.data!.budget!.budgetType}\nLimit: $${result.data!.budget!.limitAmount} ${result.data!.budget!.currency}\nTime Unit: ${result.data!.budget!.timeUnit}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "list_budgets": {
+                const result = await costManager.listBudgets();
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list budgets: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `📊 AWS Budgets (${result.data!.totalCount})\n\n`;
+
+                for (const budget of result.data!.budgets) {
+                  const statusEmoji = budget.status === "CRITICAL" ? "🔴" : budget.status === "WARNING" ? "🟡" : "🟢";
+                  output += `${statusEmoji} ${budget.name}\n`;
+                  output += `   Type: ${budget.budgetType}\n`;
+                  output += `   Limit: $${budget.limitAmount} ${budget.currency} (${budget.timeUnit})\n`;
+                  output += `   Spent: $${budget.actualSpend.toFixed(2)} (${budget.percentageUsed.toFixed(1)}%)\n`;
+                  if (budget.forecastedSpend) {
+                    output += `   Forecast: $${budget.forecastedSpend.toFixed(2)}\n`;
+                  }
+                  output += `\n`;
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              case "delete_budget": {
+                const budgetName = params.budget_name as string;
+
+                if (!budgetName) {
+                  return {
+                    content: [{ type: "text", text: "Error: budget_name is required" }],
+                    details: { error: "missing_budget_name" },
+                  };
+                }
+
+                const result = await costManager.deleteBudget(budgetName);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete budget: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `✅ Budget "${budgetName}" deleted successfully` }],
+                  details: result.data,
+                };
+              }
+
+              case "get_savings_plan_recommendations": {
+                const result = await costManager.getSavingsPlansRecommendations();
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get Savings Plan recommendations: ${result.error}` }],
+                    details: result,
+                  };
+                }
+
+                let output = `💳 Savings Plan Recommendations\n\n`;
+
+                if (result.data!.length === 0) {
+                  output += `No Savings Plan recommendations available at this time.\n`;
+                } else {
+                  for (const rec of result.data!) {
+                    output += `• ${rec.savingsPlanType} (${rec.term})\n`;
+                    output += `  Hourly Commitment: $${rec.hourlyCommitment.toFixed(2)}\n`;
+                    output += `  Estimated Monthly Savings: $${rec.estimatedMonthlySavings.toFixed(2)}\n`;
+                    output += `  Savings: ${rec.savingsPercentage.toFixed(0)}%\n\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: output }],
+                  details: result.data,
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Cost management error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_cost" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -5949,6 +6692,7 @@ Use this tool to:
         lambdaManager = null;
         s3Manager = null;
         iacManager = null;
+        costManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -5975,6 +6719,7 @@ export function getAWSManagers() {
     lambda: lambdaManager,
     s3: s3Manager,
     iac: iacManager,
+    cost: costManager,
     cli: cliWrapper,
   };
 }
