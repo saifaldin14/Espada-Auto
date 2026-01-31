@@ -70,6 +70,14 @@
     "./security": {
       "import": "./dist/security/index.js",
       "types": "./dist/security/index.d.ts"
+    },
+    "./guardrails": {
+      "import": "./dist/guardrails/index.js",
+      "types": "./dist/guardrails/index.d.ts"
+    },
+    "./organization": {
+      "import": "./dist/organization/index.js",
+      "types": "./dist/organization/index.d.ts"
     }
   },
   "scripts": {
@@ -96,6 +104,7 @@
     "@aws-sdk/client-lambda": "^3.500.0",
     "@aws-sdk/client-organizations": "^3.500.0",
     "@aws-sdk/client-pi": "^3.500.0",
+    "@aws-sdk/client-ram": "^3.980.0",
     "@aws-sdk/client-rds": "^3.500.0",
     "@aws-sdk/client-resource-groups-tagging-api": "^3.500.0",
     "@aws-sdk/client-s3": "^3.500.0",

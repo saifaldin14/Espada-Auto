@@ -75,6 +75,11 @@ import {
   type GuardrailsManager,
 } from "./src/guardrails/index.js";
 
+import {
+  createOrganizationManager,
+  type OrganizationManager,
+} from "./src/organization/index.js";
+
 import type {
   OperationContext,
   ActionType,
@@ -85,6 +90,11 @@ import type {
   PreOperationBackup,
   ChangeRequest,
 } from "./src/guardrails/types.js";
+
+import type {
+  PolicyType,
+  SCPCategory,
+} from "./src/organization/types.js";
 
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
@@ -100,6 +110,7 @@ let iacManager: IaCManager | null = null;
 let costManager: CostManager | null = null;
 let securityManager: SecurityManager | null = null;
 let guardrailsManager: GuardrailsManager | null = null;
+let organizationManager: OrganizationManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -9666,6 +9677,1653 @@ Use this tool to:
       { name: "aws_guardrails" },
     );
 
+    // ==========================================================================
+    // AWS Organization Tool - Multi-Account & Organization Management
+    // ==========================================================================
+    api.registerTool(
+      {
+        description: `Multi-account and AWS Organization management tool providing:
+- Organization management (view organization, roots, accounts)
+- Account management (list, create, move, remove accounts)
+- Organizational Unit (OU) management
+- Service Control Policies (SCPs) with pre-built templates
+- Cross-account operations via assume role
+- Resource Access Manager (RAM) for resource sharing
+- Consolidated billing insights across accounts
+- Delegated administrator management
+- Account invitation workflows`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              description: "The action to perform",
+              enum: [
+                // Organization operations
+                "get_organization",
+                "get_roots",
+                // Account operations
+                "list_accounts",
+                "get_account",
+                "create_account",
+                "get_create_account_status",
+                "move_account",
+                "remove_account",
+                // OU operations
+                "list_organizational_units",
+                "get_organizational_unit",
+                "create_organizational_unit",
+                "update_organizational_unit",
+                "delete_organizational_unit",
+                // SCP operations
+                "list_policies",
+                "get_policy",
+                "create_policy",
+                "update_policy",
+                "delete_policy",
+                "attach_policy",
+                "detach_policy",
+                "list_policies_for_target",
+                "get_policy_targets",
+                "enable_policy_type",
+                "disable_policy_type",
+                "get_scp_templates",
+                "get_scp_template",
+                // Cross-account operations
+                "assume_role",
+                "switch_account",
+                "get_current_context",
+                "get_active_sessions",
+                "reset_context",
+                // Resource sharing (RAM)
+                "create_resource_share",
+                "delete_resource_share",
+                "list_resource_shares",
+                "add_resources_to_share",
+                "remove_resources_from_share",
+                "add_principals_to_share",
+                "remove_principals_from_share",
+                "list_shareable_resource_types",
+                // Consolidated billing
+                "get_consolidated_billing",
+                // Delegated admin
+                "list_delegated_administrators",
+                "get_delegated_services",
+                "register_delegated_administrator",
+                "deregister_delegated_administrator",
+                // Handshakes
+                "list_handshakes",
+                "invite_account",
+                "accept_handshake",
+                "decline_handshake",
+                "cancel_handshake",
+                // Cross-account resource discovery
+                "discover_cross_account_resources",
+                "get_cross_account_resource_summary",
+                // Tags
+                "get_resource_tags",
+                "tag_resource",
+                "untag_resource",
+              ],
+            },
+            region: {
+              type: "string",
+              description: "AWS region (default: us-east-1)",
+            },
+            // Account parameters
+            account_id: {
+              type: "string",
+              description: "AWS account ID (12-digit)",
+            },
+            account_name: {
+              type: "string",
+              description: "Account name for creation",
+            },
+            email: {
+              type: "string",
+              description: "Account email (must be unique)",
+            },
+            // OU parameters
+            ou_id: {
+              type: "string",
+              description: "Organizational Unit ID",
+            },
+            ou_name: {
+              type: "string",
+              description: "Organizational Unit name",
+            },
+            parent_id: {
+              type: "string",
+              description: "Parent ID (root or OU)",
+            },
+            source_parent_id: {
+              type: "string",
+              description: "Source parent ID when moving account",
+            },
+            destination_parent_id: {
+              type: "string",
+              description: "Destination parent ID when moving account",
+            },
+            // Policy parameters
+            policy_id: {
+              type: "string",
+              description: "Policy ID",
+            },
+            policy_name: {
+              type: "string",
+              description: "Policy name",
+            },
+            policy_description: {
+              type: "string",
+              description: "Policy description",
+            },
+            policy_content: {
+              type: "object",
+              description: "Policy document (SCP JSON)",
+            },
+            policy_type: {
+              type: "string",
+              description: "Policy type",
+              enum: ["SERVICE_CONTROL_POLICY", "TAG_POLICY", "BACKUP_POLICY", "AISERVICES_OPT_OUT_POLICY"],
+            },
+            target_id: {
+              type: "string",
+              description: "Target ID for policy attachment (account, OU, or root)",
+            },
+            root_id: {
+              type: "string",
+              description: "Organization root ID",
+            },
+            template_id: {
+              type: "string",
+              description: "SCP template ID",
+            },
+            template_category: {
+              type: "string",
+              description: "SCP template category",
+              enum: ["security", "data-protection", "cost-management", "compliance", "networking", "logging", "identity"],
+            },
+            // Cross-account parameters
+            role_name: {
+              type: "string",
+              description: "IAM role name for assume role (default: OrganizationAccountAccessRole)",
+            },
+            role_arn: {
+              type: "string",
+              description: "Full IAM role ARN to assume",
+            },
+            session_name: {
+              type: "string",
+              description: "Session name for assumed role",
+            },
+            duration_seconds: {
+              type: "number",
+              description: "Session duration in seconds (900-43200)",
+            },
+            external_id: {
+              type: "string",
+              description: "External ID for assume role",
+            },
+            // Resource sharing parameters
+            resource_share_name: {
+              type: "string",
+              description: "Resource share name",
+            },
+            resource_share_arn: {
+              type: "string",
+              description: "Resource share ARN",
+            },
+            resource_arns: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource ARNs to share",
+            },
+            principals: {
+              type: "array",
+              items: { type: "string" },
+              description: "Principal IDs (account IDs, OU ARNs, or organization ARN)",
+            },
+            allow_external_principals: {
+              type: "boolean",
+              description: "Allow principals outside organization",
+            },
+            resource_owner: {
+              type: "string",
+              description: "Resource owner filter",
+              enum: ["SELF", "OTHER-ACCOUNTS"],
+            },
+            // Billing parameters
+            start_date: {
+              type: "string",
+              description: "Start date for billing period (YYYY-MM-DD)",
+            },
+            end_date: {
+              type: "string",
+              description: "End date for billing period (YYYY-MM-DD)",
+            },
+            granularity: {
+              type: "string",
+              description: "Billing data granularity",
+              enum: ["DAILY", "MONTHLY"],
+            },
+            // Delegated admin parameters
+            service_principal: {
+              type: "string",
+              description: "AWS service principal (e.g., securityhub.amazonaws.com)",
+            },
+            // Handshake parameters
+            handshake_id: {
+              type: "string",
+              description: "Handshake ID",
+            },
+            invite_target: {
+              type: "string",
+              description: "Account ID or email to invite",
+            },
+            invite_target_type: {
+              type: "string",
+              description: "Invite target type",
+              enum: ["ACCOUNT", "EMAIL"],
+            },
+            invite_notes: {
+              type: "string",
+              description: "Notes to include with invitation",
+            },
+            // Request ID
+            request_id: {
+              type: "string",
+              description: "Create account request ID",
+            },
+            // Tags
+            tags: {
+              type: "object",
+              description: "Tags to apply (key-value pairs)",
+            },
+            tag_keys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Tag keys to remove",
+            },
+            resource_id: {
+              type: "string",
+              description: "Resource ID for tagging",
+            },
+            // Filters
+            status_filter: {
+              type: "string",
+              description: "Account status filter",
+              enum: ["ACTIVE", "SUSPENDED", "PENDING_CLOSURE"],
+            },
+            include_tags: {
+              type: "boolean",
+              description: "Include tags in response",
+            },
+            include_cost_data: {
+              type: "boolean",
+              description: "Include cost data in response",
+            },
+            include_accounts: {
+              type: "boolean",
+              description: "Include accounts in OU response",
+            },
+            include_content: {
+              type: "boolean",
+              description: "Include full policy content",
+            },
+            recursive: {
+              type: "boolean",
+              description: "Recursively list OUs",
+            },
+            // Pagination
+            max_results: {
+              type: "number",
+              description: "Maximum results to return",
+            },
+            next_token: {
+              type: "string",
+              description: "Pagination token",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: Record<string, unknown>) {
+          const action = params.action as string;
+          const region = (params.region as string) || "us-east-1";
+
+          // Initialize organization manager if needed
+          if (!organizationManager) {
+            organizationManager = createOrganizationManager({
+              defaultRegion: region,
+            });
+          }
+
+          try {
+            switch (action) {
+              // ==================
+              // Organization Operations
+              // ==================
+              case "get_organization": {
+                const result = await organizationManager.getOrganization();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get organization: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const org = result.data!;
+                const policyTypesText = org.availablePolicyTypes
+                  .map(pt => `• ${pt.type}: ${pt.status}`)
+                  .join("\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🏢 **AWS Organization**\n\n` +
+                      `**ID:** ${org.id}\n` +
+                      `**ARN:** ${org.arn}\n` +
+                      `**Management Account:** ${org.masterAccountId}\n` +
+                      `**Management Email:** ${org.masterAccountEmail}\n` +
+                      `**Feature Set:** ${org.featureSet}\n\n` +
+                      `**Available Policy Types:**\n${policyTypesText}`,
+                  }],
+                  details: { organization: org },
+                };
+              }
+
+              case "get_roots": {
+                const result = await organizationManager.getRoots();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get roots: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const rootsText = result.data!.map(root =>
+                  `• **${root.name}** (${root.id})\n  Policy types: ${root.policyTypes.map(pt => pt.type).join(", ") || "none"}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🌳 **Organization Roots**\n\n${rootsText}`,
+                  }],
+                  details: { roots: result.data },
+                };
+              }
+
+              // ==================
+              // Account Operations
+              // ==================
+              case "list_accounts": {
+                const result = await organizationManager.listAccounts({
+                  status: params.status_filter as any,
+                  organizationalUnitId: params.ou_id as string,
+                  includeTags: params.include_tags as boolean,
+                  includeCostData: params.include_cost_data as boolean,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list accounts: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const accounts = result.data!;
+                if (accounts.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No accounts found." }],
+                    details: { accounts: [] },
+                  };
+                }
+
+                const accountsText = accounts.map(acc =>
+                  `• **${acc.name}** (${acc.id})\n` +
+                  `  Email: ${acc.email}\n` +
+                  `  Status: ${acc.status} | Joined: ${acc.joinedMethod}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `👥 **AWS Accounts** (${accounts.length})\n\n${accountsText}`,
+                  }],
+                  details: { accounts },
+                };
+              }
+
+              case "get_account": {
+                const accountId = params.account_id as string;
+                if (!accountId) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id is required" }],
+                    details: { error: "missing_account_id" },
+                  };
+                }
+
+                const result = await organizationManager.getAccount(accountId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const acc = result.data!;
+                const tagsText = acc.tags && Object.keys(acc.tags).length > 0
+                  ? Object.entries(acc.tags).map(([k, v]) => `  • ${k}: ${v}`).join("\n")
+                  : "  (none)";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `👤 **Account: ${acc.name}**\n\n` +
+                      `**ID:** ${acc.id}\n` +
+                      `**ARN:** ${acc.arn}\n` +
+                      `**Email:** ${acc.email}\n` +
+                      `**Status:** ${acc.status}\n` +
+                      `**Joined:** ${acc.joinedTimestamp.toISOString()} (${acc.joinedMethod})\n` +
+                      `**OU:** ${acc.organizationalUnitId || "Root"}\n` +
+                      `**Management Account:** ${acc.isManagementAccount ? "Yes" : "No"}\n` +
+                      `**Delegated Admin:** ${acc.isDelegatedAdmin ? "Yes" : "No"}\n\n` +
+                      `**Tags:**\n${tagsText}`,
+                  }],
+                  details: { account: acc },
+                };
+              }
+
+              case "create_account": {
+                const accountName = params.account_name as string;
+                const email = params.email as string;
+                if (!accountName || !email) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_name and email are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.createAccount({
+                  accountName,
+                  email,
+                  roleName: params.role_name as string,
+                  tags: params.tags as Record<string, string>,
+                  destinationParentId: params.destination_parent_id as string,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const status = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Account creation initiated\n\n` +
+                      `**Request ID:** ${status.id}\n` +
+                      `**Account Name:** ${status.accountName}\n` +
+                      `**State:** ${status.state}\n` +
+                      `${status.accountId ? `**Account ID:** ${status.accountId}\n` : ""}` +
+                      `\nUse \`get_create_account_status\` to check progress.`,
+                  }],
+                  details: { create_account_status: status },
+                };
+              }
+
+              case "get_create_account_status": {
+                const requestId = params.request_id as string;
+                if (!requestId) {
+                  return {
+                    content: [{ type: "text", text: "Error: request_id is required" }],
+                    details: { error: "missing_request_id" },
+                  };
+                }
+
+                const result = await organizationManager.getCreateAccountStatus(requestId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get status: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const status = result.data!;
+                const statusEmoji = status.state === "SUCCEEDED" ? "✅" : status.state === "FAILED" ? "❌" : "⏳";
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${statusEmoji} **Account Creation Status**\n\n` +
+                      `**Request ID:** ${status.id}\n` +
+                      `**Account Name:** ${status.accountName}\n` +
+                      `**State:** ${status.state}\n` +
+                      `${status.accountId ? `**Account ID:** ${status.accountId}\n` : ""}` +
+                      `${status.failureReason ? `**Failure Reason:** ${status.failureReason}\n` : ""}`,
+                  }],
+                  details: { create_account_status: status },
+                };
+              }
+
+              case "move_account": {
+                const accountId = params.account_id as string;
+                const sourceParentId = params.source_parent_id as string;
+                const destinationParentId = params.destination_parent_id as string;
+
+                if (!accountId || !sourceParentId || !destinationParentId) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id, source_parent_id, and destination_parent_id are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.moveAccount({
+                  accountId,
+                  sourceParentId,
+                  destinationParentId,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to move account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Account **${accountId}** moved successfully from ${sourceParentId} to ${destinationParentId}`,
+                  }],
+                  details: { moved: true, account_id: accountId },
+                };
+              }
+
+              case "remove_account": {
+                const accountId = params.account_id as string;
+                if (!accountId) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id is required" }],
+                    details: { error: "missing_account_id" },
+                  };
+                }
+
+                const result = await organizationManager.removeAccount(accountId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to remove account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Account **${accountId}** removed from organization`,
+                  }],
+                  details: { removed: true, account_id: accountId },
+                };
+              }
+
+              // ==================
+              // Organizational Unit Operations
+              // ==================
+              case "list_organizational_units": {
+                const result = await organizationManager.listOrganizationalUnits({
+                  parentId: params.parent_id as string,
+                  recursive: params.recursive as boolean,
+                  includeAccounts: params.include_accounts as boolean,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list OUs: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const ous = result.data!;
+                if (ous.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No organizational units found." }],
+                    details: { organizational_units: [] },
+                  };
+                }
+
+                const ousText = ous.map(ou =>
+                  `• **${ou.name}** (${ou.id})\n` +
+                  `  Parent: ${ou.parentId}` +
+                  (ou.accounts ? `\n  Accounts: ${ou.accounts.length}` : "")
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📁 **Organizational Units** (${ous.length})\n\n${ousText}`,
+                  }],
+                  details: { organizational_units: ous },
+                };
+              }
+
+              case "get_organizational_unit": {
+                const ouId = params.ou_id as string;
+                if (!ouId) {
+                  return {
+                    content: [{ type: "text", text: "Error: ou_id is required" }],
+                    details: { error: "missing_ou_id" },
+                  };
+                }
+
+                const result = await organizationManager.getOrganizationalUnit(ouId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get OU: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const ou = result.data!;
+                const accountsText = ou.accounts && ou.accounts.length > 0
+                  ? ou.accounts.map(a => `  • ${a.name} (${a.id})`).join("\n")
+                  : "  (none)";
+                const childOUsText = ou.childOUs && ou.childOUs.length > 0
+                  ? ou.childOUs.map(c => `  • ${c.name} (${c.id})`).join("\n")
+                  : "  (none)";
+                const policiesText = ou.attachedPolicies && ou.attachedPolicies.length > 0
+                  ? ou.attachedPolicies.map(p => `  • ${p.policyName} (${p.policyType})`).join("\n")
+                  : "  (none)";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📁 **Organizational Unit: ${ou.name}**\n\n` +
+                      `**ID:** ${ou.id}\n` +
+                      `**ARN:** ${ou.arn}\n` +
+                      `**Parent:** ${ou.parentId}\n\n` +
+                      `**Accounts:**\n${accountsText}\n\n` +
+                      `**Child OUs:**\n${childOUsText}\n\n` +
+                      `**Attached Policies:**\n${policiesText}`,
+                  }],
+                  details: { organizational_unit: ou },
+                };
+              }
+
+              case "create_organizational_unit": {
+                const parentId = params.parent_id as string;
+                const name = params.ou_name as string;
+
+                if (!parentId || !name) {
+                  return {
+                    content: [{ type: "text", text: "Error: parent_id and ou_name are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.createOrganizationalUnit({
+                  parentId,
+                  name,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create OU: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Organizational Unit **${name}** created\n\n` +
+                      `**ID:** ${result.data!.id}\n` +
+                      `**Parent:** ${parentId}`,
+                  }],
+                  details: { organizational_unit: result.data },
+                };
+              }
+
+              case "update_organizational_unit": {
+                const ouId = params.ou_id as string;
+                const name = params.ou_name as string;
+
+                if (!ouId || !name) {
+                  return {
+                    content: [{ type: "text", text: "Error: ou_id and ou_name are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.updateOrganizationalUnit(ouId, name);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to update OU: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Organizational Unit updated to **${name}**`,
+                  }],
+                  details: { organizational_unit: result.data },
+                };
+              }
+
+              case "delete_organizational_unit": {
+                const ouId = params.ou_id as string;
+                if (!ouId) {
+                  return {
+                    content: [{ type: "text", text: "Error: ou_id is required" }],
+                    details: { error: "missing_ou_id" },
+                  };
+                }
+
+                const result = await organizationManager.deleteOrganizationalUnit(ouId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete OU: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Organizational Unit **${ouId}** deleted`,
+                  }],
+                  details: { deleted: true, ou_id: ouId },
+                };
+              }
+
+              // ==================
+              // SCP Operations
+              // ==================
+              case "list_policies": {
+                const result = await organizationManager.listPolicies({
+                  type: params.policy_type as PolicyType,
+                  includeContent: params.include_content as boolean,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list policies: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const policies = result.data!;
+                if (policies.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No policies found." }],
+                    details: { policies: [] },
+                  };
+                }
+
+                const policiesText = policies.map(p =>
+                  `• **${p.name}** (${p.id})\n` +
+                  `  Type: ${p.type} | AWS Managed: ${p.awsManaged ? "Yes" : "No"}\n` +
+                  `  ${p.description || ""}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📜 **Policies** (${policies.length})\n\n${policiesText}`,
+                  }],
+                  details: { policies },
+                };
+              }
+
+              case "get_policy": {
+                const policyId = params.policy_id as string;
+                if (!policyId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id is required" }],
+                    details: { error: "missing_policy_id" },
+                  };
+                }
+
+                const result = await organizationManager.getPolicy(policyId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const policy = result.data!;
+                const targetsText = policy.targets && policy.targets.length > 0
+                  ? policy.targets.map(t => `  • ${t.name} (${t.type}: ${t.targetId})`).join("\n")
+                  : "  (none attached)";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📜 **Policy: ${policy.name}**\n\n` +
+                      `**ID:** ${policy.id}\n` +
+                      `**ARN:** ${policy.arn}\n` +
+                      `**Type:** ${policy.type}\n` +
+                      `**AWS Managed:** ${policy.awsManaged ? "Yes" : "No"}\n` +
+                      `**Description:** ${policy.description || "N/A"}\n\n` +
+                      `**Targets:**\n${targetsText}\n\n` +
+                      `**Content:**\n\`\`\`json\n${policy.content}\n\`\`\``,
+                  }],
+                  details: { policy },
+                };
+              }
+
+              case "create_policy": {
+                const policyName = params.policy_name as string;
+                const content = params.policy_content as object;
+
+                if (!policyName || !content) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_name and policy_content are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.createPolicy({
+                  name: policyName,
+                  description: params.policy_description as string,
+                  content: JSON.stringify(content),
+                  type: params.policy_type as PolicyType,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyName}** created\n\n` +
+                      `**ID:** ${result.data!.id}\n` +
+                      `**Type:** ${result.data!.type}`,
+                  }],
+                  details: { policy: result.data },
+                };
+              }
+
+              case "update_policy": {
+                const policyId = params.policy_id as string;
+                if (!policyId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id is required" }],
+                    details: { error: "missing_policy_id" },
+                  };
+                }
+
+                const result = await organizationManager.updatePolicy({
+                  policyId,
+                  name: params.policy_name as string,
+                  description: params.policy_description as string,
+                  content: params.policy_content ? JSON.stringify(params.policy_content) : undefined,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to update policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** updated`,
+                  }],
+                  details: { policy: result.data },
+                };
+              }
+
+              case "delete_policy": {
+                const policyId = params.policy_id as string;
+                if (!policyId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id is required" }],
+                    details: { error: "missing_policy_id" },
+                  };
+                }
+
+                const result = await organizationManager.deletePolicy(policyId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** deleted`,
+                  }],
+                  details: { deleted: true, policy_id: policyId },
+                };
+              }
+
+              case "attach_policy": {
+                const policyId = params.policy_id as string;
+                const targetId = params.target_id as string;
+
+                if (!policyId || !targetId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id and target_id are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.attachPolicy(policyId, targetId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to attach policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** attached to **${targetId}**`,
+                  }],
+                  details: { attached: true, policy_id: policyId, target_id: targetId },
+                };
+              }
+
+              case "detach_policy": {
+                const policyId = params.policy_id as string;
+                const targetId = params.target_id as string;
+
+                if (!policyId || !targetId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id and target_id are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.detachPolicy(policyId, targetId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to detach policy: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** detached from **${targetId}**`,
+                  }],
+                  details: { detached: true, policy_id: policyId, target_id: targetId },
+                };
+              }
+
+              case "get_scp_templates": {
+                const category = params.template_category as SCPCategory | undefined;
+                const templates = organizationManager.getSCPTemplates(category);
+
+                const templatesText = templates.map(t =>
+                  `• **${t.name}** (\`${t.id}\`)\n` +
+                  `  Category: ${t.category} | Risk: ${t.riskLevel}\n` +
+                  `  ${t.description}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **SCP Templates** (${templates.length})${category ? ` - Category: ${category}` : ""}\n\n${templatesText}`,
+                  }],
+                  details: { templates },
+                };
+              }
+
+              case "get_scp_template": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return {
+                    content: [{ type: "text", text: "Error: template_id is required" }],
+                    details: { error: "missing_template_id" },
+                  };
+                }
+
+                const template = organizationManager.getSCPTemplate(templateId);
+                if (!template) {
+                  return {
+                    content: [{ type: "text", text: `Template not found: ${templateId}` }],
+                    details: { error: "template_not_found" },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **SCP Template: ${template.name}**\n\n` +
+                      `**ID:** ${template.id}\n` +
+                      `**Category:** ${template.category}\n` +
+                      `**Risk Level:** ${template.riskLevel}\n` +
+                      `**Best Practice:** ${template.bestPractice ? "Yes" : "No"}\n` +
+                      `${template.cisBenchmark ? `**CIS Benchmark:** ${template.cisBenchmark}\n` : ""}` +
+                      `**Description:** ${template.description}\n\n` +
+                      `**Policy Document:**\n\`\`\`json\n${JSON.stringify(template.document, null, 2)}\n\`\`\``,
+                  }],
+                  details: { template },
+                };
+              }
+
+              case "enable_policy_type": {
+                const rootId = params.root_id as string;
+                const policyType = params.policy_type as PolicyType;
+
+                if (!rootId || !policyType) {
+                  return {
+                    content: [{ type: "text", text: "Error: root_id and policy_type are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.enablePolicyType(rootId, policyType);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to enable policy type: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy type **${policyType}** enabled for root **${rootId}**`,
+                  }],
+                  details: { enabled: true, root_id: rootId, policy_type: policyType },
+                };
+              }
+
+              case "disable_policy_type": {
+                const rootId = params.root_id as string;
+                const policyType = params.policy_type as PolicyType;
+
+                if (!rootId || !policyType) {
+                  return {
+                    content: [{ type: "text", text: "Error: root_id and policy_type are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.disablePolicyType(rootId, policyType);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to disable policy type: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy type **${policyType}** disabled for root **${rootId}**`,
+                  }],
+                  details: { disabled: true, root_id: rootId, policy_type: policyType },
+                };
+              }
+
+              // ==================
+              // Cross-Account Operations
+              // ==================
+              case "assume_role": {
+                const accountId = params.account_id as string;
+                if (!accountId && !params.role_arn) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id or role_arn is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.assumeRole({
+                  accountId: accountId || "",
+                  roleName: params.role_name as string,
+                  roleArn: params.role_arn as string,
+                  sessionName: params.session_name as string,
+                  durationSeconds: params.duration_seconds as number,
+                  externalId: params.external_id as string,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to assume role: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const creds = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Role assumed successfully\n\n` +
+                      `**Account:** ${creds.accountId}\n` +
+                      `**Role ARN:** ${creds.assumedRoleArn}\n` +
+                      `**Session:** ${creds.sessionName}\n` +
+                      `**Expires:** ${creds.expiration.toISOString()}`,
+                  }],
+                  details: { credentials: { ...creds, secretAccessKey: "[REDACTED]", sessionToken: "[REDACTED]" } },
+                };
+              }
+
+              case "switch_account": {
+                const accountId = params.account_id as string;
+                if (!accountId) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id is required" }],
+                    details: { error: "missing_account_id" },
+                  };
+                }
+
+                const result = await organizationManager.switchAccount(accountId, params.role_name as string);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to switch account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const session = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Switched to account **${session.accountName || session.accountId}**\n\n` +
+                      `**Session ID:** ${session.sessionId}\n` +
+                      `**Role:** ${session.roleArn}\n` +
+                      `**Expires:** ${session.expirationTime.toISOString()}`,
+                  }],
+                  details: { session: { ...session, credentials: undefined } },
+                };
+              }
+
+              case "get_current_context": {
+                const context = organizationManager.getCurrentContext();
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📍 **Current Context**\n\n` +
+                      `**Account:** ${context.accountName || context.accountId || "Not set"}\n` +
+                      `**Region:** ${context.currentRegion}\n` +
+                      `**Management Account:** ${context.isManagementAccount ? "Yes" : "No"}`,
+                  }],
+                  details: { context },
+                };
+              }
+
+              case "get_active_sessions": {
+                const sessions = organizationManager.getActiveSessions();
+                if (sessions.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No active sessions." }],
+                    details: { sessions: [] },
+                  };
+                }
+
+                const sessionsText = sessions.map(s =>
+                  `• **${s.accountName || s.accountId}**\n` +
+                  `  Session: ${s.sessionId}\n` +
+                  `  Active: ${s.isActive ? "Yes" : "No (expired)"}\n` +
+                  `  Expires: ${s.expirationTime.toISOString()}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔗 **Active Sessions** (${sessions.length})\n\n${sessionsText}`,
+                  }],
+                  details: { sessions: sessions.map(s => ({ ...s, credentials: undefined })) },
+                };
+              }
+
+              case "reset_context": {
+                organizationManager.resetContext();
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Context reset. All sessions cleared.`,
+                  }],
+                  details: { reset: true },
+                };
+              }
+
+              // ==================
+              // Resource Sharing (RAM) Operations
+              // ==================
+              case "create_resource_share": {
+                const name = params.resource_share_name as string;
+                if (!name) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_share_name is required" }],
+                    details: { error: "missing_resource_share_name" },
+                  };
+                }
+
+                const result = await organizationManager.createResourceShare({
+                  name,
+                  resourceArns: params.resource_arns as string[],
+                  principals: params.principals as string[],
+                  allowExternalPrincipals: params.allow_external_principals as boolean,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create resource share: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Resource share **${name}** created\n\n` +
+                      `**ARN:** ${result.data!.resourceShareArn}\n` +
+                      `**Status:** ${result.data!.status}`,
+                  }],
+                  details: { resource_share: result.data },
+                };
+              }
+
+              case "delete_resource_share": {
+                const arn = params.resource_share_arn as string;
+                if (!arn) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_share_arn is required" }],
+                    details: { error: "missing_resource_share_arn" },
+                  };
+                }
+
+                const result = await organizationManager.deleteResourceShare(arn);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete resource share: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Resource share deleted`,
+                  }],
+                  details: { deleted: true, resource_share_arn: arn },
+                };
+              }
+
+              case "list_resource_shares": {
+                const resourceOwner = params.resource_owner as "SELF" | "OTHER-ACCOUNTS";
+                if (!resourceOwner) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_owner is required (SELF or OTHER-ACCOUNTS)" }],
+                    details: { error: "missing_resource_owner" },
+                  };
+                }
+
+                const result = await organizationManager.listResourceShares({
+                  resourceOwner,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list resource shares: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const shares = result.data!;
+                if (shares.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No resource shares found." }],
+                    details: { resource_shares: [] },
+                  };
+                }
+
+                const sharesText = shares.map(s =>
+                  `• **${s.name}**\n` +
+                  `  ARN: ${s.resourceShareArn}\n` +
+                  `  Status: ${s.status} | External: ${s.allowExternalPrincipals ? "Yes" : "No"}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔗 **Resource Shares** (${shares.length})\n\n${sharesText}`,
+                  }],
+                  details: { resource_shares: shares },
+                };
+              }
+
+              case "list_shareable_resource_types": {
+                const result = await organizationManager.listShareableResourceTypes();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list resource types: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const types = result.data!;
+                const typesText = types.map(t => `• ${t}`).join("\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📦 **Shareable Resource Types** (${types.length})\n\n${typesText}`,
+                  }],
+                  details: { resource_types: types },
+                };
+              }
+
+              // ==================
+              // Consolidated Billing
+              // ==================
+              case "get_consolidated_billing": {
+                const startDateStr = params.start_date as string;
+                const endDateStr = params.end_date as string;
+
+                if (!startDateStr || !endDateStr) {
+                  return {
+                    content: [{ type: "text", text: "Error: start_date and end_date are required (YYYY-MM-DD)" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.getConsolidatedBilling({
+                  startDate: new Date(startDateStr),
+                  endDate: new Date(endDateStr),
+                  granularity: params.granularity as "DAILY" | "MONTHLY",
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get billing data: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const billing = result.data!;
+                const accountsText = billing.accountBreakdown.slice(0, 10).map(a =>
+                  `• **${a.accountName}** (${a.accountId}): $${a.cost.toFixed(2)} (${a.percentage.toFixed(1)}%)`
+                ).join("\n");
+
+                const servicesText = billing.serviceBreakdown.slice(0, 10).map(s =>
+                  `• **${s.service}**: $${s.totalCost.toFixed(2)}`
+                ).join("\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `💰 **Consolidated Billing**\n\n` +
+                      `**Period:** ${billing.periodStart.toISOString().split("T")[0]} to ${billing.periodEnd.toISOString().split("T")[0]}\n` +
+                      `**Total Cost:** $${billing.totalCost.toFixed(2)} ${billing.currency}\n` +
+                      `**Linked Accounts:** ${billing.linkedAccountCount}\n\n` +
+                      `**Top Accounts:**\n${accountsText}\n\n` +
+                      `**Top Services:**\n${servicesText}`,
+                  }],
+                  details: { billing },
+                };
+              }
+
+              // ==================
+              // Delegated Administrator
+              // ==================
+              case "list_delegated_administrators": {
+                const result = await organizationManager.listDelegatedAdministrators(
+                  params.service_principal as string
+                );
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list delegated admins: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const admins = result.data!;
+                if (admins.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No delegated administrators found." }],
+                    details: { delegated_administrators: [] },
+                  };
+                }
+
+                const adminsText = admins.map(a =>
+                  `• **${a.name}** (${a.accountId})\n` +
+                  `  Service: ${a.servicePrincipal}\n` +
+                  `  Enabled: ${a.delegationEnabledDate.toISOString()}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `👑 **Delegated Administrators** (${admins.length})\n\n${adminsText}`,
+                  }],
+                  details: { delegated_administrators: admins },
+                };
+              }
+
+              case "register_delegated_administrator": {
+                const accountId = params.account_id as string;
+                const servicePrincipal = params.service_principal as string;
+
+                if (!accountId || !servicePrincipal) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id and service_principal are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.registerDelegatedAdministrator(accountId, servicePrincipal);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to register delegated admin: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Account **${accountId}** registered as delegated administrator for **${servicePrincipal}**`,
+                  }],
+                  details: { registered: true, account_id: accountId, service_principal: servicePrincipal },
+                };
+              }
+
+              // ==================
+              // Handshakes
+              // ==================
+              case "list_handshakes": {
+                const result = await organizationManager.listHandshakes();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list handshakes: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const handshakes = result.data!;
+                if (handshakes.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No handshakes found." }],
+                    details: { handshakes: [] },
+                  };
+                }
+
+                const handshakesText = handshakes.map(h =>
+                  `• **${h.id}**\n` +
+                  `  Action: ${h.action} | State: ${h.state}\n` +
+                  `  Expires: ${h.expirationTimestamp.toISOString()}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🤝 **Handshakes** (${handshakes.length})\n\n${handshakesText}`,
+                  }],
+                  details: { handshakes },
+                };
+              }
+
+              case "invite_account": {
+                const target = params.invite_target as string;
+                const targetType = params.invite_target_type as "ACCOUNT" | "EMAIL";
+
+                if (!target || !targetType) {
+                  return {
+                    content: [{ type: "text", text: "Error: invite_target and invite_target_type are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.inviteAccount({
+                  target,
+                  targetType,
+                  notes: params.invite_notes as string,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to invite account: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Invitation sent to **${target}**\n\n` +
+                      `**Handshake ID:** ${result.data!.id}\n` +
+                      `**State:** ${result.data!.state}\n` +
+                      `**Expires:** ${result.data!.expirationTimestamp.toISOString()}`,
+                  }],
+                  details: { handshake: result.data },
+                };
+              }
+
+              // ==================
+              // Tags
+              // ==================
+              case "get_resource_tags": {
+                const resourceId = params.resource_id as string;
+                if (!resourceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_id is required" }],
+                    details: { error: "missing_resource_id" },
+                  };
+                }
+
+                const result = await organizationManager.getResourceTags(resourceId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get tags: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const tags = result.data!;
+                const tagsText = Object.entries(tags).length > 0
+                  ? Object.entries(tags).map(([k, v]) => `• ${k}: ${v}`).join("\n")
+                  : "(no tags)";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🏷️ **Tags for ${resourceId}**\n\n${tagsText}`,
+                  }],
+                  details: { tags },
+                };
+              }
+
+              case "tag_resource": {
+                const resourceId = params.resource_id as string;
+                const tags = params.tags as Record<string, string>;
+
+                if (!resourceId || !tags) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_id and tags are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.tagResource(resourceId, tags);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to tag resource: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Tags applied to **${resourceId}**`,
+                  }],
+                  details: { tagged: true, resource_id: resourceId, tags },
+                };
+              }
+
+              case "untag_resource": {
+                const resourceId = params.resource_id as string;
+                const tagKeys = params.tag_keys as string[];
+
+                if (!resourceId || !tagKeys) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_id and tag_keys are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await organizationManager.untagResource(resourceId, tagKeys);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to untag resource: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Tags removed from **${resourceId}**`,
+                  }],
+                  details: { untagged: true, resource_id: resourceId, tag_keys: tagKeys },
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Organization error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_organization" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -9699,6 +11357,7 @@ Use this tool to:
         costManager = null;
         securityManager = null;
         guardrailsManager = null;
+        organizationManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -9728,6 +11387,7 @@ export function getAWSManagers() {
     cost: costManager,
     security: securityManager,
     guardrails: guardrailsManager,
+    organization: organizationManager,
     cli: cliWrapper,
   };
 }

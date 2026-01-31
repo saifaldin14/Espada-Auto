@@ -373,6 +373,73 @@ export type {
   GuardrailsEvaluationResult,
 } from "./guardrails/index.js";
 
+// =============================================================================
+// Organization & Multi-Account Module
+// =============================================================================
+
+export {
+  OrganizationManager,
+  createOrganizationManager,
+} from "./organization/index.js";
+
+// Organization Types
+export type {
+  OrganizationManagerConfig,
+  OrganizationOperationResult,
+  OrganizationInfo,
+  OrganizationRootInfo,
+  OrganizationStatus,
+  PolicyTypeSummary,
+  AccountInfo,
+  DetailedAccountInfo,
+  AccountStatus,
+  AccountJoinMethod,
+  ListAccountsOptions,
+  CreateAccountOptions,
+  CreateAccountStatus,
+  MoveAccountOptions,
+  OrganizationalUnitInfo,
+  CreateOUOptions,
+  ListOUsOptions,
+  PolicyType,
+  PolicySummary,
+  SCPInfo,
+  SCPDocument,
+  SCPStatement,
+  PolicyTargetInfo,
+  PolicyAttachment,
+  CreateSCPOptions,
+  UpdateSCPOptions,
+  ListPoliciesOptions as ListSCPsOptions,
+  SCPTemplate,
+  SCPCategory,
+  AssumedRoleCredentials,
+  AssumeRoleOptions,
+  CrossAccountSession,
+  AccountContext,
+  ResourceShareStatus,
+  AssociationStatus,
+  ResourceShareInfo,
+  SharedResourceInfo,
+  ShareableResourceType,
+  CreateResourceShareOptions,
+  ListResourceSharesOptions,
+  ConsolidatedBillingSummary,
+  AccountCostBreakdown,
+  ServiceCostBreakdown,
+  GetConsolidatedBillingOptions,
+  DelegatedAdministratorInfo,
+  DelegatedServiceInfo,
+  HandshakeState,
+  HandshakeInfo,
+  InviteAccountOptions,
+  CrossAccountResource,
+  CrossAccountResourceOptions,
+  CrossAccountResourceSummary,
+  OrganizationEvent,
+  OrganizationEventType,
+} from "./organization/index.js";
+
 // EC2 Types
 export type {
   EC2Instance,

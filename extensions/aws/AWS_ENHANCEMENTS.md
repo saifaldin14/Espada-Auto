@@ -20,6 +20,7 @@ The AWS extension provides comprehensive infrastructure management through:
 | **Network/VPC** | VPCs, subnets, route tables, NAT, endpoints (✅ Implemented) |
 | **Security/IAM** | IAM, Security Hub, GuardDuty, KMS, Secrets Manager (✅ Implemented) |
 | **Guardrails** | Approval workflows, audit logging, rate limiting (✅ Implemented) |
+| **Organizations** | Multi-account management, SCPs, RAM, consolidated billing (✅ Implemented) |
 
 ### Current Interfaces
 - **CLI commands**: `espada aws ...`
@@ -405,40 +406,145 @@ Bot:  "📋 Change Request Created
 
 ---
 
-### 6. Multi-Account & Organization Support
+### 6. Multi-Account & Organization Support ✅ IMPLEMENTED
 
-**Current Gap**: Single account operations only
+**Status**: ✅ **IMPLEMENTED** - Full multi-account management, SCPs, cross-account operations, and consolidated billing
 
-**Proposed Capabilities**:
-- Cross-account operations via assume role
-- Organization-wide resource visibility
-- Consolidated billing insights
-- Service Control Policy (SCP) management
-- Account creation workflows
-- Resource sharing across accounts
+**Implemented Capabilities**:
+- ✅ Organization and account management (list, create, move, remove)
+- ✅ Organizational Unit (OU) hierarchy management
+- ✅ Service Control Policies (SCPs) with 12 pre-built security templates
+- ✅ Cross-account operations via assume role
+- ✅ Resource Access Manager (RAM) for resource sharing
+- ✅ Consolidated billing insights across all accounts
+- ✅ Delegated administrator management
+- ✅ Account invitation workflows (handshakes)
+- ✅ Cross-account resource discovery framework
 
 **New Tool**: `aws_organization`
 
-| Action | Description |
-|--------|-------------|
-| `list_accounts` | List all accounts in organization |
-| `switch_account` | Switch context to different account |
-| `get_org_resources` | List resources across all accounts |
-| `create_account` | Create new account in organization |
-| `manage_scps` | View/modify Service Control Policies |
-| `get_consolidated_billing` | Organization-wide cost breakdown |
-| `share_resource` | Share resources via RAM |
+| Action | Description | Status |
+|--------|-------------|--------|
+| `get_organization` | Get organization details | ✅ Implemented |
+| `get_roots` | List organization roots | ✅ Implemented |
+| `list_accounts` | List all accounts in organization | ✅ Implemented |
+| `get_account` | Get detailed account information | ✅ Implemented |
+| `create_account` | Create new account in organization | ✅ Implemented |
+| `get_create_account_status` | Check account creation status | ✅ Implemented |
+| `move_account` | Move account to different OU | ✅ Implemented |
+| `remove_account` | Remove account from organization | ✅ Implemented |
+| `list_organizational_units` | List OUs | ✅ Implemented |
+| `get_organizational_unit` | Get OU details | ✅ Implemented |
+| `create_organizational_unit` | Create new OU | ✅ Implemented |
+| `update_organizational_unit` | Update OU name | ✅ Implemented |
+| `delete_organizational_unit` | Delete OU | ✅ Implemented |
+| `list_policies` | List SCPs | ✅ Implemented |
+| `get_policy` | Get policy details | ✅ Implemented |
+| `create_policy` | Create new SCP | ✅ Implemented |
+| `update_policy` | Update existing SCP | ✅ Implemented |
+| `delete_policy` | Delete SCP | ✅ Implemented |
+| `attach_policy` | Attach SCP to target | ✅ Implemented |
+| `detach_policy` | Detach SCP from target | ✅ Implemented |
+| `enable_policy_type` | Enable policy type for root | ✅ Implemented |
+| `disable_policy_type` | Disable policy type for root | ✅ Implemented |
+| `get_scp_templates` | Get pre-built SCP templates | ✅ Implemented |
+| `get_scp_template` | Get specific SCP template | ✅ Implemented |
+| `assume_role` | Assume role in another account | ✅ Implemented |
+| `switch_account` | Switch context to different account | ✅ Implemented |
+| `get_current_context` | Get current account context | ✅ Implemented |
+| `get_active_sessions` | List active cross-account sessions | ✅ Implemented |
+| `reset_context` | Reset context and clear sessions | ✅ Implemented |
+| `create_resource_share` | Create RAM resource share | ✅ Implemented |
+| `delete_resource_share` | Delete resource share | ✅ Implemented |
+| `list_resource_shares` | List resource shares | ✅ Implemented |
+| `list_shareable_resource_types` | List shareable resource types | ✅ Implemented |
+| `get_consolidated_billing` | Get org-wide cost breakdown | ✅ Implemented |
+| `list_delegated_administrators` | List delegated admins | ✅ Implemented |
+| `register_delegated_administrator` | Register delegated admin | ✅ Implemented |
+| `list_handshakes` | List pending handshakes | ✅ Implemented |
+| `invite_account` | Invite account to organization | ✅ Implemented |
+| `get_resource_tags` | Get resource tags | ✅ Implemented |
+| `tag_resource` | Tag organization resource | ✅ Implemented |
+| `untag_resource` | Remove tags from resource | ✅ Implemented |
+
+**Pre-built SCP Templates (12 templates)**:
+| Template ID | Category | Description |
+|-------------|----------|-------------|
+| `deny-root-user` | Security | Prevents root user actions (CIS 1.7) |
+| `require-mfa` | Security | Requires MFA for sensitive IAM actions (CIS 1.10) |
+| `deny-leave-organization` | Security | Prevents accounts from leaving org |
+| `require-s3-encryption` | Data Protection | Denies S3 PutObject without encryption |
+| `deny-unencrypted-ebs` | Data Protection | Prevents unencrypted EBS volumes |
+| `deny-public-s3` | Networking | Prevents public S3 buckets |
+| `restrict-regions` | Compliance | Limits AWS to approved regions only |
+| `protect-cloudtrail` | Logging | Protects CloudTrail configurations (CIS 3.5) |
+| `protect-config` | Logging | Protects AWS Config settings |
+| `deny-expensive-instances` | Cost Management | Blocks expensive EC2 instance types |
+| `deny-iam-user-creation` | Identity | Enforces SSO usage (no IAM users) |
+| `deny-iam-changes-except-roles` | Identity | Only allows IAM role management |
 
 **Example Conversations**:
 ```
 User: "Show me all EC2 instances across all accounts"
+Bot:  "🔄 Switching to cross-account discovery mode...
+       Found 45 EC2 instances across 5 accounts:
+       
+       **Production (111111111111)**: 20 instances
+       **Development (222222222222)**: 15 instances
+       **Staging (333333333333)**: 8 instances
+       **Security (444444444444)**: 2 instances"
 
 User: "Switch to the production account"
+Bot:  "✅ Switched to account **Production** (111111111111)
+       
+       **Session ID:** session-111111111111-1706745600000
+       **Role:** arn:aws:iam::111111111111:role/OrganizationAccountAccessRole
+       **Expires:** 2024-02-01T02:00:00.000Z"
 
 User: "Create a new account for the data science team"
+Bot:  "✅ Account creation initiated
+       
+       **Request ID:** car-abc123xyz
+       **Account Name:** Data Science
+       **State:** IN_PROGRESS
+       
+       Use `get_create_account_status` to check progress."
 
 User: "What's the total AWS spend across all accounts?"
+Bot:  "💰 **Consolidated Billing**
+       
+       **Period:** 2024-01-01 to 2024-01-31
+       **Total Cost:** $45,678.90 USD
+       **Linked Accounts:** 5
+       
+       **Top Accounts:**
+       • **Production** (111111111111): $25,000.00 (54.7%)
+       • **Development** (222222222222): $12,000.00 (26.3%)
+       • **Staging** (333333333333): $5,000.00 (10.9%)
+       
+       **Top Services:**
+       • **Amazon EC2**: $20,000.00
+       • **Amazon RDS**: $15,000.00
+       • **Amazon S3**: $5,000.00"
+
+User: "Apply the deny-root-user SCP to all production accounts"
+Bot:  "📋 Found SCP Template: **Deny Root User Actions**
+       
+       Creating and attaching policy...
+       ✅ Policy **DenyRootUser** created (p-abc123)
+       ✅ Attached to **Production OU** (ou-abc1-prod)
+       
+       All accounts in Production OU now have root user access blocked."
 ```
+
+**Implementation Files**:
+- `src/organization/types.ts` - Comprehensive type definitions (~800 lines)
+- `src/organization/manager.ts` - OrganizationManager class (~1700 lines)
+- `src/organization/manager.test.ts` - Comprehensive test suite (50+ tests)
+- `src/organization/index.ts` - Module exports
+- `src/index.ts` - Updated with organization module exports
+- `index.ts` - `aws_organization` tool registration with 40+ actions
+- `package.json` - Added @aws-sdk/client-ram dependency
 
 ---
 
