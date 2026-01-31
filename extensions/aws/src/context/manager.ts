@@ -158,7 +158,7 @@ export class AWSContextManager {
     region: string,
     options: ContextSwitchOptions = {},
   ): Promise<AWSContext> {
-    const { validateAccess = true, updateDefaultRegion = false } = options;
+    const { validateAccess = true } = options;
 
     if (!this.currentContext) {
       throw new Error("No current context. Call initialize() first.");

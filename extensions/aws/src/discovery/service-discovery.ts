@@ -8,7 +8,7 @@
  * - Multi-region resource scanning
  */
 
-import { EC2Client, DescribeRegionsCommand, DescribeInstancesCommand, DescribeVpcsCommand, DescribeSubnetsCommand, DescribeSecurityGroupsCommand } from "@aws-sdk/client-ec2";
+import { EC2Client, DescribeRegionsCommand, DescribeInstancesCommand, DescribeVpcsCommand } from "@aws-sdk/client-ec2";
 import { ResourceGroupsTaggingAPIClient, GetResourcesCommand, type ResourceTagMapping } from "@aws-sdk/client-resource-groups-tagging-api";
 import type { AWSCredentialsManager } from "../credentials/manager.js";
 import type { AWSClientPoolManager } from "../client-pool/manager.js";
@@ -16,7 +16,6 @@ import type {
   AWSServiceName,
   AWSServiceCategory,
   AWSServiceMetadata,
-  AWSServiceQuota,
   AWSResource,
   AWSRegionInfo,
   AWSAccountInfo,
@@ -207,8 +206,8 @@ const AWS_SERVICE_CATALOG: Record<AWSServiceName, Omit<AWSServiceMetadata, "regi
   },
 };
 
-// Resource type to service mapping
-const RESOURCE_TYPE_SERVICE_MAP: Record<string, AWSServiceName> = {
+// Resource type to service mapping (used for future resource type resolution)
+const _RESOURCE_TYPE_SERVICE_MAP: Record<string, AWSServiceName> = {
   "ec2:instance": "ec2",
   "ec2:vpc": "ec2",
   "ec2:subnet": "ec2",

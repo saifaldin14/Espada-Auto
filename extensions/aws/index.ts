@@ -52,6 +52,11 @@ import {
   type LambdaRuntime,
 } from "./src/lambda/index.js";
 
+import {
+  createS3Manager,
+  type S3Manager,
+} from "./src/s3/index.js";
+
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
 let contextManager: AWSContextManager | null = null;
@@ -61,6 +66,7 @@ let cloudTrailManager: AWSCloudTrailManager | null = null;
 let ec2Manager: AWSEC2Manager | null = null;
 let rdsManager: RDSManager | null = null;
 let lambdaManager: LambdaManager | null = null;
+let s3Manager: S3Manager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -244,6 +250,11 @@ const plugin = {
 
     // Initialize Lambda manager
     lambdaManager = createLambdaManager({
+      region: config.defaultRegion,
+    });
+
+    // Initialize S3 manager
+    s3Manager = createS3Manager({
       region: config.defaultRegion,
     });
 
@@ -1421,7 +1432,6 @@ const plugin = {
 
           const action = params.action as string;
           const region = params.region as string | undefined;
-          const limit = (params.limit as number) ?? 20;
 
           try {
             switch (action) {
@@ -4107,6 +4117,1319 @@ const plugin = {
       { name: "aws_lambda" },
     );
 
+    // =========================================================================
+    // AWS S3 AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        description: `AWS S3 bucket and object management tool. Manage S3 buckets, objects, versioning, encryption, lifecycle policies, website hosting, CloudFront distributions, replication, and event notifications.
+
+IMPORTANT: Always specify the region parameter for operations unless using the default region.
+
+Available actions:
+- list_buckets: List all S3 buckets
+- get_bucket_details: Get comprehensive bucket details including all configurations
+- create_bucket: Create a new S3 bucket
+- delete_bucket: Delete an empty S3 bucket
+- bucket_exists: Check if a bucket exists
+- list_objects: List objects in a bucket
+- upload_object: Upload an object to S3
+- download_object: Download an object from S3
+- delete_object: Delete an object
+- delete_objects: Delete multiple objects
+- copy_object: Copy an object
+- get_presigned_url: Generate presigned URL for upload/download
+- get_versioning: Get bucket versioning status
+- set_versioning: Enable or suspend versioning
+- get_encryption: Get bucket encryption configuration
+- set_encryption: Set bucket encryption
+- get_public_access_block: Get public access block settings
+- set_public_access_block: Configure public access block
+- get_lifecycle: Get lifecycle configuration
+- set_lifecycle: Set lifecycle rules
+- delete_lifecycle: Delete lifecycle configuration
+- get_website: Get website hosting configuration
+- set_website: Enable static website hosting
+- delete_website: Delete website configuration
+- get_cors: Get CORS configuration
+- set_cors: Set CORS rules
+- delete_cors: Delete CORS configuration
+- get_replication: Get cross-region replication configuration
+- set_replication: Configure cross-region replication
+- delete_replication: Delete replication configuration
+- get_notifications: Get event notification configuration
+- set_notifications: Configure event notifications
+- list_cloudfront: List CloudFront distributions
+- get_cloudfront: Get CloudFront distribution details
+- create_cloudfront: Create CloudFront distribution for S3 bucket
+- empty_bucket: Empty a bucket (delete all objects)
+- get_bucket_tags: Get bucket tags
+- set_bucket_tags: Set bucket tags
+- get_bucket_policy: Get bucket policy
+- set_bucket_policy: Set bucket policy`,
+        inputSchema: {
+          type: "object" as const,
+          properties: {
+            action: {
+              type: "string",
+              description: "The S3 action to perform",
+              enum: [
+                "list_buckets",
+                "get_bucket_details",
+                "create_bucket",
+                "delete_bucket",
+                "bucket_exists",
+                "list_objects",
+                "upload_object",
+                "download_object",
+                "delete_object",
+                "delete_objects",
+                "copy_object",
+                "get_presigned_url",
+                "get_versioning",
+                "set_versioning",
+                "get_encryption",
+                "set_encryption",
+                "get_public_access_block",
+                "set_public_access_block",
+                "get_lifecycle",
+                "set_lifecycle",
+                "delete_lifecycle",
+                "get_website",
+                "set_website",
+                "delete_website",
+                "get_cors",
+                "set_cors",
+                "delete_cors",
+                "get_replication",
+                "set_replication",
+                "delete_replication",
+                "get_notifications",
+                "set_notifications",
+                "list_cloudfront",
+                "get_cloudfront",
+                "create_cloudfront",
+                "empty_bucket",
+                "get_bucket_tags",
+                "set_bucket_tags",
+                "get_bucket_policy",
+                "set_bucket_policy",
+              ],
+            },
+            region: {
+              type: "string",
+              description: "AWS region (e.g., us-east-1, eu-west-1)",
+            },
+            bucket_name: {
+              type: "string",
+              description: "S3 bucket name",
+            },
+            key: {
+              type: "string",
+              description: "Object key (path within the bucket)",
+            },
+            body: {
+              type: "string",
+              description: "Object content for upload",
+            },
+            content_type: {
+              type: "string",
+              description: "MIME type of the object",
+            },
+            prefix: {
+              type: "string",
+              description: "Prefix to filter objects",
+            },
+            max_keys: {
+              type: "number",
+              description: "Maximum number of objects to return",
+            },
+            version_id: {
+              type: "string",
+              description: "Object version ID",
+            },
+            storage_class: {
+              type: "string",
+              description: "Storage class (STANDARD, INTELLIGENT_TIERING, STANDARD_IA, ONEZONE_IA, GLACIER, GLACIER_IR, DEEP_ARCHIVE)",
+              enum: ["STANDARD", "INTELLIGENT_TIERING", "STANDARD_IA", "ONEZONE_IA", "GLACIER", "GLACIER_IR", "DEEP_ARCHIVE"],
+            },
+            source_bucket: {
+              type: "string",
+              description: "Source bucket for copy operations",
+            },
+            source_key: {
+              type: "string",
+              description: "Source key for copy operations",
+            },
+            destination_bucket: {
+              type: "string",
+              description: "Destination bucket for copy operations",
+            },
+            destination_key: {
+              type: "string",
+              description: "Destination key for copy operations",
+            },
+            presigned_operation: {
+              type: "string",
+              description: "Operation type for presigned URL (getObject or putObject)",
+              enum: ["getObject", "putObject"],
+            },
+            expires_in: {
+              type: "number",
+              description: "Presigned URL expiration time in seconds (default: 3600)",
+            },
+            versioning_status: {
+              type: "string",
+              description: "Versioning status to set",
+              enum: ["Enabled", "Suspended"],
+            },
+            sse_algorithm: {
+              type: "string",
+              description: "Server-side encryption algorithm",
+              enum: ["AES256", "aws:kms", "aws:kms:dsse"],
+            },
+            kms_key_id: {
+              type: "string",
+              description: "KMS key ID for encryption",
+            },
+            bucket_key_enabled: {
+              type: "boolean",
+              description: "Enable S3 Bucket Key for KMS encryption",
+            },
+            block_public_acls: {
+              type: "boolean",
+              description: "Block public ACLs",
+            },
+            ignore_public_acls: {
+              type: "boolean",
+              description: "Ignore public ACLs",
+            },
+            block_public_policy: {
+              type: "boolean",
+              description: "Block public bucket policies",
+            },
+            restrict_public_buckets: {
+              type: "boolean",
+              description: "Restrict public buckets",
+            },
+            lifecycle_rules: {
+              type: "array",
+              description: "Lifecycle rules configuration",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  status: { type: "string", enum: ["Enabled", "Disabled"] },
+                  prefix: { type: "string" },
+                  expiration_days: { type: "number" },
+                  transition_days: { type: "number" },
+                  transition_storage_class: { type: "string" },
+                },
+              },
+            },
+            index_document: {
+              type: "string",
+              description: "Index document suffix for website hosting (e.g., index.html)",
+            },
+            error_document: {
+              type: "string",
+              description: "Error document key for website hosting (e.g., error.html)",
+            },
+            cors_rules: {
+              type: "array",
+              description: "CORS configuration rules",
+              items: {
+                type: "object",
+                properties: {
+                  allowed_origins: { type: "array", items: { type: "string" } },
+                  allowed_methods: { type: "array", items: { type: "string" } },
+                  allowed_headers: { type: "array", items: { type: "string" } },
+                  max_age_seconds: { type: "number" },
+                },
+              },
+            },
+            replication_role: {
+              type: "string",
+              description: "IAM role ARN for replication",
+            },
+            replication_rules: {
+              type: "array",
+              description: "Replication rules",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  status: { type: "string", enum: ["Enabled", "Disabled"] },
+                  destination_bucket: { type: "string" },
+                  priority: { type: "number" },
+                },
+              },
+            },
+            notification_lambda_arn: {
+              type: "string",
+              description: "Lambda function ARN for event notifications",
+            },
+            notification_events: {
+              type: "array",
+              description: "S3 events to trigger notifications",
+              items: { type: "string" },
+            },
+            notification_prefix: {
+              type: "string",
+              description: "Object key prefix filter for notifications",
+            },
+            notification_suffix: {
+              type: "string",
+              description: "Object key suffix filter for notifications",
+            },
+            eventbridge_enabled: {
+              type: "boolean",
+              description: "Enable EventBridge notifications",
+            },
+            distribution_id: {
+              type: "string",
+              description: "CloudFront distribution ID",
+            },
+            cloudfront_comment: {
+              type: "string",
+              description: "Comment for CloudFront distribution",
+            },
+            default_root_object: {
+              type: "string",
+              description: "Default root object for CloudFront (e.g., index.html)",
+            },
+            aliases: {
+              type: "array",
+              description: "Custom domain aliases for CloudFront",
+              items: { type: "string" },
+            },
+            acm_certificate_arn: {
+              type: "string",
+              description: "ACM certificate ARN for HTTPS",
+            },
+            tags: {
+              type: "object",
+              description: "Tags as key-value pairs",
+              additionalProperties: { type: "string" },
+            },
+            policy: {
+              type: "string",
+              description: "Bucket policy JSON document",
+            },
+            objects_to_delete: {
+              type: "array",
+              description: "Array of objects to delete",
+              items: {
+                type: "object",
+                properties: {
+                  key: { type: "string" },
+                  version_id: { type: "string" },
+                },
+              },
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: {
+          action: string;
+          region?: string;
+          bucket_name?: string;
+          key?: string;
+          body?: string;
+          content_type?: string;
+          prefix?: string;
+          max_keys?: number;
+          version_id?: string;
+          storage_class?: string;
+          source_bucket?: string;
+          source_key?: string;
+          destination_bucket?: string;
+          destination_key?: string;
+          presigned_operation?: string;
+          expires_in?: number;
+          versioning_status?: string;
+          sse_algorithm?: string;
+          kms_key_id?: string;
+          bucket_key_enabled?: boolean;
+          block_public_acls?: boolean;
+          ignore_public_acls?: boolean;
+          block_public_policy?: boolean;
+          restrict_public_buckets?: boolean;
+          lifecycle_rules?: Array<{
+            id?: string;
+            status?: string;
+            prefix?: string;
+            expiration_days?: number;
+            transition_days?: number;
+            transition_storage_class?: string;
+          }>;
+          index_document?: string;
+          error_document?: string;
+          cors_rules?: Array<{
+            allowed_origins?: string[];
+            allowed_methods?: string[];
+            allowed_headers?: string[];
+            max_age_seconds?: number;
+          }>;
+          replication_role?: string;
+          replication_rules?: Array<{
+            id?: string;
+            status?: string;
+            destination_bucket?: string;
+            priority?: number;
+          }>;
+          notification_lambda_arn?: string;
+          notification_events?: string[];
+          notification_prefix?: string;
+          notification_suffix?: string;
+          eventbridge_enabled?: boolean;
+          distribution_id?: string;
+          cloudfront_comment?: string;
+          default_root_object?: string;
+          aliases?: string[];
+          acm_certificate_arn?: string;
+          tags?: Record<string, string>;
+          policy?: string;
+          objects_to_delete?: Array<{ key: string; version_id?: string }>;
+        }) {
+          if (!s3Manager) {
+            return {
+              content: [{ type: "text", text: "S3 manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const { action, region, bucket_name, key } = params;
+
+          try {
+            switch (action) {
+              // Bucket Operations
+              case "list_buckets": {
+                const buckets = await s3Manager.listBuckets(region);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Found ${buckets.length} S3 buckets:\n${buckets
+                        .map((b) => `• ${b.name} (created: ${b.creationDate?.toISOString() || "unknown"})`)
+                        .join("\n")}`,
+                    },
+                  ],
+                  details: { buckets },
+                };
+              }
+
+              case "bucket_exists": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const exists = await s3Manager.bucketExists(bucket_name, region);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: exists
+                        ? `Bucket '${bucket_name}' exists`
+                        : `Bucket '${bucket_name}' does not exist`,
+                    },
+                  ],
+                  details: { exists },
+                };
+              }
+
+              case "get_bucket_details": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const details = await s3Manager.getBucketDetails(bucket_name, region);
+                if (!details) {
+                  return {
+                    content: [{ type: "text", text: `Bucket '${bucket_name}' not found` }],
+                    details: { error: "bucket_not_found" },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Bucket '${bucket_name}' details:\n` +
+                        `  Region: ${details.region || "unknown"}\n` +
+                        `  Versioning: ${details.versioning || "not configured"}\n` +
+                        `  Encryption: ${details.encryption?.rules?.[0]?.applyServerSideEncryptionByDefault?.sseAlgorithm || "not configured"}\n` +
+                        `  Website: ${details.website ? "enabled" : "not configured"}\n` +
+                        `  Lifecycle rules: ${details.lifecycle?.rules?.length || 0}\n` +
+                        `  Tags: ${Object.keys(details.tags || {}).length}`,
+                    },
+                  ],
+                  details,
+                };
+              }
+
+              case "create_bucket": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const result = await s3Manager.createBucket({
+                  bucketName: bucket_name,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              case "delete_bucket": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const result = await s3Manager.deleteBucket(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: result.message }],
+                  details: result,
+                };
+              }
+
+              // Object Operations
+              case "list_objects": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const listResult = await s3Manager.listObjects({
+                  bucketName: bucket_name,
+                  prefix: params.prefix,
+                  maxKeys: params.max_keys,
+                  region,
+                });
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Found ${listResult.objects.length} objects in '${bucket_name}'${params.prefix ? ` with prefix '${params.prefix}'` : ""}:\n` +
+                        listResult.objects.slice(0, 20).map((o) => `• ${o.key} (${o.size || 0} bytes)`).join("\n") +
+                        (listResult.objects.length > 20 ? `\n... and ${listResult.objects.length - 20} more` : ""),
+                    },
+                  ],
+                  details: listResult,
+                };
+              }
+
+              case "upload_object": {
+                if (!bucket_name || !key) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const uploadResult = await s3Manager.uploadObject({
+                  bucketName: bucket_name,
+                  key,
+                  body: params.body || "",
+                  contentType: params.content_type,
+                  storageClass: params.storage_class as "STANDARD" | "INTELLIGENT_TIERING" | "STANDARD_IA" | "ONEZONE_IA" | "GLACIER" | "GLACIER_IR" | "DEEP_ARCHIVE",
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: uploadResult.message }],
+                  details: uploadResult,
+                };
+              }
+
+              case "download_object": {
+                if (!bucket_name || !key) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const downloadResult = await s3Manager.downloadObject({
+                  bucketName: bucket_name,
+                  key,
+                  versionId: params.version_id,
+                  region,
+                });
+                // Return as text if reasonable size, otherwise just metadata
+                const contentStr = downloadResult.body.length < 10000
+                  ? downloadResult.body.toString("utf-8")
+                  : `[Binary content: ${downloadResult.body.length} bytes]`;
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Downloaded '${key}':\n` +
+                        `Content-Type: ${downloadResult.contentType || "unknown"}\n` +
+                        `Size: ${downloadResult.contentLength || downloadResult.body.length} bytes\n` +
+                        `Content:\n${contentStr}`,
+                    },
+                  ],
+                  details: {
+                    contentType: downloadResult.contentType,
+                    contentLength: downloadResult.contentLength,
+                    eTag: downloadResult.eTag,
+                    lastModified: downloadResult.lastModified,
+                  },
+                };
+              }
+
+              case "delete_object": {
+                if (!bucket_name || !key) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteResult = await s3Manager.deleteObject({
+                  bucketName: bucket_name,
+                  key,
+                  versionId: params.version_id,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: deleteResult.message }],
+                  details: deleteResult,
+                };
+              }
+
+              case "delete_objects": {
+                if (!bucket_name || !params.objects_to_delete) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and objects_to_delete are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteMultiResult = await s3Manager.deleteObjects({
+                  bucketName: bucket_name,
+                  objects: params.objects_to_delete.map((o) => ({
+                    key: o.key,
+                    versionId: o.version_id,
+                  })),
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: deleteMultiResult.message }],
+                  details: deleteMultiResult,
+                };
+              }
+
+              case "copy_object": {
+                if (!params.source_bucket || !params.source_key || !params.destination_bucket || !params.destination_key) {
+                  return {
+                    content: [{ type: "text", text: "source_bucket, source_key, destination_bucket, and destination_key are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const copyResult = await s3Manager.copyObject({
+                  sourceBucket: params.source_bucket,
+                  sourceKey: params.source_key,
+                  destinationBucket: params.destination_bucket,
+                  destinationKey: params.destination_key,
+                  storageClass: params.storage_class as "STANDARD" | "INTELLIGENT_TIERING" | "STANDARD_IA" | "ONEZONE_IA" | "GLACIER" | "GLACIER_IR" | "DEEP_ARCHIVE",
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: copyResult.message }],
+                  details: copyResult,
+                };
+              }
+
+              case "get_presigned_url": {
+                if (!bucket_name || !key || !params.presigned_operation) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name, key, and presigned_operation are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const presignedResult = await s3Manager.getPresignedUrl({
+                  bucketName: bucket_name,
+                  key,
+                  operation: params.presigned_operation as "getObject" | "putObject",
+                  expiresIn: params.expires_in || 3600,
+                  contentType: params.content_type,
+                  region,
+                });
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Presigned URL for ${params.presigned_operation} on '${key}':\n` +
+                        `URL: ${presignedResult.url}\n` +
+                        `Expires: ${presignedResult.expiresAt.toISOString()}`,
+                    },
+                  ],
+                  details: presignedResult,
+                };
+              }
+
+              // Versioning
+              case "get_versioning": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const versioningStatus = await s3Manager.getVersioning(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: `Versioning status for '${bucket_name}': ${versioningStatus}` }],
+                  details: { status: versioningStatus },
+                };
+              }
+
+              case "set_versioning": {
+                if (!bucket_name || !params.versioning_status) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and versioning_status are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const versioningResult = await s3Manager.setVersioning({
+                  bucketName: bucket_name,
+                  status: params.versioning_status as "Enabled" | "Suspended",
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: versioningResult.message }],
+                  details: versioningResult,
+                };
+              }
+
+              // Encryption
+              case "get_encryption": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const encryption = await s3Manager.getEncryption(bucket_name, region);
+                if (!encryption) {
+                  return {
+                    content: [{ type: "text", text: `No encryption configuration for '${bucket_name}'` }],
+                    details: { encryption: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Encryption for '${bucket_name}':\n` +
+                        encryption.rules.map((r) =>
+                          `  Algorithm: ${r.applyServerSideEncryptionByDefault?.sseAlgorithm || "none"}\n` +
+                          `  KMS Key: ${r.applyServerSideEncryptionByDefault?.kmsMasterKeyId || "none"}\n` +
+                          `  Bucket Key: ${r.bucketKeyEnabled ? "enabled" : "disabled"}`
+                        ).join("\n"),
+                    },
+                  ],
+                  details: encryption,
+                };
+              }
+
+              case "set_encryption": {
+                if (!bucket_name || !params.sse_algorithm) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and sse_algorithm are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const encryptionResult = await s3Manager.setEncryption({
+                  bucketName: bucket_name,
+                  sseAlgorithm: params.sse_algorithm as "AES256" | "aws:kms" | "aws:kms:dsse",
+                  kmsMasterKeyId: params.kms_key_id,
+                  bucketKeyEnabled: params.bucket_key_enabled,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: encryptionResult.message }],
+                  details: encryptionResult,
+                };
+              }
+
+              // Public Access Block
+              case "get_public_access_block": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const publicAccess = await s3Manager.getPublicAccessBlock(bucket_name, region);
+                if (!publicAccess) {
+                  return {
+                    content: [{ type: "text", text: `No public access block for '${bucket_name}'` }],
+                    details: { publicAccessBlock: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Public access block for '${bucket_name}':\n` +
+                        `  Block public ACLs: ${publicAccess.blockPublicAcls}\n` +
+                        `  Ignore public ACLs: ${publicAccess.ignorePublicAcls}\n` +
+                        `  Block public policy: ${publicAccess.blockPublicPolicy}\n` +
+                        `  Restrict public buckets: ${publicAccess.restrictPublicBuckets}`,
+                    },
+                  ],
+                  details: publicAccess,
+                };
+              }
+
+              case "set_public_access_block": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const publicAccessResult = await s3Manager.setPublicAccessBlock({
+                  bucketName: bucket_name,
+                  blockPublicAcls: params.block_public_acls ?? true,
+                  ignorePublicAcls: params.ignore_public_acls ?? true,
+                  blockPublicPolicy: params.block_public_policy ?? true,
+                  restrictPublicBuckets: params.restrict_public_buckets ?? true,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: publicAccessResult.message }],
+                  details: publicAccessResult,
+                };
+              }
+
+              // Lifecycle
+              case "get_lifecycle": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const lifecycle = await s3Manager.getLifecycleConfiguration(bucket_name, region);
+                if (!lifecycle) {
+                  return {
+                    content: [{ type: "text", text: `No lifecycle configuration for '${bucket_name}'` }],
+                    details: { lifecycle: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Lifecycle rules for '${bucket_name}':\n` +
+                        lifecycle.rules.map((r) =>
+                          `• ${r.id || "unnamed"} (${r.status})\n` +
+                          `  Prefix: ${r.filter?.prefix || r.prefix || "*"}\n` +
+                          (r.expiration ? `  Expiration: ${r.expiration.days} days\n` : "") +
+                          (r.transitions?.length ? `  Transitions: ${r.transitions.map((t) => `${t.days}d → ${t.storageClass}`).join(", ")}\n` : "")
+                        ).join("\n"),
+                    },
+                  ],
+                  details: lifecycle,
+                };
+              }
+
+              case "set_lifecycle": {
+                if (!bucket_name || !params.lifecycle_rules) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and lifecycle_rules are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const lifecycleResult = await s3Manager.setLifecycleConfiguration({
+                  bucketName: bucket_name,
+                  rules: params.lifecycle_rules.map((r) => ({
+                    id: r.id,
+                    status: (r.status as "Enabled" | "Disabled") || "Enabled",
+                    filter: r.prefix ? { prefix: r.prefix } : undefined,
+                    expiration: r.expiration_days ? { days: r.expiration_days } : undefined,
+                    transitions: r.transition_days && r.transition_storage_class
+                      ? [{ days: r.transition_days, storageClass: r.transition_storage_class as "STANDARD" | "INTELLIGENT_TIERING" | "STANDARD_IA" | "ONEZONE_IA" | "GLACIER" | "GLACIER_IR" | "DEEP_ARCHIVE" }]
+                      : undefined,
+                  })),
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: lifecycleResult.message }],
+                  details: lifecycleResult,
+                };
+              }
+
+              case "delete_lifecycle": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteLifecycleResult = await s3Manager.deleteLifecycleConfiguration(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: deleteLifecycleResult.message }],
+                  details: deleteLifecycleResult,
+                };
+              }
+
+              // Website Hosting
+              case "get_website": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const website = await s3Manager.getWebsiteConfiguration(bucket_name, region);
+                if (!website) {
+                  return {
+                    content: [{ type: "text", text: `No website configuration for '${bucket_name}'` }],
+                    details: { website: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Website configuration for '${bucket_name}':\n` +
+                        `  Index document: ${website.indexDocument?.suffix || "not set"}\n` +
+                        `  Error document: ${website.errorDocument?.key || "not set"}\n` +
+                        (website.redirectAllRequestsTo ? `  Redirect: ${website.redirectAllRequestsTo.protocol}://${website.redirectAllRequestsTo.hostName}` : ""),
+                    },
+                  ],
+                  details: website,
+                };
+              }
+
+              case "set_website": {
+                if (!bucket_name || !params.index_document) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and index_document are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const websiteResult = await s3Manager.setWebsiteConfiguration({
+                  bucketName: bucket_name,
+                  indexDocument: params.index_document,
+                  errorDocument: params.error_document,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: websiteResult.message }],
+                  details: websiteResult,
+                };
+              }
+
+              case "delete_website": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteWebsiteResult = await s3Manager.deleteWebsiteConfiguration(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: deleteWebsiteResult.message }],
+                  details: deleteWebsiteResult,
+                };
+              }
+
+              // CORS
+              case "get_cors": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const cors = await s3Manager.getCors(bucket_name, region);
+                if (!cors) {
+                  return {
+                    content: [{ type: "text", text: `No CORS configuration for '${bucket_name}'` }],
+                    details: { cors: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `CORS rules for '${bucket_name}':\n` +
+                        cors.corsRules.map((r) =>
+                          `• ${r.id || "unnamed"}\n` +
+                          `  Origins: ${r.allowedOrigins.join(", ")}\n` +
+                          `  Methods: ${r.allowedMethods.join(", ")}\n` +
+                          `  Headers: ${r.allowedHeaders?.join(", ") || "*"}`
+                        ).join("\n"),
+                    },
+                  ],
+                  details: cors,
+                };
+              }
+
+              case "set_cors": {
+                if (!bucket_name || !params.cors_rules) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and cors_rules are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const corsResult = await s3Manager.setCors({
+                  bucketName: bucket_name,
+                  corsRules: params.cors_rules.map((r) => ({
+                    allowedOrigins: r.allowed_origins || ["*"],
+                    allowedMethods: (r.allowed_methods || ["GET", "HEAD"]) as Array<"GET" | "PUT" | "POST" | "DELETE" | "HEAD">,
+                    allowedHeaders: r.allowed_headers,
+                    maxAgeSeconds: r.max_age_seconds,
+                  })),
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: corsResult.message }],
+                  details: corsResult,
+                };
+              }
+
+              case "delete_cors": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteCorsResult = await s3Manager.deleteCors(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: deleteCorsResult.message }],
+                  details: deleteCorsResult,
+                };
+              }
+
+              // Replication
+              case "get_replication": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const replication = await s3Manager.getReplicationConfiguration(bucket_name, region);
+                if (!replication) {
+                  return {
+                    content: [{ type: "text", text: `No replication configuration for '${bucket_name}'` }],
+                    details: { replication: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Replication for '${bucket_name}':\n` +
+                        `Role: ${replication.role}\n` +
+                        `Rules:\n` +
+                        replication.rules.map((r) =>
+                          `• ${r.id || "unnamed"} (${r.status})\n` +
+                          `  Destination: ${r.destination.bucket}\n` +
+                          `  Priority: ${r.priority || "not set"}`
+                        ).join("\n"),
+                    },
+                  ],
+                  details: replication,
+                };
+              }
+
+              case "set_replication": {
+                if (!bucket_name || !params.replication_role || !params.replication_rules) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name, replication_role, and replication_rules are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const replicationResult = await s3Manager.setReplicationConfiguration({
+                  bucketName: bucket_name,
+                  role: params.replication_role,
+                  rules: params.replication_rules.map((r) => ({
+                    id: r.id,
+                    status: (r.status as "Enabled" | "Disabled") || "Enabled",
+                    priority: r.priority,
+                    destination: {
+                      bucket: r.destination_bucket || "",
+                    },
+                  })),
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: replicationResult.message }],
+                  details: replicationResult,
+                };
+              }
+
+              case "delete_replication": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const deleteReplicationResult = await s3Manager.deleteReplicationConfiguration(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: deleteReplicationResult.message }],
+                  details: deleteReplicationResult,
+                };
+              }
+
+              // Notifications
+              case "get_notifications": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const notifications = await s3Manager.getNotificationConfiguration(bucket_name, region);
+                const total =
+                  (notifications.topicConfigurations?.length || 0) +
+                  (notifications.queueConfigurations?.length || 0) +
+                  (notifications.lambdaFunctionConfigurations?.length || 0);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Notifications for '${bucket_name}':\n` +
+                        `  Topic configurations: ${notifications.topicConfigurations?.length || 0}\n` +
+                        `  Queue configurations: ${notifications.queueConfigurations?.length || 0}\n` +
+                        `  Lambda configurations: ${notifications.lambdaFunctionConfigurations?.length || 0}\n` +
+                        `  EventBridge: ${notifications.eventBridgeConfiguration ? "enabled" : "disabled"}`,
+                    },
+                  ],
+                  details: { notifications, total },
+                };
+              }
+
+              case "set_notifications": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+
+                // Build filter if prefix or suffix provided
+                const filter = (params.notification_prefix || params.notification_suffix)
+                  ? {
+                      key: {
+                        filterRules: [
+                          ...(params.notification_prefix ? [{ name: "prefix" as const, value: params.notification_prefix }] : []),
+                          ...(params.notification_suffix ? [{ name: "suffix" as const, value: params.notification_suffix }] : []),
+                        ],
+                      },
+                    }
+                  : undefined;
+
+                const notificationResult = await s3Manager.setNotificationConfiguration({
+                  bucketName: bucket_name,
+                  lambdaFunctionConfigurations: params.notification_lambda_arn
+                    ? [
+                        {
+                          lambdaFunctionArn: params.notification_lambda_arn,
+                          events: (params.notification_events || ["s3:ObjectCreated:*"]) as Array<
+                            "s3:ObjectCreated:*" | "s3:ObjectCreated:Put" | "s3:ObjectCreated:Post" | "s3:ObjectCreated:Copy" | "s3:ObjectCreated:CompleteMultipartUpload" | "s3:ObjectRemoved:*" | "s3:ObjectRemoved:Delete" | "s3:ObjectRemoved:DeleteMarkerCreated"
+                          >,
+                          filter,
+                        },
+                      ]
+                    : undefined,
+                  eventBridgeEnabled: params.eventbridge_enabled,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: notificationResult.message }],
+                  details: notificationResult,
+                };
+              }
+
+              // CloudFront
+              case "list_cloudfront": {
+                const distributions = await s3Manager.listCloudFrontDistributions(region);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Found ${distributions.length} CloudFront distributions:\n` +
+                        distributions.map((d) =>
+                          `• ${d.id}: ${d.domainName} (${d.status}, ${d.enabled ? "enabled" : "disabled"})`
+                        ).join("\n"),
+                    },
+                  ],
+                  details: { distributions },
+                };
+              }
+
+              case "get_cloudfront": {
+                if (!params.distribution_id) {
+                  return {
+                    content: [{ type: "text", text: "distribution_id is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const distribution = await s3Manager.getCloudFrontDistribution(params.distribution_id, region);
+                if (!distribution) {
+                  return {
+                    content: [{ type: "text", text: `Distribution '${params.distribution_id}' not found` }],
+                    details: { distribution: null },
+                  };
+                }
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `CloudFront distribution '${distribution.id}':\n` +
+                        `  Domain: ${distribution.domainName}\n` +
+                        `  Status: ${distribution.status}\n` +
+                        `  Enabled: ${distribution.enabled}\n` +
+                        `  Comment: ${distribution.comment || "none"}\n` +
+                        `  Aliases: ${distribution.aliases?.join(", ") || "none"}`,
+                    },
+                  ],
+                  details: distribution,
+                };
+              }
+
+              case "create_cloudfront": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const cloudfrontResult = await s3Manager.createCloudFrontDistribution({
+                  bucketName: bucket_name,
+                  comment: params.cloudfront_comment,
+                  defaultRootObject: params.default_root_object,
+                  aliases: params.aliases,
+                  acmCertificateArn: params.acm_certificate_arn,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: cloudfrontResult.message }],
+                  details: cloudfrontResult,
+                };
+              }
+
+              // Empty bucket
+              case "empty_bucket": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const emptyResult = await s3Manager.emptyBucket(bucket_name, region);
+                return {
+                  content: [{ type: "text", text: emptyResult.message }],
+                  details: emptyResult,
+                };
+              }
+
+              // Tags
+              case "get_bucket_tags": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const bucketTags = await s3Manager.getBucketTags(bucket_name, region);
+                const tagCount = Object.keys(bucketTags).length;
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: tagCount > 0
+                        ? `Tags for '${bucket_name}':\n` + Object.entries(bucketTags).map(([k, v]) => `  ${k}: ${v}`).join("\n")
+                        : `No tags for '${bucket_name}'`,
+                    },
+                  ],
+                  details: { tags: bucketTags },
+                };
+              }
+
+              case "set_bucket_tags": {
+                if (!bucket_name || !params.tags) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and tags are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const setTagsResult = await s3Manager.setBucketTags(bucket_name, params.tags, region);
+                return {
+                  content: [{ type: "text", text: setTagsResult.message }],
+                  details: setTagsResult,
+                };
+              }
+
+              // Policy
+              case "get_bucket_policy": {
+                if (!bucket_name) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name is required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const bucketPolicy = await s3Manager.getBucketPolicy(bucket_name, region);
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: bucketPolicy
+                        ? `Policy for '${bucket_name}':\n${bucketPolicy}`
+                        : `No policy for '${bucket_name}'`,
+                    },
+                  ],
+                  details: { policy: bucketPolicy },
+                };
+              }
+
+              case "set_bucket_policy": {
+                if (!bucket_name || !params.policy) {
+                  return {
+                    content: [{ type: "text", text: "bucket_name and policy are required" }],
+                    details: { error: "missing_parameter" },
+                  };
+                }
+                const setPolicyResult = await s3Manager.setBucketPolicy(bucket_name, params.policy, region);
+                return {
+                  content: [{ type: "text", text: setPolicyResult.message }],
+                  details: setPolicyResult,
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `S3 error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_s3" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -4135,6 +5458,7 @@ const plugin = {
         ec2Manager = null;
         rdsManager = null;
         lambdaManager = null;
+        s3Manager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -4159,6 +5483,7 @@ export function getAWSManagers() {
     ec2: ec2Manager,
     rds: rdsManager,
     lambda: lambdaManager,
+    s3: s3Manager,
     cli: cliWrapper,
   };
 }
