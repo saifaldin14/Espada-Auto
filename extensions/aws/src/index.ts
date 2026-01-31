@@ -317,6 +317,62 @@ export type {
   PolicyTemplateDefinition,
 } from "./security/index.js";
 
+// =============================================================================
+// Guardrails & Approval Workflows Module
+// =============================================================================
+
+export {
+  GuardrailsManager,
+  createGuardrailsManager,
+  DEFAULT_ACTION_CLASSIFICATIONS,
+} from "./guardrails/index.js";
+
+// Guardrails Types
+export type {
+  GuardrailsOperationResult,
+  Environment,
+  ActionSeverity,
+  ActionType,
+  DayOfWeek,
+  ApprovalStatus,
+  Approver,
+  ApprovalRequest,
+  ApprovalResponse,
+  ImpactAssessment,
+  ResourceDependency,
+  DryRunResult,
+  AffectedResource,
+  PlannedChange,
+  EnvironmentProtection,
+  TimeWindow,
+  RequiredTag,
+  AuditLogEntry,
+  AuditLogQueryOptions,
+  AuditLogQueryResult,
+  AuditLogSummary,
+  RateLimitConfig,
+  RateLimitStatus,
+  SafetyCheckConfig,
+  SafetyCheckResult,
+  SafetyCheck,
+  TicketingSystem,
+  TicketInfo,
+  TicketingIntegrationConfig,
+  ChangeRequest,
+  PlannedAction,
+  GuardrailsManagerConfig,
+  ActionClassification,
+  PreOperationBackup,
+  NotificationChannelConfig,
+  NotificationEvent,
+  NotificationPayload,
+  GuardrailsPolicy,
+  PolicyCondition,
+  PolicyAction,
+  OperationContext,
+  GuardrailsEvaluationResult,
+} from "./guardrails/index.js";
+
 // EC2 Types
 export type {
   EC2Instance,

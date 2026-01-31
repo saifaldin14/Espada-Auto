@@ -70,6 +70,22 @@ import {
   type SecurityManager,
 } from "./src/security/index.js";
 
+import {
+  createGuardrailsManager,
+  type GuardrailsManager,
+} from "./src/guardrails/index.js";
+
+import type {
+  OperationContext,
+  ActionType,
+  Environment,
+  DayOfWeek,
+  EnvironmentProtection,
+  AuditLogEntry,
+  PreOperationBackup,
+  ChangeRequest,
+} from "./src/guardrails/types.js";
+
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
 let contextManager: AWSContextManager | null = null;
@@ -83,6 +99,7 @@ let s3Manager: S3Manager | null = null;
 let iacManager: IaCManager | null = null;
 let costManager: CostManager | null = null;
 let securityManager: SecurityManager | null = null;
+let guardrailsManager: GuardrailsManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -7899,6 +7916,1756 @@ Use this tool to:
       { name: "aws_security" },
     );
 
+    // ========================================
+    // AWS Guardrails & Approval Workflows Tool
+    // ========================================
+    api.registerTool(
+      {
+        name: "aws_guardrails",
+        label: "AWS Guardrails & Approval Workflows",
+        description: `Manage AWS operational safety with approval workflows, guardrails, and audit logging.
+
+CAPABILITIES:
+- Approval workflows for destructive operations
+- Dry-run mode to preview changes before execution
+- Environment protection rules (production safeguards)
+- Rate limiting to prevent runaway automation
+- Comprehensive audit logging for compliance
+- Change request management with approval chains
+- Policy-based guardrails for operation control
+- Impact assessment before risky operations
+- Pre-operation backups for safety
+
+Use this tool to:
+- Require approval before deleting production resources
+- Preview infrastructure changes with dry-run
+- Set up environment-specific protection rules
+- Audit all AWS operations for compliance
+- Manage change requests with multi-approver workflows
+- Configure rate limits on automated operations
+- Get impact assessments before major changes
+- Create safety backups before modifications`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                // Approval workflow actions
+                "create_approval_request",
+                "get_approval_request",
+                "list_approval_requests",
+                "submit_approval_response",
+                "cancel_approval_request",
+                // Dry run actions
+                "perform_dry_run",
+                // Safety check actions
+                "run_safety_checks",
+                "evaluate_guardrails",
+                "assess_impact",
+                // Environment protection actions
+                "get_environment_protection",
+                "set_environment_protection",
+                // Audit logging actions
+                "log_action",
+                "query_audit_logs",
+                "get_audit_log_summary",
+                // Rate limiting actions
+                "check_rate_limit",
+                "get_rate_limit_config",
+                "set_rate_limit_config",
+                // Backup actions
+                "create_pre_operation_backup",
+                "list_pre_operation_backups",
+                // Change request actions
+                "create_change_request",
+                "get_change_request",
+                "update_change_request_status",
+                "list_change_requests",
+                // Policy management actions
+                "add_policy",
+                "get_policy",
+                "list_policies",
+                "update_policy",
+                "remove_policy",
+                // Classification actions
+                "classify_action",
+                // Notification actions
+                "configure_notification_channel",
+                // Configuration actions
+                "get_config",
+                "update_config",
+              ],
+              description: "The guardrails operation to perform",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region (defaults to configured region)",
+            },
+            // Approval request options
+            request_id: {
+              type: "string",
+              description: "Approval request ID",
+            },
+            operation: {
+              type: "object",
+              description: "Operation details for approval request",
+              properties: {
+                type: { type: "string" },
+                resource_type: { type: "string" },
+                resource_id: { type: "string" },
+                parameters: { type: "object" },
+              },
+            },
+            requester: {
+              type: "string",
+              description: "User ID of the requester",
+            },
+            reason: {
+              type: "string",
+              description: "Reason for the operation or approval/rejection",
+            },
+            urgency: {
+              type: "string",
+              enum: ["low", "medium", "high", "critical"],
+              description: "Urgency level of the request",
+            },
+            required_approvers: {
+              type: "number",
+              description: "Number of approvals required",
+            },
+            approval_timeout_hours: {
+              type: "number",
+              description: "Hours before approval request times out",
+            },
+            status_filter: {
+              type: "string",
+              enum: ["pending", "approved", "rejected", "expired", "cancelled"],
+              description: "Filter approvals by status",
+            },
+            // Approval response options
+            approver_id: {
+              type: "string",
+              description: "User ID of the approver",
+            },
+            approved: {
+              type: "boolean",
+              description: "Whether to approve (true) or reject (false)",
+            },
+            // Dry run options
+            action_type: {
+              type: "string",
+              description: "Type of action to dry-run",
+            },
+            target_resource: {
+              type: "object",
+              description: "Target resource for dry-run",
+              properties: {
+                type: { type: "string" },
+                id: { type: "string" },
+                region: { type: "string" },
+                account: { type: "string" },
+              },
+            },
+            operation_parameters: {
+              type: "object",
+              description: "Parameters for the operation",
+            },
+            // Environment protection options
+            environment: {
+              type: "string",
+              enum: ["production", "staging", "development", "testing"],
+              description: "Environment name",
+            },
+            protection_settings: {
+              type: "object",
+              description: "Protection settings for the environment",
+              properties: {
+                approval_required: { type: "boolean" },
+                min_approvers: { type: "number" },
+                allowed_hours: {
+                  type: "object",
+                  properties: {
+                    start: { type: "number" },
+                    end: { type: "number" },
+                    timezone: { type: "string" },
+                    days: { type: "array", items: { type: "number" } },
+                  },
+                },
+                blocked_actions: { type: "array", items: { type: "string" } },
+                require_change_request: { type: "boolean" },
+                require_backup: { type: "boolean" },
+                max_blast_radius: { type: "number" },
+              },
+            },
+            // Audit log options
+            audit_entry: {
+              type: "object",
+              description: "Audit log entry details",
+              properties: {
+                action_type: { type: "string" },
+                resource_type: { type: "string" },
+                resource_id: { type: "string" },
+                user_id: { type: "string" },
+                result: { type: "string", enum: ["success", "failure", "blocked", "dry_run"] },
+                details: { type: "object" },
+              },
+            },
+            query_filter: {
+              type: "object",
+              description: "Filter for audit log queries",
+              properties: {
+                start_time: { type: "string" },
+                end_time: { type: "string" },
+                user_id: { type: "string" },
+                action_type: { type: "string" },
+                resource_type: { type: "string" },
+                result: { type: "string" },
+              },
+            },
+            summary_period: {
+              type: "string",
+              enum: ["hour", "day", "week", "month"],
+              description: "Period for audit summary",
+            },
+            // Rate limit options
+            rate_limit_key: {
+              type: "string",
+              description: "Key for rate limiting (action type or custom key)",
+            },
+            rate_limit_config: {
+              type: "object",
+              description: "Rate limit configuration",
+              properties: {
+                max_requests: { type: "number" },
+                window_seconds: { type: "number" },
+                burst_limit: { type: "number" },
+                cooldown_seconds: { type: "number" },
+              },
+            },
+            // Backup options
+            backup_type: {
+              type: "string",
+              enum: ["full", "incremental", "config_only"],
+              description: "Type of backup to create",
+            },
+            // Change request options
+            change_request_id: {
+              type: "string",
+              description: "Change request ID",
+            },
+            change_request: {
+              type: "object",
+              description: "Change request details",
+              properties: {
+                title: { type: "string" },
+                description: { type: "string" },
+                requester: { type: "string" },
+                affected_resources: { type: "array", items: { type: "object" } },
+                planned_changes: { type: "array", items: { type: "object" } },
+                scheduled_time: { type: "string" },
+                estimated_duration_minutes: { type: "number" },
+                rollback_plan: { type: "string" },
+              },
+            },
+            change_status: {
+              type: "string",
+              enum: ["draft", "pending_approval", "approved", "rejected", "in_progress", "completed", "rolled_back", "cancelled"],
+              description: "Status for change request",
+            },
+            // Policy options
+            policy_id: {
+              type: "string",
+              description: "Policy ID",
+            },
+            policy: {
+              type: "object",
+              description: "Guardrails policy definition",
+              properties: {
+                name: { type: "string" },
+                description: { type: "string" },
+                enabled: { type: "boolean" },
+                priority: { type: "number" },
+                conditions: { type: "array", items: { type: "object" } },
+                actions: { type: "array", items: { type: "object" } },
+              },
+            },
+            // Notification options
+            channel_type: {
+              type: "string",
+              enum: ["sns", "slack", "email", "webhook"],
+              description: "Notification channel type",
+            },
+            channel_config: {
+              type: "object",
+              description: "Notification channel configuration",
+              properties: {
+                topic_arn: { type: "string" },
+                webhook_url: { type: "string" },
+                email_addresses: { type: "array", items: { type: "string" } },
+              },
+            },
+            // Configuration options
+            config_key: {
+              type: "string",
+              description: "Configuration key to get or update",
+            },
+            config_value: {
+              type: "object",
+              description: "Configuration value to set",
+            },
+            // Pagination options
+            max_results: {
+              type: "number",
+              description: "Maximum number of results to return",
+            },
+            next_token: {
+              type: "string",
+              description: "Token for pagination",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: Record<string, unknown>) {
+          const action = params.action as string;
+          const region = (params.region as string) || "us-east-1";
+
+          // Initialize guardrails manager if needed
+          if (!guardrailsManager) {
+            guardrailsManager = createGuardrailsManager({
+              defaultRegion: region,
+            } as any);
+          }
+
+          try {
+            switch (action) {
+              // ==================
+              // Approval Workflows
+              // ==================
+              case "create_approval_request": {
+                const operation = params.operation as {
+                  type: string;
+                  resource_type?: string;
+                  resource_id?: string;
+                  parameters?: Record<string, unknown>;
+                };
+                if (!operation?.type) {
+                  return {
+                    content: [{ type: "text", text: "Error: operation.type is required" }],
+                    details: { error: "missing_operation_type" },
+                  };
+                }
+                const requester = params.requester as string;
+                if (!requester) {
+                  return {
+                    content: [{ type: "text", text: "Error: requester is required" }],
+                    details: { error: "missing_requester" },
+                  };
+                }
+
+                const context: OperationContext = {
+                  userId: requester,
+                  userName: requester,
+                  action: operation.type as ActionType,
+                  service: operation.resource_type?.split(':')[0] || 'unknown',
+                  resourceIds: operation.resource_id ? [operation.resource_id] : [],
+                  resourceType: operation.resource_type || 'unknown',
+                  region,
+                  requestParams: operation.parameters,
+                };
+                const result = await guardrailsManager.createApprovalRequest(context, params.reason as string);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create approval request: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const req = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Approval request created successfully\n\n` +
+                      `**Request ID:** ${req.id}\n` +
+                      `**Operation:** ${req.operation?.type ?? 'N/A'}\n` +
+                      `**Resource:** ${req.operation?.resourceType || "N/A"} - ${req.operation?.resourceId || "N/A"}\n` +
+                      `**Status:** ${req.status}\n` +
+                      `**Required Approvers:** ${req.requiredApprovers}\n` +
+                      `**Expires:** ${req.expiresAt.toISOString()}\n\n` +
+                      `The request is now pending approval.`,
+                  }],
+                  details: { approval_request: req },
+                };
+              }
+
+              case "get_approval_request": {
+                const requestId = params.request_id as string;
+                if (!requestId) {
+                  return {
+                    content: [{ type: "text", text: "Error: request_id is required" }],
+                    details: { error: "missing_request_id" },
+                  };
+                }
+
+                const result = await guardrailsManager.getApprovalRequest(requestId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get approval request: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const req = result.data!;
+                const approversText = req.responses.length > 0
+                  ? req.responses.map(r => `  • ${r.approverId}: ${r.approved ? "✅ Approved" : "❌ Rejected"} (${r.respondedAt?.toISOString()})`).join("\n")
+                  : "  (none yet)";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `**Approval Request: ${req.id}**\n\n` +
+                      `**Operation:** ${req.operation?.type}\n` +
+                      `**Resource:** ${req.operation?.resourceType || "N/A"} - ${req.operation?.resourceId || "N/A"}\n` +
+                      `**Requester:** ${req.requester}\n` +
+                      `**Reason:** ${req.reason || "Not specified"}\n` +
+                      `**Status:** ${req.status}\n` +
+                      `**Urgency:** ${req.urgency}\n` +
+                      `**Required Approvers:** ${req.requiredApprovers}\n` +
+                      `**Created:** ${req.createdAt.toISOString()}\n` +
+                      `**Expires:** ${req.expiresAt.toISOString()}\n\n` +
+                      `**Responses:**\n${approversText}`,
+                  }],
+                  details: { approval_request: req },
+                };
+              }
+
+              case "list_approval_requests": {
+                const statusFilter = params.status_filter as "pending" | "approved" | "rejected" | "expired" | "cancelled" | undefined;
+                const result = await guardrailsManager.listApprovalRequests({
+                  status: statusFilter,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list approval requests: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const requests = result.data!;
+                if (requests.length === 0) {
+                  return {
+                    content: [{ type: "text", text: `No approval requests found${statusFilter ? ` with status: ${statusFilter}` : ""}.` }],
+                    details: { requests: [] },
+                  };
+                }
+
+                const statusEmoji: Record<string, string> = {
+                  pending: "⏳",
+                  approved: "✅",
+                  rejected: "❌",
+                  expired: "⌛",
+                  cancelled: "🚫",
+                };
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Found ${requests.length} approval request(s):\n\n` +
+                      requests.map(r =>
+                        `${statusEmoji[r.status] || "•"} **${r.id}**\n` +
+                        `  Operation: ${r.operation?.type ?? "N/A"}\n` +
+                        `  Requester: ${r.requester}\n` +
+                        `  Status: ${r.status}\n` +
+                        `  Created: ${r.createdAt.toISOString()}`
+                      ).join("\n\n"),
+                  }],
+                  details: { requests },
+                };
+              }
+
+              case "submit_approval_response": {
+                const requestId = params.request_id as string;
+                const approverId = params.approver_id as string;
+                const approved = params.approved as boolean;
+
+                if (!requestId || !approverId || approved === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: request_id, approver_id, and approved are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await guardrailsManager.submitApprovalResponse(requestId, {
+                  approverId,
+                  approverName: approverId,
+                  decision: approved ? 'approved' : 'rejected',
+                  reason: params.reason as string,
+                  approved,
+                  respondedAt: new Date(),
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to submit approval response: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const req = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${approved ? "✅" : "❌"} Approval response submitted\n\n` +
+                      `**Request ID:** ${req.id}\n` +
+                      `**Your Response:** ${approved ? "Approved" : "Rejected"}\n` +
+                      `**Current Status:** ${req.status}\n` +
+                      `**Approvals Received:** ${req.responses.filter(r => r.approved).length}/${req.requiredApprovers}`,
+                  }],
+                  details: { approval_request: req },
+                };
+              }
+
+              case "cancel_approval_request": {
+                const requestId = params.request_id as string;
+                if (!requestId) {
+                  return {
+                    content: [{ type: "text", text: "Error: request_id is required" }],
+                    details: { error: "missing_request_id" },
+                  };
+                }
+
+                const result = await guardrailsManager.cancelApprovalRequest(requestId, params.reason as string);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to cancel approval request: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🚫 Approval request ${requestId} has been cancelled.`,
+                  }],
+                  details: { cancelled: true, request_id: requestId },
+                };
+              }
+
+              // ========
+              // Dry Run
+              // ========
+              case "perform_dry_run": {
+                const actionType = params.action_type as string;
+                const targetResource = params.target_resource as {
+                  type: string;
+                  id: string;
+                  region?: string;
+                  account?: string;
+                };
+
+                if (!actionType || !targetResource) {
+                  return {
+                    content: [{ type: "text", text: "Error: action_type and target_resource are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const dryRunContext: OperationContext = {
+                  userId: 'system',
+                  userName: 'System',
+                  action: actionType as ActionType,
+                  service: targetResource.type.split(':')[0] || 'unknown',
+                  resourceIds: [targetResource.id],
+                  resourceType: targetResource.type,
+                  region: targetResource.region || region,
+                  accountId: targetResource.account,
+                  requestParams: params.operation_parameters as Record<string, unknown>,
+                  isDryRun: true,
+                };
+                const result = await guardrailsManager.performDryRun(dryRunContext);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to perform dry run: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const dryRun = result.data!;
+                const changesText = dryRun.plannedChanges.length > 0
+                  ? dryRun.plannedChanges.map((c: any) =>
+                      `• **${c.changeType}** on ${c.resourceType || c.resourceId} (${c.resourceId})\n` +
+                      `  ${c.description || 'No description'}\n` +
+                      `  Reversible: ${c.isReversible ? "Yes" : "No"}`
+                    ).join("\n\n")
+                  : "No changes planned.";
+
+                const affectedText = dryRun.affectedResources.length > 0
+                  ? dryRun.affectedResources.map((r: any) =>
+                      `• ${r.resourceType || r.type}: ${r.resourceId || r.id}`
+                    ).join("\n")
+                  : "No resources affected.";
+
+                const validationText = (dryRun as any).validationErrors?.length > 0
+                  ? `\n\n⚠️ **Validation Errors:**\n${(dryRun as any).validationErrors.map((e: string) => `• ${e}`).join("\n")}`
+                  : "";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔍 **Dry Run Results**\n\n` +
+                      `**Action:** ${actionType}\n` +
+                      `**Would Succeed:** ${dryRun.wouldSucceed ? "Yes ✅" : "No ❌"}\n` +
+                      `**Estimated Duration:** ${dryRun.estimatedDuration}ms\n\n` +
+                      `**Planned Changes:**\n${changesText}\n\n` +
+                      `**Affected Resources (${dryRun.affectedResources.length}):**\n${affectedText}` +
+                      validationText,
+                  }],
+                  details: { dry_run_result: dryRun },
+                };
+              }
+
+              // =============
+              // Safety Checks
+              // =============
+              case "run_safety_checks": {
+                const actionType = params.action_type as string;
+                const targetResource = params.target_resource as {
+                  type: string;
+                  id: string;
+                  region?: string;
+                  account?: string;
+                };
+
+                if (!actionType || !targetResource) {
+                  return {
+                    content: [{ type: "text", text: "Error: action_type and target_resource are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const safetyContext: OperationContext = {
+                  userId: 'system',
+                  userName: 'System',
+                  action: actionType as ActionType,
+                  service: targetResource.type.split(':')[0] || 'unknown',
+                  resourceIds: [targetResource.id],
+                  resourceType: targetResource.type,
+                  region: targetResource.region || region,
+                  accountId: targetResource.account,
+                  requestParams: params.operation_parameters as Record<string, unknown>,
+                };
+                const result = await guardrailsManager.runSafetyChecks(safetyContext);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to run safety checks: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const safetyResult = result.data!;
+                const statusEmoji: Record<string, string> = {
+                  pass: "✅",
+                  fail: "❌",
+                  warn: "⚠️",
+                  skip: "⏭️",
+                };
+
+                const checksText = safetyResult.checks.map((c: any) =>
+                  `${statusEmoji[c.passed ? 'pass' : 'fail']} **${c.name}**\n` +
+                  `  ${c.message}\n` +
+                  (c.description ? `  💡 ${c.description}` : "")
+                ).join("\n\n");
+
+                const passed = safetyResult.checks.filter((c: any) => c.passed).length;
+                const failed = safetyResult.checks.filter((c: any) => !c.passed && c.isBlocking).length;
+                const warned = safetyResult.checks.filter((c: any) => !c.passed && !c.isBlocking).length;
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🛡️ **Safety Check Results**\n\n` +
+                      `**Summary:** ${passed} passed, ${failed} failed, ${warned} warnings\n\n` +
+                      checksText,
+                  }],
+                  details: { safety_checks: safetyResult },
+                };
+              }
+
+              case "evaluate_guardrails": {
+                const operation = params.operation as {
+                  type: string;
+                  resource_type?: string;
+                  resource_id?: string;
+                  parameters?: Record<string, unknown>;
+                };
+                const environment = params.environment as string;
+
+                if (!operation?.type) {
+                  return {
+                    content: [{ type: "text", text: "Error: operation.type is required" }],
+                    details: { error: "missing_operation_type" },
+                  };
+                }
+
+                const evalContext: OperationContext = {
+                  userId: (params.requester as string) || 'system',
+                  userName: (params.requester as string) || 'System',
+                  action: operation.type as ActionType,
+                  service: operation.resource_type?.split(':')[0] || 'unknown',
+                  resourceIds: operation.resource_id ? [operation.resource_id] : [],
+                  resourceType: operation.resource_type || 'unknown',
+                  region,
+                  environment: (environment as Environment) || 'development',
+                  requestParams: operation.parameters,
+                };
+                const result = await guardrailsManager.evaluateGuardrails(evalContext);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to evaluate guardrails: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const evaluation = result.data!;
+                const requirementsText = [];
+
+                if (evaluation.requiresApproval) {
+                  requirementsText.push(`⚠️ **Requires Approval** (${evaluation.requiredApprovers} approver(s))`);
+                }
+                if (evaluation.blockedByPolicy) {
+                  requirementsText.push(`🚫 **Blocked by Policy:** ${evaluation.blockingPolicies?.join(", ")}`);
+                }
+                if (evaluation.requiresChangeRequest) {
+                  requirementsText.push(`📋 **Requires Change Request**`);
+                }
+                if (evaluation.requiresBackup) {
+                  requirementsText.push(`💾 **Requires Pre-operation Backup**`);
+                }
+                if (!evaluation.withinAllowedHours) {
+                  requirementsText.push(`🕐 **Outside Allowed Hours**`);
+                }
+                if (evaluation.rateLimited) {
+                  requirementsText.push(`⏱️ **Rate Limited**`);
+                }
+
+                const warningsText = evaluation.warnings.length > 0
+                  ? `\n\n**Warnings:**\n${evaluation.warnings.map(w => `• ${w}`).join("\n")}`
+                  : "";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🛡️ **Guardrails Evaluation**\n\n` +
+                      `**Operation:** ${operation.type}\n` +
+                      `**Environment:** ${environment || "development"}\n` +
+                      `**Allowed:** ${evaluation.allowed ? "Yes ✅" : "No ❌"}\n` +
+                      `**Risk Level:** ${evaluation.riskLevel}\n\n` +
+                      (requirementsText.length > 0 ? `**Requirements:**\n${requirementsText.join("\n")}\n` : "No special requirements.") +
+                      warningsText,
+                  }],
+                  details: { evaluation },
+                };
+              }
+
+              case "assess_impact": {
+                const operation = params.operation as {
+                  type: string;
+                  resource_type?: string;
+                  resource_id?: string;
+                  parameters?: Record<string, unknown>;
+                };
+
+                if (!operation?.type) {
+                  return {
+                    content: [{ type: "text", text: "Error: operation.type is required" }],
+                    details: { error: "missing_operation_type" },
+                  };
+                }
+
+                const impactContext: OperationContext = {
+                  userId: 'system',
+                  userName: 'System',
+                  action: operation.type as ActionType,
+                  service: operation.resource_type?.split(':')[0] || 'unknown',
+                  resourceIds: operation.resource_id ? [operation.resource_id] : [],
+                  resourceType: operation.resource_type || 'unknown',
+                  region,
+                  requestParams: operation.parameters,
+                };
+                const result = await guardrailsManager.assessImpact(impactContext);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to assess impact: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const impact = result.data!;
+                const affectedText = (impact.affectedResources?.length ?? 0) > 0
+                  ? impact.affectedResources?.map((r: any) =>
+                      `• ${r.resourceType || r.type}: ${r.resourceId || r.id}`
+                    ).join("\n")
+                  : "No resources directly affected.";
+
+                const dependenciesText = (impact.downstreamDependencies?.length ?? 0) > 0
+                  ? `\n\n**Downstream Dependencies:**\n${impact.downstreamDependencies?.map((d: any) => `• ${d}`).join("\n")}`
+                  : "";
+
+                const mitigationsText = (impact.mitigationSuggestions?.length ?? 0) > 0
+                  ? `\n\n**Mitigation Suggestions:**\n${impact.mitigationSuggestions!.map((m: any) => `• ${m}`).join("\n")}`
+                  : "";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📊 **Impact Assessment**\n\n` +
+                      `**Blast Radius:** ${impact.blastRadius}\n` +
+                      `**Severity:** ${impact.severity}\n` +
+                      `**Reversible:** ${impact.reversible ? "Yes" : "No"}\n` +
+                      `**Estimated Recovery Time:** ${impact.estimatedRecoveryTime}\n\n` +
+                      `**Affected Resources:**\n${affectedText}` +
+                      dependenciesText +
+                      mitigationsText,
+                  }],
+                  details: { impact },
+                };
+              }
+
+              // ======================
+              // Environment Protection
+              // ======================
+              case "get_environment_protection": {
+                const environment = params.environment as Environment;
+                if (!environment) {
+                  return {
+                    content: [{ type: "text", text: "Error: environment is required" }],
+                    details: { error: "missing_environment" },
+                  };
+                }
+
+                const prot = guardrailsManager.getEnvironmentProtection(environment);
+                if (!prot) {
+                  return {
+                    content: [{ type: "text", text: `No protection configured for environment: ${environment}` }],
+                    details: { error: "no_protection" },
+                  };
+                }
+
+                const blockedText = prot.blockedActions.length > 0
+                  ? prot.blockedActions.join(", ")
+                  : "None";
+
+                const hoursText = prot.allowedTimeWindows?.[0]
+                  ? `${prot.allowedTimeWindows[0].startHour}:00 - ${prot.allowedTimeWindows[0].endHour}:00 (${prot.allowedTimeWindows[0].timezone})`
+                  : "Any time";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔒 **${environment.toUpperCase()} Environment Protection**\n\n` +
+                      `**Protected:** ${prot.isProtected ? "Yes" : "No"}\n` +
+                      `**Protection Level:** ${prot.protectionLevel}\n` +
+                      `**Approval Required Actions:** ${prot.approvalRequiredActions.join(", ") || "None"}\n` +
+                      `**Blocked Actions:** ${blockedText}\n` +
+                      `**Allowed Hours:** ${hoursText}\n` +
+                      `**Min Approvals:** ${prot.minApprovals || 0}`,
+                  }],
+                  details: { protection: prot },
+                };
+              }
+
+              case "set_environment_protection": {
+                const environment = params.environment as Environment;
+                const settings = params.protection_settings as {
+                  approval_required?: boolean;
+                  min_approvers?: number;
+                  allowed_hours?: {
+                    start: number;
+                    end: number;
+                    timezone: string;
+                    days?: number[];
+                  };
+                  blocked_actions?: string[];
+                  require_change_request?: boolean;
+                  require_backup?: boolean;
+                  max_blast_radius?: number;
+                };
+
+                if (!environment || !settings) {
+                  return {
+                    content: [{ type: "text", text: "Error: environment and protection_settings are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const protection: EnvironmentProtection = {
+                  environment,
+                  isProtected: settings.approval_required !== false,
+                  protectionLevel: settings.approval_required ? 'full' : 'partial',
+                  approvalRequiredActions: settings.blocked_actions as ActionType[] || [],
+                  blockedActions: settings.blocked_actions as ActionType[] || [],
+                  allowedTimeWindows: settings.allowed_hours ? [{
+                    days: (settings.allowed_hours.days || [1, 2, 3, 4, 5]).map(d => ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d] as DayOfWeek),
+                    startHour: settings.allowed_hours.start,
+                    endHour: settings.allowed_hours.end,
+                    timezone: settings.allowed_hours.timezone,
+                  }] : undefined,
+                  minApprovals: settings.min_approvers,
+                };
+
+                guardrailsManager.setEnvironmentProtection(protection);
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Environment protection for **${environment}** has been updated.`,
+                  }],
+                  details: { protection },
+                };
+              }
+
+              // =============
+              // Audit Logging
+              // =============
+              case "log_action": {
+                const entry = params.audit_entry as {
+                  action_type: string;
+                  resource_type?: string;
+                  resource_id?: string;
+                  user_id?: string;
+                  result: "success" | "failure" | "blocked" | "dry_run";
+                  details?: Record<string, unknown>;
+                };
+
+                if (!entry?.action_type || !entry?.result) {
+                  return {
+                    content: [{ type: "text", text: "Error: audit_entry with action_type and result is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await guardrailsManager.logAction({
+                  userId: entry.user_id || "system",
+                  userName: entry.user_id || "System",
+                  action: entry.action_type as ActionType,
+                  service: entry.resource_type?.split(':')[0] || 'unknown',
+                  resourceIds: entry.resource_id ? [entry.resource_id] : [],
+                  environment: 'unknown' as Environment,
+                  region: region,
+                  outcome: entry.result === 'dry_run' ? 'success' : entry.result as 'success' | 'failure' | 'blocked' | 'pending_approval',
+                  dryRun: entry.result === 'dry_run',
+                  context: entry.details,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to log action: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📝 Action logged successfully\n\n` +
+                      `**Log ID:** ${result.data!.id}\n` +
+                      `**Action:** ${entry.action_type}\n` +
+                      `**Result:** ${entry.result}`,
+                  }],
+                  details: { audit_log: result.data },
+                };
+              }
+
+              case "query_audit_logs": {
+                const filter = params.query_filter as {
+                  start_time?: string;
+                  end_time?: string;
+                  user_id?: string;
+                  action_type?: string;
+                  resource_type?: string;
+                  result?: string;
+                };
+
+                const result = await guardrailsManager.queryAuditLogs({
+                  startTime: filter?.start_time ? new Date(filter.start_time) : undefined,
+                  endTime: filter?.end_time ? new Date(filter.end_time) : undefined,
+                  userId: filter?.user_id,
+                  actions: filter?.action_type ? [filter.action_type as ActionType] : undefined,
+                  services: filter?.resource_type ? [filter.resource_type.split(':')[0]] : undefined,
+                  outcomes: filter?.result ? [filter.result as 'success' | 'failure' | 'blocked' | 'pending_approval'] : undefined,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to query audit logs: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const logsResult = result.data!;
+                const logs = logsResult.entries || [];
+                if (logs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No audit logs found matching the criteria." }],
+                    details: { logs: [] },
+                  };
+                }
+
+                const resultEmoji: Record<string, string> = {
+                  success: "✅",
+                  failure: "❌",
+                  blocked: "🚫",
+                  pending_approval: "⏳",
+                };
+
+                const logsText = logs.slice(0, 20).map((log: AuditLogEntry) =>
+                  `${resultEmoji[log.outcome] || "•"} **${log.action}** by ${log.userId}\n` +
+                  `  Time: ${log.timestamp.toISOString()}\n` +
+                  `  Resource: ${log.service || "N/A"} - ${log.resourceIds?.join(', ') || "N/A"}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Audit Logs** (${logs.length} entries)\n\n${logsText}` +
+                      (logs.length > 20 ? `\n\n... and ${logs.length - 20} more entries` : ""),
+                  }],
+                  details: { logs },
+                };
+              }
+
+              case "get_audit_log_summary": {
+                const period = (params.summary_period as "hour" | "day" | "week" | "month") || "day";
+                const periodMs: Record<string, number> = {
+                  hour: 60 * 60 * 1000,
+                  day: 24 * 60 * 60 * 1000,
+                  week: 7 * 24 * 60 * 60 * 1000,
+                  month: 30 * 24 * 60 * 60 * 1000,
+                };
+                const endTime = new Date();
+                const startTime = new Date(endTime.getTime() - periodMs[period]);
+                const result = await guardrailsManager.getAuditLogSummary(startTime, endTime);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get audit log summary: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const summary = result.data!;
+                const actionsText = Object.entries(summary.byAction)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([action, count]) => `• ${action}: ${count}`)
+                  .join("\n");
+
+                const usersText = Object.entries(summary.byUser)
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([user, count]) => `• ${user}: ${count}`)
+                  .join("\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📊 **Audit Log Summary** (past ${period})\n\n` +
+                      `**Total Operations:** ${summary.totalOperations}\n` +
+                      `**Successful:** ${summary.successfulOperations}\n` +
+                      `**Failed:** ${summary.failedOperations}\n` +
+                      `**Blocked:** ${summary.blockedOperations}\n\n` +
+                      `**Top Actions:**\n${actionsText || "None"}\n\n` +
+                      `**Top Users:**\n${usersText || "None"}`,
+                  }],
+                  details: { summary },
+                };
+              }
+
+              // ============
+              // Rate Limiting
+              // ============
+              case "check_rate_limit": {
+                const key = params.rate_limit_key as string;
+                if (!key) {
+                  return {
+                    content: [{ type: "text", text: "Error: rate_limit_key is required" }],
+                    details: { error: "missing_rate_limit_key" },
+                  };
+                }
+
+                const status = guardrailsManager.checkRateLimit(key, 'read' as ActionType);
+                return {
+                  content: [{
+                    type: "text",
+                    text: `⏱️ **Rate Limit Status: ${key}**\n\n` +
+                      `**Rate Limited:** ${status.isRateLimited ? "Yes ❌" : "No ✅"}\n` +
+                      `**Operations This Minute:** ${status.operationsThisMinute}\n` +
+                      `**Operations This Hour:** ${status.operationsThisHour}\n` +
+                      `**Remaining This Minute:** ${status.remainingThisMinute}\n` +
+                      `**Remaining This Hour:** ${status.remainingThisHour}` +
+                      (status.rateLimitReason ? `\n**Reason:** ${status.rateLimitReason}` : ""),
+                  }],
+                  details: { rate_limit_status: status },
+                };
+              }
+
+              case "get_rate_limit_config": {
+                const config = guardrailsManager.getRateLimitConfig();
+                return {
+                  content: [{
+                    type: "text",
+                    text: `⚙️ **Rate Limit Configuration**\n\n` +
+                      `**Max Resources Per Operation:** ${config.maxResourcesPerOperation}\n` +
+                      `**Max Operations Per Minute:** ${config.maxOperationsPerMinute}\n` +
+                      `**Max Operations Per Hour:** ${config.maxOperationsPerHour}\n` +
+                      `**Max Destructive Operations Per Day:** ${config.maxDestructiveOperationsPerDay}\n` +
+                      `**Confirmation Threshold:** ${config.confirmationThreshold}`,
+                  }],
+                  details: { config },
+                };
+              }
+
+              case "set_rate_limit_config": {
+                const config = params.rate_limit_config as {
+                  max_requests?: number;
+                  max_operations_per_minute?: number;
+                  max_operations_per_hour?: number;
+                  max_destructive_operations_per_day?: number;
+                };
+
+                if (!config) {
+                  return {
+                    content: [{ type: "text", text: "Error: rate_limit_config is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                guardrailsManager.setRateLimitConfig({
+                  maxResourcesPerOperation: config.max_requests,
+                  maxOperationsPerMinute: config.max_operations_per_minute,
+                  maxOperationsPerHour: config.max_operations_per_hour,
+                  maxDestructiveOperationsPerDay: config.max_destructive_operations_per_day,
+                });
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Rate limit configuration has been updated.`,
+                  }],
+                  details: { config },
+                };
+              }
+
+              // =====================
+              // Pre-operation Backups
+              // =====================
+              case "create_pre_operation_backup": {
+                const targetResource = params.target_resource as {
+                  type: string;
+                  id: string;
+                  region?: string;
+                };
+                const operation = params.operation as { type: string };
+
+                if (!targetResource || !operation?.type) {
+                  return {
+                    content: [{ type: "text", text: "Error: target_resource and operation.type are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await guardrailsManager.createPreOperationBackup(
+                  targetResource.id,
+                  targetResource.type,
+                  operation.type
+                );
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create pre-operation backup: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const backup = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `💾 **Pre-operation Backup Created**\n\n` +
+                      `**Backup ID:** ${backup.id}\n` +
+                      `**Resource:** ${backup.resourceType} - ${backup.resourceId}\n` +
+                      `**Type:** ${backup.backupType}\n` +
+                      `**Created:** ${backup.createdAt.toISOString()}` +
+                      (backup.expiresAt ? `\n**Expires:** ${backup.expiresAt.toISOString()}` : ""),
+                  }],
+                  details: { backup },
+                };
+              }
+
+              case "list_pre_operation_backups": {
+                const targetResource = params.target_resource as {
+                  type?: string;
+                  id?: string;
+                };
+
+                const result = await guardrailsManager.listPreOperationBackups(targetResource?.id);
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list pre-operation backups: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const backups = result.data!;
+                if (backups.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No pre-operation backups found." }],
+                    details: { backups: [] },
+                  };
+                }
+
+                const backupsText = backups.map((b: PreOperationBackup) =>
+                  `• **${b.id}**\n` +
+                  `  Resource: ${b.resourceType} - ${b.resourceId}\n` +
+                  `  Operation: ${b.triggeringOperation}\n` +
+                  `  Type: ${b.backupType}\n` +
+                  `  Created: ${b.createdAt.toISOString()}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `💾 **Pre-operation Backups** (${backups.length})\n\n${backupsText}`,
+                  }],
+                  details: { backups },
+                };
+              }
+
+              // ===============
+              // Change Requests
+              // ===============
+              case "create_change_request": {
+                const cr = params.change_request as {
+                  title: string;
+                  description?: string;
+                  requester: string;
+                  affected_resources?: Array<{
+                    type: string;
+                    id: string;
+                    region?: string;
+                  }>;
+                  planned_changes?: Array<{
+                    change_type: string;
+                    description: string;
+                  }>;
+                  scheduled_time?: string;
+                  estimated_duration_minutes?: number;
+                  rollback_plan?: string;
+                };
+
+                if (!cr?.title || !cr?.requester) {
+                  return {
+                    content: [{ type: "text", text: "Error: change_request with title and requester is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await guardrailsManager.createChangeRequest({
+                  title: cr.title,
+                  description: cr.description || '',
+                  changeType: 'normal',
+                  priority: 'medium',
+                  requestedBy: cr.requester,
+                  plannedActions: cr.planned_changes?.map((c, i) => ({
+                    order: i + 1,
+                    description: c.description,
+                    service: 'aws',
+                    actionType: c.change_type as ActionType,
+                    targetResources: cr.affected_resources?.map(r => r.id) || [],
+                    expectedOutcome: c.description,
+                  })) || [],
+                  impactAssessment: {
+                    severity: 'medium',
+                    affectedResourceCount: cr.affected_resources?.length || 0,
+                    affectedResourceTypes: cr.affected_resources?.map(r => r.type) || [],
+                    rollbackPossible: true,
+                    riskFactors: [],
+                    recommendations: [],
+                    affectedResources: [],
+                    downstreamDependencies: [],
+                    mitigationSuggestions: [],
+                    blastRadius: 'low',
+                    reversible: true,
+                    estimatedRecoveryTime: 'N/A',
+                  },
+                  rollbackPlan: cr.rollback_plan,
+                  scheduledStart: cr.scheduled_time ? new Date(cr.scheduled_time) : undefined,
+                  requester: undefined,
+                  scheduledTime: undefined,
+                  plannedChanges: undefined,
+                  affectedResources: undefined,
+                  estimatedDurationMinutes: ""
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create change request: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const request = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Change Request Created**\n\n` +
+                      `**ID:** ${request.id}\n` +
+                      `**Title:** ${request.title}\n` +
+                      `**Status:** ${request.status}\n` +
+                      `**Requested By:** ${request.requestedBy}\n` +
+                      `**Created:** ${request.createdAt.toISOString()}` +
+                      (request.scheduledStart ? `\n**Scheduled:** ${request.scheduledStart.toISOString()}` : ""),
+                  }],
+                  details: { change_request: request },
+                };
+              }
+
+              case "get_change_request": {
+                const id = params.change_request_id as string;
+                if (!id) {
+                  return {
+                    content: [{ type: "text", text: "Error: change_request_id is required" }],
+                    details: { error: "missing_change_request_id" },
+                  };
+                }
+
+                const result = await guardrailsManager.getChangeRequest(id);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get change request: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const cr = result.data!;
+                const changesText = cr.plannedActions?.length > 0
+                  ? cr.plannedActions.map((c: any) => `• ${c.actionType}: ${c.description}`).join("\n")
+                  : "None specified";
+
+                const resourcesText = cr.plannedActions?.flatMap((a: any) => a.targetResources || []).length > 0
+                  ? cr.plannedActions.flatMap((a: any) => a.targetResources || []).map((r: string) => `• ${r}`).join("\n")
+                  : "None specified";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Change Request: ${cr.id}**\n\n` +
+                      `**Title:** ${cr.title}\n` +
+                      `**Description:** ${cr.description || "N/A"}\n` +
+                      `**Status:** ${cr.status}\n` +
+                      `**Requested By:** ${cr.requestedBy}\n` +
+                      `**Created:** ${cr.createdAt.toISOString()}\n` +
+                      (cr.scheduledStart ? `**Scheduled:** ${cr.scheduledStart.toISOString()}\n` : "") +
+                      `\n**Planned Actions:**\n${changesText}\n\n` +
+                      `**Target Resources:**\n${resourcesText}\n\n` +
+                      `**Rollback Plan:** ${cr.rollbackPlan || "Not specified"}`,
+                  }],
+                  details: { change_request: cr },
+                };
+              }
+
+              case "update_change_request_status": {
+                const id = params.change_request_id as string;
+                const status = params.change_status as string;
+
+                if (!id || !status) {
+                  return {
+                    content: [{ type: "text", text: "Error: change_request_id and change_status are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await guardrailsManager.updateChangeRequestStatus(
+                  id,
+                  status as ChangeRequest['status'],
+                  params.reason as string
+                );
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to update change request status: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Change request **${id}** status updated to **${status}**.`,
+                  }],
+                  details: { change_request: result.data },
+                };
+              }
+
+              case "list_change_requests": {
+                const statusFilter = params.change_status as ChangeRequest['status'] | undefined;
+                const result = await guardrailsManager.listChangeRequests({
+                  status: statusFilter,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list change requests: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const requests = result.data!;
+                if (requests.length === 0) {
+                  return {
+                    content: [{ type: "text", text: `No change requests found${statusFilter ? ` with status: ${statusFilter}` : ""}.` }],
+                    details: { change_requests: [] },
+                  };
+                }
+
+                const statusEmoji: Record<string, string> = {
+                  draft: "📝",
+                  pending_review: "⏳",
+                  approved: "✅",
+                  in_progress: "🔄",
+                  completed: "✓",
+                  cancelled: "🚫",
+                  failed: "❌",
+                };
+
+                const requestsText = requests.map((cr: ChangeRequest) =>
+                  `${statusEmoji[cr.status] || "•"} **${cr.id}**: ${cr.title}\n` +
+                  `  Status: ${cr.status} | Requested By: ${cr.requestedBy}\n` +
+                  `  Created: ${cr.createdAt.toISOString()}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Change Requests** (${requests.length})\n\n${requestsText}`,
+                  }],
+                  details: { change_requests: requests },
+                };
+              }
+
+              // =================
+              // Policy Management
+              // =================
+              case "add_policy": {
+                const policy = params.policy as {
+                  name: string;
+                  description?: string;
+                  enabled?: boolean;
+                  priority?: number;
+                  conditions?: Array<{
+                    field: string;
+                    operator: string;
+                    value: unknown;
+                  }>;
+                  actions?: Array<{
+                    type: string;
+                    parameters?: Record<string, unknown>;
+                  }>;
+                };
+
+                if (!policy?.name) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy with name is required" }],
+                    details: { error: "missing_policy_name" },
+                  };
+                }
+
+                const newPolicy = guardrailsManager.addPolicy({
+                  name: policy.name,
+                  description: policy.description || '',
+                  enabled: policy.enabled !== false,
+                  priority: policy.priority || 100,
+                  conditions: (policy.conditions || []) as any,
+                  actions: (policy.actions || []) as any,
+                  success: undefined,
+                  error: undefined,
+                  data: undefined
+                });
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policy.name}** has been added.\n\n` +
+                      `**ID:** ${newPolicy.id}\n` +
+                      `**Priority:** ${newPolicy.priority}\n` +
+                      `**Enabled:** ${newPolicy.enabled ? "Yes" : "No"}`,
+                  }],
+                  details: { policy: newPolicy },
+                };
+              }
+
+              case "get_policy": {
+                const policyId = params.policy_id as string;
+                if (!policyId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id is required" }],
+                    details: { error: "missing_policy_id" },
+                  };
+                }
+
+                const pol = guardrailsManager.getPolicy(policyId);
+                if (!pol) {
+                  return {
+                    content: [{ type: "text", text: `Policy not found: ${policyId}` }],
+                    details: { error: "policy_not_found" },
+                  };
+                }
+
+                const conditionsText = pol.conditions.length > 0
+                  ? pol.conditions.map((c: any) => `• ${c.type} ${c.operator} ${JSON.stringify(c.value)}`).join("\n")
+                  : "None";
+
+                const actionsText = pol.actions.length > 0
+                  ? pol.actions.map((a: any) => `• ${a.type}`).join("\n")
+                  : "None";
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📜 **Policy: ${pol.name}**\n\n` +
+                      `**ID:** ${pol.id}\n` +
+                      `**Description:** ${pol.description || "N/A"}\n` +
+                      `**Enabled:** ${pol.enabled ? "Yes" : "No"}\n` +
+                      `**Priority:** ${pol.priority}\n\n` +
+                      `**Conditions:**\n${conditionsText}\n\n` +
+                      `**Actions:**\n${actionsText}`,
+                  }],
+                  details: { policy: pol },
+                };
+              }
+
+              case "list_policies": {
+                const policies = guardrailsManager.listPolicies();
+                if (policies.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No policies configured." }],
+                    details: { policies: [] },
+                  };
+                }
+
+                const policiesText = policies.map((p: any) =>
+                  `• **${p.name}** (${p.id})\n` +
+                  `  Priority: ${p.priority} | Enabled: ${p.enabled ? "Yes" : "No"}\n` +
+                  `  ${p.description || ""}`
+                ).join("\n\n");
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📜 **Guardrails Policies** (${policies.length})\n\n${policiesText}`,
+                  }],
+                  details: { policies },
+                };
+              }
+
+              case "update_policy": {
+                const policyId = params.policy_id as string;
+                const updates = params.policy as {
+                  name?: string;
+                  description?: string;
+                  enabled?: boolean;
+                  priority?: number;
+                  conditions?: Array<{
+                    field: string;
+                    operator: string;
+                    value: unknown;
+                  }>;
+                  actions?: Array<{
+                    type: string;
+                    parameters?: Record<string, unknown>;
+                  }>;
+                };
+
+                if (!policyId || !updates) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id and policy updates are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const updatedPolicy = guardrailsManager.updatePolicy(policyId, updates as any);
+                if (!updatedPolicy) {
+                  return {
+                    content: [{ type: "text", text: `Policy not found: ${policyId}` }],
+                    details: { error: "policy_not_found" },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** has been updated.`,
+                  }],
+                  details: { policy: updatedPolicy },
+                };
+              }
+
+              case "remove_policy": {
+                const policyId = params.policy_id as string;
+                if (!policyId) {
+                  return {
+                    content: [{ type: "text", text: "Error: policy_id is required" }],
+                    details: { error: "missing_policy_id" },
+                  };
+                }
+
+                const removed = guardrailsManager.removePolicy(policyId);
+                if (!removed) {
+                  return {
+                    content: [{ type: "text", text: `Policy not found: ${policyId}` }],
+                    details: { error: "policy_not_found" },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Policy **${policyId}** has been removed.`,
+                  }],
+                  details: { removed: true, policy_id: policyId },
+                };
+              }
+
+              // ====================
+              // Action Classification
+              // ====================
+              case "classify_action": {
+                const actionType = params.action_type as string;
+                if (!actionType) {
+                  return {
+                    content: [{ type: "text", text: "Error: action_type is required" }],
+                    details: { error: "missing_action_type" },
+                  };
+                }
+
+                const classification = guardrailsManager.classifyAction(actionType as ActionType, 'aws');
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🏷️ **Action Classification: ${actionType}**\n\n` +
+                      `**Severity:** ${classification.severity}\n` +
+                      `**Destructive:** ${classification.isDestructive ? "Yes ⚠️" : "No"}\n` +
+                      `**Requires Approval:** ${classification.requiresApproval ? "Yes" : "No"}\n` +
+                      `**Category:** ${classification.category}`,
+                  }],
+                  details: { classification },
+                };
+              }
+
+              // =============
+              // Notifications
+              // =============
+              case "configure_notification_channel": {
+                const channelType = params.channel_type as "sns" | "slack" | "email" | "webhook";
+                const config = params.channel_config as {
+                  topic_arn?: string;
+                  webhook_url?: string;
+                  email_addresses?: string[];
+                };
+
+                if (!channelType || !config) {
+                  return {
+                    content: [{ type: "text", text: "Error: channel_type and channel_config are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                guardrailsManager.configureNotificationChannel({
+                  type: channelType === 'webhook' ? 'webhook' : channelType === 'email' ? 'email' : channelType === 'slack' ? 'slack' : 'sns',
+                  enabled: true,
+                  endpoint: config.topic_arn || config.webhook_url || config.email_addresses?.[0] || '',
+                  events: ['approval_requested', 'approval_granted', 'approval_denied'],
+                });
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Notification channel **${channelType}** has been configured.`,
+                  }],
+                  details: { channel_type: channelType, configured: true },
+                };
+              }
+
+              // =============
+              // Configuration
+              // =============
+              case "get_config": {
+                const config = guardrailsManager.getConfig();
+                return {
+                  content: [{
+                    type: "text",
+                    text: `⚙️ **Guardrails Configuration**\n\n` +
+                      `**Default Region:** ${config.defaultRegion}\n` +
+                      `**Dry Run by Default:** ${config.dryRunByDefault ? "Yes" : "No"}\n` +
+                      `**Require Approval for Destructive:** ${config.requireApprovalForDestructive ? "Yes" : "No"}\n` +
+                      `**Audit All Operations:** ${config.auditAllOperations ? "Yes" : "No"}\n` +
+                      `**Default Approval Timeout:** ${config.defaultApprovalTimeoutHours} hours\n` +
+                      `**Max Blast Radius:** ${config.maxBlastRadius}`,
+                  }],
+                  details: { config },
+                };
+              }
+
+              case "update_config": {
+                const configKey = params.config_key as string;
+                const configValue = params.config_value;
+
+                if (!configKey || configValue === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: config_key and config_value are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                guardrailsManager.updateConfig({ [configKey]: configValue });
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Configuration **${configKey}** has been updated.`,
+                  }],
+                  details: { updated: true, key: configKey },
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Guardrails error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_guardrails" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -7931,6 +9698,7 @@ Use this tool to:
         iacManager = null;
         costManager = null;
         securityManager = null;
+        guardrailsManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -7959,6 +9727,7 @@ export function getAWSManagers() {
     iac: iacManager,
     cost: costManager,
     security: securityManager,
+    guardrails: guardrailsManager,
     cli: cliWrapper,
   };
 }

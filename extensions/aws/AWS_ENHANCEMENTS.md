@@ -19,11 +19,12 @@ The AWS extension provides comprehensive infrastructure management through:
 | **Cost Management** | Cost analysis, optimization, budgets (✅ Implemented) |
 | **Network/VPC** | VPCs, subnets, route tables, NAT, endpoints (✅ Implemented) |
 | **Security/IAM** | IAM, Security Hub, GuardDuty, KMS, Secrets Manager (✅ Implemented) |
+| **Guardrails** | Approval workflows, audit logging, rate limiting (✅ Implemented) |
 
 ### Current Interfaces
 - **CLI commands**: `espada aws ...`
 - **Gateway methods**: Programmatic API access
-- **Agent Tools**: AI-driven conversational access (`aws_ec2`, `aws_rds`, `aws_lambda`, `aws_s3`, `aws_iac`, `aws_cost`, `aws_network`, `aws_security`)
+- **Agent Tools**: AI-driven conversational access (`aws_ec2`, `aws_rds`, `aws_lambda`, `aws_s3`, `aws_iac`, `aws_cost`, `aws_network`, `aws_security`, `aws_guardrails`)
 
 ---
 
@@ -287,81 +288,120 @@ User: "Give me an overview of my security posture"
 
 ---
 
-### 5. Approval Workflows & Guardrails
+### 5. Approval Workflows & Guardrails ✅ IMPLEMENTED
 
-**Current Gap**: No production safety controls for destructive operations
+**Status**: ✅ **IMPLEMENTED** - Full approval workflows, guardrails, and audit logging for production safety
 
-**Proposed Capabilities**:
-- Approval workflows for destructive operations (terminate, delete)
-- Dry-run mode for all mutating operations
-- Environment tagging (dev/staging/prod) with different permission levels
-- Change request integration (ServiceNow, Jira)
-- Audit logging for all conversational infrastructure changes
-- Rate limiting for bulk operations
+**Implemented Capabilities**:
+- ✅ Approval workflows for destructive operations (terminate, delete)
+- ✅ Multi-approver support with configurable thresholds
+- ✅ Dry-run mode for all mutating operations
+- ✅ Environment protection rules (production/staging/development)
+- ✅ Change request management with approval chains
+- ✅ Comprehensive audit logging for all operations
+- ✅ Rate limiting for bulk operations
+- ✅ Policy-based guardrails for operation control
+- ✅ Impact assessment before risky operations
+- ✅ Pre-operation backups for safety
+- ✅ Action classification (severity, destructiveness)
+- ✅ Time-based operation restrictions
+- ✅ SNS notification integration
 
-**Configuration Schema**:
-```typescript
-interface ApprovalConfig {
-  // Require approval for destructive actions
-  requireApproval: boolean;
-  
-  // List of approvers (email/Slack/Teams)
-  approvers: string[];
-  
-  // Environments requiring approval
-  protectedEnvironments: ['production', 'staging'];
-  
-  // Actions requiring approval
-  destructiveActions: ['terminate', 'delete', 'modify'];
-  
-  // Approval timeout
-  timeoutMinutes: number;
-  
-  // Integration with ticketing systems
-  ticketingIntegration?: {
-    system: 'jira' | 'servicenow' | 'pagerduty';
-    createTicket: boolean;
-    requiredFields: string[];
-  };
-}
-```
+**New Tool**: `aws_guardrails`
 
-**Production Safety Checks**:
-```typescript
-interface ProductionSafetyChecks {
-  // Prevent accidental production changes
-  confirmProductionChanges: boolean;
-  
-  // Rate limiting for bulk operations
-  maxResourcesPerOperation: number;
-  
-  // Automatic backup before destructive changes
-  createBackupBeforeDelete: boolean;
-  
-  // Dependency checking
-  checkDependenciesBeforeDelete: boolean;
-  
-  // Time-based restrictions
-  preventChangesOutsideWindow: {
-    enabled: boolean;
-    allowedHours: [9, 17]; // 9 AM - 5 PM
-    allowedDays: ['mon', 'tue', 'wed', 'thu', 'fri'];
-  };
-}
-```
+| Action | Description | Status |
+|--------|-------------|--------|
+| `create_approval_request` | Create approval request for operation | ✅ Implemented |
+| `get_approval_request` | Get approval request details | ✅ Implemented |
+| `list_approval_requests` | List approval requests by status | ✅ Implemented |
+| `submit_approval_response` | Approve or reject a request | ✅ Implemented |
+| `cancel_approval_request` | Cancel a pending request | ✅ Implemented |
+| `perform_dry_run` | Preview operation without executing | ✅ Implemented |
+| `run_safety_checks` | Run safety checks for operation | ✅ Implemented |
+| `evaluate_guardrails` | Evaluate all guardrails for operation | ✅ Implemented |
+| `assess_impact` | Assess impact of operation | ✅ Implemented |
+| `get_environment_protection` | Get environment protection rules | ✅ Implemented |
+| `set_environment_protection` | Configure environment protection | ✅ Implemented |
+| `log_action` | Log action to audit trail | ✅ Implemented |
+| `query_audit_logs` | Query audit logs with filters | ✅ Implemented |
+| `get_audit_log_summary` | Get audit summary by period | ✅ Implemented |
+| `check_rate_limit` | Check rate limit status | ✅ Implemented |
+| `get_rate_limit_config` | Get rate limit configuration | ✅ Implemented |
+| `set_rate_limit_config` | Configure rate limits | ✅ Implemented |
+| `create_pre_operation_backup` | Create backup before operation | ✅ Implemented |
+| `list_pre_operation_backups` | List pre-operation backups | ✅ Implemented |
+| `create_change_request` | Create change request | ✅ Implemented |
+| `get_change_request` | Get change request details | ✅ Implemented |
+| `update_change_request_status` | Update change request status | ✅ Implemented |
+| `list_change_requests` | List change requests | ✅ Implemented |
+| `add_policy` | Add guardrails policy | ✅ Implemented |
+| `get_policy` | Get policy details | ✅ Implemented |
+| `list_policies` | List all policies | ✅ Implemented |
+| `update_policy` | Update policy | ✅ Implemented |
+| `remove_policy` | Remove policy | ✅ Implemented |
+| `classify_action` | Classify action severity | ✅ Implemented |
+| `configure_notification_channel` | Configure notifications | ✅ Implemented |
+| `get_config` | Get guardrails configuration | ✅ Implemented |
+| `update_config` | Update guardrails configuration | ✅ Implemented |
+
+**Default Environment Protections**:
+| Environment | Approval Required | Min Approvers | Require Change Request | Require Backup |
+|-------------|-------------------|---------------|------------------------|----------------|
+| Production | Yes | 2 | Yes | Yes |
+| Staging | Yes | 1 | No | Yes |
+| Development | No | 0 | No | No |
+| Testing | No | 0 | No | No |
+
+**Action Classifications**:
+| Action Type | Severity | Destructive | Requires Approval |
+|-------------|----------|-------------|-------------------|
+| Delete/Terminate | Critical | Yes | Yes |
+| Modify/Update | High | No | Yes (in production) |
+| Create | Medium | No | No |
+| Read/List/Get | Low | No | No |
 
 **Example Conversations**:
 ```
 User: "Terminate the production web servers"
 Bot:  "⚠️ This is a destructive action on production resources.
-       Approval required from: ops-team@company.com
-       Waiting for approval... (timeout: 30 minutes)"
+       Approval request created: req-abc123
+       Required approvers: 2
+       Waiting for approval... (timeout: 24 hours)"
 
 User: "Delete all untagged EC2 instances"
 Bot:  "🔍 Dry-run mode: Found 15 untagged instances.
-       This would delete: i-abc123, i-def456, ...
+       Blast radius: 15 resources
+       Affected services: web-tier, api-tier
        Type 'confirm' to proceed."
+
+User: "Show me the audit log for today"
+Bot:  "📋 Audit Log Summary (past day)
+       Total Operations: 45
+       Successful: 42
+       Failed: 2
+       Blocked: 1
+       
+       Top Actions:
+       • describe_instances: 15
+       • create_snapshot: 8
+       • modify_security_group: 5"
+
+User: "Create a change request for database migration"
+Bot:  "📋 Change Request Created
+       ID: cr-xyz789
+       Title: Database Migration
+       Status: draft
+       Required approvers: 2"
 ```
+
+**Implementation Files**:
+- `src/guardrails/types.ts` - Comprehensive type definitions (~750 lines)
+- `src/guardrails/manager.ts` - GuardrailsManager class (~1400 lines)
+- `src/guardrails/manager.test.ts` - Comprehensive test suite (40+ tests)
+- `src/guardrails/index.ts` - Module exports
+- `src/index.ts` - Updated with guardrails module exports
+- `index.ts` - `aws_guardrails` tool registration with 32 actions
+- `package.json` - Added @aws-sdk/client-sns dependency
 
 ---
 
