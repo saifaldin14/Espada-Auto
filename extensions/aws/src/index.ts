@@ -140,6 +140,54 @@ export {
   createEC2Manager,
 } from "./ec2/index.js";
 
+// =============================================================================
+// IaC (Infrastructure as Code) Module
+// =============================================================================
+
+export {
+  IaCManager,
+  createIaCManager,
+} from "./iac/index.js";
+
+// IaC Types
+export type {
+  IaCFormat,
+  CloudFormationOutputFormat,
+  AWSResourceType,
+  DriftStatus,
+  ChangeAction,
+  IaCManagerConfig,
+  IaCResourceDefinition,
+  EC2InstanceDefinition,
+  VPCDefinition,
+  SubnetDefinition,
+  SecurityGroupDefinition,
+  RDSInstanceDefinition,
+  S3BucketDefinition,
+  LambdaFunctionDefinition,
+  IAMRoleDefinition,
+  ALBDefinition,
+  ASGDefinition,
+  InfrastructureTemplate,
+  TemplateVariable,
+  TemplateOutput,
+  TerraformGenerationOptions,
+  CloudFormationGenerationOptions,
+  TerraformGenerationResult,
+  CloudFormationGenerationResult,
+  DriftDetectionOptions,
+  ResourceDrift,
+  DriftDetectionResult,
+  StateExportOptions,
+  DiscoveredResource,
+  StateExportResult,
+  ResourceChange,
+  InfrastructurePlan,
+  ApplyOptions,
+  ApplyResult,
+  IaCOperationResult,
+} from "./iac/index.js";
+
 // EC2 Types
 export type {
   EC2Instance,

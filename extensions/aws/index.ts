@@ -32,6 +32,7 @@ import {
   createCloudTrailManager,
   createEC2Manager,
   createCLIWrapper,
+  createIaCManager,
   type AWSCredentialsManager,
   type AWSContextManager,
   type AWSServiceDiscovery,
@@ -39,6 +40,12 @@ import {
   type AWSCloudTrailManager,
   type AWSEC2Manager,
   type AWSCLIWrapper,
+  type IaCManager,
+  type InfrastructureTemplate,
+  type IaCResourceDefinition,
+  type AWSResourceType,
+  TemplateVariable,
+  TemplateOutput,
 } from "./src/index.js";
 
 import {
@@ -67,6 +74,7 @@ let ec2Manager: AWSEC2Manager | null = null;
 let rdsManager: RDSManager | null = null;
 let lambdaManager: LambdaManager | null = null;
 let s3Manager: S3Manager | null = null;
+let iacManager: IaCManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -256,6 +264,12 @@ const plugin = {
     // Initialize S3 manager
     s3Manager = createS3Manager({
       region: config.defaultRegion,
+    });
+
+    // Initialize IaC manager
+    iacManager = createIaCManager({
+      defaultRegion: config.defaultRegion,
+      defaultTags: config.defaultTags?.reduce((acc, t) => ({ ...acc, [t.key]: t.value }), {}),
     });
 
     // Register CLI commands
@@ -5430,6 +5444,481 @@ Available actions:
       { name: "aws_s3" },
     );
 
+    // =========================================================================
+    // AWS IaC (Infrastructure as Code) AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_iac",
+        label: "AWS Infrastructure as Code",
+        description: `Generate and manage Infrastructure as Code (IaC) for AWS resources.
+
+CAPABILITIES:
+- Generate Terraform HCL configurations from resource definitions
+- Generate CloudFormation YAML/JSON templates
+- Detect drift between IaC and deployed resources
+- Export existing AWS infrastructure to IaC format
+- Plan infrastructure changes before applying
+
+SUPPORTED RESOURCE TYPES:
+- EC2: Instances, VPCs, Subnets, Security Groups, Key Pairs, NAT Gateways
+- RDS: Database Instances, Clusters, Subnet Groups, Parameter Groups
+- S3: Buckets with versioning, encryption, lifecycle policies
+- Lambda: Functions with VPC config, layers, environment variables
+- IAM: Roles, Policies, Instance Profiles
+- Load Balancing: ALBs, Target Groups, Listeners
+- Auto Scaling: Groups, Launch Templates
+- Others: CloudWatch, SNS, SQS, DynamoDB, ElastiCache, KMS
+
+Use this tool to:
+- Create IaC from natural language infrastructure descriptions
+- Export existing infrastructure for version control
+- Ensure consistent, repeatable infrastructure deployments`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "generate_terraform",
+                "generate_cloudformation",
+                "detect_drift",
+                "export_state",
+                "plan_changes",
+              ],
+              description: "The IaC operation to perform",
+            },
+            // Template definition for generation
+            template_name: {
+              type: "string",
+              description: "Name for the infrastructure template",
+            },
+            template_description: {
+              type: "string",
+              description: "Description of the infrastructure",
+            },
+            // Resource definitions
+            resources: {
+              type: "array",
+              description: "Array of resource definitions to include in the template",
+              items: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    description: "Resource type (ec2_instance, ec2_vpc, ec2_subnet, ec2_security_group, rds_instance, s3_bucket, lambda_function, iam_role, alb, asg, etc.)",
+                  },
+                  name: {
+                    type: "string",
+                    description: "Logical name for the resource",
+                  },
+                  properties: {
+                    type: "object",
+                    description: "Resource-specific properties",
+                  },
+                  tags: {
+                    type: "object",
+                    description: "Tags to apply to the resource",
+                  },
+                  depends_on: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Resource dependencies",
+                  },
+                },
+              },
+            },
+            // Variables/Parameters
+            variables: {
+              type: "object",
+              description: "Template variables/parameters",
+            },
+            // Outputs
+            outputs: {
+              type: "object",
+              description: "Template outputs to export",
+            },
+            // Generation options
+            format: {
+              type: "string",
+              enum: ["terraform", "cloudformation"],
+              description: "IaC format to generate",
+            },
+            cloudformation_format: {
+              type: "string",
+              enum: ["yaml", "json"],
+              description: "CloudFormation output format (default: yaml)",
+            },
+            include_comments: {
+              type: "boolean",
+              description: "Include comments in generated code (default: true)",
+            },
+            split_files: {
+              type: "boolean",
+              description: "Split Terraform into multiple files (default: false)",
+            },
+            // Terraform-specific options
+            terraform_version: {
+              type: "string",
+              description: "Terraform version constraint (default: >= 1.0)",
+            },
+            aws_provider_version: {
+              type: "string",
+              description: "AWS provider version constraint (default: ~> 5.0)",
+            },
+            backend_type: {
+              type: "string",
+              enum: ["s3", "local", "remote"],
+              description: "Terraform backend type",
+            },
+            backend_config: {
+              type: "object",
+              description: "Terraform backend configuration",
+            },
+            // Export/drift options
+            resource_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Specific resource IDs to export or check for drift",
+            },
+            resource_types: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource types to export or check",
+            },
+            iac_path: {
+              type: "string",
+              description: "Path to IaC files for drift detection",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region",
+            },
+            profile: {
+              type: "string",
+              description: "AWS profile",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!iacManager) {
+            return {
+              content: [{ type: "text", text: "Error: IaC manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+          const region = params.region as string | undefined;
+
+          try {
+            switch (action) {
+              case "generate_terraform": {
+                const resources = params.resources as Array<{
+                  type: string;
+                  name: string;
+                  properties: Record<string, unknown>;
+                  tags?: Record<string, string>;
+                  depends_on?: string[];
+                }> | undefined;
+
+                if (!resources || resources.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: resources array is required for generate_terraform" }],
+                    details: { error: "missing_resources" },
+                  };
+                }
+
+                const template: InfrastructureTemplate = {
+                  name: (params.template_name as string) || "generated-infrastructure",
+                  description: params.template_description as string,
+                  resources: resources.map(r => ({
+                    type: r.type as AWSResourceType,
+                    name: r.name,
+                    properties: r.properties,
+                    tags: r.tags,
+                    dependsOn: r.depends_on,
+                  })),
+                  variables: params.variables as Record<string, TemplateVariable> | undefined,
+                  outputs: params.outputs as Record<string, TemplateOutput> | undefined,
+                };
+
+                const result = await iacManager.generateTerraform(template, {
+                  terraformVersion: params.terraform_version as string,
+                  awsProviderVersion: params.aws_provider_version as string,
+                  includeComments: params.include_comments as boolean ?? true,
+                  splitFiles: params.split_files as boolean,
+                  includeVariables: !!params.variables,
+                  includeOutputs: !!params.outputs,
+                  region: region,
+                  profile: params.profile as string,
+                  backend: params.backend_type ? {
+                    type: params.backend_type as "s3" | "local" | "remote",
+                    config: (params.backend_config as Record<string, unknown>) || {},
+                  } : undefined,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to generate Terraform: ${result.errors?.join(", ")}` }],
+                    details: result,
+                  };
+                }
+
+                // Build response with all generated files
+                const filesOutput = result.files
+                  ? Object.entries(result.files).map(([filename, content]) => 
+                      `--- ${filename} ---\n${content}`
+                    ).join("\n\n")
+                  : result.mainTf || "";
+
+                return {
+                  content: [{ 
+                    type: "text", 
+                    text: `✅ ${result.message}\n\n${filesOutput}` 
+                  }],
+                  details: result,
+                };
+              }
+
+              case "generate_cloudformation": {
+                const resources = params.resources as Array<{
+                  type: string;
+                  name: string;
+                  properties: Record<string, unknown>;
+                  tags?: Record<string, string>;
+                  depends_on?: string[];
+                }> | undefined;
+
+                if (!resources || resources.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: resources array is required for generate_cloudformation" }],
+                    details: { error: "missing_resources" },
+                  };
+                }
+
+                const template: InfrastructureTemplate = {
+                  name: (params.template_name as string) || "generated-infrastructure",
+                  description: params.template_description as string,
+                  resources: resources.map(r => ({
+                    type: r.type as AWSResourceType,
+                    name: r.name,
+                    properties: r.properties,
+                    tags: r.tags,
+                    dependsOn: r.depends_on,
+                  })),
+                  variables: params.variables as Record<string, TemplateVariable> | undefined,
+                  outputs: params.outputs as Record<string, TemplateOutput> | undefined,
+                };
+
+                const result = await iacManager.generateCloudFormation(template, {
+                  format: (params.cloudformation_format as "yaml" | "json") || "yaml",
+                  description: params.template_description as string,
+                  includeComments: params.include_comments as boolean ?? true,
+                  includeParameters: !!params.variables,
+                  region: region,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to generate CloudFormation: ${result.errors?.join(", ")}` }],
+                    details: result,
+                  };
+                }
+
+                return {
+                  content: [{ 
+                    type: "text", 
+                    text: `✅ ${result.message}\n\n${result.template}` 
+                  }],
+                  details: result,
+                };
+              }
+
+              case "detect_drift": {
+                const result = await iacManager.detectDrift({
+                  resourceIds: params.resource_ids as string[],
+                  resourceTypes: params.resource_types as AWSResourceType[],
+                  region: region,
+                  iacPath: params.iac_path as string,
+                  format: params.format as "terraform" | "cloudformation",
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Drift detection failed: ${result.errors?.join(", ")}` }],
+                    details: result,
+                  };
+                }
+
+                const statusEmoji = result.status === "clean" ? "✅" : result.status === "drifted" ? "⚠️" : "❌";
+                
+                let driftSummary = `${statusEmoji} ${result.message}\n\n`;
+                driftSummary += `Total Resources: ${result.totalResources}\n`;
+                driftSummary += `In Sync: ${result.inSyncCount}\n`;
+                driftSummary += `Drifted: ${result.driftedCount}\n`;
+                driftSummary += `Deleted: ${result.deletedCount}\n`;
+
+                if (result.drifts.length > 0) {
+                  driftSummary += "\nDrifted Resources:\n";
+                  for (const drift of result.drifts) {
+                    driftSummary += `• ${drift.resourceId} (${drift.resourceType}): ${drift.status}\n`;
+                    if (drift.changes) {
+                      for (const change of drift.changes) {
+                        driftSummary += `  - ${change.property}: ${change.expected} → ${change.actual}\n`;
+                      }
+                    }
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: driftSummary }],
+                  details: result,
+                };
+              }
+
+              case "export_state": {
+                const format = (params.format as "terraform" | "cloudformation") || "terraform";
+                
+                const result = await iacManager.exportState({
+                  resourceIds: params.resource_ids as string[],
+                  resourceTypes: params.resource_types as AWSResourceType[],
+                  regions: region ? [region] : undefined,
+                  format,
+                  includeTags: true,
+                  includeDependencies: true,
+                  terraformOptions: format === "terraform" ? {
+                    terraformVersion: params.terraform_version as string,
+                    awsProviderVersion: params.aws_provider_version as string,
+                    includeComments: params.include_comments as boolean ?? true,
+                    region: region,
+                  } : undefined,
+                  cloudFormationOptions: format === "cloudformation" ? {
+                    format: (params.cloudformation_format as "yaml" | "json") || "yaml",
+                    includeComments: params.include_comments as boolean ?? true,
+                    region: region,
+                  } : undefined,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Export failed: ${result.errors?.join(", ")}` }],
+                    details: result,
+                  };
+                }
+
+                let exportOutput = `✅ ${result.message}\n\n`;
+                
+                if (result.iacCode) {
+                  exportOutput += `Generated ${format} code:\n\n${result.iacCode}`;
+                }
+
+                if (result.importCommands && result.importCommands.length > 0) {
+                  exportOutput += "\n\nTerraform Import Commands:\n";
+                  exportOutput += result.importCommands.join("\n");
+                }
+
+                return {
+                  content: [{ type: "text", text: exportOutput }],
+                  details: result,
+                };
+              }
+
+              case "plan_changes": {
+                const resources = params.resources as Array<{
+                  type: string;
+                  name: string;
+                  properties: Record<string, unknown>;
+                  tags?: Record<string, string>;
+                  depends_on?: string[];
+                }> | undefined;
+
+                if (!resources || resources.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: resources array is required for plan_changes" }],
+                    details: { error: "missing_resources" },
+                  };
+                }
+
+                const template: InfrastructureTemplate = {
+                  name: (params.template_name as string) || "infrastructure-plan",
+                  description: params.template_description as string,
+                  resources: resources.map(r => ({
+                    type: r.type as AWSResourceType,
+                    name: r.name,
+                    properties: r.properties,
+                    tags: r.tags,
+                    dependsOn: r.depends_on,
+                  })),
+                };
+
+                const format = (params.format as "terraform" | "cloudformation") || "terraform";
+                const result = await iacManager.planChanges(template, { format, region });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Plan failed: ${result.errors?.join(", ")}` }],
+                    details: result,
+                  };
+                }
+
+                let planOutput = `📋 Infrastructure Plan\n\n`;
+                planOutput += `${result.message}\n\n`;
+                
+                if (result.toCreate.length > 0) {
+                  planOutput += `➕ Resources to Create (${result.toCreate.length}):\n`;
+                  for (const r of result.toCreate) {
+                    planOutput += `  • ${r.logicalName} (${r.resourceType})\n`;
+                  }
+                }
+                
+                if (result.toUpdate.length > 0) {
+                  planOutput += `\n🔄 Resources to Update (${result.toUpdate.length}):\n`;
+                  for (const r of result.toUpdate) {
+                    planOutput += `  • ${r.logicalName} (${r.resourceType})\n`;
+                  }
+                }
+                
+                if (result.toDelete.length > 0) {
+                  planOutput += `\n➖ Resources to Delete (${result.toDelete.length}):\n`;
+                  for (const r of result.toDelete) {
+                    planOutput += `  • ${r.logicalName} (${r.resourceType})\n`;
+                  }
+                }
+
+                if (result.warnings && result.warnings.length > 0) {
+                  planOutput += `\n⚠️ Warnings:\n`;
+                  for (const w of result.warnings) {
+                    planOutput += `  • ${w}\n`;
+                  }
+                }
+
+                return {
+                  content: [{ type: "text", text: planOutput }],
+                  details: result,
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `IaC error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_iac" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -5459,6 +5948,7 @@ Available actions:
         rdsManager = null;
         lambdaManager = null;
         s3Manager = null;
+        iacManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -5484,6 +5974,7 @@ export function getAWSManagers() {
     rds: rdsManager,
     lambda: lambdaManager,
     s3: s3Manager,
+    iac: iacManager,
     cli: cliWrapper,
   };
 }
