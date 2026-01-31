@@ -44,7 +44,6 @@ import {
   type IaCManager,
   type CostManager,
   type InfrastructureTemplate,
-  type IaCResourceDefinition,
   type AWSResourceType,
   TemplateVariable,
   TemplateOutput,
