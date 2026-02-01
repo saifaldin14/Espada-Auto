@@ -78,6 +78,14 @@
     "./organization": {
       "import": "./dist/organization/index.js",
       "types": "./dist/organization/index.d.ts"
+    },
+    "./containers": {
+      "import": "./dist/containers/index.js",
+      "types": "./dist/containers/index.d.ts"
+    },
+    "./observability": {
+      "import": "./dist/observability/index.js",
+      "types": "./dist/observability/index.d.ts"
     }
   },
   "scripts": {
@@ -116,6 +124,8 @@
     "@aws-sdk/client-securityhub": "^3.980.0",
     "@aws-sdk/client-sns": "^3.980.0",
     "@aws-sdk/client-sts": "^3.500.0",
+    "@aws-sdk/client-synthetics": "^3.980.0",
+    "@aws-sdk/client-xray": "^3.980.0",
     "@aws-sdk/credential-providers": "^3.500.0",
     "@aws-sdk/s3-request-presigner": "^3.500.0",
     "@smithy/types": "^2.9.0",

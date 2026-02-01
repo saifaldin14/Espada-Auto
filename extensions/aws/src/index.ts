@@ -468,6 +468,127 @@ export type {
 } from "./ec2/types.js";
 
 // =============================================================================
+// Containers Module
+// =============================================================================
+
+export {
+  ContainerManager,
+  createContainerManager,
+} from "./containers/index.js";
+
+// Containers Types
+export type {
+  ContainerManagerConfig,
+  ContainerOperationResult,
+  // ECS Types
+  ECSClusterInfo,
+  ECSServiceInfo,
+  ECSTaskInfo,
+  TaskDefinitionInfo,
+  ContainerInfo,
+  NetworkConfiguration,
+  Deployment,
+  CapacityProviderStrategyItem,
+  CreateECSClusterOptions,
+  CreateECSServiceOptions,
+  UpdateECSServiceOptions,
+  RunECSTaskOptions,
+  RegisterTaskDefinitionOptions,
+  ContainerDefinition,
+  ScaleECSServiceOptions,
+  // EKS Types
+  EKSClusterInfo,
+  EKSNodeGroupInfo,
+  EKSFargateProfileInfo,
+  EKSLogging,
+  CreateEKSClusterOptions,
+  UpdateEKSClusterOptions,
+  CreateEKSNodeGroupOptions,
+  UpdateEKSNodeGroupOptions,
+  CreateEKSFargateProfileOptions,
+  // ECR Types
+  ECRRepositoryInfo,
+  ECRImageInfo,
+  ECRImageScanFinding,
+  LifecyclePolicyRule,
+  CreateECRRepositoryOptions,
+  // Container Insights
+  ContainerInsightsMetrics,
+  GetContainerInsightsOptions,
+} from "./containers/types.js";
+
+// =============================================================================
+// Observability Module
+// =============================================================================
+
+export {
+  ObservabilityManager,
+  createObservabilityManager,
+} from "./observability/index.js";
+
+// Observability Types
+export type {
+  ObservabilityManagerConfig,
+  ObservabilityOperationResult,
+  // Alarms
+  AlarmInfo,
+  AlarmState,
+  CreateAlarmOptions,
+  ListAlarmsOptions,
+  AlarmHistoryItem,
+  AlarmTemplate,
+  // Metrics
+  MetricInfo,
+  MetricDataPoint,
+  MetricDataQuery,
+  MetricDataResult,
+  MetricDimension,
+  GetMetricStatisticsOptions,
+  PutMetricDataOptions,
+  ListMetricsOptions,
+  // Dashboards
+  DashboardInfo,
+  DashboardBody,
+  DashboardWidget,
+  CreateDashboardOptions,
+  DashboardTemplate,
+  // Logs
+  LogGroupInfo,
+  LogStreamInfo,
+  LogEvent,
+  ListLogGroupsOptions,
+  ListLogStreamsOptions,
+  FilterLogEventsOptions,
+  LogInsightsQueryResult,
+  StartLogInsightsQueryOptions,
+  MetricFilterInfo,
+  CreateMetricFilterOptions,
+  QueryStatus,
+  // X-Ray
+  TraceSummary,
+  TraceDetail,
+  GetTraceSummariesOptions,
+  ServiceMap,
+  ServiceMapNode,
+  XRayGroupInfo,
+  InsightSummary,
+  // Synthetics
+  CanaryInfo,
+  CanaryRunInfo,
+  CreateCanaryOptions,
+  UpdateCanaryOptions,
+  CanaryBlueprint,
+  // Anomaly Detection
+  AnomalyDetectorInfo,
+  PutAnomalyDetectorOptions,
+  // Composite Alarms
+  CompositeAlarmInfo,
+  CreateCompositeAlarmOptions,
+  // Summary
+  ObservabilityHealthSummary,
+} from "./observability/types.js";
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 
@@ -485,6 +606,8 @@ import { AWSServiceDiscovery, createServiceDiscovery } from "./discovery/index.j
 import { AWSTaggingManager, createTaggingManager } from "./tagging/index.js";
 import { AWSCloudTrailManager, createCloudTrailManager } from "./cloudtrail/index.js";
 import { AWSEC2Manager, createEC2Manager } from "./ec2/index.js";
+import { ContainerManager, createContainerManager } from "./containers/index.js";
+import { ObservabilityManager, createObservabilityManager } from "./observability/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
 
 export interface AWSPluginOptions {
@@ -527,6 +650,8 @@ export class AWSPlugin {
   readonly tagging: AWSTaggingManager;
   readonly cloudtrail: AWSCloudTrailManager;
   readonly ec2: AWSEC2Manager;
+  readonly containers: ContainerManager;
+  readonly observability: ObservabilityManager;
 
   private defaultRegion: string;
 
@@ -576,6 +701,16 @@ export class AWSPlugin {
       this.credentials,
       options.defaultRegion,
     );
+
+    // Initialize Container manager
+    this.containers = createContainerManager({
+      defaultRegion: options.defaultRegion,
+    });
+
+    // Initialize Observability manager
+    this.observability = createObservabilityManager({
+      defaultRegion: options.defaultRegion,
+    });
   }
 
   /**
