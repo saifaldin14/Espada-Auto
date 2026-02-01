@@ -21,11 +21,16 @@ The AWS extension provides comprehensive infrastructure management through:
 | **Security/IAM** | IAM, Security Hub, GuardDuty, KMS, Secrets Manager (✅ Implemented) |
 | **Guardrails** | Approval workflows, audit logging, rate limiting (✅ Implemented) |
 | **Organizations** | Multi-account management, SCPs, RAM, consolidated billing (✅ Implemented) |
+| **Containers** | ECS, EKS, ECR management (✅ Implemented) |
+| **Observability** | CloudWatch, X-Ray, Synthetics (✅ Implemented) |
+| **Backup/DR** | Backup plans, recovery, DR runbooks (✅ Implemented) |
+| **CI/CD** | CodePipeline, CodeBuild, CodeDeploy (✅ Implemented) |
+| **Conversational UX** | Context management, insights, wizards (✅ Implemented) |
 
 ### Current Interfaces
 - **CLI commands**: `espada aws ...`
 - **Gateway methods**: Programmatic API access
-- **Agent Tools**: AI-driven conversational access (`aws_ec2`, `aws_rds`, `aws_lambda`, `aws_s3`, `aws_iac`, `aws_cost`, `aws_network`, `aws_security`, `aws_guardrails`)
+- **Agent Tools**: AI-driven conversational access (`aws_ec2`, `aws_rds`, `aws_lambda`, `aws_s3`, `aws_iac`, `aws_cost`, `aws_network`, `aws_security`, `aws_guardrails`, `aws_organization`, `aws_containers`, `aws_observability`, `aws_backup`, `aws_assistant`)
 
 ---
 

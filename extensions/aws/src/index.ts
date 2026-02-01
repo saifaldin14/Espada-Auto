@@ -755,6 +755,78 @@ export type {
 } from "./conversational/index.js";
 
 // =============================================================================
+// Compliance & Governance Module
+// =============================================================================
+
+export {
+  AWSComplianceManager,
+  AWS_MANAGED_RULES,
+  CONFORMANCE_PACK_TEMPLATES,
+  FRAMEWORK_DEFINITIONS,
+} from "./compliance/index.js";
+
+// Compliance Types
+export type {
+  // Common types
+  ComplianceOperationResult,
+  ComplianceManagerConfig,
+  // Framework types
+  ComplianceFramework as ComplianceFrameworkType,
+  FrameworkInfo as ComplianceFrameworkInfo,
+  ComplianceControl,
+  // Status types
+  ComplianceSeverity,
+  ComplianceStatus as ComplianceStatusType,
+  ComplianceCheckResult as ComplianceCheckResultType,
+  ComplianceSummary,
+  ComplianceResource,
+  // Config rule types
+  ConfigRuleSourceType,
+  ConfigRuleTriggerType,
+  ConfigRuleComplianceType,
+  ConfigRuleInfo,
+  ConfigRuleEvaluation,
+  ConfigRuleComplianceDetail,
+  CreateConfigRuleOptions,
+  ListConfigRulesOptions,
+  // Conformance pack types
+  ConformancePackInfo,
+  ConformancePackInputParameter,
+  ConformancePackComplianceDetail,
+  CreateConformancePackOptions,
+  ListConformancePacksOptions,
+  // Violation types
+  ComplianceViolation,
+  ViolationStatus,
+  RemediationStep,
+  ListViolationsOptions,
+  // Tag compliance types
+  RequiredTag as ComplianceRequiredTag,
+  TagPolicy,
+  TagEnforcementMode,
+  TagComplianceResult,
+  TagValidationError as ComplianceTagValidationError,
+  EnforceTagsOptions,
+  TagEnforcementResult,
+  // Remediation types
+  RemediationActionType,
+  RemediationActionConfig,
+  RemediationExecutionResult,
+  RemediationStepDetail,
+  RemediateViolationOptions,
+  // Report types
+  ReportFormat,
+  ReportType,
+  ComplianceReport,
+  ComplianceReportSummary,
+  GenerateReportOptions,
+  // Check options
+  CheckComplianceOptions,
+  // Manager interface
+  ComplianceManager,
+} from "./compliance/index.js";
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 
@@ -775,7 +847,15 @@ import { AWSEC2Manager, createEC2Manager } from "./ec2/index.js";
 import { ContainerManager, createContainerManager } from "./containers/index.js";
 import { ObservabilityManager, createObservabilityManager } from "./observability/index.js";
 import { AWSConversationalManager, createConversationalManager } from "./conversational/index.js";
+import { AWSComplianceManager } from "./compliance/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
+
+/**
+ * Create an AWS Compliance Manager instance
+ */
+export function createComplianceManager(config?: import("./compliance/types.js").ComplianceManagerConfig): AWSComplianceManager {
+  return new AWSComplianceManager(config);
+}
 
 export interface AWSPluginOptions {
   /** Default AWS region */
@@ -820,6 +900,7 @@ export class AWSPlugin {
   readonly containers: ContainerManager;
   readonly observability: ObservabilityManager;
   readonly conversational: AWSConversationalManager;
+  readonly compliance: AWSComplianceManager;
 
   private defaultRegion: string;
 
@@ -882,6 +963,11 @@ export class AWSPlugin {
 
     // Initialize Conversational UX manager
     this.conversational = createConversationalManager({
+      defaultRegion: options.defaultRegion,
+    });
+
+    // Initialize Compliance & Governance manager
+    this.compliance = createComplianceManager({
       defaultRegion: options.defaultRegion,
     });
   }

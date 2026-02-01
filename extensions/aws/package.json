@@ -112,6 +112,7 @@
     "@aws-sdk/client-codebuild": "^3.980.0",
     "@aws-sdk/client-codedeploy": "^3.980.0",
     "@aws-sdk/client-codepipeline": "^3.980.0",
+    "@aws-sdk/client-config-service": "^3.980.0",
     "@aws-sdk/client-cost-explorer": "^3.500.0",
     "@aws-sdk/client-ec2": "^3.500.0",
     "@aws-sdk/client-ecr": "^3.980.0",
