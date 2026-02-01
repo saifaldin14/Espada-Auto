@@ -589,6 +589,117 @@ export type {
 } from "./observability/types.js";
 
 // =============================================================================
+// Backup & Disaster Recovery Module
+// =============================================================================
+
+export {
+  BackupManager,
+  createBackupManager,
+} from "./backup/index.js";
+
+// Backup Types
+export type {
+  BackupManagerConfig,
+  BackupOperationResult,
+  // Backup Plan Types
+  BackupPlanInfo,
+  BackupRuleInfo,
+  BackupLifecycle,
+  CopyAction,
+  AdvancedBackupSetting,
+  ListBackupPlansOptions,
+  CreateBackupPlanOptions,
+  CreateBackupRuleOptions,
+  UpdateBackupPlanOptions,
+  // Backup Vault Types
+  BackupVaultInfo,
+  ListBackupVaultsOptions,
+  CreateBackupVaultOptions,
+  LockBackupVaultOptions,
+  // Recovery Point Types
+  RecoveryPointInfo,
+  RecoveryPointCreator,
+  CalculatedLifecycle,
+  RecoveryPointStatus,
+  StorageClass,
+  ListRecoveryPointsOptions,
+  GetRecoveryPointOptions,
+  // Backup Selection Types
+  BackupSelectionInfo,
+  TagCondition,
+  BackupConditions,
+  ConditionParameter,
+  CreateBackupSelectionOptions,
+  // Restore Types
+  RestoreJobInfo,
+  RestoreJobStatus,
+  ListRestoreJobsOptions,
+  StartRestoreOptions,
+  RestoreMetadata,
+  // Backup Job Types
+  BackupJobInfo,
+  BackupJobState,
+  ListBackupJobsOptions,
+  StartBackupOptions,
+  // Cross-Region Replication Types
+  ReplicationConfiguration,
+  ConfigureReplicationOptions,
+  CopyJobInfo,
+  CopyJobState,
+  StartCopyOptions,
+  // DR Runbook Types
+  DRRunbook,
+  DRRunbookStep,
+  DRStepType,
+  DRStepAction,
+  DRResource,
+  DRContact,
+  DRPreCondition,
+  DRPostCondition,
+  DRTestResult,
+  GenerateDRRunbookOptions,
+  // Failover Types
+  FailoverPlan,
+  FailoverStatus,
+  FailoverStep,
+  ExecuteFailoverOptions,
+  FailoverResult,
+  ResourceFailoverResult,
+  // Compliance Types
+  BackupComplianceStatus,
+  ResourceTypeCompliance,
+  BackupPlanCompliance,
+  ComplianceIssue,
+  ComplianceIssueType,
+  GetComplianceOptions,
+  FrameworkControl,
+  ControlScope,
+  FrameworkInfo,
+  CreateFrameworkOptions,
+  // Recovery Testing Types
+  RecoveryTestInfo,
+  ValidationStep,
+  RunRecoveryTestOptions,
+  RecoveryTestResult,
+  // Report Types
+  ReportPlanInfo,
+  ReportSetting,
+  ReportTemplate,
+  ReportDeliveryChannel,
+  CreateReportPlanOptions,
+  // Protected Resource Types
+  ProtectedResourceInfo,
+  ListProtectedResourcesOptions,
+  // Resource Types
+  BackupResourceType,
+  // Templates
+  BackupPlanTemplate,
+} from "./backup/types.js";
+
+// Re-export backup templates
+export { BACKUP_PLAN_TEMPLATES, RESOURCE_TYPE_ARN_PREFIXES } from "./backup/types.js";
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 

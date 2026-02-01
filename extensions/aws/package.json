@@ -86,6 +86,10 @@
     "./observability": {
       "import": "./dist/observability/index.js",
       "types": "./dist/observability/index.d.ts"
+    },
+    "./backup": {
+      "import": "./dist/backup/index.js",
+      "types": "./dist/backup/index.d.ts"
     }
   },
   "scripts": {
@@ -99,6 +103,7 @@
     "@aws-sdk/client-accessanalyzer": "^3.980.0",
     "@aws-sdk/client-application-auto-scaling": "^3.980.0",
     "@aws-sdk/client-auto-scaling": "^3.500.0",
+    "@aws-sdk/client-backup": "^3.980.0",
     "@aws-sdk/client-budgets": "^3.500.0",
     "@aws-sdk/client-cloudfront": "^3.500.0",
     "@aws-sdk/client-cloudtrail": "^3.500.0",

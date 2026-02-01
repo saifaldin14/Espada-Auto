@@ -80,6 +80,12 @@ import {
   type OrganizationManager,
 } from "./src/organization/index.js";
 
+import {
+  createBackupManager,
+  type BackupManager,
+  BACKUP_PLAN_TEMPLATES,
+} from "./src/backup/index.js";
+
 import type {
   OperationContext,
   ActionType,
@@ -111,6 +117,7 @@ let costManager: CostManager | null = null;
 let securityManager: SecurityManager | null = null;
 let guardrailsManager: GuardrailsManager | null = null;
 let organizationManager: OrganizationManager | null = null;
+let backupManager: BackupManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -11324,6 +11331,1206 @@ Use this tool to:
       { name: "aws_organization" },
     );
 
+    // =========================================================================
+    // AWS BACKUP & DISASTER RECOVERY AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_backup",
+        label: "AWS Backup & Disaster Recovery",
+        description: `Manage AWS Backup plans, recovery points, cross-region replication, disaster recovery runbooks, and compliance reporting.
+
+CAPABILITIES:
+- Backup plan management with predefined templates (daily, weekly, monthly, compliance)
+- Backup vault creation and locking for data protection
+- Recovery point listing and restoration
+- On-demand backup job creation
+- Cross-region replication configuration
+- Disaster recovery runbook generation
+- Failover orchestration (with dry-run support)
+- Backup compliance status and reporting
+- Recovery testing and validation
+- Report plan management
+
+PREDEFINED BACKUP TEMPLATES:
+- daily-35day-retention: Daily backups with 35-day retention
+- weekly-90day-retention: Weekly backups with 90-day retention
+- monthly-1year-retention: Monthly backups with cold storage after 90 days
+- production-standard: Daily + Weekly + Monthly with enterprise retention
+- compliance-hipaa: HIPAA-compliant with 7-year retention
+- compliance-gdpr: GDPR-compliant with retention limits
+- continuous-pit: Continuous point-in-time recovery (5 min RPO)
+
+Use this tool to:
+- Create backup plans with schedules and retention policies
+- List and restore from recovery points
+- Set up cross-region disaster recovery
+- Generate DR runbooks with step-by-step procedures
+- Execute failovers to DR region
+- Check backup compliance status
+- Test recovery procedures`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                // Backup Plans
+                "list_backup_plans",
+                "get_backup_plan",
+                "create_backup_plan",
+                "update_backup_plan",
+                "delete_backup_plan",
+                "get_backup_plan_templates",
+                "get_backup_plan_template",
+                "create_backup_plan_from_template",
+                // Backup Selections
+                "list_backup_selections",
+                "create_backup_selection",
+                "delete_backup_selection",
+                // Backup Vaults
+                "list_backup_vaults",
+                "get_backup_vault",
+                "create_backup_vault",
+                "delete_backup_vault",
+                "lock_backup_vault",
+                // Recovery Points
+                "list_recovery_points",
+                "get_recovery_point",
+                "delete_recovery_point",
+                // Backup Jobs
+                "list_backup_jobs",
+                "get_backup_job",
+                "start_backup_job",
+                "stop_backup_job",
+                // Restore Jobs
+                "list_restore_jobs",
+                "get_restore_job",
+                "start_restore_job",
+                // Copy Jobs (Cross-Region)
+                "list_copy_jobs",
+                "start_copy_job",
+                // Cross-Region Replication
+                "configure_replication",
+                "get_replication_configuration",
+                // Protected Resources
+                "list_protected_resources",
+                // DR Runbook
+                "generate_dr_runbook",
+                // Failover
+                "execute_failover",
+                // Compliance
+                "get_backup_compliance",
+                "list_frameworks",
+                "create_framework",
+                "delete_framework",
+                // Recovery Testing
+                "test_recovery",
+                // Report Plans
+                "list_report_plans",
+                "create_report_plan",
+                "delete_report_plan",
+              ],
+              description: "The backup operation to perform",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region (defaults to configured region)",
+            },
+            // Backup plan options
+            backup_plan_id: {
+              type: "string",
+              description: "ID of the backup plan",
+            },
+            backup_plan_name: {
+              type: "string",
+              description: "Name for the backup plan",
+            },
+            template_id: {
+              type: "string",
+              description: "ID of the backup plan template to use",
+            },
+            rules: {
+              type: "array",
+              description: "Array of backup rules with schedule and lifecycle",
+              items: {
+                type: "object",
+                properties: {
+                  rule_name: { type: "string" },
+                  target_vault_name: { type: "string" },
+                  schedule_expression: { type: "string" },
+                  start_window_minutes: { type: "number" },
+                  completion_window_minutes: { type: "number" },
+                  delete_after_days: { type: "number" },
+                  move_to_cold_storage_after_days: { type: "number" },
+                },
+              },
+            },
+            // Backup vault options
+            backup_vault_name: {
+              type: "string",
+              description: "Name of the backup vault",
+            },
+            encryption_key_arn: {
+              type: "string",
+              description: "KMS key ARN for vault encryption",
+            },
+            min_retention_days: {
+              type: "number",
+              description: "Minimum retention days for vault lock",
+            },
+            max_retention_days: {
+              type: "number",
+              description: "Maximum retention days for vault lock",
+            },
+            // Recovery point options
+            recovery_point_arn: {
+              type: "string",
+              description: "ARN of the recovery point",
+            },
+            resource_arn: {
+              type: "string",
+              description: "ARN of the resource to backup/restore",
+            },
+            resource_type: {
+              type: "string",
+              description: "Type of resource (EC2, RDS, DynamoDB, EFS, S3)",
+            },
+            // Backup selection options
+            selection_id: {
+              type: "string",
+              description: "ID of the backup selection",
+            },
+            selection_name: {
+              type: "string",
+              description: "Name for the backup selection",
+            },
+            iam_role_arn: {
+              type: "string",
+              description: "IAM role ARN for backup operations",
+            },
+            resources: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of resource ARNs to include",
+            },
+            // Backup/Restore job options
+            backup_job_id: {
+              type: "string",
+              description: "ID of the backup job",
+            },
+            restore_job_id: {
+              type: "string",
+              description: "ID of the restore job",
+            },
+            restore_metadata: {
+              type: "object",
+              description: "Metadata for the restore operation",
+            },
+            // Cross-region options
+            destination_region: {
+              type: "string",
+              description: "Destination region for cross-region copy",
+            },
+            destination_vault_arn: {
+              type: "string",
+              description: "Destination vault ARN for copy job",
+            },
+            create_destination_vault: {
+              type: "boolean",
+              description: "Whether to create the destination vault if it doesn't exist",
+            },
+            // DR Runbook options
+            runbook_name: {
+              type: "string",
+              description: "Name for the DR runbook",
+            },
+            source_region: {
+              type: "string",
+              description: "Source region for DR",
+            },
+            dr_region: {
+              type: "string",
+              description: "DR region for failover",
+            },
+            target_rpo: {
+              type: "string",
+              description: "Target Recovery Point Objective (e.g., '24 hours')",
+            },
+            target_rto: {
+              type: "string",
+              description: "Target Recovery Time Objective (e.g., '4 hours')",
+            },
+            resource_arns: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of resource ARNs for DR runbook",
+            },
+            include_rollback: {
+              type: "boolean",
+              description: "Include rollback steps in DR runbook",
+            },
+            // Failover options
+            dry_run: {
+              type: "boolean",
+              description: "Perform a dry run without making changes",
+            },
+            skip_health_checks: {
+              type: "boolean",
+              description: "Skip pre-failover health checks",
+            },
+            // Compliance options
+            framework_name: {
+              type: "string",
+              description: "Name of the compliance framework",
+            },
+            framework_controls: {
+              type: "array",
+              description: "Controls for the compliance framework",
+            },
+            // Report plan options
+            report_plan_name: {
+              type: "string",
+              description: "Name for the report plan",
+            },
+            report_template: {
+              type: "string",
+              enum: [
+                "RESOURCE_COMPLIANCE_REPORT",
+                "CONTROL_COMPLIANCE_REPORT",
+                "BACKUP_JOB_REPORT",
+                "COPY_JOB_REPORT",
+                "RESTORE_JOB_REPORT",
+              ],
+              description: "Type of report to generate",
+            },
+            s3_bucket_name: {
+              type: "string",
+              description: "S3 bucket for report delivery",
+            },
+            // Recovery test options
+            test_name: {
+              type: "string",
+              description: "Name for the recovery test",
+            },
+            cleanup_after_test: {
+              type: "boolean",
+              description: "Clean up restored resources after test",
+            },
+            timeout_minutes: {
+              type: "number",
+              description: "Timeout for the recovery test",
+            },
+            // Common
+            tags: {
+              type: "object",
+              description: "Tags to apply to resources",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: Record<string, unknown>) {
+          const action = params.action as string;
+          const region = (params.region as string) || config.defaultRegion || "us-east-1";
+
+          // Initialize backup manager if needed
+          if (!backupManager) {
+            backupManager = createBackupManager({
+              defaultRegion: region,
+              drRegion: (params.dr_region as string) || "us-west-2",
+            });
+          }
+
+          try {
+            switch (action) {
+              // ==================
+              // Backup Plans
+              // ==================
+              case "list_backup_plans": {
+                const result = await backupManager.listBackupPlans({
+                  maxResults: params.max_results as number,
+                  includeDeleted: params.include_deleted as boolean,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list backup plans: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const plans = result.data ?? [];
+                if (plans.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No backup plans found" }],
+                    details: { plans: [] },
+                  };
+                }
+
+                const planList = plans.map(p => 
+                  `• **${p.backupPlanName}** (${p.backupPlanId})\n  Rules: ${p.rules.length}, Created: ${p.creationDate.toISOString().split('T')[0]}`
+                ).join('\n');
+
+                return {
+                  content: [{ type: "text", text: `📋 **Backup Plans** (${plans.length})\n\n${planList}` }],
+                  details: { plans },
+                };
+              }
+
+              case "get_backup_plan": {
+                const backupPlanId = params.backup_plan_id as string;
+                if (!backupPlanId) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_plan_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.getBackupPlan(backupPlanId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get backup plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const plan = result.data!;
+                const rulesText = plan.rules.map(r => 
+                  `  • **${r.ruleName}**: ${r.scheduleExpression ?? 'On-demand'} → ${r.targetBackupVaultName}`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **${plan.backupPlanName}**\n\n**ID:** ${plan.backupPlanId}\n**Created:** ${plan.creationDate.toISOString()}\n**Rules:**\n${rulesText}`,
+                  }],
+                  details: { plan },
+                };
+              }
+
+              case "create_backup_plan": {
+                const backupPlanName = params.backup_plan_name as string;
+                const rules = params.rules as Array<{
+                  rule_name: string;
+                  target_vault_name: string;
+                  schedule_expression?: string;
+                  start_window_minutes?: number;
+                  completion_window_minutes?: number;
+                  delete_after_days?: number;
+                  move_to_cold_storage_after_days?: number;
+                }>;
+
+                if (!backupPlanName || !rules || rules.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_plan_name and at least one rule are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.createBackupPlan({
+                  backupPlanName,
+                  rules: rules.map(r => ({
+                    ruleName: r.rule_name,
+                    targetBackupVaultName: r.target_vault_name || 'Default',
+                    scheduleExpression: r.schedule_expression,
+                    startWindowMinutes: r.start_window_minutes,
+                    completionWindowMinutes: r.completion_window_minutes,
+                    lifecycle: (r.delete_after_days || r.move_to_cold_storage_after_days) ? {
+                      deleteAfterDays: r.delete_after_days,
+                      moveToColdStorageAfterDays: r.move_to_cold_storage_after_days,
+                    } : undefined,
+                  })),
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create backup plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Backup plan **${backupPlanName}** created\n\n**ID:** ${result.data!.backupPlanId}\n**ARN:** ${result.data!.backupPlanArn}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "delete_backup_plan": {
+                const backupPlanId = params.backup_plan_id as string;
+                if (!backupPlanId) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_plan_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.deleteBackupPlan(backupPlanId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete backup plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `✅ Backup plan ${backupPlanId} deleted` }],
+                  details: { deleted: true },
+                };
+              }
+
+              case "get_backup_plan_templates": {
+                const templates = backupManager.getBackupPlanTemplates();
+                const templateList = templates.map(t => 
+                  `• **${t.name}** (\`${t.id}\`)\n  ${t.description}\n  Category: ${t.category}, RPO: ${t.targetRPO}`
+                ).join('\n\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Backup Plan Templates** (${templates.length})\n\n${templateList}`,
+                  }],
+                  details: { templates },
+                };
+              }
+
+              case "get_backup_plan_template": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return {
+                    content: [{ type: "text", text: "Error: template_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const template = backupManager.getBackupPlanTemplate(templateId);
+                if (!template) {
+                  return {
+                    content: [{ type: "text", text: `Template "${templateId}" not found` }],
+                    details: { error: "template_not_found" },
+                  };
+                }
+
+                const rulesText = template.rules.map(r => 
+                  `  • **${r.ruleName}**: ${r.scheduleExpression ?? 'Continuous'}\n    Retention: ${r.lifecycle?.deleteAfterDays ?? 'N/A'} days`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **${template.name}**\n\n${template.description}\n\n**Category:** ${template.category}\n**Target RPO:** ${template.targetRPO}\n\n**Rules:**\n${rulesText}`,
+                  }],
+                  details: { template },
+                };
+              }
+
+              case "create_backup_plan_from_template": {
+                const templateId = params.template_id as string;
+                const backupPlanName = params.backup_plan_name as string;
+
+                if (!templateId) {
+                  return {
+                    content: [{ type: "text", text: "Error: template_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.createBackupPlanFromTemplate(templateId, {
+                  backupPlanName,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create backup plan from template: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Backup plan created from template **${templateId}**\n\n**ID:** ${result.data!.backupPlanId}\n**ARN:** ${result.data!.backupPlanArn}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              // ==================
+              // Backup Vaults
+              // ==================
+              case "list_backup_vaults": {
+                const result = await backupManager.listBackupVaults({
+                  maxResults: params.max_results as number,
+                });
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list backup vaults: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const vaults = result.data ?? [];
+                if (vaults.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No backup vaults found" }],
+                    details: { vaults: [] },
+                  };
+                }
+
+                const vaultList = vaults.map(v => 
+                  `• **${v.backupVaultName}** ${v.locked ? '🔒' : ''}\n  Recovery Points: ${v.numberOfRecoveryPoints}`
+                ).join('\n');
+
+                return {
+                  content: [{ type: "text", text: `🗄️ **Backup Vaults** (${vaults.length})\n\n${vaultList}` }],
+                  details: { vaults },
+                };
+              }
+
+              case "create_backup_vault": {
+                const backupVaultName = params.backup_vault_name as string;
+                if (!backupVaultName) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_vault_name is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.createBackupVault({
+                  backupVaultName,
+                  encryptionKeyArn: params.encryption_key_arn as string,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create backup vault: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Backup vault **${backupVaultName}** created\n\n**ARN:** ${result.data!.backupVaultArn}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "lock_backup_vault": {
+                const backupVaultName = params.backup_vault_name as string;
+                const minRetentionDays = params.min_retention_days as number;
+
+                if (!backupVaultName || !minRetentionDays) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_vault_name and min_retention_days are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.lockBackupVault({
+                  backupVaultName,
+                  minRetentionDays,
+                  maxRetentionDays: params.max_retention_days as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to lock backup vault: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔒 Backup vault **${backupVaultName}** locked\n\nMin retention: ${minRetentionDays} days`,
+                  }],
+                  details: { locked: true },
+                };
+              }
+
+              // ==================
+              // Recovery Points
+              // ==================
+              case "list_recovery_points": {
+                const result = await backupManager.listRecoveryPoints({
+                  backupVaultName: params.backup_vault_name as string,
+                  resourceArn: params.resource_arn as string,
+                  resourceType: params.resource_type as string,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list recovery points: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const rps = result.data ?? [];
+                if (rps.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No recovery points found" }],
+                    details: { recovery_points: [] },
+                  };
+                }
+
+                const rpList = rps.slice(0, 20).map(rp => {
+                  const size = rp.backupSizeInBytes 
+                    ? `${(rp.backupSizeInBytes / 1024 / 1024 / 1024).toFixed(2)} GB` 
+                    : 'N/A';
+                  return `• **${rp.resourceType}** - ${rp.creationDate.toISOString().split('T')[0]}\n  Status: ${rp.status}, Size: ${size}`;
+                }).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📦 **Recovery Points** (${rps.length})\n\n${rpList}${rps.length > 20 ? `\n\n... and ${rps.length - 20} more` : ''}`,
+                  }],
+                  details: { recovery_points: rps },
+                };
+              }
+
+              // ==================
+              // Backup Jobs
+              // ==================
+              case "start_backup_job": {
+                const resourceArn = params.resource_arn as string;
+                const backupVaultName = params.backup_vault_name as string;
+                const iamRoleArn = params.iam_role_arn as string;
+
+                if (!resourceArn || !backupVaultName || !iamRoleArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_arn, backup_vault_name, and iam_role_arn are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.startBackupJob({
+                  resourceArn,
+                  backupVaultName,
+                  iamRoleArn,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to start backup job: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Backup job started\n\n**Job ID:** ${result.data!.backupJobId}\n**Recovery Point:** ${result.data!.recoveryPointArn}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "list_backup_jobs": {
+                const result = await backupManager.listBackupJobs({
+                  resourceArn: params.resource_arn as string,
+                  backupVaultName: params.backup_vault_name as string,
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list backup jobs: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const jobs = result.data ?? [];
+                if (jobs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No backup jobs found" }],
+                    details: { jobs: [] },
+                  };
+                }
+
+                const jobList = jobs.slice(0, 15).map(j => {
+                  const status = j.state === 'COMPLETED' ? '✅' : j.state === 'FAILED' ? '❌' : '⏳';
+                  return `${status} **${j.resourceType}** - ${j.state}\n   ${j.creationDate.toISOString().split('T')[0]}`;
+                }).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Backup Jobs** (${jobs.length})\n\n${jobList}`,
+                  }],
+                  details: { jobs },
+                };
+              }
+
+              // ==================
+              // Restore Jobs
+              // ==================
+              case "start_restore_job": {
+                const recoveryPointArn = params.recovery_point_arn as string;
+                const resourceType = params.resource_type as string;
+                const iamRoleArn = params.iam_role_arn as string;
+                const metadata = params.restore_metadata as Record<string, string>;
+
+                if (!recoveryPointArn || !resourceType || !iamRoleArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: recovery_point_arn, resource_type, and iam_role_arn are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.startRestoreJob({
+                  recoveryPointArn,
+                  resourceType,
+                  iamRoleArn,
+                  metadata: metadata ?? {},
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to start restore job: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Restore job started\n\n**Job ID:** ${result.data!.restoreJobId}\n\nUse \`get_restore_job\` to check status.`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "list_restore_jobs": {
+                const result = await backupManager.listRestoreJobs({
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list restore jobs: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const jobs = result.data ?? [];
+                if (jobs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No restore jobs found" }],
+                    details: { jobs: [] },
+                  };
+                }
+
+                const jobList = jobs.slice(0, 15).map(j => {
+                  const status = j.status === 'COMPLETED' ? '✅' : j.status === 'FAILED' ? '❌' : '⏳';
+                  return `${status} **${j.resourceType ?? 'Unknown'}** - ${j.status}\n   ${j.creationDate.toISOString().split('T')[0]}`;
+                }).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Restore Jobs** (${jobs.length})\n\n${jobList}`,
+                  }],
+                  details: { jobs },
+                };
+              }
+
+              // ==================
+              // Cross-Region Replication
+              // ==================
+              case "configure_replication": {
+                const sourceVaultName = params.backup_vault_name as string;
+                const destinationRegion = params.destination_region as string;
+
+                if (!sourceVaultName || !destinationRegion) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_vault_name and destination_region are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.configureReplication({
+                  sourceVaultName,
+                  destinationRegion,
+                  destinationVaultName: params.destination_vault_name as string,
+                  createDestinationVault: params.create_destination_vault as boolean,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to configure replication: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Cross-region replication configured\n\n**Source:** ${sourceVaultName} (${result.data!.sourceRegion})\n**Destination:** ${result.data!.destinationVaultArn}\n\n${result.message}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "start_copy_job": {
+                const sourceVaultName = params.backup_vault_name as string;
+                const recoveryPointArn = params.recovery_point_arn as string;
+                const destinationVaultArn = params.destination_vault_arn as string;
+                const iamRoleArn = params.iam_role_arn as string;
+
+                if (!sourceVaultName || !recoveryPointArn || !destinationVaultArn || !iamRoleArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: backup_vault_name, recovery_point_arn, destination_vault_arn, and iam_role_arn are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.startCopyJob({
+                  sourceBackupVaultName: sourceVaultName,
+                  recoveryPointArn,
+                  destinationBackupVaultArn: destinationVaultArn,
+                  iamRoleArn,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to start copy job: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Copy job started\n\n**Job ID:** ${result.data!.copyJobId}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              // ==================
+              // DR Runbook
+              // ==================
+              case "generate_dr_runbook": {
+                const name = params.runbook_name as string;
+                const sourceRegion = params.source_region as string;
+                const drRegion = params.dr_region as string;
+                const targetRPO = params.target_rpo as string;
+                const targetRTO = params.target_rto as string;
+
+                if (!name || !sourceRegion || !drRegion || !targetRPO || !targetRTO) {
+                  return {
+                    content: [{ type: "text", text: "Error: runbook_name, source_region, dr_region, target_rpo, and target_rto are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.generateDRRunbook({
+                  name,
+                  sourceRegion,
+                  drRegion,
+                  targetRPO,
+                  targetRTO,
+                  resourceArns: params.resource_arns as string[],
+                  includeRollback: params.include_rollback as boolean,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to generate DR runbook: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const runbook = result.data!;
+                const stepsText = runbook.steps.map(s => 
+                  `${s.stepNumber}. **${s.name}** (${s.type})\n   ${s.description}\n   Est: ${s.estimatedDurationMinutes} min, Automated: ${s.automated ? 'Yes' : 'No'}`
+                ).join('\n\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **DR Runbook: ${runbook.name}**\n\n**Source Region:** ${runbook.sourceRegion}\n**DR Region:** ${runbook.drRegion}\n**Target RPO:** ${runbook.targetRPO}\n**Target RTO:** ${runbook.targetRTO}\n\n## Steps\n\n${stepsText}\n\n## Pre-Conditions\n${runbook.preConditions.map(c => `• ${c.name}`).join('\n')}\n\n## Post-Conditions\n${runbook.postConditions.map(c => `• ${c.name}`).join('\n')}`,
+                  }],
+                  details: { runbook },
+                };
+              }
+
+              // ==================
+              // Failover
+              // ==================
+              case "execute_failover": {
+                const sourceRegion = params.source_region as string;
+                const targetRegion = params.dr_region as string;
+                const dryRun = params.dry_run as boolean;
+
+                if (!sourceRegion || !targetRegion) {
+                  return {
+                    content: [{ type: "text", text: "Error: source_region and dr_region are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.executeFailover({
+                  sourceRegion,
+                  targetRegion,
+                  resourceArns: params.resource_arns as string[],
+                  dryRun: dryRun ?? false,
+                  skipHealthChecks: params.skip_health_checks as boolean,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to execute failover: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const fo = result.data!;
+                const statusIcon = fo.success ? '✅' : '❌';
+                const mode = dryRun ? '(DRY RUN)' : '';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${statusIcon} **Failover ${fo.status}** ${mode}\n\n**Plan ID:** ${fo.planId}\n**Duration:** ${fo.durationMinutes} minutes\n**Steps Completed:** ${fo.stepsCompleted}\n**Steps Failed:** ${fo.stepsFailed}\n**Resources:** ${fo.resourcesFailedOver.length}${fo.errors.length > 0 ? `\n\n**Errors:**\n${fo.errors.map(e => `• ${e}`).join('\n')}` : ''}`,
+                  }],
+                  details: { failover_result: fo },
+                };
+              }
+
+              // ==================
+              // Compliance
+              // ==================
+              case "get_backup_compliance": {
+                const result = await backupManager.getBackupCompliance({
+                  resourceTypes: params.resource_types as string[],
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get backup compliance: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const compliance = result.data!;
+                const statusIcon = compliance.overallStatus === 'COMPLIANT' ? '✅' : '⚠️';
+                const pct = compliance.resourcesEvaluated > 0 
+                  ? Math.round((compliance.resourcesCompliant / compliance.resourcesEvaluated) * 100) 
+                  : 0;
+
+                const issueList = compliance.issues.slice(0, 10).map(i => 
+                  `• **${i.issueType}** (${i.severity}): ${i.description}`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${statusIcon} **Backup Compliance: ${compliance.overallStatus}**\n\n**Resources Evaluated:** ${compliance.resourcesEvaluated}\n**Compliant:** ${compliance.resourcesCompliant} (${pct}%)\n**Non-Compliant:** ${compliance.resourcesNonCompliant}\n\n**Issues (${compliance.issues.length}):**\n${issueList || 'None'}`,
+                  }],
+                  details: { compliance },
+                };
+              }
+
+              // ==================
+              // Protected Resources
+              // ==================
+              case "list_protected_resources": {
+                const result = await backupManager.listProtectedResources({
+                  maxResults: params.max_results as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list protected resources: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const resources = result.data ?? [];
+                if (resources.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No protected resources found" }],
+                    details: { resources: [] },
+                  };
+                }
+
+                const resourceList = resources.slice(0, 20).map(r => {
+                  const lastBackup = r.lastBackupTime 
+                    ? r.lastBackupTime.toISOString().split('T')[0] 
+                    : 'Never';
+                  return `• **${r.resourceType}**: ${r.resourceName ?? r.resourceArn.split('/').pop()}\n  Last Backup: ${lastBackup}`;
+                }).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🛡️ **Protected Resources** (${resources.length})\n\n${resourceList}`,
+                  }],
+                  details: { resources },
+                };
+              }
+
+              // ==================
+              // Recovery Testing
+              // ==================
+              case "test_recovery": {
+                const testName = params.test_name as string;
+                const recoveryPointArn = params.recovery_point_arn as string;
+                const resourceType = params.resource_type as string;
+                const iamRoleArn = params.iam_role_arn as string;
+
+                if (!testName || !recoveryPointArn || !resourceType || !iamRoleArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: test_name, recovery_point_arn, resource_type, and iam_role_arn are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.testRecovery({
+                  testName,
+                  recoveryPointArn,
+                  resourceType,
+                  iamRoleArn,
+                  restoreMetadata: params.restore_metadata as Record<string, string> ?? {},
+                  cleanupAfterTest: params.cleanup_after_test as boolean,
+                  timeoutMinutes: params.timeout_minutes as number,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to run recovery test: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const test = result.data!;
+                const statusIcon = test.success ? '✅' : '❌';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `${statusIcon} **Recovery Test: ${test.success ? 'PASSED' : 'FAILED'}**\n\n**Test ID:** ${test.testId}\n**Resource Restored:** ${test.resourceRestored ? 'Yes' : 'No'}\n**Restored ARN:** ${test.restoredResourceArn ?? 'N/A'}\n**Recovery Time:** ${test.actualRecoveryTimeMinutes} minutes\n**Validations Passed:** ${test.validationsPassed}\n**Validations Failed:** ${test.validationsFailed}\n**Cleaned Up:** ${test.cleanedUp ? 'Yes' : 'No'}${test.errors.length > 0 ? `\n\n**Errors:**\n${test.errors.map(e => `• ${e}`).join('\n')}` : ''}`,
+                  }],
+                  details: { test_result: test },
+                };
+              }
+
+              // ==================
+              // Report Plans
+              // ==================
+              case "list_report_plans": {
+                const result = await backupManager.listReportPlans();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to list report plans: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const plans = result.data ?? [];
+                if (plans.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No report plans found" }],
+                    details: { plans: [] },
+                  };
+                }
+
+                const planList = plans.map(p => 
+                  `• **${p.reportPlanName}**\n  Template: ${p.reportSetting.reportTemplate}\n  Delivery: s3://${p.reportDeliveryChannel.s3BucketName}`
+                ).join('\n');
+
+                return {
+                  content: [{ type: "text", text: `📊 **Report Plans** (${plans.length})\n\n${planList}` }],
+                  details: { plans },
+                };
+              }
+
+              case "create_report_plan": {
+                const reportPlanName = params.report_plan_name as string;
+                const reportTemplate = params.report_template as string;
+                const s3BucketName = params.s3_bucket_name as string;
+
+                if (!reportPlanName || !reportTemplate || !s3BucketName) {
+                  return {
+                    content: [{ type: "text", text: "Error: report_plan_name, report_template, and s3_bucket_name are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.createReportPlan({
+                  reportPlanName,
+                  reportTemplate: reportTemplate as "RESOURCE_COMPLIANCE_REPORT" | "CONTROL_COMPLIANCE_REPORT" | "BACKUP_JOB_REPORT" | "COPY_JOB_REPORT" | "RESTORE_JOB_REPORT",
+                  s3BucketName,
+                  tags: params.tags as Record<string, string>,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to create report plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Report plan **${reportPlanName}** created\n\n**ARN:** ${result.data!.reportPlanArn}`,
+                  }],
+                  details: result.data,
+                };
+              }
+
+              case "delete_report_plan": {
+                const reportPlanName = params.report_plan_name as string;
+                if (!reportPlanName) {
+                  return {
+                    content: [{ type: "text", text: "Error: report_plan_name is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await backupManager.deleteReportPlan(reportPlanName);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to delete report plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                return {
+                  content: [{ type: "text", text: `✅ Report plan ${reportPlanName} deleted` }],
+                  details: { deleted: true },
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Backup error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_backup" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -11358,6 +12565,7 @@ Use this tool to:
         securityManager = null;
         guardrailsManager = null;
         organizationManager = null;
+        backupManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -11388,6 +12596,7 @@ export function getAWSManagers() {
     security: securityManager,
     guardrails: guardrailsManager,
     organization: organizationManager,
+    backup: backupManager,
     cli: cliWrapper,
   };
 }
