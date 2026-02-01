@@ -86,6 +86,14 @@ import {
   BACKUP_PLAN_TEMPLATES,
 } from "./src/backup/index.js";
 
+import {
+  createConversationalManager,
+  WIZARD_TEMPLATES,
+  INSIGHT_CHECKS,
+  QUERY_PATTERNS,
+  type AWSConversationalManager,
+} from "./src/conversational/index.js";
+
 import type {
   OperationContext,
   ActionType,
@@ -118,6 +126,7 @@ let securityManager: SecurityManager | null = null;
 let guardrailsManager: GuardrailsManager | null = null;
 let organizationManager: OrganizationManager | null = null;
 let backupManager: BackupManager | null = null;
+let conversationalManager: AWSConversationalManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -12531,6 +12540,1233 @@ Use this tool to:
       { name: "aws_backup" },
     );
 
+    // =========================================================================
+    // AWS CONVERSATIONAL UX AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_assistant",
+        label: "AWS Conversational Assistant",
+        description: `An intelligent AWS infrastructure assistant providing context-aware interactions, proactive insights, natural language queries, and wizard-guided infrastructure creation.
+
+CAPABILITIES:
+
+1. INFRASTRUCTURE CONTEXT MANAGEMENT
+   - Track recently accessed resources automatically
+   - Maintain session history of operations
+   - Pin/unpin important resources for quick access
+   - Set context variables for filtering
+   - Switch between regions and environments
+
+2. NATURAL LANGUAGE QUERIES
+   - Query resources using plain English
+   - "Show me all EC2 instances in production"
+   - "Find resources tagged with project=alpha"
+   - "What's running in us-west-2?"
+   - "Count Lambda functions created this week"
+   - "List unused EBS volumes"
+
+3. PROACTIVE INSIGHTS
+   - Automatic detection of cost optimization opportunities
+   - Security vulnerability identification
+   - Performance bottleneck alerts
+   - Capacity planning warnings
+   - Compliance status monitoring
+
+   Insight Categories:
+   - Cost: Unused resources, idle instances, old snapshots
+   - Security: Public S3 buckets, open security groups, MFA status
+   - Performance: High CPU, memory issues, throttling
+   - Reliability: Single-AZ databases, missing backups
+   - Operational: Pending maintenance, outdated AMIs
+
+4. WIZARD MODE
+   - Guided infrastructure creation with step-by-step flows
+   - Pre-built templates for common architectures:
+     • Production Web Application (VPC, ALB, EC2, RDS)
+     • Serverless REST API (API Gateway, Lambda)
+     • Containerized Application (ECS Fargate)
+     • Static Website (S3, CloudFront)
+     • VPC Network Setup
+     • Database Setup (RDS/Aurora)
+     • Monitoring & Alerting Setup
+   - Dry-run execution for validation
+   - Cost estimation before deployment
+   - IaC generation (Terraform/CloudFormation)
+
+5. SESSION SUMMARY & REPORTING
+   - Infrastructure health overview
+   - Session activity summary
+   - Resource access patterns
+   - Operation success rates
+
+Use this tool to:
+- Get intelligent assistance with AWS infrastructure
+- Query resources using natural language
+- Receive proactive recommendations
+- Create infrastructure using guided wizards
+- Track context across multiple operations`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                // Context Management
+                "get_context",
+                "set_region",
+                "set_account",
+                "set_environment",
+                "add_recent_resource",
+                "pin_resource",
+                "unpin_resource",
+                "add_filter",
+                "remove_filter",
+                "clear_filters",
+                "set_variable",
+                "get_variable",
+                "clear_session",
+                "record_operation",
+                // Natural Language Queries
+                "query",
+                "parse_query",
+                "get_suggestions",
+                // Proactive Insights
+                "get_insights",
+                "get_insight",
+                "acknowledge_insight",
+                "dismiss_insight",
+                "snooze_insight",
+                "resolve_insight",
+                "run_insight_checks",
+                "get_insight_checks",
+                "update_insight_check",
+                // Wizard Mode
+                "list_wizard_templates",
+                "get_wizard_template",
+                "start_wizard",
+                "get_wizard_state",
+                "answer_wizard_step",
+                "go_back_wizard",
+                "skip_wizard_step",
+                "cancel_wizard",
+                "generate_wizard_plan",
+                "execute_wizard",
+                // Summary & Reporting
+                "get_infrastructure_summary",
+                "get_session_summary",
+              ],
+              description: "The conversational assistant action to perform",
+            },
+            // Common options
+            region: {
+              type: "string",
+              description: "AWS region for context",
+            },
+            // Context options
+            account_id: {
+              type: "string",
+              description: "AWS account ID",
+            },
+            environment: {
+              type: "string",
+              enum: ["dev", "development", "staging", "uat", "production", "prod", "test", "sandbox"],
+              description: "Environment type",
+            },
+            resource: {
+              type: "object",
+              description: "Resource reference object",
+              properties: {
+                type: { type: "string" },
+                id: { type: "string" },
+                name: { type: "string" },
+                region: { type: "string" },
+                arn: { type: "string" },
+                tags: { type: "object" },
+              },
+            },
+            resource_id: {
+              type: "string",
+              description: "Resource ID to unpin",
+            },
+            filter: {
+              type: "object",
+              description: "Filter to add",
+              properties: {
+                id: { type: "string" },
+                name: { type: "string" },
+                type: { type: "string" },
+                operator: { type: "string" },
+                value: { type: "string" },
+                active: { type: "boolean" },
+              },
+            },
+            filter_id: {
+              type: "string",
+              description: "Filter ID to remove",
+            },
+            variable_name: {
+              type: "string",
+              description: "Variable name",
+            },
+            variable_value: {
+              type: "string",
+              description: "Variable value",
+            },
+            operation: {
+              type: "object",
+              description: "Operation record",
+            },
+            // Query options
+            query: {
+              type: "string",
+              description: "Natural language query",
+            },
+            partial_query: {
+              type: "string",
+              description: "Partial query for suggestions",
+            },
+            // Insight options
+            insight_id: {
+              type: "string",
+              description: "Insight ID",
+            },
+            insight_category: {
+              type: "string",
+              enum: ["cost", "security", "performance", "reliability", "operational", "compliance", "capacity", "optimization"],
+              description: "Filter insights by category",
+            },
+            insight_severity: {
+              type: "string",
+              enum: ["critical", "high", "medium", "low", "info"],
+              description: "Filter insights by severity",
+            },
+            insight_status: {
+              type: "string",
+              enum: ["new", "acknowledged", "in-progress", "resolved", "dismissed", "snoozed"],
+              description: "Filter insights by status",
+            },
+            snooze_until: {
+              type: "string",
+              description: "ISO date string for snooze until",
+            },
+            check_ids: {
+              type: "array",
+              items: { type: "string" },
+              description: "Specific insight check IDs to run",
+            },
+            check_id: {
+              type: "string",
+              description: "Insight check ID to update",
+            },
+            check_enabled: {
+              type: "boolean",
+              description: "Enable or disable the insight check",
+            },
+            // Wizard options
+            template_id: {
+              type: "string",
+              description: "Wizard template ID",
+            },
+            wizard_id: {
+              type: "string",
+              description: "Active wizard ID",
+            },
+            step_id: {
+              type: "string",
+              description: "Wizard step ID",
+            },
+            step_value: {
+              description: "Value for wizard step answer",
+            },
+            dry_run: {
+              type: "boolean",
+              description: "Execute wizard in dry-run mode",
+            },
+            // Pagination
+            limit: {
+              type: "number",
+              description: "Maximum results to return",
+            },
+            include_dismissed: {
+              type: "boolean",
+              description: "Include dismissed insights",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(params: Record<string, unknown>) {
+          const action = params.action as string;
+          const region = (params.region as string) || config.defaultRegion || "us-east-1";
+
+          // Initialize conversational manager if needed
+          if (!conversationalManager) {
+            conversationalManager = createConversationalManager({
+              defaultRegion: region,
+            });
+          }
+
+          try {
+            switch (action) {
+              // ==================
+              // Context Management
+              // ==================
+              case "get_context": {
+                const context = conversationalManager.getContext();
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Current Context**
+
+**Session:** ${context.sessionId}
+**Started:** ${context.sessionStarted.toISOString()}
+**Region:** ${context.activeRegion}
+**Account:** ${context.activeAccount || 'Not set'}
+**Environment:** ${context.environment || 'Not set'}
+
+**Recent Resources:** ${context.recentResources.length}
+**Pinned Resources:** ${context.pinnedResources.length}
+**Active Filters:** ${context.activeFilters.length}
+**Operations:** ${context.sessionHistory.length}`,
+                  }],
+                  details: { context },
+                };
+              }
+
+              case "set_region": {
+                const newRegion = params.region as string;
+                if (!newRegion) {
+                  return {
+                    content: [{ type: "text", text: "Error: region is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.setActiveRegion(newRegion);
+                return {
+                  content: [{ type: "text", text: `✅ Active region set to **${newRegion}**` }],
+                  details: { region: newRegion },
+                };
+              }
+
+              case "set_account": {
+                const accountId = params.account_id as string;
+                if (!accountId) {
+                  return {
+                    content: [{ type: "text", text: "Error: account_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.setActiveAccount(accountId);
+                return {
+                  content: [{ type: "text", text: `✅ Active account set to **${accountId}**` }],
+                  details: { accountId },
+                };
+              }
+
+              case "set_environment": {
+                const environment = params.environment as string;
+                if (!environment) {
+                  return {
+                    content: [{ type: "text", text: "Error: environment is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.setEnvironment(environment as "dev" | "development" | "staging" | "uat" | "production" | "prod" | "test" | "sandbox");
+                return {
+                  content: [{ type: "text", text: `✅ Environment set to **${environment}**` }],
+                  details: { environment },
+                };
+              }
+
+              case "add_recent_resource": {
+                const resource = params.resource as { type: string; id: string; name: string; region: string; arn?: string; tags?: Record<string, string> };
+                if (!resource?.type || !resource?.id || !resource?.name) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource with type, id, and name is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.addRecentResource({
+                  ...resource,
+                  lastAccessed: new Date(),
+                  accessCount: 1,
+                } as { type: "ec2:instance" | "ec2:security-group" | "ec2:vpc" | "ec2:subnet" | "rds:instance" | "rds:cluster" | "lambda:function" | "s3:bucket" | "ecs:cluster" | "ecs:service" | "eks:cluster" | "dynamodb:table" | "sqs:queue" | "sns:topic" | "cloudfront:distribution" | "elb:load-balancer" | "iam:role" | "iam:user" | "kms:key" | "secretsmanager:secret" | "cloudwatch:alarm" | "route53:hosted-zone" | "apigateway:rest-api" | "other"; id: string; name: string; region: string; arn?: string; tags?: Record<string, string>; lastAccessed: Date; accessCount: number });
+                return {
+                  content: [{ type: "text", text: `✅ Added **${resource.name}** to recent resources` }],
+                  details: { resource },
+                };
+              }
+
+              case "pin_resource": {
+                const resource = params.resource as { type: string; id: string; name: string; region: string; arn?: string; tags?: Record<string, string> };
+                if (!resource?.type || !resource?.id || !resource?.name) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource with type, id, and name is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.pinResource({
+                  ...resource,
+                  lastAccessed: new Date(),
+                  accessCount: 1,
+                } as { type: "ec2:instance" | "ec2:security-group" | "ec2:vpc" | "ec2:subnet" | "rds:instance" | "rds:cluster" | "lambda:function" | "s3:bucket" | "ecs:cluster" | "ecs:service" | "eks:cluster" | "dynamodb:table" | "sqs:queue" | "sns:topic" | "cloudfront:distribution" | "elb:load-balancer" | "iam:role" | "iam:user" | "kms:key" | "secretsmanager:secret" | "cloudwatch:alarm" | "route53:hosted-zone" | "apigateway:rest-api" | "other"; id: string; name: string; region: string; arn?: string; tags?: Record<string, string>; lastAccessed: Date; accessCount: number });
+                return {
+                  content: [{ type: "text", text: `📌 Pinned **${resource.name}**` }],
+                  details: { resource },
+                };
+              }
+
+              case "unpin_resource": {
+                const resourceId = params.resource_id as string;
+                if (!resourceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: resource_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.unpinResource(resourceId);
+                return {
+                  content: [{ type: "text", text: `📌 Unpinned resource **${resourceId}**` }],
+                  details: { resourceId },
+                };
+              }
+
+              case "add_filter": {
+                const filter = params.filter as { id: string; name: string; type: string; operator: string; value: string; active: boolean };
+                if (!filter?.name || !filter?.type || !filter?.operator || filter?.value === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: filter with name, type, operator, and value is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.addFilter({
+                  id: filter.id || crypto.randomUUID(),
+                  name: filter.name,
+                  type: filter.type as "tag" | "region" | "type" | "environment" | "account" | "name" | "created" | "custom",
+                  operator: filter.operator as "equals" | "not-equals" | "contains" | "starts-with" | "ends-with" | "greater-than" | "less-than" | "in" | "not-in" | "exists" | "not-exists",
+                  value: filter.value,
+                  active: filter.active ?? true,
+                });
+                return {
+                  content: [{ type: "text", text: `✅ Added filter **${filter.name}**` }],
+                  details: { filter },
+                };
+              }
+
+              case "remove_filter": {
+                const filterId = params.filter_id as string;
+                if (!filterId) {
+                  return {
+                    content: [{ type: "text", text: "Error: filter_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.removeFilter(filterId);
+                return {
+                  content: [{ type: "text", text: `✅ Removed filter **${filterId}**` }],
+                  details: { filterId },
+                };
+              }
+
+              case "clear_filters": {
+                conversationalManager.clearFilters();
+                return {
+                  content: [{ type: "text", text: "✅ All filters cleared" }],
+                  details: { cleared: true },
+                };
+              }
+
+              case "set_variable": {
+                const varName = params.variable_name as string;
+                const varValue = params.variable_value as string;
+                if (!varName || varValue === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: variable_name and variable_value are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.setVariable(varName, varValue);
+                return {
+                  content: [{ type: "text", text: `✅ Variable **${varName}** set to "${varValue}"` }],
+                  details: { name: varName, value: varValue },
+                };
+              }
+
+              case "get_variable": {
+                const varName = params.variable_name as string;
+                if (!varName) {
+                  return {
+                    content: [{ type: "text", text: "Error: variable_name is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const value = conversationalManager.getVariable(varName);
+                return {
+                  content: [{ type: "text", text: value !== undefined ? `**${varName}** = "${value}"` : `Variable **${varName}** not found` }],
+                  details: { name: varName, value },
+                };
+              }
+
+              case "clear_session": {
+                conversationalManager.clearSession();
+                return {
+                  content: [{ type: "text", text: "✅ Session cleared - new session started" }],
+                  details: { cleared: true },
+                };
+              }
+
+              case "record_operation": {
+                const operation = params.operation as { id: string; action: string; service: string; resources: unknown[]; timestamp: string; status: string; durationMs?: number; error?: string };
+                if (!operation?.action || !operation?.service) {
+                  return {
+                    content: [{ type: "text", text: "Error: operation with action and service is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                conversationalManager.recordOperation({
+                  id: operation.id || crypto.randomUUID(),
+                  action: operation.action,
+                  service: operation.service,
+                  resources: (operation.resources || []) as { type: "ec2:instance" | "ec2:security-group" | "ec2:vpc" | "ec2:subnet" | "rds:instance" | "rds:cluster" | "lambda:function" | "s3:bucket" | "ecs:cluster" | "ecs:service" | "eks:cluster" | "dynamodb:table" | "sqs:queue" | "sns:topic" | "cloudfront:distribution" | "elb:load-balancer" | "iam:role" | "iam:user" | "kms:key" | "secretsmanager:secret" | "cloudwatch:alarm" | "route53:hosted-zone" | "apigateway:rest-api" | "other"; id: string; name: string; region: string; lastAccessed: Date; accessCount: number }[],
+                  timestamp: operation.timestamp ? new Date(operation.timestamp) : new Date(),
+                  status: (operation.status || 'success') as 'success' | 'failed' | 'in-progress' | 'cancelled',
+                  durationMs: operation.durationMs,
+                  error: operation.error,
+                });
+                return {
+                  content: [{ type: "text", text: `✅ Recorded operation: ${operation.action}` }],
+                  details: { operation },
+                };
+              }
+
+              // ==================
+              // Natural Language Queries
+              // ==================
+              case "query": {
+                const queryText = params.query as string;
+                if (!queryText) {
+                  return {
+                    content: [{ type: "text", text: "Error: query is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.executeQuery(queryText);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Query failed: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const queryResult = result.data!;
+                const resourceList = queryResult.resources.length > 0
+                  ? queryResult.resources.slice(0, 20).map(r => `• **${r.name}** (${r.type}) - ${r.region}`).join('\n')
+                  : 'No resources found';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔍 **Query Results**
+
+**Summary:** ${queryResult.summary}
+**Execution Time:** ${queryResult.executionTimeMs}ms
+
+**Resources:**
+${resourceList}${queryResult.totalCount > 20 ? `\n\n_...and ${queryResult.totalCount - 20} more_` : ''}${queryResult.suggestions?.length ? `\n\n**Suggestions:**\n${queryResult.suggestions.map(s => `• ${s}`).join('\n')}` : ''}`,
+                  }],
+                  details: queryResult,
+                };
+              }
+
+              case "parse_query": {
+                const queryText = params.query as string;
+                if (!queryText) {
+                  return {
+                    content: [{ type: "text", text: "Error: query is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.parseQuery(queryText);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Parse failed: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const parsed = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📝 **Parsed Query**
+
+**Original:** "${parsed.originalQuery}"
+**Intent:** ${parsed.intent}
+**Confidence:** ${(parsed.confidence * 100).toFixed(0)}%
+**Resource Types:** ${parsed.resourceTypes.join(', ') || 'All'}
+**Filters:** ${parsed.filters.length}
+**Region:** ${parsed.region || 'Default'}
+**Environment:** ${parsed.environment || 'Any'}
+**Time Range:** ${parsed.timeRange?.type || 'None'}${parsed.ambiguities?.length ? `\n\n**Ambiguities:**\n${parsed.ambiguities.map(a => `• ${a}`).join('\n')}` : ''}`,
+                  }],
+                  details: parsed,
+                };
+              }
+
+              case "get_suggestions": {
+                const partialQuery = params.partial_query as string || '';
+                const result = await conversationalManager.getSuggestions(partialQuery);
+                
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get suggestions: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const suggestions = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: suggestions.length > 0
+                      ? `💡 **Query Suggestions**\n\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+                      : 'No suggestions available',
+                  }],
+                  details: { suggestions },
+                };
+              }
+
+              // ==================
+              // Proactive Insights
+              // ==================
+              case "get_insights": {
+                const result = await conversationalManager.getInsights({
+                  category: params.insight_category as "cost" | "security" | "performance" | "reliability" | "operational" | "compliance" | "capacity" | "optimization" | undefined,
+                  severity: params.insight_severity as "critical" | "high" | "medium" | "low" | "info" | undefined,
+                  status: params.insight_status as "new" | "acknowledged" | "in-progress" | "resolved" | "dismissed" | "snoozed" | undefined,
+                  limit: params.limit as number,
+                  includeDismissed: params.include_dismissed as boolean,
+                });
+
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get insights: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const insights = result.data!;
+                if (insights.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "✅ No insights found - your infrastructure looks healthy!" }],
+                    details: { insights: [] },
+                  };
+                }
+
+                const severityEmoji: Record<string, string> = {
+                  critical: '🔴',
+                  high: '🟠',
+                  medium: '🟡',
+                  low: '🟢',
+                  info: 'ℹ️',
+                };
+
+                const insightList = insights.map(i => 
+                  `${severityEmoji[i.severity]} **${i.title}**\n   ${i.description}\n   Category: ${i.category} | Status: ${i.status}`
+                ).join('\n\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🔍 **Proactive Insights** (${insights.length})\n\n${insightList}`,
+                  }],
+                  details: { insights },
+                };
+              }
+
+              case "get_insight": {
+                const insightId = params.insight_id as string;
+                if (!insightId) {
+                  return {
+                    content: [{ type: "text", text: "Error: insight_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.getInsight(insightId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get insight: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const insight = result.data!;
+                const recommendations = insight.recommendations.map((r, i) => 
+                  `${i + 1}. **${r.title}**\n   ${r.description}\n   Effort: ${r.effort} | Automatable: ${r.automatable ? 'Yes' : 'No'}`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📊 **Insight Details**
+
+**${insight.title}**
+${insight.description}
+
+**Category:** ${insight.category}
+**Severity:** ${insight.severity}
+**Status:** ${insight.status}
+**Service:** ${insight.service}
+**Detected:** ${insight.detectedAt.toISOString()}
+
+**Affected Resources:** ${insight.affectedResources.length}
+${insight.affectedResources.slice(0, 5).map(r => `• ${r.name} (${r.type})`).join('\n')}
+
+**Recommendations:**
+${recommendations}`,
+                  }],
+                  details: { insight },
+                };
+              }
+
+              case "acknowledge_insight": {
+                const insightId = params.insight_id as string;
+                if (!insightId) {
+                  return {
+                    content: [{ type: "text", text: "Error: insight_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.acknowledgeInsight(insightId);
+                return result.success
+                  ? { content: [{ type: "text", text: `✅ Insight acknowledged` }], details: { acknowledged: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "dismiss_insight": {
+                const insightId = params.insight_id as string;
+                if (!insightId) {
+                  return {
+                    content: [{ type: "text", text: "Error: insight_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.dismissInsight(insightId);
+                return result.success
+                  ? { content: [{ type: "text", text: `✅ Insight dismissed` }], details: { dismissed: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "snooze_insight": {
+                const insightId = params.insight_id as string;
+                const snoozeUntil = params.snooze_until as string;
+                if (!insightId || !snoozeUntil) {
+                  return {
+                    content: [{ type: "text", text: "Error: insight_id and snooze_until are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.snoozeInsight(insightId, new Date(snoozeUntil));
+                return result.success
+                  ? { content: [{ type: "text", text: `✅ Insight snoozed until ${snoozeUntil}` }], details: { snoozed: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "resolve_insight": {
+                const insightId = params.insight_id as string;
+                if (!insightId) {
+                  return {
+                    content: [{ type: "text", text: "Error: insight_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.resolveInsight(insightId);
+                return result.success
+                  ? { content: [{ type: "text", text: `✅ Insight resolved` }], details: { resolved: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "run_insight_checks": {
+                const checkIds = params.check_ids as string[] | undefined;
+                const result = await conversationalManager.runInsightChecks(checkIds);
+                
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to run checks: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const newInsights = result.data!;
+                return {
+                  content: [{
+                    type: "text",
+                    text: newInsights.length > 0
+                      ? `🔍 **Insight Checks Complete**\n\nFound ${newInsights.length} new insight(s):\n${newInsights.map(i => `• ${i.severity.toUpperCase()}: ${i.title}`).join('\n')}`
+                      : `✅ **Insight Checks Complete**\n\nNo new issues found.`,
+                  }],
+                  details: { newInsights },
+                };
+              }
+
+              case "get_insight_checks": {
+                const result = await conversationalManager.getInsightChecks();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get checks: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const checks = result.data!;
+                const checkList = checks.map(c => 
+                  `• **${c.name}** (${c.id})\n  Category: ${c.category} | Enabled: ${c.enabled ? '✓' : '✗'} | Interval: ${c.intervalMinutes}min`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `⚙️ **Insight Checks** (${checks.length})\n\n${checkList}`,
+                  }],
+                  details: { checks },
+                };
+              }
+
+              case "update_insight_check": {
+                const checkId = params.check_id as string;
+                const enabled = params.check_enabled as boolean;
+                if (!checkId || enabled === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: check_id and check_enabled are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.updateInsightCheck(checkId, enabled);
+                return result.success
+                  ? { content: [{ type: "text", text: `✅ Check ${checkId} ${enabled ? 'enabled' : 'disabled'}` }], details: { updated: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              // ==================
+              // Wizard Mode
+              // ==================
+              case "list_wizard_templates": {
+                const result = await conversationalManager.getWizardTemplates();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get templates: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const templates = result.data!;
+                const templateList = templates.map(t => 
+                  `• **${t.name}** (\`${t.id}\`)\n  ${t.description}\n  Complexity: ${t.complexity} | Time: ~${t.estimatedTimeMinutes}min`
+                ).join('\n\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🧙 **Available Wizard Templates** (${templates.length})\n\n${templateList}`,
+                  }],
+                  details: { templates },
+                };
+              }
+
+              case "get_wizard_template": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return {
+                    content: [{ type: "text", text: "Error: template_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.getWizardTemplate(templateId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get template: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const template = result.data!;
+                const steps = template.stepDefinitions.map((s, i) => 
+                  `${i + 1}. **${s.title}**: ${s.description}`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🧙 **${template.name}**
+
+${template.description}
+
+**Category:** ${template.category}
+**Complexity:** ${template.complexity}
+**Estimated Time:** ~${template.estimatedTimeMinutes} minutes
+
+**Steps:**
+${steps}${template.prerequisites?.length ? `\n\n**Prerequisites:**\n${template.prerequisites.map(p => `• ${p}`).join('\n')}` : ''}`,
+                  }],
+                  details: { template },
+                };
+              }
+
+              case "start_wizard": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return {
+                    content: [{ type: "text", text: "Error: template_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.startWizard(templateId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to start wizard: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const state = result.data!;
+                const currentStep = state.steps[state.currentStepIndex];
+                const options = currentStep.options?.map((o, i) => 
+                  `  ${i + 1}. **${o.label}**${o.recommended ? ' ⭐' : ''}${o.disabled ? ' (disabled)' : ''}\n     ${o.description || ''}`
+                ).join('\n') || '';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🧙 **${state.title}** - Started!
+
+**Wizard ID:** \`${state.wizardId}\`
+
+---
+
+**Step ${currentStep.stepNumber}/${currentStep.totalSteps}: ${currentStep.title}**
+
+${currentStep.description}
+
+${currentStep.type === 'choice' || currentStep.type === 'multi-select' ? `**Options:**\n${options}` : ''}
+${currentStep.inputConfig ? `**Input Required:** ${currentStep.inputConfig.placeholder || 'Enter value'}` : ''}
+${currentStep.helpText ? `\n💡 ${currentStep.helpText}` : ''}`,
+                  }],
+                  details: { state },
+                };
+              }
+
+              case "get_wizard_state": {
+                const wizardId = params.wizard_id as string;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.getWizardState(wizardId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get wizard state: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const state = result.data!;
+                const completedSteps = state.steps.filter(s => s.completed).length;
+                const currentStep = state.steps[state.currentStepIndex];
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🧙 **${state.title}**
+
+**Status:** ${state.status}
+**Progress:** ${completedSteps}/${state.steps.length} steps
+
+**Current Step:** ${currentStep.title}
+${currentStep.description}`,
+                  }],
+                  details: { state },
+                };
+              }
+
+              case "answer_wizard_step": {
+                const wizardId = params.wizard_id as string;
+                const stepId = params.step_id as string;
+                const value = params.step_value;
+                if (!wizardId || !stepId || value === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id, step_id, and step_value are required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.answerWizardStep(wizardId, stepId, value);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to answer step: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const state = result.data!;
+                const currentStep = state.steps[state.currentStepIndex];
+                const options = currentStep.options?.map((o, i) => 
+                  `  ${i + 1}. **${o.label}**${o.recommended ? ' ⭐' : ''}\n     ${o.description || ''}`
+                ).join('\n') || '';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `✅ Answer recorded!
+
+---
+
+**Step ${currentStep.stepNumber}/${currentStep.totalSteps}: ${currentStep.title}**
+
+${currentStep.description}
+
+${currentStep.type === 'choice' || currentStep.type === 'multi-select' ? `**Options:**\n${options}` : ''}
+${currentStep.type === 'review' ? '📋 Review your configuration and generate the execution plan.' : ''}`,
+                  }],
+                  details: { state },
+                };
+              }
+
+              case "go_back_wizard": {
+                const wizardId = params.wizard_id as string;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.goBackWizard(wizardId);
+                return result.success
+                  ? { content: [{ type: "text", text: `⬅️ Went back to step ${result.data!.currentStepIndex + 1}` }], details: { state: result.data } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "skip_wizard_step": {
+                const wizardId = params.wizard_id as string;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.skipWizardStep(wizardId);
+                return result.success
+                  ? { content: [{ type: "text", text: `⏭️ Skipped to step ${result.data!.currentStepIndex + 1}` }], details: { state: result.data } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "cancel_wizard": {
+                const wizardId = params.wizard_id as string;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+                const result = await conversationalManager.cancelWizard(wizardId);
+                return result.success
+                  ? { content: [{ type: "text", text: `❌ Wizard cancelled` }], details: { cancelled: true } }
+                  : { content: [{ type: "text", text: `Failed: ${result.error}` }], details: { error: result.error } };
+              }
+
+              case "generate_wizard_plan": {
+                const wizardId = params.wizard_id as string;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.generateWizardPlan(wizardId);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to generate plan: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const plan = result.data!;
+                const resources = plan.resourcesToCreate.map(r => 
+                  `• **${r.name}** (${r.type})${r.estimatedMonthlyCost ? ` - ~$${r.estimatedMonthlyCost}/mo` : ''}`
+                ).join('\n');
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📋 **Execution Plan Generated**
+
+**Resources to Create:** ${plan.resourcesToCreate.length}
+${resources}
+
+**Estimated Monthly Cost:** $${plan.estimatedMonthlyCost?.toFixed(2) || 'N/A'}
+**Estimated Setup Time:** ~${plan.estimatedSetupTimeMinutes} minutes
+
+${plan.warnings?.length ? `⚠️ **Warnings:**\n${plan.warnings.map(w => `• ${w}`).join('\n')}` : ''}
+
+Ready to execute? Use \`execute_wizard\` with \`dry_run: true\` to validate first.`,
+                  }],
+                  details: { plan },
+                };
+              }
+
+              case "execute_wizard": {
+                const wizardId = params.wizard_id as string;
+                const dryRun = params.dry_run as boolean ?? false;
+                if (!wizardId) {
+                  return {
+                    content: [{ type: "text", text: "Error: wizard_id is required" }],
+                    details: { error: "missing_required_params" },
+                  };
+                }
+
+                const result = await conversationalManager.executeWizard(wizardId, dryRun);
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to execute wizard: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const state = result.data!;
+                if (dryRun) {
+                  return {
+                    content: [{
+                      type: "text",
+                      text: `🧪 **Dry Run Complete**\n\nValidation passed. Use \`execute_wizard\` without \`dry_run\` to create resources.`,
+                    }],
+                    details: { state, dryRun: true },
+                  };
+                }
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `🎉 **Wizard Complete!**
+
+**Status:** ${state.status}
+**Resources Created:** ${state.createdResources?.length || 0}
+
+${state.createdResources?.map(r => `• ${r.name} (${r.id})`).join('\n') || 'No resources created'}`,
+                  }],
+                  details: { state },
+                };
+              }
+
+              // ==================
+              // Summary & Reporting
+              // ==================
+              case "get_infrastructure_summary": {
+                const result = await conversationalManager.getInfrastructureSummary();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get summary: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const summary = result.data!;
+                const healthEmoji = summary.overallHealth === 'healthy' ? '🟢' : summary.overallHealth === 'warning' ? '🟡' : '🔴';
+                
+                const regionBreakdown = Object.entries(summary.resourcesByRegion)
+                  .map(([region, count]) => `• ${region}: ${count}`)
+                  .join('\n') || 'No data';
+
+                const typeBreakdown = Object.entries(summary.resourceCounts)
+                  .sort(([, a], [, b]) => (b as number) - (a as number))
+                  .slice(0, 10)
+                  .map(([type, count]) => `• ${type}: ${count}`)
+                  .join('\n') || 'No data';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📊 **Infrastructure Summary**
+
+${healthEmoji} **Overall Health:** ${summary.overallHealth.toUpperCase()}
+⏰ **Last Updated:** ${summary.lastUpdated.toISOString()}
+
+🚨 **Active Alarms:** ${summary.activeAlarms}
+💡 **Pending Insights:** ${summary.pendingInsights}
+
+**Resources by Region:**
+${regionBreakdown}
+
+**Top Resource Types:**
+${typeBreakdown}`,
+                  }],
+                  details: { summary },
+                };
+              }
+
+              case "get_session_summary": {
+                const result = await conversationalManager.getSessionSummary();
+                if (!result.success) {
+                  return {
+                    content: [{ type: "text", text: `Failed to get session summary: ${result.error}` }],
+                    details: { error: result.error },
+                  };
+                }
+
+                const summary = result.data!;
+                const serviceBreakdown = Object.entries(summary.operationsByService)
+                  .map(([service, count]) => `• ${service}: ${count}`)
+                  .join('\n') || 'No operations';
+
+                const topResources = summary.topResources
+                  .map(r => `• ${r.name} (${r.accessCount} accesses)`)
+                  .join('\n') || 'No resources accessed';
+
+                return {
+                  content: [{
+                    type: "text",
+                    text: `📈 **Session Summary**
+
+**Duration:** ${summary.durationMinutes} minutes
+**Operations:** ${summary.operationCount}
+**Success Rate:** ${summary.successRate.toFixed(1)}%
+**Resources Accessed:** ${summary.resourcesAccessed}
+
+**Operations by Service:**
+${serviceBreakdown}
+
+**Top Accessed Resources:**
+${topResources}`,
+                  }],
+                  details: { summary },
+                };
+              }
+
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Assistant error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_assistant" },
+    );
+
     // Register service for cleanup
     api.registerService({
       id: "aws-core-services",
@@ -12566,6 +13802,7 @@ Use this tool to:
         guardrailsManager = null;
         organizationManager = null;
         backupManager = null;
+        conversationalManager = null;
         cliWrapper = null;
         console.log("[AWS] AWS Core Services stopped");
       },
@@ -12597,6 +13834,7 @@ export function getAWSManagers() {
     guardrails: guardrailsManager,
     organization: organizationManager,
     backup: backupManager,
+    conversational: conversationalManager,
     cli: cliWrapper,
   };
 }

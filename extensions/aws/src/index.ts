@@ -700,6 +700,61 @@ export type {
 export { BACKUP_PLAN_TEMPLATES, RESOURCE_TYPE_ARN_PREFIXES } from "./backup/types.js";
 
 // =============================================================================
+// Conversational UX Module
+// =============================================================================
+
+export {
+  AWSConversationalManager,
+  createConversationalManager,
+  WIZARD_TEMPLATES,
+  INSIGHT_CHECKS,
+  QUERY_PATTERNS,
+} from "./conversational/index.js";
+
+// Conversational UX Types
+export type {
+  // Common types
+  ConversationalOperationResult,
+  ConversationalManagerConfig,
+  // Context types
+  EnvironmentType,
+  TrackedResourceType,
+  ResourceReference,
+  OperationRecord,
+  InfrastructureContext,
+  ResourceFilter,
+  // Insight types
+  InsightSeverity,
+  InsightCategory,
+  InsightStatus,
+  ProactiveInsight,
+  InsightImpact,
+  InsightRecommendation,
+  InsightCheckConfig,
+  GetInsightsOptions,
+  // Query types
+  QueryIntent,
+  TimeRangeType,
+  ParsedQuery,
+  QueryResult,
+  QueryPattern,
+  // Wizard types
+  WizardType,
+  WizardStepType,
+  WizardStepOption,
+  WizardStep,
+  WizardExecutionPlan,
+  PlannedResource,
+  WizardState,
+  WizardTemplate,
+  // Summary types
+  InfrastructureSummary,
+  SessionSummary,
+  // Manager interface
+  ConversationalManager,
+} from "./conversational/index.js";
+
+// =============================================================================
 // Utility Exports
 // =============================================================================
 
@@ -719,6 +774,7 @@ import { AWSCloudTrailManager, createCloudTrailManager } from "./cloudtrail/inde
 import { AWSEC2Manager, createEC2Manager } from "./ec2/index.js";
 import { ContainerManager, createContainerManager } from "./containers/index.js";
 import { ObservabilityManager, createObservabilityManager } from "./observability/index.js";
+import { AWSConversationalManager, createConversationalManager } from "./conversational/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
 
 export interface AWSPluginOptions {
@@ -763,6 +819,7 @@ export class AWSPlugin {
   readonly ec2: AWSEC2Manager;
   readonly containers: ContainerManager;
   readonly observability: ObservabilityManager;
+  readonly conversational: AWSConversationalManager;
 
   private defaultRegion: string;
 
@@ -820,6 +877,11 @@ export class AWSPlugin {
 
     // Initialize Observability manager
     this.observability = createObservabilityManager({
+      defaultRegion: options.defaultRegion,
+    });
+
+    // Initialize Conversational UX manager
+    this.conversational = createConversationalManager({
       defaultRegion: options.defaultRegion,
     });
   }
