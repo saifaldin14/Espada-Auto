@@ -89,6 +89,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-accessanalyzer": "^3.980.0",
+    "@aws-sdk/client-application-auto-scaling": "^3.980.0",
     "@aws-sdk/client-auto-scaling": "^3.500.0",
     "@aws-sdk/client-budgets": "^3.500.0",
     "@aws-sdk/client-cloudfront": "^3.500.0",
@@ -97,6 +98,9 @@
     "@aws-sdk/client-cloudwatch-logs": "^3.500.0",
     "@aws-sdk/client-cost-explorer": "^3.500.0",
     "@aws-sdk/client-ec2": "^3.500.0",
+    "@aws-sdk/client-ecr": "^3.980.0",
+    "@aws-sdk/client-ecs": "^3.980.0",
+    "@aws-sdk/client-eks": "^3.980.0",
     "@aws-sdk/client-elastic-load-balancing-v2": "^3.500.0",
     "@aws-sdk/client-guardduty": "^3.980.0",
     "@aws-sdk/client-iam": "^3.500.0",
