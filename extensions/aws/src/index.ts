@@ -765,6 +765,18 @@ export {
   FRAMEWORK_DEFINITIONS,
 } from "./compliance/index.js";
 
+// =============================================================================
+// Event-Driven Automation Module
+// =============================================================================
+
+export {
+  AWSAutomationManager,
+  createAutomationManager,
+  PREDEFINED_EVENT_PATTERNS,
+  SCHEDULE_EXPRESSIONS,
+  WORKFLOW_TEMPLATES,
+} from "./automation/index.js";
+
 // Compliance Types
 export type {
   // Common types
@@ -826,6 +838,65 @@ export type {
   ComplianceManager,
 } from "./compliance/index.js";
 
+// Automation Types
+export type {
+  // Common types
+  AutomationOperationResult,
+  AutomationManagerConfig,
+  // EventBridge types
+  EventBusInfo,
+  EventRuleInfo,
+  EventRuleState,
+  EventTargetInfo,
+  EventPattern,
+  AWSEventSource,
+  TargetType,
+  CreateEventRuleOptions,
+  AddTargetOptions,
+  ListEventRulesOptions,
+  // Scheduler types
+  ScheduleInfo,
+  ScheduleState,
+  ScheduleGroupInfo,
+  CreateScheduleOptions,
+  ListSchedulesOptions,
+  // State Machine types
+  StateMachineInfo,
+  StateMachineType,
+  StateMachineStatus,
+  ExecutionInfo,
+  ExecutionStatus,
+  CreateStateMachineOptions,
+  StartExecutionOptions,
+  ListExecutionsOptions,
+  ListStateMachinesOptions,
+  // ASL types
+  ASLDefinition,
+  ASLState,
+  ASLStateType,
+  // Workflow Builder types
+  WorkflowDefinition,
+  WorkflowStep,
+  WorkflowStepType,
+  WorkflowCondition,
+  BuildWorkflowOptions,
+  // Remediation types
+  RemediationConfig,
+  RemediationTriggerType,
+  RemediationActionType,
+  RemediationExecution,
+  SetupRemediationOptions,
+  ListRemediationsOptions,
+  // Archive and Replay types
+  EventArchiveInfo,
+  EventReplayInfo,
+  CreateEventArchiveOptions,
+  StartEventReplayOptions,
+  ListEventArchivesOptions,
+  // Manager interface
+  AutomationManager,
+} from "./automation/index.js";
+
 // =============================================================================
 // Utility Exports
 // =============================================================================
@@ -848,6 +919,7 @@ import { ContainerManager, createContainerManager } from "./containers/index.js"
 import { ObservabilityManager, createObservabilityManager } from "./observability/index.js";
 import { AWSConversationalManager, createConversationalManager } from "./conversational/index.js";
 import { AWSComplianceManager } from "./compliance/index.js";
+import { AWSAutomationManager, createAutomationManager } from "./automation/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
 
 /**
@@ -856,6 +928,11 @@ import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource }
 export function createComplianceManager(config?: import("./compliance/types.js").ComplianceManagerConfig): AWSComplianceManager {
   return new AWSComplianceManager(config);
 }
+
+/**
+ * Create an AWS Automation Manager instance
+ */
+export { createAutomationManager };
 
 export interface AWSPluginOptions {
   /** Default AWS region */
@@ -901,6 +978,7 @@ export class AWSPlugin {
   readonly observability: ObservabilityManager;
   readonly conversational: AWSConversationalManager;
   readonly compliance: AWSComplianceManager;
+  readonly automation: AWSAutomationManager;
 
   private defaultRegion: string;
 
@@ -968,6 +1046,11 @@ export class AWSPlugin {
 
     // Initialize Compliance & Governance manager
     this.compliance = createComplianceManager({
+      defaultRegion: options.defaultRegion,
+    });
+
+    // Initialize Event-Driven Automation manager
+    this.automation = createAutomationManager({
       defaultRegion: options.defaultRegion,
     });
   }
