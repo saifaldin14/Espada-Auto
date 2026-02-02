@@ -51,7 +51,6 @@ type ExternalCatalogEntry = {
   version?: string;
   description?: string;
   espada?: EspadaPackageManifest;
-  [LEGACY_MANIFEST_KEY]?: EspadaPackageManifest;
 };
 
 const DEFAULT_CATALOG_PATHS = [

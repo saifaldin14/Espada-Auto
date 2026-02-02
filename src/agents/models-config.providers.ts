@@ -97,7 +97,7 @@ async function discoverOllamaModels(): Promise<ModelDefinitionConfig[]> {
   }
   try {
     const response = await fetch(`${OLLAMA_API_BASE_URL}/api/tags`, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(15000), // Increased timeout to 15 seconds
     });
     if (!response.ok) {
       console.warn(`Failed to discover Ollama models: ${response.status}`);
@@ -410,12 +410,15 @@ export async function resolveImplicitProviders(params: {
     };
   }
 
-  // Ollama provider - only add if explicitly configured
+  // Ollama provider - add if explicitly configured OR if running locally
   const ollamaKey =
     resolveEnvApiKeyVarName("ollama") ??
     resolveApiKeyFromProfiles({ provider: "ollama", store: authStore });
-  if (ollamaKey) {
-    providers.ollama = { ...(await buildOllamaProvider()), apiKey: ollamaKey };
+
+  // Always try to add Ollama provider if models are discovered (it's a local service)
+  const ollamaProvider = await buildOllamaProvider();
+  if (ollamaKey || ollamaProvider.models.length > 0) {
+    providers.ollama = { ...ollamaProvider, apiKey: ollamaKey || "not-needed" };
   }
 
   return providers;

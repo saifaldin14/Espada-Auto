@@ -141,7 +141,6 @@ export type PackageManifest = {
   version?: string;
   description?: string;
   espada?: EspadaPackageManifest;
-  [LEGACY_MANIFEST_KEY]?: EspadaPackageManifest;
 };
 
 export function getPackageManifestMetadata(

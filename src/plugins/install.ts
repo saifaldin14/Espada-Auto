@@ -22,7 +22,6 @@ type PackageManifest = {
   version?: string;
   dependencies?: Record<string, string>;
   espada?: { extensions?: string[] };
-  [LEGACY_MANIFEST_KEY]?: { extensions?: string[] };
 };
 
 export type InstallPluginResult =

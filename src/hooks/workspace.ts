@@ -23,7 +23,6 @@ import type {
 type HookPackageManifest = {
   name?: string;
   espada?: { hooks?: string[] };
-  [LEGACY_MANIFEST_KEY]?: { hooks?: string[] };
 };
 
 function filterHookEntries(

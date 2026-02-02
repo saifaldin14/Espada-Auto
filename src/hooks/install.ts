@@ -24,7 +24,6 @@ type HookPackageManifest = {
   version?: string;
   dependencies?: Record<string, string>;
   espada?: { hooks?: string[] };
-  [LEGACY_MANIFEST_KEY]?: { hooks?: string[] };
 };
 
 export type InstallHooksResult =

@@ -912,6 +912,212 @@ const plugin = {
     // Agent Tools - Allows AI agents to perform AWS operations via prompts
     // ========================================================================
 
+    // AWS Authentication Tool
+    api.registerTool(
+      {
+        name: "aws_authenticate",
+        label: "AWS Authentication",
+        description: "Authenticate with AWS using SSO (Single Sign-On) by opening a browser for login, or configure access keys.",
+        parameters: {
+          type: "object",
+          properties: {
+            method: {
+              type: "string",
+              enum: ["sso", "access-keys"],
+              description: "Authentication method: 'sso' for browser-based SSO login, or 'access-keys' for programmatic access",
+            },
+            sso_start_url: {
+              type: "string",
+              description: "SSO start URL (e.g., https://your-org.awsapps.com/start). Required for SSO method.",
+            },
+            sso_region: {
+              type: "string",
+              description: "AWS region where SSO is configured (e.g., us-east-1). Required for SSO method.",
+            },
+            session_name: {
+              type: "string",
+              description: "Name for the SSO session (e.g., 'my-sso'). Optional for SSO method.",
+            },
+            access_key_id: {
+              type: "string",
+              description: "AWS Access Key ID. Required for access-keys method.",
+            },
+            secret_access_key: {
+              type: "string",
+              description: "AWS Secret Access Key. Required for access-keys method.",
+            },
+            default_region: {
+              type: "string",
+              description: "Default AWS region (e.g., us-east-1). Optional.",
+            },
+          },
+          required: ["method"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          try {
+            const { execSync} = await import("node:child_process");
+            const { writeFileSync, mkdirSync, existsSync } = await import("node:fs");
+            const { homedir } = await import("node:os");
+            const { join } = await import("node:path");
+
+            const method = params.method as string;
+            const sso_start_url = params.sso_start_url as string | undefined;
+            const sso_region = params.sso_region as string | undefined;
+            const session_name = params.session_name as string | undefined;
+            const access_key_id = params.access_key_id as string | undefined;
+            const secret_access_key = params.secret_access_key as string | undefined;
+            const default_region = params.default_region as string | undefined;
+
+            const awsDir = join(homedir(), ".aws");
+            if (!existsSync(awsDir)) {
+              mkdirSync(awsDir, { recursive: true });
+            }
+
+            if (method === "sso") {
+              // Validate SSO parameters
+              if (!sso_start_url || !sso_region) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Error: SSO authentication requires 'sso_start_url' and 'sso_region' parameters.",
+                    },
+                  ],
+                };
+              }
+
+              const sessionName = session_name || "default-sso";
+              const region = default_region || sso_region;
+
+              // Create SSO configuration
+              const configPath = join(awsDir, "config");
+              const ssoConfig = `
+[profile ${sessionName}]
+sso_session = ${sessionName}
+sso_account_id = 
+sso_role_name = 
+region = ${region}
+output = json
+
+[sso-session ${sessionName}]
+sso_start_url = ${sso_start_url}
+sso_region = ${sso_region}
+sso_registration_scopes = sso:account:access
+`;
+
+              // Append to config file
+              writeFileSync(configPath, ssoConfig, { flag: "a" });
+
+              // Initiate SSO login (this will open a browser)
+              try {
+                const output = execSync(`aws sso login --profile ${sessionName}`, {
+                  encoding: "utf-8",
+                  stdio: "pipe",
+                });
+
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `✅ AWS SSO authentication initiated!\n\nA browser window should have opened for you to login.\n\nProfile: ${sessionName}\nStart URL: ${sso_start_url}\nRegion: ${sso_region}\n\nAfter logging in through the browser, you'll be able to use AWS services.\n\nOutput:\n${output}`,
+                    },
+                  ],
+                };
+              } catch (error: any) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Browser login initiated. Please check your browser to complete the AWS SSO login.\n\nProfile: ${sessionName}\nIf the browser didn't open automatically, run: aws sso login --profile ${sessionName}\n\nError details: ${error.message}`,
+                    },
+                  ],
+                };
+              }
+            } else if (method === "access-keys") {
+              // Validate access key parameters
+              if (!access_key_id || !secret_access_key) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: "Error: Access key authentication requires 'access_key_id' and 'secret_access_key' parameters.",
+                    },
+                  ],
+                };
+              }
+
+              const region = default_region || "us-east-1";
+
+              // Create credentials file
+              const credentialsPath = join(awsDir, "credentials");
+              const credentialsContent = `
+[default]
+aws_access_key_id = ${access_key_id}
+aws_secret_access_key = ${secret_access_key}
+`;
+
+              writeFileSync(credentialsPath, credentialsContent, { mode: 0o600 });
+
+              // Create config file
+              const configPath = join(awsDir, "config");
+              const configContent = `
+[default]
+region = ${region}
+output = json
+`;
+
+              writeFileSync(configPath, configContent);
+
+              // Test the credentials
+              try {
+                const output = execSync("aws sts get-caller-identity", {
+                  encoding: "utf-8",
+                });
+                const identity = JSON.parse(output);
+
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `✅ AWS credentials configured successfully!\n\nAccount: ${identity.Account}\nUser/Role: ${identity.Arn}\nRegion: ${region}\n\nYou can now use AWS services through the agent.`,
+                    },
+                  ],
+                };
+              } catch (error: any) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `⚠️ Credentials saved but verification failed: ${error.message}\n\nPlease verify your access key and secret key are correct.`,
+                    },
+                  ],
+                };
+              }
+            }
+
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: "Error: Invalid authentication method. Use 'sso' or 'access-keys'.",
+                },
+              ],
+            };
+          } catch (error) {
+            return {
+              content: [
+                {
+                  type: "text",
+                  text: `AWS authentication error: ${error}`,
+                },
+              ],
+            };
+          }
+        },
+      },
+      { name: "aws_authenticate" },
+    );
+
     // EC2 Instance Management Tool
     api.registerTool(
       {
@@ -2746,6 +2952,7 @@ const plugin = {
     // Register Lambda agent tool
     api.registerTool(
       {
+        name: "aws_lambda",
         description: `Manage AWS Lambda functions with comprehensive operations including:
 - List and get Lambda functions
 - Create, update, and delete functions
@@ -4194,6 +4401,7 @@ const plugin = {
 
     api.registerTool(
       {
+        name: "aws_s3",
         description: `AWS S3 bucket and object management tool. Manage S3 buckets, objects, versioning, encryption, lifecycle policies, website hosting, CloudFront distributions, replication, and event notifications.
 
 IMPORTANT: Always specify the region parameter for operations unless using the default region.
@@ -9698,6 +9906,7 @@ Use this tool to:
     // ==========================================================================
     api.registerTool(
       {
+        name: "aws_organizations",
         description: `Multi-account and AWS Organization management tool providing:
 - Organization management (view organization, roots, accounts)
 - Account management (list, create, move, remove accounts)
@@ -11597,6 +11806,7 @@ Use this tool to:
             },
             framework_controls: {
               type: "array",
+              items: { type: "string" },
               description: "Controls for the compliance framework",
             },
             // Report plan options
