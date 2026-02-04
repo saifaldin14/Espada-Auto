@@ -754,7 +754,12 @@ export class AWSAutomationManager implements AutomationManager {
         State: options.state || 'ENABLED',
         StartDate: options.startDate,
         EndDate: options.endDate,
-        FlexibleTimeWindow: options.flexibleTimeWindow || { Mode: 'OFF' },
+        FlexibleTimeWindow: options.flexibleTimeWindow
+          ? {
+              Mode: options.flexibleTimeWindow.mode,
+              MaximumWindowInMinutes: options.flexibleTimeWindow.maximumWindowInMinutes,
+            }
+          : { Mode: 'OFF' },
         Target: {
           Arn: options.targetArn,
           RoleArn: options.targetRoleArn,
@@ -765,7 +770,9 @@ export class AWSAutomationManager implements AutomationManager {
                 MaximumEventAgeInSeconds: options.retryPolicy.maximumEventAgeInSeconds,
               }
             : undefined,
-          DeadLetterConfig: options.deadLetterConfig,
+          DeadLetterConfig: options.deadLetterConfig
+            ? { Arn: options.deadLetterConfig.arn }
+            : undefined,
         },
       });
       const response = await this.schedulerClient.send(command);
@@ -821,6 +828,7 @@ export class AWSAutomationManager implements AutomationManager {
 
       const existing = existingResult.data;
 
+      const flexWindow = updates.flexibleTimeWindow ?? existing.flexibleTimeWindow;
       const command = new UpdateScheduleCommand({
         Name: name,
         GroupName: updates.groupName || existing.groupName,
@@ -830,7 +838,12 @@ export class AWSAutomationManager implements AutomationManager {
         State: updates.state ?? existing.state,
         StartDate: updates.startDate ?? existing.startDate,
         EndDate: updates.endDate ?? existing.endDate,
-        FlexibleTimeWindow: updates.flexibleTimeWindow ?? existing.flexibleTimeWindow ?? { Mode: 'OFF' },
+        FlexibleTimeWindow: flexWindow
+          ? {
+              Mode: flexWindow.mode,
+              MaximumWindowInMinutes: flexWindow.maximumWindowInMinutes,
+            }
+          : { Mode: 'OFF' },
         Target: {
           Arn: updates.targetArn ?? existing.target.arn,
           RoleArn: updates.targetRoleArn ?? existing.target.roleArn,

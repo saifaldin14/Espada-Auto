@@ -78,26 +78,10 @@ export class PolicyEngine {
       
       for (const rule of applicableRules) {
         policiesEvaluated.add(rule.id);
-        
         const result = rule.evaluate(resource, intent);
         
         if (!result.passed) {
-          if (rule.severity === 'low' || rule.severity === 'medium') {
-            warnings.push({
-              message: result.message || `Policy ${rule.name} violated`,
-              resourceId: resource.id,
-              recommendation: result.remediation,
-            });
-          } else {
-            violations.push({
-              severity: rule.severity,
-              policy: rule.id,
-              resourceId: resource.id,
-              message: result.message || `Policy ${rule.name} violated`,
-              remediation: result.remediation,
-              autoFixable: result.autoFixable && rule.autoFix !== undefined,
-            });
-          }
+          this.categorizeViolation(result, rule, resource, violations, warnings);
         }
       }
     }
@@ -116,6 +100,36 @@ export class PolicyEngine {
       warnings,
       policiesEvaluated: Array.from(policiesEvaluated),
     };
+  }
+
+  /**
+   * Categorize policy violation into warning or violation based on severity
+   */
+  private categorizeViolation(
+    result: PolicyEvaluationResult,
+    rule: PolicyRule,
+    resource: PlannedResource,
+    violations: PolicyViolation[],
+    warnings: PolicyWarning[],
+  ): void {
+    const isLowSeverity = rule.severity === 'low' || rule.severity === 'medium';
+    
+    if (isLowSeverity) {
+      warnings.push({
+        message: result.message || `Policy ${rule.name} violated`,
+        resourceId: resource.id,
+        recommendation: result.remediation,
+      });
+    } else {
+      violations.push({
+        severity: rule.severity,
+        policy: rule.id,
+        resourceId: resource.id,
+        message: result.message || `Policy ${rule.name} violated`,
+        remediation: result.remediation,
+        autoFixable: result.autoFixable && rule.autoFix !== undefined,
+      });
+    }
   }
 
   /**

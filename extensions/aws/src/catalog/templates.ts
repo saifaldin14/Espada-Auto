@@ -13,6 +13,12 @@ import type {
 } from '../intent/types.js';
 
 /**
+ * Template index for O(1) lookups
+ */
+const TEMPLATE_INDEX = new Map<string, IntentTemplate>();
+const CATEGORY_INDEX = new Map<string, IntentTemplate[]>();
+
+/**
  * Catalog of pre-built infrastructure templates
  */
 export const INFRASTRUCTURE_CATALOG: IntentTemplate[] = [
@@ -659,17 +665,34 @@ export const INFRASTRUCTURE_CATALOG: IntentTemplate[] = [
 ];
 
 /**
- * Get template by ID
+ * Initialize template indices
  */
-export function getTemplate(templateId: string): IntentTemplate | undefined {
-  return INFRASTRUCTURE_CATALOG.find(t => t.id === templateId);
+function initializeIndices(): void {
+  if (TEMPLATE_INDEX.size === 0) {
+    for (const template of INFRASTRUCTURE_CATALOG) {
+      TEMPLATE_INDEX.set(template.id, template);
+      
+      const categoryTemplates = CATEGORY_INDEX.get(template.category) || [];
+      categoryTemplates.push(template);
+      CATEGORY_INDEX.set(template.category, categoryTemplates);
+    }
+  }
 }
 
 /**
- * Search templates by category
+ * Get template by ID with O(1) lookup
+ */
+export function getTemplate(templateId: string): IntentTemplate | undefined {
+  initializeIndices();
+  return TEMPLATE_INDEX.get(templateId);
+}
+
+/**
+ * Search templates by category with O(1) lookup
  */
 export function getTemplatesByCategory(category: string): IntentTemplate[] {
-  return INFRASTRUCTURE_CATALOG.filter(t => t.category === category);
+  initializeIndices();
+  return CATEGORY_INDEX.get(category) || [];
 }
 
 /**

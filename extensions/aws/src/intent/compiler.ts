@@ -55,47 +55,26 @@ export class IntentCompiler {
     const resources: PlannedResource[] = [];
     const executionOrder: string[][] = [];
 
-    // Phase 1: Network Infrastructure
-    const networkResources = await this.compileNetworkInfrastructure(intent);
-    resources.push(...networkResources);
-    if (networkResources.length > 0) {
-      executionOrder.push(networkResources.map(r => r.id));
-    }
+    // Execute compilation phases in order
+    const phases = [
+      { name: 'Network Infrastructure', compiler: () => this.compileNetworkInfrastructure(intent) },
+      { name: 'Security & IAM', compiler: () => this.compileSecurityInfrastructure(intent) },
+      { name: 'Data Layer', compiler: () => this.compileDataLayer(intent) },
+      { name: 'Application Layer', compiler: () => this.compileApplicationLayer(intent) },
+      { name: 'Monitoring', compiler: () => this.compileMonitoring(intent) },
+    ];
 
-    // Phase 2: Security & IAM
-    const securityResources = await this.compileSecurityInfrastructure(intent);
-    resources.push(...securityResources);
-    if (securityResources.length > 0) {
-      executionOrder.push(securityResources.map(r => r.id));
-    }
-
-    // Phase 3: Data Layer
-    const dataResources = await this.compileDataLayer(intent);
-    resources.push(...dataResources);
-    if (dataResources.length > 0) {
-      executionOrder.push(dataResources.map(r => r.id));
-    }
-
-    // Phase 4: Application Layer
-    const appResources = await this.compileApplicationLayer(intent);
-    resources.push(...appResources);
-    if (appResources.length > 0) {
-      executionOrder.push(appResources.map(r => r.id));
-    }
-
-    // Phase 5: Monitoring & Observability
-    const monitoringResources = await this.compileMonitoring(intent);
-    resources.push(...monitoringResources);
-    if (monitoringResources.length > 0) {
-      executionOrder.push(monitoringResources.map(r => r.id));
-    }
-
-    // Phase 6: Disaster Recovery
+    // Add DR phase conditionally
     if (intent.disasterRecovery) {
-      const drResources = await this.compileDisasterRecovery(intent);
-      resources.push(...drResources);
-      if (drResources.length > 0) {
-        executionOrder.push(drResources.map(r => r.id));
+      phases.push({ name: 'Disaster Recovery', compiler: () => this.compileDisasterRecovery(intent) });
+    }
+
+    // Execute all phases and collect resources
+    for (const phase of phases) {
+      const phaseResources = await this.executeCompilationPhase(phase.name, phase.compiler);
+      resources.push(...phaseResources);
+      if (phaseResources.length > 0) {
+        executionOrder.push(phaseResources.map(r => r.id));
       }
     }
 
@@ -1051,6 +1030,21 @@ export class IntentCompiler {
     if (rps < 500) return 'db.r6g.large';
     if (rps < 2000) return 'db.r6g.xlarge';
     return 'db.r6g.2xlarge';
+  }
+
+  /**
+   * Execute a compilation phase with error handling
+   */
+  private async executeCompilationPhase(
+    phaseName: string,
+    compiler: () => Promise<PlannedResource[]>,
+  ): Promise<PlannedResource[]> {
+    try {
+      return await compiler();
+    } catch (error) {
+      console.error(`Compilation phase "${phaseName}" failed:`, error);
+      throw new Error(`Failed to compile ${phaseName}: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private selectCacheNodeType(tier: ApplicationTierIntent, intent: ApplicationIntent): string {

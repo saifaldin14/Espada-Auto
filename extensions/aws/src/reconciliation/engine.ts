@@ -220,71 +220,85 @@ export class ReconciliationEngine {
     anomalies: CostAnomaly[],
     context: ReconciliationContext,
   ): Promise<RemediationAction[]> {
-    const actions: RemediationAction[] = [];
-    
-    // Drift remediation actions
-    for (const drift of drifts) {
+    return [
+      ...this.generateDriftRemediationActions(drifts),
+      ...this.generateComplianceRemediationActions(violations),
+      ...this.generateCostRemediationActions(anomalies),
+    ];
+  }
+
+  /**
+   * Generate drift remediation actions
+   */
+  private generateDriftRemediationActions(drifts: ResourceDrift[]): RemediationAction[] {
+    return drifts.flatMap((drift): RemediationAction[] => {
       if (drift.driftType === 'deleted') {
-        actions.push({
+        return [{
           id: `remediate-${drift.resourceId}-deleted`,
-          type: 'recreate',
-          priority: 'critical',
+          type: 'recreate' as const,
+          priority: 'critical' as const,
           description: `Recreate deleted resource ${drift.resourceId}`,
           resourceIds: [drift.resourceId],
-          autoExecutable: false, // Requires approval
+          autoExecutable: false,
           estimatedImpact: 'Resource will be recreated with original configuration',
           approvalRequired: true,
-        });
-      } else if (drift.driftType === 'configuration') {
+        }];
+      }
+      
+      if (drift.driftType === 'configuration') {
         const criticalDiffs = drift.differences.filter(d => d.severity === 'critical');
         if (criticalDiffs.length > 0) {
-          actions.push({
+          return [{
             id: `remediate-${drift.resourceId}-config`,
-            type: 'update',
-            priority: 'high',
+            type: 'update' as const,
+            priority: 'high' as const,
             description: `Update configuration for ${drift.resourceId}`,
             resourceIds: [drift.resourceId],
             autoExecutable: true,
             estimatedImpact: 'Resource configuration will be updated to match intent',
             approvalRequired: false,
-          });
+          }];
         }
       }
-    }
-    
-    // Compliance violation remediation
-    for (const violation of violations) {
-      if (violation.autoFixable) {
-        actions.push({
-          id: `remediate-${violation.resourceId}-compliance`,
-          type: 'update',
-          priority: violation.severity === 'critical' ? 'critical' : 'high',
-          description: violation.remediation || `Fix ${violation.policy} violation`,
-          resourceIds: [violation.resourceId],
-          autoExecutable: true,
-          estimatedImpact: violation.remediation || 'Resource will be updated to comply with policy',
-          approvalRequired: violation.severity === 'critical',
-        });
-      }
-    }
-    
-    // Cost anomaly remediation
-    for (const anomaly of anomalies) {
-      if (anomaly.percentageDifference > this.config.costAnomalyThreshold * 2) {
-        actions.push({
-          id: `remediate-${anomaly.resourceId}-cost`,
-          type: 'scale',
-          priority: 'medium',
-          description: `Investigate and optimize ${anomaly.service} costs`,
-          resourceIds: anomaly.resourceId ? [anomaly.resourceId] : [],
-          autoExecutable: false,
-          estimatedImpact: `Cost is ${anomaly.percentageDifference.toFixed(1)}% higher than expected`,
-          approvalRequired: true,
-        });
-      }
-    }
-    
-    return actions;
+      
+      return [];
+    });
+  }
+
+  /**
+   * Generate compliance remediation actions
+   */
+  private generateComplianceRemediationActions(violations: any[]): RemediationAction[] {
+    return violations
+      .filter(v => v.autoFixable)
+      .map(violation => ({
+        id: `remediate-${violation.resourceId}-compliance`,
+        type: 'update' as const,
+        priority: (violation.severity === 'critical' ? 'critical' : 'high') as 'critical' | 'high',
+        description: violation.remediation || `Fix ${violation.policy} violation`,
+        resourceIds: [violation.resourceId],
+        autoExecutable: true,
+        estimatedImpact: violation.remediation || 'Resource will be updated to comply with policy',
+        approvalRequired: violation.severity === 'critical',
+      }));
+  }
+
+  /**
+   * Generate cost remediation actions
+   */
+  private generateCostRemediationActions(anomalies: CostAnomaly[]): RemediationAction[] {
+    return anomalies
+      .filter(anomaly => anomaly.percentageDifference > this.config.costAnomalyThreshold * 2)
+      .map(anomaly => ({
+        id: `remediate-${anomaly.resourceId}-cost`,
+        type: 'scale' as const,
+        priority: 'medium' as const,
+        description: `Investigate and optimize ${anomaly.service} costs`,
+        resourceIds: anomaly.resourceId ? [anomaly.resourceId] : [],
+        autoExecutable: false,
+        estimatedImpact: `Cost is ${anomaly.percentageDifference.toFixed(1)}% higher than expected`,
+        approvalRequired: true,
+      }));
   }
 
   /**

@@ -17,6 +17,30 @@ import { createReconciliationEngine, type ReconciliationConfig } from '../reconc
 import { getTemplate, applyTemplate, listTemplates } from '../catalog/templates.js';
 import { validateIntent } from '../intent/schema.js';
 
+/**
+ * Custom error types for better error handling
+ */
+export class IntentValidationError extends Error {
+  constructor(message: string, public errors: string[]) {
+    super(message);
+    this.name = 'IntentValidationError';
+  }
+}
+
+export class PlanExecutionError extends Error {
+  constructor(message: string, public planId: string, public cause?: Error) {
+    super(message);
+    this.name = 'PlanExecutionError';
+  }
+}
+
+export class TemplateNotFoundError extends Error {
+  constructor(public templateId: string) {
+    super(`Template ${templateId} not found`);
+    this.name = 'TemplateNotFoundError';
+  }
+}
+
 export interface IDIOConfig {
   compiler: Partial<CompilerConfig>;
   policyEngine: Partial<PolicyEngineConfig>;
@@ -61,24 +85,7 @@ export class IDIOOrchestrator {
     userId?: string,
   ): Promise<IDIOResult> {
     try {
-      // Validate intent
-      const validation = validateIntent(intent);
-      if (!validation.valid) {
-        return {
-          success: false,
-          message: 'Intent validation failed',
-          errors: validation.errors,
-        };
-      }
-
-      // Compile intent into plan
-      const plan = await this.compiler.compile(intent, {
-        executionId: randomUUID(),
-        timestamp: new Date().toISOString(),
-        userId,
-      });
-
-      // Store plan
+      const plan = await this.validateAndCompile(intent, userId);
       this.plans.set(plan.id, plan);
 
       return {
@@ -94,12 +101,40 @@ export class IDIOOrchestrator {
         },
       };
     } catch (error) {
+      if (error instanceof IntentValidationError) {
+        return {
+          success: false,
+          message: error.message,
+          errors: error.errors,
+        };
+      }
       return {
         success: false,
         message: 'Failed to create infrastructure plan',
         errors: [error instanceof Error ? error.message : String(error)],
       };
     }
+  }
+
+  /**
+   * Validate intent and compile into plan
+   */
+  private async validateAndCompile(
+    intent: ApplicationIntent,
+    userId?: string,
+  ): Promise<InfrastructurePlan> {
+    // Validate intent structure
+    const validation = validateIntent(intent);
+    if (!validation.valid) {
+      throw new IntentValidationError('Intent validation failed', validation.errors || []);
+    }
+
+    // Compile intent into plan
+    return await this.compiler.compile(intent, {
+      executionId: randomUUID(),
+      timestamp: new Date().toISOString(),
+      userId,
+    });
   }
 
   /**
@@ -114,14 +149,17 @@ export class IDIOOrchestrator {
       const intent = applyTemplate(templateId, parameters);
       
       if (!intent) {
-        return {
-          success: false,
-          message: `Template ${templateId} not found`,
-        };
+        throw new TemplateNotFoundError(templateId);
       }
 
       return await this.createPlanFromIntent(intent as ApplicationIntent, userId);
     } catch (error) {
+      if (error instanceof TemplateNotFoundError) {
+        return {
+          success: false,
+          message: error.message,
+        };
+      }
       return {
         success: false,
         message: 'Failed to create plan from template',

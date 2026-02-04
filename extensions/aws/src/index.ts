@@ -168,7 +168,7 @@ export type {
   IAMRoleDefinition,
   ALBDefinition,
   ASGDefinition,
-  InfrastructureTemplate,
+  InfrastructureTemplate as IaCInfrastructureTemplate,
   TemplateVariable,
   TemplateOutput,
   TerraformGenerationOptions,
@@ -176,13 +176,13 @@ export type {
   TerraformGenerationResult,
   CloudFormationGenerationResult,
   DriftDetectionOptions,
-  ResourceDrift,
+  ResourceDrift as IaCResourceDrift,
   DriftDetectionResult,
   StateExportOptions,
   DiscoveredResource,
   StateExportResult,
   ResourceChange,
-  InfrastructurePlan,
+  InfrastructurePlan as IaCInfrastructurePlan,
   ApplyOptions,
   ApplyResult,
   IaCOperationResult,
@@ -744,7 +744,7 @@ export type {
   WizardStepOption,
   WizardStep,
   WizardExecutionPlan,
-  PlannedResource,
+  PlannedResource as ConversationalPlannedResource,
   WizardState,
   WizardTemplate,
   // Summary types
@@ -821,7 +821,7 @@ export type {
   EnforceTagsOptions,
   TagEnforcementResult,
   // Remediation types
-  RemediationActionType,
+  RemediationActionType as ComplianceRemediationActionType,
   RemediationActionConfig,
   RemediationExecutionResult,
   RemediationStepDetail,
@@ -865,7 +865,7 @@ export type {
   StateMachineType,
   StateMachineStatus,
   ExecutionInfo,
-  ExecutionStatus,
+  ExecutionStatus as AutomationExecutionStatus,
   CreateStateMachineOptions,
   StartExecutionOptions,
   ListExecutionsOptions,
@@ -883,7 +883,7 @@ export type {
   // Remediation types
   RemediationConfig,
   RemediationTriggerType,
-  RemediationActionType,
+  RemediationActionType as AutomationRemediationActionType,
   RemediationExecution,
   SetupRemediationOptions,
   ListRemediationsOptions,
@@ -904,6 +904,239 @@ export type {
 export { which } from "./utils/which.js";
 
 // =============================================================================
+// Enterprise Services Module (Database, API, Messaging, DNS, Identity)
+// =============================================================================
+
+// DynamoDB
+export {
+  DynamoDBManager,
+  createDynamoDBManager,
+  dynamoDBToolDefinitions,
+} from "./dynamodb/manager.js";
+
+export type {
+  DynamoDBManagerConfig,
+  TableConfig,
+  KeyAttribute,
+  GSIConfig,
+  LSIConfig,
+  AutoScalingConfig,
+  GlobalTableConfig,
+  BackupConfig,
+  RestoreConfig,
+  ExportConfig,
+  ImportConfig,
+  QueryOptions,
+  ScanOptions,
+  TableMetrics,
+  DynamoDBOperationResult,
+} from "./dynamodb/manager.js";
+
+// API Gateway
+export {
+  APIGatewayManager,
+  createAPIGatewayManager,
+  apiGatewayToolDefinitions,
+} from "./apigateway/manager.js";
+
+export type {
+  APIGatewayManagerConfig,
+  CreateRESTApiConfig,
+  CreateHTTPApiConfig,
+  ResourceConfig,
+  MethodConfig,
+  IntegrationConfig,
+  RouteConfig,
+  HTTPIntegrationConfig,
+  StageConfig,
+  AuthorizerConfig,
+  UsagePlanConfig,
+  ApiKeyConfig,
+  DomainConfig,
+  BasePathMappingConfig,
+  OpenApiImportConfig,
+  ApiMetrics,
+  APIGatewayOperationResult,
+} from "./apigateway/manager.js";
+
+// SQS
+export {
+  SQSManager,
+  createSQSManager,
+  sqsToolDefinitions,
+} from "./sqs/manager.js";
+
+export type {
+  SQSManagerConfig,
+  CreateQueueConfig,
+  UpdateQueueConfig,
+  SendMessageConfig,
+  ReceiveMessageConfig,
+  QueueMetrics,
+  SQSOperationResult,
+  MessageResult,
+  ReceivedMessage,
+  BatchResultEntry,
+} from "./sqs/manager.js";
+
+// Route 53
+export {
+  Route53Manager,
+  createRoute53Manager,
+  route53ToolDefinitions,
+} from "./route53/manager.js";
+
+export type {
+  Route53ManagerConfig,
+  CreateHostedZoneConfig,
+  RecordConfig,
+  CreateHealthCheckConfig,
+  TrafficPolicyConfig,
+  TrafficPolicyInstanceConfig,
+  QueryLoggingConfigInput,
+  HostedZoneMetrics,
+  Route53OperationResult,
+} from "./route53/manager.js";
+
+// Cognito
+export {
+  CognitoManager,
+  createCognitoManager,
+  cognitoToolDefinitions,
+} from "./cognito/manager.js";
+
+export type {
+  CognitoManagerConfig,
+  CreateUserPoolConfig,
+  CreateAppClientConfig,
+  CreateGroupConfig,
+  CreateUserConfig,
+  CreateIdentityProviderConfig,
+  CreateIdentityPoolConfig,
+  IdentityPoolRolesConfig,
+  UserPoolMetrics,
+  CognitoOperationResult,
+} from "./cognito/manager.js";
+
+// SNS
+export {
+  SNSManager,
+  createSNSManager,
+  snsToolDefinitions,
+} from "./sns/manager.js";
+
+export type {
+  SNSManagerConfig,
+  CreateTopicConfig,
+  SubscriptionConfig,
+  PublishMessageConfig,
+  BatchPublishConfig,
+  CreatePlatformApplicationConfig,
+  CreatePlatformEndpointConfig,
+  SMSAttributesConfig,
+  TopicMetrics,
+  SNSOperationResult,
+} from "./sns/manager.js";
+
+// Enterprise Services Aggregate
+export {
+  enterpriseToolDefinitions,
+} from "./enterprise-services.js";
+
+// =============================================================================
+// Intent-Driven Infrastructure Orchestration (IDIO) System
+// =============================================================================
+
+export {
+  IntentCompiler,
+  createIntentCompiler,
+} from "./intent/compiler.js";
+
+export {
+  PolicyEngine,
+  createPolicyEngine,
+} from "./policy/engine.js";
+
+export {
+  INFRASTRUCTURE_CATALOG,
+  getTemplate,
+  getTemplatesByCategory,
+  searchTemplatesByTags,
+  applyTemplate,
+  listTemplates,
+  getCategories,
+} from "./catalog/templates.js";
+
+export {
+  ReconciliationEngine,
+  createReconciliationEngine,
+} from "./reconciliation/engine.js";
+
+export {
+  IDIOOrchestrator,
+  createIDIOOrchestrator,
+} from "./idio/orchestrator.js";
+
+export type {
+  // Intent Types
+  ComplianceFramework as IntentComplianceFramework,
+  ApplicationTier,
+  TrafficPattern,
+  Environment as IntentEnvironment,
+  AvailabilityRequirement,
+  CostConstraint,
+  DisasterRecoveryRequirement,
+  ScalingRequirement,
+  SecurityRequirement,
+  ApplicationIntent,
+  ApplicationTierIntent,
+  RuntimeConfiguration,
+  InfrastructurePlan,
+  PlannedResource,
+  CostBreakdownItem,
+  PolicyValidationResult,
+  PolicyViolation as IntentPolicyViolation,
+  PolicyWarning,
+  GuardrailCheckResult,
+  GeneratedIaC,
+  RollbackPlan,
+  RollbackStep,
+  IntentExecutionResult,
+  ProvisionedResource,
+  ExecutionError,
+  IntentTemplate,
+  TemplateParameter,
+  ParameterValidation,
+  IntentTemplateExample,
+  ReconciliationResult,
+  ResourceDrift,
+  ConfigurationDifference,
+  CostAnomaly,
+  RemediationAction as IntentRemediationAction,
+} from "./intent/types.js";
+
+export type {
+  // Policy Types
+  PolicyRule,
+  PolicyEvaluationResult,
+} from "./policy/engine.js";
+
+export {
+  COMPLIANCE_POLICY_SETS,
+} from "./policy/engine.js";
+
+export type {
+  // Reconciliation Types
+  ReconciliationConfig,
+  ReconciliationContext,
+} from "./reconciliation/engine.js";
+
+export {
+  createReconciliationSchedule,
+  createReconciliationWorkflow,
+} from "./reconciliation/engine.js";
+
+// =============================================================================
 // Plugin Interface
 // =============================================================================
 
@@ -922,17 +1155,23 @@ import { AWSComplianceManager } from "./compliance/index.js";
 import { AWSAutomationManager, createAutomationManager } from "./automation/index.js";
 import type { StandardTagConfig, AWSTag, ClientPoolConfig, AWSCredentialSource } from "./types.js";
 
+// Enterprise Services Imports
+import { DynamoDBManager, createDynamoDBManager } from "./dynamodb/manager.js";
+import { APIGatewayManager, createAPIGatewayManager } from "./apigateway/manager.js";
+import { SQSManager, createSQSManager } from "./sqs/manager.js";
+import { Route53Manager, createRoute53Manager } from "./route53/manager.js";
+import { CognitoManager, createCognitoManager } from "./cognito/manager.js";
+import { SNSManager, createSNSManager } from "./sns/manager.js";
+
+// IDIO System Imports
+import { IDIOOrchestrator, createIDIOOrchestrator } from "./idio/orchestrator.js";
+
 /**
  * Create an AWS Compliance Manager instance
  */
 export function createComplianceManager(config?: import("./compliance/types.js").ComplianceManagerConfig): AWSComplianceManager {
   return new AWSComplianceManager(config);
 }
-
-/**
- * Create an AWS Automation Manager instance
- */
-export { createAutomationManager };
 
 export interface AWSPluginOptions {
   /** Default AWS region */
@@ -958,6 +1197,9 @@ export interface AWSPluginOptions {
 
   /** Path to AWS credentials file */
   credentialsFilePath?: string;
+
+  /** Enable IDIO (Intent-Driven Infrastructure Orchestration) */
+  enableIDIO?: boolean;
 }
 
 /**
@@ -966,6 +1208,7 @@ export interface AWSPluginOptions {
  * Unified interface for AWS operations providing access to all AWS services.
  */
 export class AWSPlugin {
+  // Core Services
   readonly credentials: AWSCredentialsManager;
   readonly cli: AWSCLIWrapper;
   readonly clientPool: AWSClientPoolManager;
@@ -979,6 +1222,17 @@ export class AWSPlugin {
   readonly conversational: AWSConversationalManager;
   readonly compliance: AWSComplianceManager;
   readonly automation: AWSAutomationManager;
+
+  // Enterprise Services
+  readonly dynamodb: DynamoDBManager;
+  readonly apigateway: APIGatewayManager;
+  readonly sqs: SQSManager;
+  readonly route53: Route53Manager;
+  readonly cognito: CognitoManager;
+  readonly sns: SNSManager;
+
+  // IDIO System (Intent-Driven Infrastructure Orchestration)
+  readonly idio: IDIOOrchestrator;
 
   private defaultRegion: string;
 
@@ -1053,6 +1307,56 @@ export class AWSPlugin {
     this.automation = createAutomationManager({
       defaultRegion: options.defaultRegion,
     });
+
+    // =========================================================================
+    // Enterprise Services Initialization
+    // =========================================================================
+
+    // Initialize DynamoDB manager
+    this.dynamodb = createDynamoDBManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize API Gateway manager
+    this.apigateway = createAPIGatewayManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize SQS manager
+    this.sqs = createSQSManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize Route 53 manager
+    this.route53 = createRoute53Manager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize Cognito manager
+    this.cognito = createCognitoManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize SNS manager
+    this.sns = createSNSManager({
+      region: options.defaultRegion,
+    });
+
+    // =========================================================================
+    // IDIO System Initialization (Intent-Driven Infrastructure Orchestration)
+    // =========================================================================
+
+    // Initialize IDIO orchestrator for declarative infrastructure management
+    this.idio = createIDIOOrchestrator({
+      compiler: {},
+      policyEngine: {},
+      reconciliation: { 
+        intervalMinutes: 30, 
+        enableAutoRemediation: false, 
+        costAnomalyThreshold: 20,
+        maxRemediationAttempts: 3,
+      },
+    });
   }
 
   /**
@@ -1109,6 +1413,89 @@ export class AWSPlugin {
       accountId: context?.accountId,
       profile: context?.profile,
     };
+  }
+
+  // ===========================================================================
+  // IDIO Convenience Methods
+  // ===========================================================================
+
+  /**
+   * Create infrastructure plan from a declarative intent specification
+   * @example
+   * ```ts
+   * const result = await plugin.createPlanFromIntent({
+   *   name: 'my-api',
+   *   environment: 'production',
+   *   type: 'web-api',
+   *   trafficPattern: 'steady',
+   *   tiers: [{ tier: 'web', scaling: { min: 1, max: 4 } }],
+   * });
+   * ```
+   */
+  async createPlanFromIntent(intent: import("./intent/types.js").ApplicationIntent): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.createPlanFromIntent(intent);
+  }
+
+  /**
+   * Validate an infrastructure intent without executing
+   */
+  async validateIntent(intent: import("./intent/types.js").ApplicationIntent): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.validateIntent(intent);
+  }
+
+  /**
+   * Estimate cost for an infrastructure intent
+   */
+  async estimateIntentCost(intent: import("./intent/types.js").ApplicationIntent): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.estimateCost(intent);
+  }
+
+  /**
+   * Create plan from a pre-built template in the catalog
+   * @example
+   * ```ts
+   * const result = await plugin.createPlanFromTemplate('three-tier-web', {
+   *   environment: 'staging',
+   *   instanceType: 't3.medium',
+   * });
+   * ```
+   */
+  async createPlanFromTemplate(
+    templateId: string,
+    parameters: Record<string, unknown>,
+  ): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.createPlanFromTemplate(templateId, parameters);
+  }
+
+  /**
+   * Execute an infrastructure plan
+   */
+  async executePlan(
+    planId: string, 
+    options?: { dryRun?: boolean; skipApproval?: boolean }
+  ): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.executePlan(planId, options);
+  }
+
+  /**
+   * Check execution status
+   */
+  async checkExecutionStatus(executionId: string): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.checkStatus(executionId);
+  }
+
+  /**
+   * Reconcile infrastructure to match desired state
+   */
+  async reconcileInfrastructure(executionId: string): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.reconcile(executionId);
+  }
+
+  /**
+   * Rollback an execution
+   */
+  async rollbackExecution(executionId: string): Promise<import("./idio/orchestrator.js").IDIOResult> {
+    return this.idio.rollback(executionId);
   }
 
   /**
