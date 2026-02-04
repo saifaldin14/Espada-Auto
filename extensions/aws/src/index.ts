@@ -838,6 +838,12 @@ export type {
   ComplianceManager,
 } from "./compliance/index.js";
 
+// =============================================================================
+// Enterprise Module (Multi-Tenancy, Billing, Authentication)
+// =============================================================================
+
+export * from './enterprise/index.js';
+
 // Automation Types
 export type {
   // Common types
