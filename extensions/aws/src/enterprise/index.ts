@@ -2,7 +2,7 @@
  * Enterprise Module Index
  *
  * Exports all enterprise features for multi-tenancy, billing, authentication,
- * and team collaboration.
+ * team collaboration, and GitOps integration.
  */
 
 // Multi-Tenancy
@@ -24,6 +24,9 @@ export * from './auth/scim.js';
 // Team Collaboration
 export * from './collaboration/index.js';
 
+// GitOps Integration
+export * from './gitops/index.js';
+
 // =============================================================================
 // Enterprise Service Factory
 // =============================================================================
@@ -44,6 +47,7 @@ import { createNotificationService, type NotificationServiceConfig } from './col
 import { createTemplateService, type TemplateServiceConfig } from './collaboration/templates.js';
 import { createSlackIntegrationService, type SlackServiceConfig } from './collaboration/integrations/slack.js';
 import { createTeamsIntegrationService, type TeamsServiceConfig } from './collaboration/integrations/teams.js';
+import { createGitOpsServices, type GitOpsServiceConfig, type GitOpsServices } from './gitops/index.js';
 
 export interface EnterpriseConfig {
   tenantStore: TenantStoreConfig;
@@ -60,6 +64,7 @@ export interface EnterpriseConfig {
   templates?: TemplateServiceConfig;
   slack?: SlackServiceConfig;
   teams?: TeamsServiceConfig;
+  gitops?: GitOpsServiceConfig;
 }
 
 export interface EnterpriseServices {
@@ -77,6 +82,7 @@ export interface EnterpriseServices {
   templates: ReturnType<typeof createTemplateService>;
   slack?: ReturnType<typeof createSlackIntegrationService>;
   teams?: ReturnType<typeof createTeamsIntegrationService>;
+  gitops?: GitOpsServices;
 }
 
 /** Create all enterprise services with a single configuration */
@@ -98,9 +104,13 @@ export function createEnterpriseServices(config: EnterpriseConfig): EnterpriseSe
   const slack = config.slack ? createSlackIntegrationService(config.slack) : undefined;
   const teams = config.teams ? createTeamsIntegrationService(config.teams) : undefined;
 
+  // GitOps services
+  const gitops = config.gitops ? createGitOpsServices(config.gitops) : undefined;
+
   return { 
     tenantStore, tenantManager, billing, jwt, saml, oidc, scim,
     workspace, approval, comments, notifications, templates, slack, teams,
+    gitops,
   };
 }
 
