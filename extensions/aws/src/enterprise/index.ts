@@ -2,7 +2,7 @@
  * Enterprise Module Index
  *
  * Exports all enterprise features for multi-tenancy, billing, authentication,
- * team collaboration, and GitOps integration.
+ * team collaboration, GitOps integration, observability, and service catalog.
  */
 
 // Multi-Tenancy
@@ -27,6 +27,12 @@ export * from './collaboration/index.js';
 // GitOps Integration
 export * from './gitops/index.js';
 
+// Advanced Observability
+export * from './observability/index.js';
+
+// Service Catalog & Self-Service
+export * from './catalog/index.js';
+
 // =============================================================================
 // Enterprise Service Factory
 // =============================================================================
@@ -48,6 +54,8 @@ import { createTemplateService, type TemplateServiceConfig } from './collaborati
 import { createSlackIntegrationService, type SlackServiceConfig } from './collaboration/integrations/slack.js';
 import { createTeamsIntegrationService, type TeamsServiceConfig } from './collaboration/integrations/teams.js';
 import { createGitOpsServices, type GitOpsServiceConfig, type GitOpsServices } from './gitops/index.js';
+import { createObservabilityServices, type ObservabilityConfig, type ObservabilityServices } from './observability/index.js';
+import { createServiceCatalogServices, type ServiceCatalogConfig, type ServiceCatalogServices } from './catalog/index.js';
 
 export interface EnterpriseConfig {
   tenantStore: TenantStoreConfig;
@@ -65,6 +73,8 @@ export interface EnterpriseConfig {
   slack?: SlackServiceConfig;
   teams?: TeamsServiceConfig;
   gitops?: GitOpsServiceConfig;
+  observability?: ObservabilityConfig;
+  catalog?: ServiceCatalogConfig;
 }
 
 export interface EnterpriseServices {
@@ -83,6 +93,8 @@ export interface EnterpriseServices {
   slack?: ReturnType<typeof createSlackIntegrationService>;
   teams?: ReturnType<typeof createTeamsIntegrationService>;
   gitops?: GitOpsServices;
+  observability?: ObservabilityServices;
+  catalog?: ServiceCatalogServices;
 }
 
 /** Create all enterprise services with a single configuration */
@@ -107,10 +119,16 @@ export function createEnterpriseServices(config: EnterpriseConfig): EnterpriseSe
   // GitOps services
   const gitops = config.gitops ? createGitOpsServices(config.gitops) : undefined;
 
+  // Observability services
+  const observability = config.observability ? createObservabilityServices(config.observability) : undefined;
+
+  // Service catalog services
+  const catalog = config.catalog ? createServiceCatalogServices(config.catalog) : undefined;
+
   return { 
     tenantStore, tenantManager, billing, jwt, saml, oidc, scim,
     workspace, approval, comments, notifications, templates, slack, teams,
-    gitops,
+    gitops, observability, catalog,
   };
 }
 
