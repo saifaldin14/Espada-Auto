@@ -13,6 +13,11 @@ Comprehensive AWS infrastructure management extension providing AI-powered tools
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Available Tools](#available-tools)
+- [Intent-Driven Infrastructure Orchestration (IDIO)](#intent-driven-infrastructure-orchestration-idio)
+  - [IDIO CLI Commands](#idio-cli-commands)
+  - [Available Templates](#available-templates)
+  - [Intent File Format](#intent-file-format)
+  - [Example Workflows](#example-workflows)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 
@@ -326,6 +331,262 @@ Conversational AWS assistant
 - Context-aware interactions
 - Proactive insights
 - Wizard-guided resource creation
+
+## Intent-Driven Infrastructure Orchestration (IDIO)
+
+IDIO is a revolutionary approach to cloud infrastructure management that lets you describe **what** you want rather than **how** to build it. Simply declare your application requirements, and IDIO compiles them into a complete, policy-compliant infrastructure plan.
+
+### Key Features
+
+- **Declarative Intent** - Describe your needs in business terms (availability, cost, compliance)
+- **Automatic Compilation** - Translates intents into optimal AWS resource configurations  
+- **Policy Enforcement** - Built-in guardrails for security, compliance, and cost
+- **Cost Estimation** - Get accurate cost projections before provisioning
+- **Drift Detection** - Continuously monitor for configuration drift
+- **Auto-Remediation** - Automatically fix drift to maintain desired state
+- **Template Catalog** - Pre-built patterns for common architectures
+
+### IDIO CLI Commands
+
+```bash
+# Initialize a sample intent file
+espada aws idio init web-api ./my-app.intent.json
+
+# Validate an intent
+espada aws idio validate ./my-app.intent.json
+
+# Estimate costs
+espada aws idio cost ./my-app.intent.json
+
+# Create an infrastructure plan
+espada aws idio plan ./my-app.intent.json
+
+# Preview what will be created (dry run)
+espada aws idio execute plan-abc123 --dry-run
+
+# Deploy infrastructure
+espada aws idio execute plan-abc123
+
+# Quick deploy (validate + plan + execute)
+espada aws idio deploy ./my-app.intent.json
+
+# Check deployment status
+espada aws idio status exec-abc123
+
+# Detect drift
+espada aws idio drift exec-abc123
+
+# Reconcile to fix drift
+espada aws idio reconcile exec-abc123 --auto-remediate
+
+# Rollback deployment
+espada aws idio rollback exec-abc123
+```
+
+### Available Templates
+
+```bash
+# List all templates
+espada aws idio templates
+
+# Get template details
+espada aws idio template three-tier-web
+```
+
+| Template | Description |
+|----------|-------------|
+| `three-tier-web` | Classic web app with load balancer, app servers, and database |
+| `microservices` | Container-based microservices with service mesh |
+| `serverless-api` | API Gateway + Lambda + DynamoDB |
+| `data-lake` | S3-based data lake with analytics |
+| `ml-platform` | SageMaker-based ML training and inference |
+| `static-website` | S3 + CloudFront static site hosting |
+| `event-driven` | Event-driven architecture with SQS/SNS |
+
+### Intent File Format
+
+An intent file describes your application requirements declaratively:
+
+```json
+{
+  "name": "my-web-api",
+  "description": "Production web API with high availability",
+  "environment": "production",
+  "availability": "99.99",
+  "primaryRegion": "us-east-1",
+  "additionalRegions": ["us-west-2"],
+  "cost": {
+    "monthlyBudgetUsd": 5000,
+    "prioritizeCost": false,
+    "alertThreshold": 80
+  },
+  "compliance": ["soc2", "gdpr"],
+  "security": {
+    "encryptionAtRest": true,
+    "encryptionInTransit": true,
+    "networkIsolation": "vpc-isolated",
+    "mfaRequired": true
+  },
+  "tiers": [
+    {
+      "type": "web",
+      "trafficPattern": "predictable-daily",
+      "expectedRps": 10000,
+      "runtime": {
+        "language": "nodejs",
+        "version": "20",
+        "containerImage": "node:20-alpine",
+        "healthCheckPath": "/health"
+      },
+      "scaling": {
+        "min": 4,
+        "max": 50,
+        "targetCpuUtilization": 60
+      }
+    },
+    {
+      "type": "api",
+      "trafficPattern": "predictable-daily",
+      "expectedRps": 50000,
+      "runtime": {
+        "language": "nodejs",
+        "version": "20",
+        "containerImage": "node:20-alpine"
+      },
+      "scaling": {
+        "min": 6,
+        "max": 100,
+        "targetCpuUtilization": 50
+      },
+      "dependsOn": ["web"]
+    },
+    {
+      "type": "database",
+      "trafficPattern": "steady",
+      "dataSizeGb": 500,
+      "scaling": {
+        "min": 2,
+        "max": 2
+      },
+      "dependsOn": ["api"]
+    },
+    {
+      "type": "cache",
+      "trafficPattern": "predictable-daily",
+      "scaling": {
+        "min": 2,
+        "max": 6
+      },
+      "dependsOn": ["api"]
+    }
+  ],
+  "disasterRecovery": {
+    "rtoMinutes": 15,
+    "rpoMinutes": 5,
+    "crossRegionReplication": true,
+    "backupRetentionDays": 30,
+    "automaticFailover": true
+  },
+  "tags": {
+    "Project": "MyWebAPI",
+    "Owner": "platform-team",
+    "CostCenter": "engineering"
+  }
+}
+```
+
+### Intent Properties Reference
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `name` | string | Application name (lowercase, alphanumeric with hyphens) |
+| `description` | string | Human-readable description |
+| `environment` | enum | `development`, `staging`, `production`, `disaster-recovery` |
+| `availability` | enum | `99.9`, `99.95`, `99.99`, `99.999`, `best-effort` |
+| `primaryRegion` | string | AWS region for deployment |
+| `additionalRegions` | string[] | Additional regions for multi-region |
+| `cost` | object | Budget constraints and optimization preferences |
+| `compliance` | string[] | `hipaa`, `soc2`, `pci-dss`, `gdpr`, `iso27001`, `fedramp`, `none` |
+| `security` | object | Security requirements |
+| `tiers` | array | Application tier configurations |
+| `disasterRecovery` | object | DR requirements (RTO, RPO, replication) |
+| `tags` | object | Tags to apply to all resources |
+
+### Tier Types
+
+| Type | Description | Typical AWS Services |
+|------|-------------|---------------------|
+| `web` | Web/frontend tier | ALB, ECS/EKS, CloudFront |
+| `api` | API/backend tier | ALB, ECS/EKS, API Gateway |
+| `database` | Data persistence | RDS, DynamoDB, ElastiCache |
+| `cache` | Caching layer | ElastiCache Redis/Memcached |
+| `queue` | Message queuing | SQS, SNS, EventBridge |
+| `storage` | Object storage | S3, EFS |
+| `analytics` | Analytics/processing | Athena, EMR, Kinesis |
+
+### Traffic Patterns
+
+| Pattern | Description | Scaling Strategy |
+|---------|-------------|------------------|
+| `steady` | Consistent load | Conservative scaling |
+| `burst` | Unpredictable spikes | Aggressive pre-warming |
+| `predictable-daily` | Daily patterns | Scheduled scaling |
+| `predictable-weekly` | Weekly patterns | Scheduled scaling |
+| `seasonal` | Seasonal variations | Capacity reservations |
+| `unpredictable` | No clear pattern | Aggressive auto-scaling |
+
+### Example Workflows
+
+#### Deploy a Three-Tier Web App
+
+```bash
+# 1. Generate a sample intent
+espada aws idio init web-api ./webapp.intent.json
+
+# 2. Customize the intent file (edit as needed)
+
+# 3. Validate the intent
+espada aws idio validate ./webapp.intent.json
+
+# 4. Check estimated costs
+espada aws idio cost ./webapp.intent.json
+
+# 5. Create and review the plan
+espada aws idio plan ./webapp.intent.json
+
+# 6. Preview what will be created
+espada aws idio execute plan-xxx --dry-run
+
+# 7. Deploy!
+espada aws idio execute plan-xxx
+```
+
+#### Deploy from Template
+
+```bash
+# Deploy a serverless API
+espada aws idio plan template serverless-api \
+  --name=my-api \
+  --env=production
+
+espada aws idio execute plan-xxx
+```
+
+#### Monitor and Maintain
+
+```bash
+# Check status
+espada aws idio status exec-xxx
+
+# Detect drift
+espada aws idio drift exec-xxx
+
+# Auto-fix drift
+espada aws idio reconcile exec-xxx --auto-remediate
+
+# Rollback if needed
+espada aws idio rollback exec-xxx
+```
 
 ## Examples
 
