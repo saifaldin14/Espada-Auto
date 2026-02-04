@@ -1,7 +1,8 @@
 /**
  * Enterprise Module Index
  *
- * Exports all enterprise features for multi-tenancy, billing, and authentication.
+ * Exports all enterprise features for multi-tenancy, billing, authentication,
+ * and team collaboration.
  */
 
 // Multi-Tenancy
@@ -20,6 +21,9 @@ export * from './auth/saml.js';
 export * from './auth/oidc.js';
 export * from './auth/scim.js';
 
+// Team Collaboration
+export * from './collaboration/index.js';
+
 // =============================================================================
 // Enterprise Service Factory
 // =============================================================================
@@ -33,6 +37,13 @@ import { createSAMLService, type SAMLServiceConfig } from './auth/saml.js';
 import { createOIDCService, type OIDCServiceConfig } from './auth/oidc.js';
 import { createSCIMService, type SCIMServiceConfig } from './auth/scim.js';
 import { ROLE_PERMISSIONS } from './auth/types.js';
+import { createWorkspaceManager, type WorkspaceManagerConfig } from './collaboration/workspace.js';
+import { createApprovalService, type ApprovalServiceConfig } from './collaboration/approval.js';
+import { createCommentService, type CommentServiceConfig } from './collaboration/comments.js';
+import { createNotificationService, type NotificationServiceConfig } from './collaboration/notifications.js';
+import { createTemplateService, type TemplateServiceConfig } from './collaboration/templates.js';
+import { createSlackIntegrationService, type SlackServiceConfig } from './collaboration/integrations/slack.js';
+import { createTeamsIntegrationService, type TeamsServiceConfig } from './collaboration/integrations/teams.js';
 
 export interface EnterpriseConfig {
   tenantStore: TenantStoreConfig;
@@ -42,6 +53,13 @@ export interface EnterpriseConfig {
   saml?: Pick<SAMLServiceConfig, 'spEntityId' | 'spCertificate' | 'spPrivateKey' | 'spAcsUrl'> & Partial<SAMLServiceConfig>;
   oidc?: Pick<OIDCServiceConfig, 'defaultRedirectUri'> & Partial<OIDCServiceConfig>;
   scim?: Pick<SCIMServiceConfig, 'baseUrl'> & Partial<SCIMServiceConfig>;
+  workspace?: WorkspaceManagerConfig;
+  approval?: ApprovalServiceConfig;
+  comments?: CommentServiceConfig;
+  notifications?: NotificationServiceConfig;
+  templates?: TemplateServiceConfig;
+  slack?: SlackServiceConfig;
+  teams?: TeamsServiceConfig;
 }
 
 export interface EnterpriseServices {
@@ -52,6 +70,13 @@ export interface EnterpriseServices {
   saml?: ReturnType<typeof createSAMLService>;
   oidc?: ReturnType<typeof createOIDCService>;
   scim?: ReturnType<typeof createSCIMService>;
+  workspace: ReturnType<typeof createWorkspaceManager>;
+  approval: ReturnType<typeof createApprovalService>;
+  comments: ReturnType<typeof createCommentService>;
+  notifications: ReturnType<typeof createNotificationService>;
+  templates: ReturnType<typeof createTemplateService>;
+  slack?: ReturnType<typeof createSlackIntegrationService>;
+  teams?: ReturnType<typeof createTeamsIntegrationService>;
 }
 
 /** Create all enterprise services with a single configuration */
@@ -63,8 +88,20 @@ export function createEnterpriseServices(config: EnterpriseConfig): EnterpriseSe
   const saml = config.saml ? createSAMLService(config.saml) : undefined;
   const oidc = config.oidc ? createOIDCService(config.oidc) : undefined;
   const scim = config.scim ? createSCIMService(config.scim) : undefined;
+  
+  // Collaboration services
+  const workspace = createWorkspaceManager(config.workspace);
+  const approval = createApprovalService(config.approval);
+  const comments = createCommentService(config.comments);
+  const notifications = createNotificationService(config.notifications);
+  const templates = createTemplateService(config.templates);
+  const slack = config.slack ? createSlackIntegrationService(config.slack) : undefined;
+  const teams = config.teams ? createTeamsIntegrationService(config.teams) : undefined;
 
-  return { tenantStore, tenantManager, billing, jwt, saml, oidc, scim };
+  return { 
+    tenantStore, tenantManager, billing, jwt, saml, oidc, scim,
+    workspace, approval, comments, notifications, templates, slack, teams,
+  };
 }
 
 // =============================================================================
