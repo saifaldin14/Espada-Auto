@@ -1039,6 +1039,7 @@
           "tools/lobster",
           "tools/llm-task",
           "plugin",
+          "plugins/aws",
           "plugins/voice-call",
           "plugins/zalouser",
           "tools/exec",

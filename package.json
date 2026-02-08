@@ -6,7 +6,10 @@
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
-    "./plugin-sdk": "./dist/plugin-sdk/index.js",
+    "./plugin-sdk": {
+      "types": "./src/plugin-sdk/index.ts",
+      "import": "./dist/plugin-sdk/index.js"
+    },
     "./plugin-sdk/*": "./dist/plugin-sdk/*",
     "./cli-entry": "./espada.mjs"
   },

@@ -6,24 +6,7 @@
  * for AWS infrastructure management.
  */
 
-// Define CLI command type
-interface CliCommand {
-  command(name: string): CliCommand;
-  description(desc: string): CliCommand;
-  option(flags: string, desc: string, defaultValue?: unknown): CliCommand;
-  action(fn: (...args: unknown[]) => Promise<void>): CliCommand;
-}
-
-interface CliContext {
-  program: {
-    command(name: string): CliCommand;
-  };
-}
-
-// Plugin API type - using any for now due to tsconfig rootDir restrictions
-// In production, this would be properly typed via espada/plugin-sdk
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type EspadaPluginApi = any;
+import type { EspadaPluginApi, EspadaPluginCliContext } from "espada/plugin-sdk";
 
 // AWS-specific utilities (self-contained to avoid tsconfig issues)
 import {
@@ -33,14 +16,17 @@ import {
   enableAWSDiagnostics,
 } from "./src/diagnostics.js";
 
-// Simple theme helper for CLI output (self-contained)
+// Theme helper for CLI output — uses LOBSTER_PALETTE tokens for consistency
 const theme = {
   error: (s: string) => `\x1b[31m${s}\x1b[0m`,
   success: (s: string) => `\x1b[32m${s}\x1b[0m`,
   warn: (s: string) => `\x1b[33m${s}\x1b[0m`,
   info: (s: string) => `\x1b[34m${s}\x1b[0m`,
   muted: (s: string) => `\x1b[90m${s}\x1b[0m`,
-};
+} as const;
+
+// Store the plugin logger so the service start() can use it
+let pluginLogger: EspadaPluginApi["logger"] | null = null;
 
 import {
   createCredentialsManager,
@@ -81,6 +67,16 @@ import {
   createS3Manager,
   type S3Manager,
 } from "./src/s3/index.js";
+
+import {
+  createCICDManager,
+} from "./src/cicd/index.js";
+import type { CICDManager } from "./src/cicd/types.js";
+
+import {
+  createNetworkManager,
+  type NetworkManager,
+} from "./src/network/index.js";
 
 import {
   createSecurityManager,
@@ -134,6 +130,8 @@ let ec2Manager: AWSEC2Manager | null = null;
 let rdsManager: RDSManager | null = null;
 let lambdaManager: LambdaManager | null = null;
 let s3Manager: S3Manager | null = null;
+let cicdManager: CICDManager | null = null;
+let networkManager: NetworkManager | null = null;
 let iacManager: IaCManager | null = null;
 let costManager: CostManager | null = null;
 let securityManager: SecurityManager | null = null;
@@ -356,98 +354,23 @@ const plugin = {
   version: "1.0.0",
   configSchema,
 
-  async register(api: EspadaPluginApi) {
+  register(api: EspadaPluginApi) {
     // Use the plugin's logger for consistent output
     api.logger.info("Registering AWS extension");
+    pluginLogger = api.logger;
 
     // Get plugin configuration
     const config = (api.pluginConfig as AWSPluginConfig) ?? getDefaultConfig();
 
-    // Configure diagnostics based on config
+    // Configure diagnostics based on config (sync — no AWS API calls)
     if (config.diagnostics?.enabled) {
       enableAWSDiagnostics();
       api.logger.info("AWS diagnostics enabled");
     }
 
-    // Initialize credentials manager
-    credentialsManager = createCredentialsManager({
-      defaultProfile: config.defaultProfile,
-      defaultRegion: config.defaultRegion,
-    });
-
-    // Initialize CLI wrapper
-    cliWrapper = createCLIWrapper({
-      defaultOptions: {
-        profile: config.defaultProfile,
-        region: config.defaultRegion,
-      },
-    });
-
-    // Initialize context manager
-    contextManager = createContextManager(credentialsManager);
-
-    // Initialize service discovery
-    serviceDiscovery = createServiceDiscovery(credentialsManager);
-
-    // Initialize tagging manager
-    const tagConfigConverted = config.tagConfig ? {
-      required: (config.tagConfig.requiredTags ?? []).map(k => ({ key: k, value: "" })),
-      optional: (config.tagConfig.optionalTags ?? []).map(k => ({ key: k, value: "" })),
-      prohibited: [] as string[],
-    } : undefined;
-    
-    const defaultTagsConverted = config.defaultTags?.map(t => ({
-      key: t.key,
-      value: t.value,
-    }));
-    
-    taggingManager = createTaggingManager(
-      credentialsManager,
-      tagConfigConverted,
-      defaultTagsConverted,
-    );
-
-    // Initialize CloudTrail manager
-    cloudTrailManager = createCloudTrailManager(
-      credentialsManager,
-      config.defaultRegion,
-    );
-
-    // Initialize EC2 manager
-    ec2Manager = createEC2Manager(
-      credentialsManager,
-      config.defaultRegion,
-    );
-
-    // Initialize RDS manager
-    rdsManager = createRDSManager({
-      region: config.defaultRegion,
-    });
-
-    // Initialize Lambda manager
-    lambdaManager = createLambdaManager({
-      region: config.defaultRegion,
-    });
-
-    // Initialize S3 manager
-    s3Manager = createS3Manager({
-      region: config.defaultRegion,
-    });
-
-    // Initialize IaC manager
-    iacManager = createIaCManager({
-      defaultRegion: config.defaultRegion,
-      defaultTags: config.defaultTags?.reduce((acc, t) => ({ ...acc, [t.key]: t.value }), {}),
-    });
-
-    // Initialize Cost manager
-    costManager = createCostManager({
-      defaultRegion: config.defaultRegion,
-    });
-
     // Register CLI commands
     api.registerCli(
-      (ctx: CliContext) => {
+      (ctx: EspadaPluginCliContext) => {
         const aws = ctx.program
           .command("aws")
           .description("AWS infrastructure management");
@@ -865,162 +788,200 @@ const plugin = {
     );
 
     // Register gateway methods for programmatic access
-    api.registerGatewayMethod("aws/identity", async () => {
+    api.registerGatewayMethod("aws/identity", async (opts) => {
       if (!contextManager) {
-        return { success: false, error: "Context manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Context manager not initialized" });
+        return;
       }
       try {
         await contextManager.initialize();
         const context = contextManager.getContext();
-        return { success: true, data: context };
+        opts.respond(true, { data: context });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/instances", async (params: { region?: string; states?: string[] }) => {
+    api.registerGatewayMethod("aws/ec2/instances", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string; states?: string[] };
         const instances = await ec2Manager.listInstances({
           region: params.region,
           states: params.states as ("running" | "stopped" | "pending" | "terminated")[],
         });
-        return { success: true, data: instances };
+        opts.respond(true, { data: instances });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/start", async (params: { instanceIds: string[]; region?: string }) => {
+    api.registerGatewayMethod("aws/ec2/start", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { instanceIds: string[]; region?: string };
         const result = await ec2Manager.startInstances(params.instanceIds, { region: params.region });
-        return { success: result.success, data: result, error: result.error };
+        if (result.error) {
+          opts.respond(false, { data: result }, { code: "EC2_ERROR", message: result.error });
+        } else {
+          opts.respond(true, { data: result });
+        }
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/stop", async (params: { instanceIds: string[]; region?: string; force?: boolean }) => {
+    api.registerGatewayMethod("aws/ec2/stop", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { instanceIds: string[]; region?: string; force?: boolean };
         const result = await ec2Manager.stopInstances(params.instanceIds, {
           region: params.region,
           force: params.force,
         });
-        return { success: result.success, data: result, error: result.error };
+        if (result.error) {
+          opts.respond(false, { data: result }, { code: "EC2_ERROR", message: result.error });
+        } else {
+          opts.respond(true, { data: result });
+        }
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/terminate", async (params: { instanceIds: string[]; region?: string }) => {
+    api.registerGatewayMethod("aws/ec2/terminate", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { instanceIds: string[]; region?: string };
         const result = await ec2Manager.terminateInstances(params.instanceIds, { region: params.region });
-        return { success: result.success, data: result, error: result.error };
+        if (result.error) {
+          opts.respond(false, { data: result }, { code: "EC2_ERROR", message: result.error });
+        } else {
+          opts.respond(true, { data: result });
+        }
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/security-groups", async (params: { region?: string; vpcId?: string }) => {
+    api.registerGatewayMethod("aws/ec2/security-groups", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string; vpcId?: string };
         const groups = await ec2Manager.listSecurityGroups({
           region: params.region,
           filters: params.vpcId ? { "vpc-id": [params.vpcId] } : undefined,
         });
-        return { success: true, data: groups };
+        opts.respond(true, { data: groups });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/ec2/key-pairs", async (params: { region?: string }) => {
+    api.registerGatewayMethod("aws/ec2/key-pairs", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string };
         const keyPairs = await ec2Manager.listKeyPairs({ region: params.region });
-        return { success: true, data: keyPairs };
+        opts.respond(true, { data: keyPairs });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/asg/list", async (params: { region?: string }) => {
+    api.registerGatewayMethod("aws/asg/list", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string };
         const groups = await ec2Manager.listAutoScalingGroups({ region: params.region });
-        return { success: true, data: groups };
+        opts.respond(true, { data: groups });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/asg/scale", async (params: { name: string; capacity: number; region?: string }) => {
+    api.registerGatewayMethod("aws/asg/scale", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { name: string; capacity: number; region?: string };
         const result = await ec2Manager.setDesiredCapacity(params.name, params.capacity, {
           region: params.region,
         });
-        return { success: result.success, data: result, error: result.error };
+        if (result.error) {
+          opts.respond(false, { data: result }, { code: "ASG_ERROR", message: result.error });
+        } else {
+          opts.respond(true, { data: result });
+        }
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/elb/list", async (params: { region?: string }) => {
+    api.registerGatewayMethod("aws/elb/list", async (opts) => {
       if (!ec2Manager) {
-        return { success: false, error: "EC2 manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EC2 manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string };
         const loadBalancers = await ec2Manager.listLoadBalancers({ region: params.region });
-        return { success: true, data: loadBalancers };
+        opts.respond(true, { data: loadBalancers });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/services", async (_params: { region?: string }) => {
+    api.registerGatewayMethod("aws/services", async (opts) => {
       if (!serviceDiscovery) {
-        return { success: false, error: "Service discovery not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Service discovery not initialized" });
+        return;
       }
       try {
         const result = await serviceDiscovery.discover();
-        return { success: true, data: result.services };
+        opts.respond(true, { data: result.services });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
-    api.registerGatewayMethod("aws/cloudtrail/events", async (params: { region?: string; limit?: number }) => {
+    api.registerGatewayMethod("aws/cloudtrail/events", async (opts) => {
       if (!cloudTrailManager) {
-        return { success: false, error: "CloudTrail manager not initialized" };
+        opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "CloudTrail manager not initialized" });
+        return;
       }
       try {
+        const params = (opts.params ?? {}) as { region?: string; limit?: number };
         const events = await cloudTrailManager.queryEvents({
           region: params.region,
           maxResults: params.limit ?? 20,
         });
-        return { success: true, data: events };
+        opts.respond(true, { data: events });
       } catch (error) {
-        return { success: false, error: String(error) };
+        opts.respond(false, undefined, { code: "AWS_ERROR", message: String(error) });
       }
     });
 
@@ -1099,6 +1060,7 @@ const plugin = {
                       text: "Error: SSO authentication requires 'sso_start_url' and 'sso_region' parameters.",
                     },
                   ],
+                  details: { error: "missing_sso_params" },
                 };
               }
 
@@ -1138,6 +1100,7 @@ sso_registration_scopes = sso:account:access
                       text: `✅ AWS SSO authentication initiated!\n\nA browser window should have opened for you to login.\n\nProfile: ${sessionName}\nStart URL: ${sso_start_url}\nRegion: ${sso_region}\n\nAfter logging in through the browser, you'll be able to use AWS services.\n\nOutput:\n${output}`,
                     },
                   ],
+                  details: { method: "sso", profile: sessionName },
                 };
               } catch (error: any) {
                 return {
@@ -1147,6 +1110,7 @@ sso_registration_scopes = sso:account:access
                       text: `Browser login initiated. Please check your browser to complete the AWS SSO login.\n\nProfile: ${sessionName}\nIf the browser didn't open automatically, run: aws sso login --profile ${sessionName}\n\nError details: ${error.message}`,
                     },
                   ],
+                  details: { method: "sso", profile: sessionName, browserError: error.message },
                 };
               }
             } else if (method === "access-keys") {
@@ -1159,6 +1123,7 @@ sso_registration_scopes = sso:account:access
                       text: "Error: Access key authentication requires 'access_key_id' and 'secret_access_key' parameters.",
                     },
                   ],
+                  details: { error: "missing_access_key_params" },
                 };
               }
 
@@ -1198,6 +1163,7 @@ output = json
                       text: `✅ AWS credentials configured successfully!\n\nAccount: ${identity.Account}\nUser/Role: ${identity.Arn}\nRegion: ${region}\n\nYou can now use AWS services through the agent.`,
                     },
                   ],
+                  details: { method: "access-keys", account: identity.Account, arn: identity.Arn },
                 };
               } catch (error: any) {
                 return {
@@ -1207,6 +1173,7 @@ output = json
                       text: `⚠️ Credentials saved but verification failed: ${error.message}\n\nPlease verify your access key and secret key are correct.`,
                     },
                   ],
+                  details: { method: "access-keys", error: error.message },
                 };
               }
             }
@@ -1218,6 +1185,7 @@ output = json
                   text: "Error: Invalid authentication method. Use 'sso' or 'access-keys'.",
                 },
               ],
+              details: { error: "invalid_method" },
             };
           } catch (error) {
             return {
@@ -1227,6 +1195,7 @@ output = json
                   text: `AWS authentication error: ${error}`,
                 },
               ],
+              details: { error: String(error) },
             };
           }
         },
@@ -3069,6 +3038,7 @@ output = json
     api.registerTool(
       {
         name: "aws_lambda",
+        label: "AWS Lambda Management",
         description: `Manage AWS Lambda functions with comprehensive operations including:
 - List and get Lambda functions
 - Create, update, and delete functions
@@ -3082,7 +3052,7 @@ output = json
 - Optimize cold starts with reserved/provisioned concurrency
 - Invoke functions synchronously or asynchronously
 - Manage function URLs for HTTP endpoints`,
-        inputSchema: {
+        parameters: {
           type: "object",
           properties: {
             action: {
@@ -4518,6 +4488,7 @@ output = json
     api.registerTool(
       {
         name: "aws_s3",
+        label: "AWS S3 Management",
         description: `AWS S3 bucket and object management tool. Manage S3 buckets, objects, versioning, encryption, lifecycle policies, website hosting, CloudFront distributions, replication, and event notifications.
 
 IMPORTANT: Always specify the region parameter for operations unless using the default region.
@@ -4563,7 +4534,7 @@ Available actions:
 - set_bucket_tags: Set bucket tags
 - get_bucket_policy: Get bucket policy
 - set_bucket_policy: Set bucket policy`,
-        inputSchema: {
+        parameters: {
           type: "object" as const,
           properties: {
             action: {
@@ -4826,7 +4797,7 @@ Available actions:
           },
           required: ["action"],
         },
-        async execute(params: {
+        async execute(_toolCallId: string, params: {
           action: string;
           region?: string;
           bucket_name?: string;
@@ -7317,7 +7288,7 @@ Use this tool to:
           },
           required: ["action"],
         },
-        async execute(params: Record<string, unknown>) {
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
           const action = params.action as string;
           const region = params.region as string | undefined;
 
@@ -8578,7 +8549,7 @@ Use this tool to:
           },
           required: ["action"],
         },
-        async execute(params: Record<string, unknown>) {
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
           const action = params.action as string;
           const region = (params.region as string) || "us-east-1";
 
@@ -10023,6 +9994,7 @@ Use this tool to:
     api.registerTool(
       {
         name: "aws_organizations",
+        label: "AWS Organizations Management",
         description: `Multi-account and AWS Organization management tool providing:
 - Organization management (view organization, roots, accounts)
 - Account management (list, create, move, remove accounts)
@@ -10327,7 +10299,7 @@ Use this tool to:
           },
           required: ["action"],
         },
-        async execute(params: Record<string, unknown>) {
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
           const action = params.action as string;
           const region = (params.region as string) || "us-east-1";
 
@@ -11966,7 +11938,7 @@ Use this tool to:
           },
           required: ["action"],
         },
-        async execute(params: Record<string, unknown>) {
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
           const action = params.action as string;
           const region = (params.region as string) || config.defaultRegion || "us-east-1";
 
@@ -12867,6 +12839,885 @@ Use this tool to:
     );
 
     // =========================================================================
+    // AWS CI/CD PIPELINE AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_cicd",
+        label: "AWS CI/CD Pipeline Management",
+        description:
+          "Manage AWS CI/CD pipelines with CodePipeline, CodeBuild, and CodeDeploy. Create and manage pipelines, build projects, deployments, and blue/green deployment strategies.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_pipelines",
+                "get_pipeline",
+                "create_pipeline",
+                "delete_pipeline",
+                "start_pipeline",
+                "stop_pipeline",
+                "get_pipeline_state",
+                "list_pipeline_executions",
+                "get_pipeline_execution",
+                "retry_stage",
+                "enable_stage_transition",
+                "disable_stage_transition",
+                "list_build_projects",
+                "get_build_project",
+                "create_build_project",
+                "delete_build_project",
+                "start_build",
+                "stop_build",
+                "get_build",
+                "get_build_logs",
+                "list_applications",
+                "get_application",
+                "create_application",
+                "delete_application",
+                "list_deployment_groups",
+                "get_deployment_group",
+                "create_deployment_group",
+                "create_deployment",
+                "get_deployment",
+                "list_deployments",
+                "stop_deployment",
+                "rollback_deployment",
+                "list_deployment_configs",
+                "get_deployment_config",
+                "configure_blue_green",
+                "list_templates",
+                "create_from_template",
+              ],
+              description: "The CI/CD operation to perform",
+            },
+            pipelineName: {
+              type: "string",
+              description: "The pipeline name",
+            },
+            pipelineExecutionId: {
+              type: "string",
+              description: "The pipeline execution ID",
+            },
+            projectName: {
+              type: "string",
+              description: "The CodeBuild project name",
+            },
+            buildId: {
+              type: "string",
+              description: "The build ID",
+            },
+            applicationName: {
+              type: "string",
+              description: "The CodeDeploy application name",
+            },
+            deploymentGroupName: {
+              type: "string",
+              description: "The deployment group name",
+            },
+            deploymentId: {
+              type: "string",
+              description: "The deployment ID",
+            },
+            deploymentConfigName: {
+              type: "string",
+              description: "The deployment config name",
+            },
+            stageName: {
+              type: "string",
+              description: "The pipeline stage name",
+            },
+            templateId: {
+              type: "string",
+              description: "The pipeline template ID",
+            },
+            roleArn: {
+              type: "string",
+              description: "The IAM role ARN",
+            },
+            artifactBucket: {
+              type: "string",
+              description: "The S3 artifact bucket name",
+            },
+            sourceType: {
+              type: "string",
+              enum: ["CodeCommit", "GitHub", "GitHubEnterpriseServer", "S3", "Bitbucket", "CodeStarSourceConnection"],
+              description: "The source provider type",
+            },
+            repositoryName: {
+              type: "string",
+              description: "The source repository name",
+            },
+            branchName: {
+              type: "string",
+              description: "The source branch name",
+            },
+            computeType: {
+              type: "string",
+              enum: ["BUILD_GENERAL1_SMALL", "BUILD_GENERAL1_MEDIUM", "BUILD_GENERAL1_LARGE", "BUILD_GENERAL1_2XLARGE"],
+              description: "The CodeBuild compute type",
+            },
+            buildImage: {
+              type: "string",
+              description: "The CodeBuild environment image (e.g., aws/codebuild/standard:7.0)",
+            },
+            buildspec: {
+              type: "string",
+              description: "The buildspec file path or inline YAML",
+            },
+            computePlatform: {
+              type: "string",
+              enum: ["Server", "Lambda", "ECS"],
+              description: "The CodeDeploy compute platform",
+            },
+            reason: {
+              type: "string",
+              description: "Reason for stopping/disabling",
+            },
+            parameters: {
+              type: "object",
+              description: "Template parameters as key-value pairs",
+            },
+            region: {
+              type: "string",
+              description: "AWS region override",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          const action = params.action as string;
+          if (!cicdManager) {
+            return {
+              content: [{ type: "text", text: "CI/CD manager not initialized. AWS services may not be started." }],
+              details: { error: "not_initialized" },
+            };
+          }
+          try {
+            switch (action) {
+              case "list_pipelines": {
+                const result = await cicdManager.listPipelines();
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_pipeline": {
+                const result = await cicdManager.getPipeline(params.pipelineName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_pipeline": {
+                const result = await cicdManager.createPipeline({
+                  pipelineName: params.pipelineName as string,
+                  roleArn: params.roleArn as string,
+                  artifactStore: { type: "S3" as const, location: params.artifactBucket as string },
+                  stages: [],
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_pipeline": {
+                const result = await cicdManager.deletePipeline(params.pipelineName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "start_pipeline": {
+                const result = await cicdManager.startPipelineExecution({
+                  pipelineName: params.pipelineName as string,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "stop_pipeline": {
+                const result = await cicdManager.stopPipelineExecution({
+                  pipelineName: params.pipelineName as string,
+                  pipelineExecutionId: params.pipelineExecutionId as string,
+                  reason: params.reason as string | undefined,
+                  abandon: false,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_pipeline_state": {
+                const result = await cicdManager.getPipelineState(params.pipelineName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_pipeline_executions": {
+                const result = await cicdManager.listPipelineExecutions({
+                  pipelineName: params.pipelineName as string,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_pipeline_execution": {
+                const result = await cicdManager.getPipelineExecution(
+                  params.pipelineName as string,
+                  params.pipelineExecutionId as string,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "retry_stage": {
+                const result = await cicdManager.retryStageExecution({
+                  pipelineName: params.pipelineName as string,
+                  stageName: params.stageName as string,
+                  pipelineExecutionId: params.pipelineExecutionId as string,
+                  retryMode: "FAILED_ACTIONS",
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "enable_stage_transition": {
+                const result = await cicdManager.enableStageTransition(
+                  params.pipelineName as string,
+                  params.stageName as string,
+                  "Inbound",
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "disable_stage_transition": {
+                const result = await cicdManager.disableStageTransition(
+                  params.pipelineName as string,
+                  params.stageName as string,
+                  "Inbound",
+                  params.reason as string ?? "Disabled via Espada",
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_build_projects": {
+                const result = await cicdManager.listBuildProjects();
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_build_project": {
+                const result = await cicdManager.getBuildProject(params.projectName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_build_project": {
+                const result = await cicdManager.createBuildProject({
+                  name: params.projectName as string,
+                  source: { type: ((params.sourceType as string) ?? "CODEPIPELINE") as "CODEPIPELINE", location: params.repositoryName as string },
+                  environment: {
+                    type: "LINUX_CONTAINER",
+                    computeType: ((params.computeType as string) ?? "BUILD_GENERAL1_SMALL") as "BUILD_GENERAL1_SMALL",
+                    image: (params.buildImage as string) ?? "aws/codebuild/standard:7.0",
+                  },
+                  serviceRole: params.roleArn as string,
+                  artifacts: { type: "CODEPIPELINE" },
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_build_project": {
+                const result = await cicdManager.deleteBuildProject(params.projectName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "start_build": {
+                const result = await cicdManager.startBuild({
+                  projectName: params.projectName as string,
+                  buildspecOverride: params.buildspec as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "stop_build": {
+                const result = await cicdManager.stopBuild(params.buildId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_build": {
+                const result = await cicdManager.getBuild(params.buildId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_build_logs": {
+                const result = await cicdManager.getBuildLogs(params.buildId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_applications": {
+                const result = await cicdManager.listApplications();
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_application": {
+                const result = await cicdManager.getApplication(params.applicationName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_application": {
+                const result = await cicdManager.createApplication({
+                  applicationName: params.applicationName as string,
+                  computePlatform: (params.computePlatform as "Server" | "Lambda" | "ECS") ?? "Server",
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_application": {
+                const result = await cicdManager.deleteApplication(params.applicationName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_deployment_groups": {
+                const result = await cicdManager.listDeploymentGroups({
+                  applicationName: params.applicationName as string,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_deployment_group": {
+                const result = await cicdManager.getDeploymentGroup(
+                  params.applicationName as string,
+                  params.deploymentGroupName as string,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_deployment": {
+                const result = await cicdManager.createDeployment({
+                  applicationName: params.applicationName as string,
+                  deploymentGroupName: params.deploymentGroupName as string,
+                  deploymentConfigName: params.deploymentConfigName as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_deployment": {
+                const result = await cicdManager.getDeployment(params.deploymentId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_deployments": {
+                const result = await cicdManager.listDeployments({
+                  applicationName: params.applicationName as string | undefined,
+                  deploymentGroupName: params.deploymentGroupName as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "stop_deployment": {
+                const result = await cicdManager.stopDeployment(params.deploymentId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "rollback_deployment": {
+                const result = await cicdManager.rollbackDeployment(params.deploymentId as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_deployment_configs": {
+                const result = await cicdManager.listDeploymentConfigs();
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_deployment_config": {
+                const result = await cicdManager.getDeploymentConfig(params.deploymentConfigName as string);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "configure_blue_green": {
+                const result = await cicdManager.configureBlueGreenDeployment({
+                  applicationName: params.applicationName as string,
+                  deploymentGroupName: params.deploymentGroupName as string,
+                  trafficRoutingType: "AllAtOnce",
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_templates": {
+                const result = await cicdManager.getPipelineTemplates();
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_from_template": {
+                const result = await cicdManager.createPipelineFromTemplate(
+                  params.templateId as string,
+                  params.pipelineName as string,
+                  params.roleArn as string,
+                  params.artifactBucket as string,
+                  (params.parameters as Record<string, string>) ?? {},
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown CI/CD action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `CI/CD error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_cicd" },
+    );
+
+    // =========================================================================
+    // AWS NETWORK AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_network",
+        label: "AWS Network Management",
+        description:
+          "Manage AWS networking infrastructure. Create and manage VPCs, subnets, route tables, internet gateways, NAT gateways, VPC peering, transit gateways, network ACLs, VPC endpoints, and flow logs.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_vpcs",
+                "create_vpc",
+                "delete_vpc",
+                "list_subnets",
+                "create_subnet",
+                "delete_subnet",
+                "list_route_tables",
+                "create_route_table",
+                "create_route",
+                "associate_route_table",
+                "delete_route_table",
+                "list_internet_gateways",
+                "create_internet_gateway",
+                "delete_internet_gateway",
+                "list_nat_gateways",
+                "create_nat_gateway",
+                "delete_nat_gateway",
+                "list_vpc_peering",
+                "create_vpc_peering",
+                "accept_vpc_peering",
+                "delete_vpc_peering",
+                "list_transit_gateways",
+                "create_transit_gateway",
+                "attach_vpc_to_transit_gateway",
+                "delete_transit_gateway",
+                "list_network_acls",
+                "create_network_acl",
+                "create_network_acl_entry",
+                "delete_network_acl",
+                "list_vpc_endpoints",
+                "list_vpc_endpoint_services",
+                "create_vpc_endpoint",
+                "delete_vpc_endpoints",
+                "list_flow_logs",
+                "create_flow_log",
+                "delete_flow_logs",
+                "create_multi_az_vpc",
+                "get_availability_zones",
+              ],
+              description: "The network operation to perform",
+            },
+            vpcId: {
+              type: "string",
+              description: "The VPC ID",
+            },
+            subnetId: {
+              type: "string",
+              description: "The subnet ID",
+            },
+            routeTableId: {
+              type: "string",
+              description: "The route table ID",
+            },
+            internetGatewayId: {
+              type: "string",
+              description: "The internet gateway ID",
+            },
+            natGatewayId: {
+              type: "string",
+              description: "The NAT gateway ID",
+            },
+            peeringConnectionId: {
+              type: "string",
+              description: "The VPC peering connection ID",
+            },
+            transitGatewayId: {
+              type: "string",
+              description: "The transit gateway ID",
+            },
+            networkAclId: {
+              type: "string",
+              description: "The network ACL ID",
+            },
+            vpcEndpointIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of VPC endpoint IDs",
+            },
+            flowLogIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Array of flow log IDs",
+            },
+            cidrBlock: {
+              type: "string",
+              description: "The CIDR block (e.g., 10.0.0.0/16)",
+            },
+            availabilityZone: {
+              type: "string",
+              description: "The availability zone (e.g., us-east-1a)",
+            },
+            name: {
+              type: "string",
+              description: "Resource name tag",
+            },
+            peerVpcId: {
+              type: "string",
+              description: "The peer VPC ID for peering connections",
+            },
+            peerAccountId: {
+              type: "string",
+              description: "The peer account ID for cross-account peering",
+            },
+            peerRegion: {
+              type: "string",
+              description: "The peer region for cross-region peering",
+            },
+            serviceName: {
+              type: "string",
+              description: "The VPC endpoint service name",
+            },
+            endpointType: {
+              type: "string",
+              enum: ["Interface", "Gateway", "GatewayLoadBalancer"],
+              description: "The VPC endpoint type",
+            },
+            destinationCidrBlock: {
+              type: "string",
+              description: "The destination CIDR block for routes",
+            },
+            gatewayId: {
+              type: "string",
+              description: "The gateway ID for routes",
+            },
+            allocationId: {
+              type: "string",
+              description: "The Elastic IP allocation ID for NAT gateway",
+            },
+            enableDnsHostnames: {
+              type: "boolean",
+              description: "Enable DNS hostnames in VPC",
+            },
+            enableDnsSupport: {
+              type: "boolean",
+              description: "Enable DNS support in VPC",
+            },
+            mapPublicIpOnLaunch: {
+              type: "boolean",
+              description: "Map public IP on launch for subnets",
+            },
+            numberOfAzs: {
+              type: "number",
+              description: "Number of availability zones for multi-AZ VPC",
+            },
+            region: {
+              type: "string",
+              description: "AWS region override",
+            },
+            tags: {
+              type: "object",
+              description: "Resource tags as key-value pairs",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          const action = params.action as string;
+          if (!networkManager) {
+            return {
+              content: [{ type: "text", text: "Network manager not initialized. AWS services may not be started." }],
+              details: { error: "not_initialized" },
+            };
+          }
+          try {
+            switch (action) {
+              case "list_vpcs": {
+                const result = await networkManager.listVPCs({
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_vpc": {
+                const result = await networkManager.createVPC({
+                  cidrBlock: params.cidrBlock as string,
+                  name: params.name as string | undefined,
+                  enableDnsHostnames: params.enableDnsHostnames as boolean | undefined,
+                  enableDnsSupport: params.enableDnsSupport as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_vpc": {
+                const result = await networkManager.deleteVPC(
+                  params.vpcId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_subnets": {
+                const result = await networkManager.listSubnets({
+                  vpcId: params.vpcId as string | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_subnet": {
+                const result = await networkManager.createSubnet({
+                  vpcId: params.vpcId as string,
+                  cidrBlock: params.cidrBlock as string,
+                  availabilityZone: params.availabilityZone as string | undefined,
+                  name: params.name as string | undefined,
+                  mapPublicIpOnLaunch: params.mapPublicIpOnLaunch as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_subnet": {
+                const result = await networkManager.deleteSubnet(
+                  params.subnetId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_route_tables": {
+                const result = await networkManager.listRouteTables({
+                  vpcId: params.vpcId as string | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_route_table": {
+                const result = await networkManager.createRouteTable({
+                  vpcId: params.vpcId as string,
+                  name: params.name as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_route": {
+                const result = await networkManager.createRoute({
+                  routeTableId: params.routeTableId as string,
+                  destinationCidrBlock: params.destinationCidrBlock as string,
+                  gatewayId: params.gatewayId as string | undefined,
+                  natGatewayId: params.natGatewayId as string | undefined,
+                  transitGatewayId: params.transitGatewayId as string | undefined,
+                  vpcPeeringConnectionId: params.peeringConnectionId as string | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "associate_route_table": {
+                const result = await networkManager.associateRouteTable(
+                  params.routeTableId as string,
+                  params.subnetId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_route_table": {
+                const result = await networkManager.deleteRouteTable(
+                  params.routeTableId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_internet_gateways": {
+                const result = await networkManager.listInternetGateways(
+                  params.vpcId as string | undefined,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_internet_gateway": {
+                const result = await networkManager.createInternetGateway({
+                  vpcId: params.vpcId as string | undefined,
+                  name: params.name as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_internet_gateway": {
+                const result = await networkManager.deleteInternetGateway(
+                  params.internetGatewayId as string,
+                  params.vpcId as string | undefined,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_nat_gateways": {
+                const result = await networkManager.listNATGateways({
+                  vpcId: params.vpcId as string | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_nat_gateway": {
+                const result = await networkManager.createNATGateway({
+                  subnetId: params.subnetId as string,
+                  allocationId: params.allocationId as string | undefined,
+                  name: params.name as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_nat_gateway": {
+                const result = await networkManager.deleteNATGateway(
+                  params.natGatewayId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_vpc_peering": {
+                const result = await networkManager.listVPCPeering({
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_vpc_peering": {
+                const result = await networkManager.createVPCPeering({
+                  vpcId: params.vpcId as string,
+                  peerVpcId: params.peerVpcId as string,
+                  peerOwnerId: params.peerAccountId as string | undefined,
+                  peerRegion: params.peerRegion as string | undefined,
+                  name: params.name as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "accept_vpc_peering": {
+                const result = await networkManager.acceptVPCPeering(
+                  params.peeringConnectionId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_vpc_peering": {
+                const result = await networkManager.deleteVPCPeering(
+                  params.peeringConnectionId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_transit_gateways": {
+                const result = await networkManager.listTransitGateways(params.region as string | undefined);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_transit_gateway": {
+                const result = await networkManager.createTransitGateway({
+                  name: params.name as string | undefined,
+                  description: params.reason as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "attach_vpc_to_transit_gateway": {
+                const result = await networkManager.attachVPCToTransitGateway({
+                  transitGatewayId: params.transitGatewayId as string,
+                  vpcId: params.vpcId as string,
+                  subnetIds: (params.vpcEndpointIds as string[]) ?? [],
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_transit_gateway": {
+                const result = await networkManager.deleteTransitGateway(
+                  params.transitGatewayId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_network_acls": {
+                const result = await networkManager.listNetworkACLs(
+                  params.vpcId as string | undefined,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_network_acl": {
+                const result = await networkManager.createNetworkACL({
+                  vpcId: params.vpcId as string,
+                  name: params.name as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_network_acl": {
+                const result = await networkManager.deleteNetworkACL(
+                  params.networkAclId as string,
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_vpc_endpoints": {
+                const result = await networkManager.listVPCEndpoints({
+                  vpcId: params.vpcId as string | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_vpc_endpoint_services": {
+                const result = await networkManager.listVPCEndpointServices(params.region as string | undefined);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_vpc_endpoint": {
+                const result = await networkManager.createVPCEndpoint({
+                  vpcId: params.vpcId as string,
+                  serviceName: params.serviceName as string,
+                  vpcEndpointType: (params.endpointType as "Interface" | "Gateway" | "GatewayLoadBalancer") ?? "Interface",
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_vpc_endpoints": {
+                const result = await networkManager.deleteVPCEndpoints(
+                  params.vpcEndpointIds as string[],
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "list_flow_logs": {
+                const result = await networkManager.listFlowLogs({
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_flow_log": {
+                const result = await networkManager.createFlowLog({
+                  resourceId: params.vpcId as string,
+                  resourceType: "VPC",
+                  trafficType: "ALL",
+                  logDestinationType: "cloud-watch-logs",
+                  tags: params.tags as Record<string, string> | undefined,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "delete_flow_logs": {
+                const result = await networkManager.deleteFlowLogs(
+                  params.flowLogIds as string[],
+                  params.region as string | undefined,
+                );
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "create_multi_az_vpc": {
+                const result = await networkManager.createMultiAZVPC({
+                  cidrBlock: params.cidrBlock as string ?? "10.0.0.0/16",
+                  name: params.name as string ?? "multi-az-vpc",
+                  azCount: params.numberOfAzs as number ?? 2,
+                  region: params.region as string | undefined,
+                });
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              case "get_availability_zones": {
+                const result = await networkManager.getAvailabilityZones(params.region as string | undefined);
+                return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: result };
+              }
+              default:
+                return {
+                  content: [{ type: "text", text: `Unknown network action: ${action}` }],
+                  details: { error: "unknown_action" },
+                };
+            }
+          } catch (error) {
+            return {
+              content: [{ type: "text", text: `Network error: ${error}` }],
+              details: { error: String(error) },
+            };
+          }
+        },
+      },
+      { name: "aws_network" },
+    );
+
+    // =========================================================================
     // AWS CONVERSATIONAL UX AGENT TOOL
     // =========================================================================
 
@@ -13122,7 +13973,7 @@ Use this tool to:
           },
           required: ["action"],
         },
-        async execute(params: Record<string, unknown>) {
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
           const action = params.action as string;
           const region = (params.region as string) || config.defaultRegion || "us-east-1";
 
@@ -14093,19 +14944,86 @@ ${topResources}`,
       { name: "aws_assistant" },
     );
 
-    // Register service for cleanup
+    // Register service — manager init happens in start() (async-safe)
     api.registerService({
       id: "aws-core-services",
       async start() {
-        console.log("[AWS] AWS Core Services started");
-        // Optionally initialize context on start
-        if (contextManager) {
-          try {
-            await contextManager.initialize();
-          } catch {
-            // Ignore - credentials may not be available
-          }
+        const log = pluginLogger ?? { info: console.log, warn: console.warn, error: console.error };
+        log.info("[AWS] Initializing AWS managers");
+
+        // Initialize all managers during service start (async lifecycle)
+        credentialsManager = createCredentialsManager({
+          defaultProfile: config.defaultProfile,
+          defaultRegion: config.defaultRegion,
+        });
+
+        cliWrapper = createCLIWrapper({
+          defaultOptions: {
+            profile: config.defaultProfile,
+            region: config.defaultRegion,
+          },
+        });
+
+        contextManager = createContextManager(credentialsManager);
+        serviceDiscovery = createServiceDiscovery(credentialsManager);
+
+        const tagConfigConverted = config.tagConfig ? {
+          required: (config.tagConfig.requiredTags ?? []).map((k: string) => ({ key: k, value: "" })),
+          optional: (config.tagConfig.optionalTags ?? []).map((k: string) => ({ key: k, value: "" })),
+          prohibited: [] as string[],
+        } : undefined;
+
+        const defaultTagsConverted = config.defaultTags?.map((t: { key: string; value: string }) => ({
+          key: t.key,
+          value: t.value,
+        }));
+
+        taggingManager = createTaggingManager(
+          credentialsManager,
+          tagConfigConverted,
+          defaultTagsConverted,
+        );
+
+        cloudTrailManager = createCloudTrailManager(
+          credentialsManager,
+          config.defaultRegion,
+        );
+
+        ec2Manager = createEC2Manager(
+          credentialsManager,
+          config.defaultRegion,
+        );
+
+        rdsManager = createRDSManager({ region: config.defaultRegion });
+        lambdaManager = createLambdaManager({ region: config.defaultRegion });
+        s3Manager = createS3Manager({ region: config.defaultRegion });
+        cicdManager = createCICDManager({ defaultRegion: config.defaultRegion });
+        networkManager = createNetworkManager({
+          defaultRegion: config.defaultRegion,
+          defaultTags: config.defaultTags?.reduce(
+            (acc: Record<string, string>, t: { key: string; value: string }) => ({ ...acc, [t.key]: t.value }),
+            {},
+          ),
+        });
+
+        iacManager = createIaCManager({
+          defaultRegion: config.defaultRegion,
+          defaultTags: config.defaultTags?.reduce(
+            (acc: Record<string, string>, t: { key: string; value: string }) => ({ ...acc, [t.key]: t.value }),
+            {},
+          ),
+        });
+
+        costManager = createCostManager({ defaultRegion: config.defaultRegion });
+
+        // Optionally probe identity on start
+        try {
+          await contextManager.initialize();
+        } catch {
+          // Ignore - credentials may not be available at start
         }
+
+        log.info("[AWS] AWS Core Services started");
       },
       async stop() {
         // Clear cached credentials
@@ -14122,6 +15040,8 @@ ${topResources}`,
         rdsManager = null;
         lambdaManager = null;
         s3Manager = null;
+        cicdManager = null;
+        networkManager = null;
         iacManager = null;
         costManager = null;
         securityManager = null;
@@ -14130,11 +15050,11 @@ ${topResources}`,
         backupManager = null;
         conversationalManager = null;
         cliWrapper = null;
-        console.log("[AWS] AWS Core Services stopped");
+        pluginLogger?.info("[AWS] AWS Core Services stopped");
       },
     });
 
-    console.log("[AWS] AWS extension registered successfully");
+    api.logger.info("[AWS] AWS extension registered successfully");
   },
 };
 
@@ -14154,6 +15074,8 @@ export function getAWSManagers() {
     rds: rdsManager,
     lambda: lambdaManager,
     s3: s3Manager,
+    cicd: cicdManager,
+    network: networkManager,
     iac: iacManager,
     cost: costManager,
     security: securityManager,

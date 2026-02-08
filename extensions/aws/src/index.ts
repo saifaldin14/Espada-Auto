@@ -1050,6 +1050,180 @@ export {
 } from "./enterprise-services.js";
 
 // =============================================================================
+// Lambda Module
+// =============================================================================
+
+export {
+  LambdaManager,
+  createLambdaManager,
+} from "./lambda/manager.js";
+
+export type {
+  LambdaClientConfig,
+  LambdaOperationResult,
+  LambdaFunction,
+  LambdaRuntime,
+  LambdaArchitecture,
+  LambdaCreateFunctionOptions,
+  LambdaCodeSource,
+  LambdaUpdateCodeOptions,
+  LambdaUpdateConfigOptions,
+  LambdaEventSourceMapping,
+  LambdaCreateEventSourceMappingOptions,
+  LambdaPermission,
+  LambdaAddPermissionOptions,
+  LambdaLayer,
+  LambdaLayerVersion,
+  LambdaPublishLayerVersionOptions,
+  LambdaVersion,
+  LambdaAlias,
+  LambdaPublishVersionOptions,
+  LambdaCreateAliasOptions,
+} from "./lambda/types.js";
+
+// =============================================================================
+// RDS Module
+// =============================================================================
+
+export {
+  RDSManager,
+  createRDSManager,
+} from "./rds/manager.js";
+
+export type {
+  RDSClientConfig,
+  RDSOperationResult,
+  RDSInstance,
+  RDSCreateInstanceOptions,
+  RDSModifyInstanceOptions,
+  RDSEngine,
+  RDSSnapshot,
+  RDSCreateSnapshotOptions,
+  RDSRestoreFromSnapshotOptions,
+  RDSCopySnapshotOptions,
+  RDSParameterGroup,
+  RDSParameter,
+  RDSCreateParameterGroupOptions,
+  RDSModifyParameterGroupOptions,
+  RDSSubnetGroup,
+  RDSCreateSubnetGroupOptions,
+  RDSModifySubnetGroupOptions,
+  RDSPerformanceMetrics,
+  RDSGetMetricsOptions,
+} from "./rds/types.js";
+
+// =============================================================================
+// S3 Module
+// =============================================================================
+
+export {
+  S3Manager,
+  createS3Manager,
+} from "./s3/manager.js";
+
+export type {
+  S3ClientConfig,
+  S3OperationResult,
+  S3Bucket,
+  S3BucketDetails,
+  S3CreateBucketOptions,
+  S3BucketAcl,
+  S3Object,
+  S3ObjectDetails,
+  S3StorageClass,
+  S3UploadOptions,
+  S3DownloadOptions,
+  S3DownloadResult,
+  S3CopyOptions,
+  S3DeleteOptions,
+  S3DeleteMultipleOptions,
+  S3ListObjectsOptions,
+  S3ListObjectsResult,
+} from "./s3/types.js";
+
+// =============================================================================
+// CI/CD Module
+// =============================================================================
+
+export {
+  createCICDManager,
+  PIPELINE_TEMPLATES,
+} from "./cicd/index.js";
+
+export type {
+  CICDOperationResult,
+  CICDManagerConfig,
+  CICDManager,
+  PipelineStatus,
+  PipelineInfo,
+  PipelineSummary,
+  PipelineExecutionSummary,
+  PipelineExecutionDetail,
+  StageInfo,
+  ActionInfo,
+  BuildProjectInfo,
+  BuildInfo,
+  BuildSummary,
+  ApplicationInfo,
+  DeploymentGroupInfo,
+  DeploymentInfo,
+  DeploymentConfigInfo,
+  PipelineTemplate,
+  ListPipelinesOptions,
+  CreatePipelineOptions,
+  StartPipelineExecutionOptions,
+  CreateBuildProjectOptions,
+  StartBuildOptions,
+  CreateDeploymentOptions,
+  ListDeploymentsOptions,
+  BlueGreenDeploymentOptions,
+} from "./cicd/types.js";
+
+// =============================================================================
+// Network Module
+// =============================================================================
+
+export {
+  NetworkManager,
+  createNetworkManager,
+} from "./network/index.js";
+
+export type {
+  NetworkManagerConfig,
+  NetworkOperationResult,
+  VPCInfo,
+  CreateVPCOptions,
+  ListVPCsOptions,
+  SubnetInfo,
+  CreateSubnetOptions,
+  ListSubnetsOptions,
+  RouteTableInfo,
+  CreateRouteTableOptions,
+  CreateRouteOptions,
+  ListRouteTablesOptions,
+  InternetGatewayInfo,
+  CreateInternetGatewayOptions,
+  NATGatewayInfo,
+  CreateNATGatewayOptions,
+  ListNATGatewaysOptions,
+  VPCPeeringInfo,
+  CreateVPCPeeringOptions,
+  TransitGatewayInfo,
+  TransitGatewayAttachmentInfo,
+  CreateTransitGatewayOptions,
+  NetworkACLInfo,
+  CreateNetworkACLOptions,
+  VPCEndpointInfo,
+  CreateVPCEndpointOptions,
+  ListVPCEndpointsOptions,
+  FlowLogInfo,
+  CreateFlowLogOptions,
+  ListFlowLogsOptions,
+  CreateMultiAZVPCOptions,
+  CreateMultiAZVPCResult,
+} from "./network/types.js";
+
+// =============================================================================
 // Intent-Driven Infrastructure Orchestration (IDIO) System
 // =============================================================================
 
@@ -1169,6 +1343,14 @@ import { Route53Manager, createRoute53Manager } from "./route53/manager.js";
 import { CognitoManager, createCognitoManager } from "./cognito/manager.js";
 import { SNSManager, createSNSManager } from "./sns/manager.js";
 
+// Additional Service Imports
+import { LambdaManager, createLambdaManager } from "./lambda/manager.js";
+import { RDSManager, createRDSManager } from "./rds/manager.js";
+import { S3Manager, createS3Manager } from "./s3/manager.js";
+import { createCICDManager } from "./cicd/index.js";
+import type { CICDManager } from "./cicd/types.js";
+import { NetworkManager, createNetworkManager } from "./network/index.js";
+
 // IDIO System Imports
 import { IDIOOrchestrator, createIDIOOrchestrator } from "./idio/orchestrator.js";
 
@@ -1236,6 +1418,15 @@ export class AWSPlugin {
   readonly route53: Route53Manager;
   readonly cognito: CognitoManager;
   readonly sns: SNSManager;
+
+  // Compute & Storage Services
+  readonly lambda: LambdaManager;
+  readonly rds: RDSManager;
+  readonly s3: S3Manager;
+
+  // CI/CD & Networking
+  readonly cicd: CICDManager;
+  readonly network: NetworkManager;
 
   // IDIO System (Intent-Driven Infrastructure Orchestration)
   readonly idio: IDIOOrchestrator;
@@ -1346,6 +1537,39 @@ export class AWSPlugin {
     // Initialize SNS manager
     this.sns = createSNSManager({
       region: options.defaultRegion,
+    });
+
+    // =========================================================================
+    // Compute, Storage & Pipeline Initialization
+    // =========================================================================
+
+    // Initialize Lambda manager
+    this.lambda = createLambdaManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize RDS manager
+    this.rds = createRDSManager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize S3 manager
+    this.s3 = createS3Manager({
+      region: options.defaultRegion,
+    });
+
+    // Initialize CI/CD manager
+    this.cicd = createCICDManager({
+      defaultRegion: options.defaultRegion,
+    });
+
+    // Initialize Network manager
+    this.network = createNetworkManager({
+      defaultRegion: options.defaultRegion,
+      defaultTags: options.defaultTags?.reduce(
+        (acc: Record<string, string>, t: { key: string; value: string }) => ({ ...acc, [t.key]: t.value }),
+        {},
+      ),
     });
 
     // =========================================================================

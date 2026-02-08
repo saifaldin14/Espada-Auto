@@ -60,6 +60,8 @@ export type {
 export type { ChannelConfigSchema, ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export type {
   EspadaPluginApi,
+  EspadaPluginCliContext,
+  EspadaPluginCliRegistrar,
   EspadaPluginService,
   EspadaPluginServiceContext,
 } from "../plugins/types.js";

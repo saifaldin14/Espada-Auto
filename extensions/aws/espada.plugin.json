@@ -1,7 +1,7 @@
 {
   "id": "aws",
   "name": "AWS Core Services",
-  "description": "Comprehensive AWS infrastructure management with EC2, RDS, Lambda, S3, IAM, CloudTrail, and more",
+  "description": "Comprehensive AWS infrastructure management with EC2, RDS, Lambda, S3, VPC, CI/CD, IAM, CloudTrail, and more",
   "version": "1.0.0",
   "author": "Espada Team",
   "category": "infrastructure",
@@ -36,7 +36,23 @@
     "s3-website-hosting",
     "s3-cloudfront-integration",
     "s3-cross-region-replication",
-    "s3-event-notifications"
+    "s3-event-notifications",
+    "vpc-management",
+    "subnet-management",
+    "route-tables",
+    "internet-gateways",
+    "nat-gateways",
+    "vpc-peering",
+    "transit-gateways",
+    "network-acls",
+    "vpc-endpoints",
+    "flow-logs",
+    "multi-az-vpc",
+    "codepipeline-management",
+    "codebuild-projects",
+    "codedeploy-applications",
+    "blue-green-deployments",
+    "pipeline-templates"
   ],
   "configSchema": {
     "type": "object",
