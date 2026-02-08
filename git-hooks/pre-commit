@@ -1,4 +1,19 @@
 #!/bin/sh
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
 [ -z "$ROOT" ] && exit 0
-node "$ROOT/scripts/format-staged.js"
+
+# Find node in common locations
+if command -v node >/dev/null 2>&1; then
+  NODE="node"
+elif [ -x "$HOME/.nvm/versions/node/$(nvm current 2>/dev/null)/bin/node" ]; then
+  NODE="$HOME/.nvm/versions/node/$(nvm current)/bin/node"
+elif [ -x "/usr/local/bin/node" ]; then
+  NODE="/usr/local/bin/node"
+elif [ -x "/opt/homebrew/bin/node" ]; then
+  NODE="/opt/homebrew/bin/node"
+else
+  echo "Error: node not found in PATH" >&2
+  exit 1
+fi
+
+"$NODE" "$ROOT/scripts/format-staged.js"
