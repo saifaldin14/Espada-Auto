@@ -12,6 +12,8 @@
  * - Redrive policies
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   SQSClient,
   CreateQueueCommand,
@@ -205,14 +207,27 @@ export interface BatchResultEntry {
 export class SQSManager {
   private client: SQSClient;
   private config: SQSManagerConfig;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: SQSManagerConfig = {}) {
+  constructor(config: SQSManagerConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
+    this.retryOptions = retryOptions;
     
     this.client = new SQSClient({
       region: config.region,
       credentials: config.credentials,
       maxAttempts: config.maxRetries ?? 3,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
     });
   }
 
@@ -287,17 +302,23 @@ export class SQSManager {
         attributes.Policy = config.policy;
       }
 
-      const response = await this.client.send(new CreateQueueCommand({
-        QueueName: queueName,
-        Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        tags: { ...this.config.defaultTags, ...config.tags },
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreateQueueCommand({
+          QueueName: queueName,
+          Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+          tags: { ...this.config.defaultTags, ...config.tags },
+        })),
+        'CreateQueue'
+      );
 
       // Get queue ARN
-      const arnResponse = await this.client.send(new GetQueueAttributesCommand({
-        QueueUrl: response.QueueUrl!,
-        AttributeNames: [QueueAttributeName.QueueArn],
-      }));
+      const arnResponse = await this.withRetry(
+        () => this.client.send(new GetQueueAttributesCommand({
+          QueueUrl: response.QueueUrl!,
+          AttributeNames: [QueueAttributeName.QueueArn],
+        })),
+        'GetQueueAttributes'
+      );
 
       return {
         success: true,
@@ -319,9 +340,12 @@ export class SQSManager {
    */
   async deleteQueue(queueUrl: string): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new DeleteQueueCommand({
-        QueueUrl: queueUrl,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeleteQueueCommand({
+          QueueUrl: queueUrl,
+        })),
+        'DeleteQueue'
+      );
 
       return { success: true };
     } catch (error) {
@@ -337,10 +361,13 @@ export class SQSManager {
    */
   async getQueueUrl(queueName: string, accountId?: string): Promise<SQSOperationResult<string>> {
     try {
-      const response = await this.client.send(new GetQueueUrlCommand({
-        QueueName: queueName,
-        QueueOwnerAWSAccountId: accountId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new GetQueueUrlCommand({
+          QueueName: queueName,
+          QueueOwnerAWSAccountId: accountId,
+        })),
+        'GetQueueUrl'
+      );
 
       return { success: true, data: response.QueueUrl };
     } catch (error) {
@@ -360,11 +387,14 @@ export class SQSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListQueuesCommand({
-          QueueNamePrefix: prefix,
-          MaxResults: maxResults ? Math.min(maxResults - queues.length, 1000) : 1000,
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListQueuesCommand({
+            QueueNamePrefix: prefix,
+            MaxResults: maxResults ? Math.min(maxResults - queues.length, 1000) : 1000,
+            NextToken: nextToken,
+          })),
+          'ListQueues'
+        );
 
         queues.push(...(response.QueueUrls ?? []));
         nextToken = response.NextToken;
@@ -386,10 +416,13 @@ export class SQSManager {
    */
   async getQueueMetrics(queueUrl: string): Promise<SQSOperationResult<QueueMetrics>> {
     try {
-      const response = await this.client.send(new GetQueueAttributesCommand({
-        QueueUrl: queueUrl,
-        AttributeNames: [QueueAttributeName.All],
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new GetQueueAttributesCommand({
+          QueueUrl: queueUrl,
+          AttributeNames: [QueueAttributeName.All],
+        })),
+        'GetQueueAttributes'
+      );
 
       const attrs = response.Attributes ?? {};
       const queueArn = attrs.QueueArn ?? '';
@@ -494,10 +527,13 @@ export class SQSManager {
         attributes.Policy = config.policy ?? '';
       }
 
-      await this.client.send(new SetQueueAttributesCommand({
-        QueueUrl: config.queueUrl,
-        Attributes: attributes,
-      }));
+      await this.withRetry(
+        () => this.client.send(new SetQueueAttributesCommand({
+          QueueUrl: config.queueUrl,
+          Attributes: attributes,
+        })),
+        'SetQueueAttributes'
+      );
 
       return { success: true };
     } catch (error) {
@@ -513,9 +549,12 @@ export class SQSManager {
    */
   async purgeQueue(queueUrl: string): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new PurgeQueueCommand({
-        QueueUrl: queueUrl,
-      }));
+      await this.withRetry(
+        () => this.client.send(new PurgeQueueCommand({
+          QueueUrl: queueUrl,
+        })),
+        'PurgeQueue'
+      );
 
       return { success: true };
     } catch (error) {
@@ -548,14 +587,17 @@ export class SQSManager {
           )
         : undefined;
 
-      const response = await this.client.send(new SendMessageCommand({
-        QueueUrl: config.queueUrl,
-        MessageBody: config.messageBody,
-        DelaySeconds: config.delaySeconds,
-        MessageAttributes: messageAttributes,
-        MessageGroupId: config.messageGroupId,
-        MessageDeduplicationId: config.messageDeduplicationId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new SendMessageCommand({
+          QueueUrl: config.queueUrl,
+          MessageBody: config.messageBody,
+          DelaySeconds: config.delaySeconds,
+          MessageAttributes: messageAttributes,
+          MessageGroupId: config.messageGroupId,
+          MessageDeduplicationId: config.messageDeduplicationId,
+        })),
+        'SendMessage'
+      );
 
       return {
         success: true,
@@ -609,10 +651,13 @@ export class SQSManager {
         MessageDeduplicationId: msg.messageDeduplicationId,
       }));
 
-      const response = await this.client.send(new SendMessageBatchCommand({
-        QueueUrl: queueUrl,
-        Entries: entries,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new SendMessageBatchCommand({
+          QueueUrl: queueUrl,
+          Entries: entries,
+        })),
+        'SendMessageBatch'
+      );
 
       const results: BatchResultEntry[] = [
         ...(response.Successful ?? []).map(s => ({
@@ -642,15 +687,18 @@ export class SQSManager {
    */
   async receiveMessages(config: ReceiveMessageConfig): Promise<SQSOperationResult<ReceivedMessage[]>> {
     try {
-      const response = await this.client.send(new ReceiveMessageCommand({
-        QueueUrl: config.queueUrl,
-        MaxNumberOfMessages: config.maxNumberOfMessages ?? 1,
-        VisibilityTimeout: config.visibilityTimeout,
-        WaitTimeSeconds: config.waitTimeSeconds,
-        AttributeNames: config.attributeNames ? config.attributeNames as unknown as QueueAttributeName[] : [QueueAttributeName.All],
-        MessageAttributeNames: config.messageAttributeNames ?? ['All'],
-        ReceiveRequestAttemptId: config.receiveRequestAttemptId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ReceiveMessageCommand({
+          QueueUrl: config.queueUrl,
+          MaxNumberOfMessages: config.maxNumberOfMessages ?? 1,
+          VisibilityTimeout: config.visibilityTimeout,
+          WaitTimeSeconds: config.waitTimeSeconds,
+          AttributeNames: config.attributeNames ? config.attributeNames as unknown as QueueAttributeName[] : [QueueAttributeName.All],
+          MessageAttributeNames: config.messageAttributeNames ?? ['All'],
+          ReceiveRequestAttemptId: config.receiveRequestAttemptId,
+        })),
+        'ReceiveMessage'
+      );
 
       const messages: ReceivedMessage[] = (response.Messages ?? []).map(msg => ({
         messageId: msg.MessageId!,
@@ -698,10 +746,13 @@ export class SQSManager {
    */
   async deleteMessage(queueUrl: string, receiptHandle: string): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new DeleteMessageCommand({
-        QueueUrl: queueUrl,
-        ReceiptHandle: receiptHandle,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeleteMessageCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receiptHandle,
+        })),
+        'DeleteMessage'
+      );
 
       return { success: true };
     } catch (error) {
@@ -725,10 +776,13 @@ export class SQSManager {
         ReceiptHandle: msg.receiptHandle,
       }));
 
-      const response = await this.client.send(new DeleteMessageBatchCommand({
-        QueueUrl: queueUrl,
-        Entries: entries,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new DeleteMessageBatchCommand({
+          QueueUrl: queueUrl,
+          Entries: entries,
+        })),
+        'DeleteMessageBatch'
+      );
 
       const results: BatchResultEntry[] = [
         ...(response.Successful ?? []).map(s => ({
@@ -761,11 +815,14 @@ export class SQSManager {
     visibilityTimeout: number
   ): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new ChangeMessageVisibilityCommand({
-        QueueUrl: queueUrl,
-        ReceiptHandle: receiptHandle,
-        VisibilityTimeout: visibilityTimeout,
-      }));
+      await this.withRetry(
+        () => this.client.send(new ChangeMessageVisibilityCommand({
+          QueueUrl: queueUrl,
+          ReceiptHandle: receiptHandle,
+          VisibilityTimeout: visibilityTimeout,
+        })),
+        'ChangeMessageVisibility'
+      );
 
       return { success: true };
     } catch (error) {
@@ -790,10 +847,13 @@ export class SQSManager {
         VisibilityTimeout: msg.visibilityTimeout,
       }));
 
-      const response = await this.client.send(new ChangeMessageVisibilityBatchCommand({
-        QueueUrl: queueUrl,
-        Entries: entries,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ChangeMessageVisibilityBatchCommand({
+          QueueUrl: queueUrl,
+          Entries: entries,
+        })),
+        'ChangeMessageVisibilityBatch'
+      );
 
       const results: BatchResultEntry[] = [
         ...(response.Successful ?? []).map(s => ({
@@ -830,10 +890,13 @@ export class SQSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListDeadLetterSourceQueuesCommand({
-          QueueUrl: dlqUrl,
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListDeadLetterSourceQueuesCommand({
+            QueueUrl: dlqUrl,
+            NextToken: nextToken,
+          })),
+          'ListDeadLetterSourceQueues'
+        );
 
         queues.push(...(response.queueUrls ?? []));
         nextToken = response.NextToken;
@@ -857,11 +920,14 @@ export class SQSManager {
     maxNumberOfMessagesPerSecond?: number
   ): Promise<SQSOperationResult<{ taskHandle: string }>> {
     try {
-      const response = await this.client.send(new StartMessageMoveTaskCommand({
-        SourceArn: sourceArn,
-        DestinationArn: destinationArn,
-        MaxNumberOfMessagesPerSecond: maxNumberOfMessagesPerSecond,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new StartMessageMoveTaskCommand({
+          SourceArn: sourceArn,
+          DestinationArn: destinationArn,
+          MaxNumberOfMessagesPerSecond: maxNumberOfMessagesPerSecond,
+        })),
+        'StartMessageMoveTask'
+      );
 
       return {
         success: true,
@@ -880,9 +946,12 @@ export class SQSManager {
    */
   async cancelMessageMoveTask(taskHandle: string): Promise<SQSOperationResult<{ approximateNumberOfMessagesMoved: number }>> {
     try {
-      const response = await this.client.send(new CancelMessageMoveTaskCommand({
-        TaskHandle: taskHandle,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CancelMessageMoveTaskCommand({
+          TaskHandle: taskHandle,
+        })),
+        'CancelMessageMoveTask'
+      );
 
       return {
         success: true,
@@ -901,9 +970,12 @@ export class SQSManager {
    */
   async listMessageMoveTasks(sourceArn: string): Promise<SQSOperationResult<ListMessageMoveTasksResultEntry[]>> {
     try {
-      const response = await this.client.send(new ListMessageMoveTasksCommand({
-        SourceArn: sourceArn,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ListMessageMoveTasksCommand({
+          SourceArn: sourceArn,
+        })),
+        'ListMessageMoveTasks'
+      );
 
       return { success: true, data: response.Results ?? [] };
     } catch (error) {
@@ -923,10 +995,13 @@ export class SQSManager {
    */
   async tagQueue(queueUrl: string, tags: Record<string, string>): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new TagQueueCommand({
-        QueueUrl: queueUrl,
-        Tags: tags,
-      }));
+      await this.withRetry(
+        () => this.client.send(new TagQueueCommand({
+          QueueUrl: queueUrl,
+          Tags: tags,
+        })),
+        'TagQueue'
+      );
 
       return { success: true };
     } catch (error) {
@@ -942,10 +1017,13 @@ export class SQSManager {
    */
   async untagQueue(queueUrl: string, tagKeys: string[]): Promise<SQSOperationResult<void>> {
     try {
-      await this.client.send(new UntagQueueCommand({
-        QueueUrl: queueUrl,
-        TagKeys: tagKeys,
-      }));
+      await this.withRetry(
+        () => this.client.send(new UntagQueueCommand({
+          QueueUrl: queueUrl,
+          TagKeys: tagKeys,
+        })),
+        'UntagQueue'
+      );
 
       return { success: true };
     } catch (error) {
@@ -961,9 +1039,12 @@ export class SQSManager {
    */
   async listQueueTags(queueUrl: string): Promise<SQSOperationResult<Record<string, string>>> {
     try {
-      const response = await this.client.send(new ListQueueTagsCommand({
-        QueueUrl: queueUrl,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ListQueueTagsCommand({
+          QueueUrl: queueUrl,
+        })),
+        'ListQueueTags'
+      );
 
       return { success: true, data: response.Tags ?? {} };
     } catch (error) {

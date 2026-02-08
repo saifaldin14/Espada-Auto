@@ -149,6 +149,8 @@ import type {
   S3ObjectAcl,
 } from './types.js';
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 // ============================================================================
 // S3 Manager Class
 // ============================================================================
@@ -156,10 +158,23 @@ import type {
 export class S3Manager {
   private config: S3ClientConfig;
   private defaultRegion: string;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: S3ClientConfig = {}) {
+  constructor(config: S3ClientConfig = {}, retryOptions?: AWSRetryOptions) {
     this.config = config;
     this.defaultRegion = config.region || process.env.AWS_REGION || 'us-east-1';
+    this.retryOptions = retryOptions ?? {};
+  }
+
+  // --------------------------------------------------------------------------
+  // Private Helpers
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute an AWS API call with retry logic for transient failures
+   */
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, { ...this.retryOptions, label });
   }
 
   // --------------------------------------------------------------------------
@@ -473,7 +488,10 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new ListBucketsCommand({});
-    const response = await client.send(command);
+    const response = await this.withRetry(
+      () => client.send(command),
+      'ListBuckets'
+    );
 
     return (response.Buckets || []).map((bucket) => ({
       name: bucket.Name || '',
@@ -488,7 +506,10 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new HeadBucketCommand({ Bucket: bucketName }));
+      await this.withRetry(
+        () => client.send(new HeadBucketCommand({ Bucket: bucketName })),
+        'HeadBucket'
+      );
       return true;
     } catch {
       return false;
@@ -502,7 +523,10 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketLocationCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(
+      () => client.send(command),
+      'GetBucketLocation'
+    );
 
     // Empty string means us-east-1
     return response.LocationConstraint || 'us-east-1';
@@ -526,7 +550,7 @@ export class S3Manager {
           region !== 'us-east-1' ? { LocationConstraint: region as BucketLocationConstraint } : undefined,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'CreateBucket');
 
       return {
         success: true,
@@ -550,7 +574,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketCommand({ Bucket: bucketName })), 'DeleteBucket');
 
       return {
         success: true,
@@ -574,7 +598,7 @@ export class S3Manager {
 
     try {
       // Check if bucket exists
-      await client.send(new HeadBucketCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new HeadBucketCommand({ Bucket: bucketName })), 'HeadBucket');
 
       const details: S3BucketDetails = {
         name: bucketName,
@@ -695,7 +719,7 @@ export class S3Manager {
         ChecksumAlgorithm: options.checksumAlgorithm,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PutObject');
 
       return {
         success: true,
@@ -733,7 +757,7 @@ export class S3Manager {
       IfUnmodifiedSince: options.ifUnmodifiedSince,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetObject');
 
     // Convert stream to buffer
     const chunks: Uint8Array[] = [];
@@ -779,7 +803,7 @@ export class S3Manager {
         VersionId: versionId,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'HeadObject');
 
       return {
         key,
@@ -840,7 +864,7 @@ export class S3Manager {
         TaggingDirective: options.taggingDirective,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CopyObject');
 
       return {
         success: true,
@@ -875,7 +899,7 @@ export class S3Manager {
         BypassGovernanceRetention: options.bypassGovernanceRetention,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DeleteObject');
 
       return {
         success: true,
@@ -914,7 +938,7 @@ export class S3Manager {
         BypassGovernanceRetention: options.bypassGovernanceRetention,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DeleteObjects');
 
       return {
         success: true,
@@ -959,7 +983,7 @@ export class S3Manager {
       FetchOwner: options.fetchOwner,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListObjectsV2');
 
     return {
       objects: (response.Contents || []).map((obj) => ({
@@ -1002,7 +1026,7 @@ export class S3Manager {
       VersionIdMarker: options.versionIdMarker,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListObjectVersions');
 
     return {
       versions: (response.Versions || []).map((v) => this.mapObjectVersion(v)),
@@ -1059,7 +1083,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketLifecycleConfigurationCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketLifecycleConfiguration');
 
       return {
         rules: (response.Rules || []).map((r) => this.mapLifecycleRule(r)),
@@ -1138,7 +1162,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketLifecycleConfiguration');
 
       return {
         success: true,
@@ -1165,7 +1189,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketLifecycleCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketLifecycleCommand({ Bucket: bucketName })), 'DeleteBucketLifecycle');
 
       return {
         success: true,
@@ -1192,7 +1216,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketVersioningCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetBucketVersioning');
 
     if (!response.Status) {
       return 'Disabled';
@@ -1215,7 +1239,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketVersioning');
 
       return {
         success: true,
@@ -1239,7 +1263,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketEncryptionCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketEncryption');
 
       return {
         rules:
@@ -1286,7 +1310,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketEncryption');
 
       return {
         success: true,
@@ -1309,7 +1333,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketEncryptionCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketEncryptionCommand({ Bucket: bucketName })), 'DeleteBucketEncryption');
 
       return {
         success: true,
@@ -1336,7 +1360,7 @@ export class S3Manager {
 
     try {
       const command = new GetPublicAccessBlockCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetPublicAccessBlock');
 
       return {
         blockPublicAcls: response.PublicAccessBlockConfiguration?.BlockPublicAcls,
@@ -1369,7 +1393,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutPublicAccessBlock');
 
       return {
         success: true,
@@ -1392,7 +1416,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeletePublicAccessBlockCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeletePublicAccessBlockCommand({ Bucket: bucketName })), 'DeletePublicAccessBlock');
 
       return {
         success: true,
@@ -1423,7 +1447,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketWebsiteCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketWebsite');
 
       return {
         indexDocument: response.IndexDocument
@@ -1498,7 +1522,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketWebsite');
 
       const websiteUrl = `http://${options.bucketName}.s3-website-${options.region || this.defaultRegion}.amazonaws.com`;
 
@@ -1527,7 +1551,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketWebsiteCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketWebsiteCommand({ Bucket: bucketName })), 'DeleteBucketWebsite');
 
       return {
         success: true,
@@ -1551,7 +1575,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketCorsCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketCors');
 
       return {
         corsRules: (response.CORSRules || []).map((r) => this.mapCorsRule(r)),
@@ -1585,7 +1609,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketCors');
 
       return {
         success: true,
@@ -1608,7 +1632,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketCorsCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketCorsCommand({ Bucket: bucketName })), 'DeleteBucketCors');
 
       return {
         success: true,
@@ -1635,7 +1659,7 @@ export class S3Manager {
     const client = this.getCloudFrontClient(region);
 
     const command = new ListDistributionsCommand({});
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListDistributions');
 
     return (response.DistributionList?.Items || []).map((d) => this.mapDistribution(d));
   }
@@ -1651,7 +1675,7 @@ export class S3Manager {
 
     try {
       const command = new GetDistributionCommand({ Id: distributionId });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetDistribution');
 
       if (!response.Distribution) return null;
       return this.mapDistribution(response.Distribution);
@@ -1684,7 +1708,7 @@ export class S3Manager {
         },
       });
 
-      const oacResponse = await client.send(oacCommand);
+      const oacResponse = await this.withRetry(() => client.send(oacCommand), 'CreateOriginAccessControl');
       const oacId = oacResponse.OriginAccessControl?.Id;
 
       // Create the distribution
@@ -1753,7 +1777,7 @@ export class S3Manager {
         },
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateDistribution');
 
       return {
         success: true,
@@ -1786,11 +1810,14 @@ export class S3Manager {
     const client = this.getCloudFrontClient(region);
 
     try {
-      await client.send(
-        new DeleteDistributionCommand({
-          Id: distributionId,
-          IfMatch: etag,
-        })
+      await this.withRetry(
+        () => client.send(
+          new DeleteDistributionCommand({
+            Id: distributionId,
+            IfMatch: etag,
+          })
+        ),
+        'DeleteDistribution'
       );
 
       return {
@@ -1814,7 +1841,7 @@ export class S3Manager {
     const client = this.getCloudFrontClient(region);
 
     const command = new ListOriginAccessControlsCommand({});
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListOriginAccessControls');
 
     return (response.OriginAccessControlList?.Items || []).map((oac) =>
       this.mapOriginAccessControl(oac)
@@ -1832,7 +1859,7 @@ export class S3Manager {
 
     try {
       const command = new GetOriginAccessControlCommand({ Id: id });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetOriginAccessControl');
 
       if (!response.OriginAccessControl) return null;
 
@@ -1867,7 +1894,7 @@ export class S3Manager {
     const client = this.getCloudFrontClient(region);
 
     try {
-      await client.send(new DeleteOriginAccessControlCommand({ Id: id, IfMatch: etag }));
+      await this.withRetry(() => client.send(new DeleteOriginAccessControlCommand({ Id: id, IfMatch: etag })), 'DeleteOriginAccessControl');
 
       return {
         success: true,
@@ -1898,7 +1925,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketReplicationCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketReplication');
 
       return {
         role: response.ReplicationConfiguration?.Role || '',
@@ -1992,7 +2019,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketReplication');
 
       return {
         success: true,
@@ -2019,7 +2046,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketReplicationCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketReplicationCommand({ Bucket: bucketName })), 'DeleteBucketReplication');
 
       return {
         success: true,
@@ -2049,7 +2076,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketNotificationConfigurationCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetBucketNotificationConfiguration');
 
     return {
       topicConfigurations: response.TopicConfigurations?.map((c) =>
@@ -2128,7 +2155,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketNotificationConfiguration');
 
       const configCount =
         (options.topicConfigurations?.length || 0) +
@@ -2174,7 +2201,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketLoggingCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetBucketLogging');
 
     if (!response.LoggingEnabled) {
       return null;
@@ -2213,7 +2240,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketLogging');
 
       return {
         success: true,
@@ -2237,7 +2264,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketTaggingCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketTagging');
 
       const tags: Record<string, string> = {};
       for (const tag of response.TagSet || []) {
@@ -2272,7 +2299,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketTagging');
 
       return {
         success: true,
@@ -2295,7 +2322,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketTaggingCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketTaggingCommand({ Bucket: bucketName })), 'DeleteBucketTagging');
 
       return {
         success: true,
@@ -2328,7 +2355,7 @@ export class S3Manager {
       VersionId: versionId,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetObjectTagging');
 
     const tags: Record<string, string> = {};
     for (const tag of response.TagSet || []) {
@@ -2361,7 +2388,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutObjectTagging');
 
       return {
         success: true,
@@ -2389,12 +2416,15 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(
-        new DeleteObjectTaggingCommand({
-          Bucket: bucketName,
-          Key: key,
-          VersionId: versionId,
-        })
+      await this.withRetry(
+        () => client.send(
+          new DeleteObjectTaggingCommand({
+            Bucket: bucketName,
+            Key: key,
+            VersionId: versionId,
+          })
+        ),
+        'DeleteObjectTagging'
       );
 
       return {
@@ -2419,7 +2449,7 @@ export class S3Manager {
 
     try {
       const command = new GetBucketPolicyCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetBucketPolicy');
 
       return response.Policy || null;
     } catch (error) {
@@ -2446,7 +2476,7 @@ export class S3Manager {
         Policy: policy,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutBucketPolicy');
 
       return {
         success: true,
@@ -2469,7 +2499,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(new DeleteBucketPolicyCommand({ Bucket: bucketName }));
+      await this.withRetry(() => client.send(new DeleteBucketPolicyCommand({ Bucket: bucketName })), 'DeleteBucketPolicy');
 
       return {
         success: true,
@@ -2502,7 +2532,7 @@ export class S3Manager {
       VersionId: versionId,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetObjectAcl');
 
     return {
       owner: this.mapOwner(response.Owner),
@@ -2537,7 +2567,7 @@ export class S3Manager {
         VersionId: versionId,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutObjectAcl');
 
       return {
         success: true,
@@ -2573,7 +2603,7 @@ export class S3Manager {
       UploadIdMarker: options.uploadIdMarker,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListMultipartUploads');
 
     return {
       uploads: (response.Uploads || []).map((u) => this.mapMultipartUpload(u)),
@@ -2590,12 +2620,15 @@ export class S3Manager {
     const client = this.getS3Client(options.region);
 
     try {
-      await client.send(
-        new AbortMultipartUploadCommand({
-          Bucket: options.bucketName,
-          Key: options.key,
-          UploadId: options.uploadId,
-        })
+      await this.withRetry(
+        () => client.send(
+          new AbortMultipartUploadCommand({
+            Bucket: options.bucketName,
+            Key: options.key,
+            UploadId: options.uploadId,
+          })
+        ),
+        'AbortMultipartUpload'
       );
 
       return {
@@ -2622,7 +2655,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketAccelerateConfigurationCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetBucketAccelerateConfiguration');
 
     return (response.Status as 'Enabled' | 'Suspended') || null;
   }
@@ -2638,11 +2671,14 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(
-        new PutBucketAccelerateConfigurationCommand({
-          Bucket: bucketName,
-          AccelerateConfiguration: { Status: status },
-        })
+      await this.withRetry(
+        () => client.send(
+          new PutBucketAccelerateConfigurationCommand({
+            Bucket: bucketName,
+            AccelerateConfiguration: { Status: status },
+          })
+        ),
+        'PutBucketAccelerateConfiguration'
       );
 
       return {
@@ -2669,7 +2705,7 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     const command = new GetBucketRequestPaymentCommand({ Bucket: bucketName });
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetBucketRequestPayment');
 
     return (response.Payer as 'BucketOwner' | 'Requester') || 'BucketOwner';
   }
@@ -2685,11 +2721,14 @@ export class S3Manager {
     const client = this.getS3Client(region);
 
     try {
-      await client.send(
-        new PutBucketRequestPaymentCommand({
-          Bucket: bucketName,
-          RequestPaymentConfiguration: { Payer: payer },
-        })
+      await this.withRetry(
+        () => client.send(
+          new PutBucketRequestPaymentCommand({
+            Bucket: bucketName,
+            RequestPaymentConfiguration: { Payer: payer },
+          })
+        ),
+        'PutBucketRequestPayment'
       );
 
       return {
@@ -2717,7 +2756,7 @@ export class S3Manager {
 
     try {
       const command = new GetObjectLockConfigurationCommand({ Bucket: bucketName });
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetObjectLockConfiguration');
 
       if (!response.ObjectLockConfiguration) return null;
 
@@ -2760,7 +2799,7 @@ export class S3Manager {
         },
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'PutObjectLockConfiguration');
 
       return {
         success: true,

@@ -3,6 +3,8 @@
  * Comprehensive RDS operations implementation
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   RDSClient,
   CreateDBInstanceCommand,
@@ -114,10 +116,23 @@ import type {
 export class RDSManager {
   private config: RDSClientConfig;
   private defaultRegion: string;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: RDSClientConfig = {}) {
+  constructor(config: RDSClientConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
     this.defaultRegion = config.region || process.env.AWS_REGION || 'us-east-1';
+    this.retryOptions = retryOptions;
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
+    });
   }
 
   // --------------------------------------------------------------------------
@@ -416,7 +431,10 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'DescribeDBInstances'
+      );
       
       if (response.DBInstances) {
         for (const instance of response.DBInstances) {
@@ -491,7 +509,10 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'CreateDBInstance'
+      );
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -548,7 +569,10 @@ export class RDSManager {
         ApplyImmediately: options.applyImmediately ?? false,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'ModifyDBInstance'
+      );
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -590,7 +614,10 @@ export class RDSManager {
         DeleteAutomatedBackups: options.deleteAutomatedBackups,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'DeleteDBInstance'
+      );
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -624,7 +651,10 @@ export class RDSManager {
         DBInstanceIdentifier: dbInstanceIdentifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'StartDBInstance'
+      );
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -662,7 +692,10 @@ export class RDSManager {
         DBSnapshotIdentifier: options.dbSnapshotIdentifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'StopDBInstance'
+      );
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -743,7 +776,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeOrderableDBInstanceOptions');
 
       if (response.OrderableDBInstanceOptions) {
         for (const opt of response.OrderableDBInstanceOptions) {
@@ -832,7 +865,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBEngineVersions');
 
       if (response.DBEngineVersions) {
         for (const v of response.DBEngineVersions) {
@@ -898,7 +931,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBSnapshots');
 
       if (response.DBSnapshots) {
         for (const snapshot of response.DBSnapshots) {
@@ -925,7 +958,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateDBSnapshot');
       const snapshot = response.DBSnapshot
         ? this.mapDBSnapshot(response.DBSnapshot)
         : null;
@@ -959,7 +992,7 @@ export class RDSManager {
         DBSnapshotIdentifier: dbSnapshotIdentifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DeleteDBSnapshot');
       const snapshot = response.DBSnapshot
         ? this.mapDBSnapshot(response.DBSnapshot)
         : null;
@@ -1013,7 +1046,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'RestoreDBInstanceFromDBSnapshot');
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -1050,7 +1083,7 @@ export class RDSManager {
         // Note: For cross-region copy, use PreSignedUrl instead of SourceRegion
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CopyDBSnapshot');
       const snapshot = response.DBSnapshot
         ? this.mapDBSnapshot(response.DBSnapshot)
         : null;
@@ -1110,7 +1143,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'RestoreDBInstanceToPointInTime');
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -1185,7 +1218,7 @@ export class RDSManager {
       });
 
       try {
-        const response = await client.send(command);
+        const response = await this.withRetry(() => client.send(command), 'GetMetricStatistics');
         return { metricName, datapoints: response.Datapoints || [] };
       } catch {
         return { metricName, datapoints: [] };
@@ -1296,7 +1329,7 @@ export class RDSManager {
       }),
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetResourceMetrics');
 
     return {
       alignedStartTime: response.AlignedStartTime,
@@ -1356,7 +1389,7 @@ export class RDSManager {
       },
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'DescribeDimensionKeys');
 
     return (response.Keys || []).map((key) => ({
       waitEvent: key.Dimensions?.['db.wait_event'] || '',
@@ -1443,7 +1476,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBParameterGroups');
 
       if (response.DBParameterGroups) {
         for (const group of response.DBParameterGroups) {
@@ -1478,7 +1511,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBParameters');
 
       if (response.Parameters) {
         for (const param of response.Parameters) {
@@ -1508,7 +1541,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateDBParameterGroup');
       const group = response.DBParameterGroup
         ? this.mapDBParameterGroup(response.DBParameterGroup)
         : null;
@@ -1542,7 +1575,7 @@ export class RDSManager {
         DBParameterGroupName: dbParameterGroupName,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteDBParameterGroup');
 
       return {
         success: true,
@@ -1576,7 +1609,7 @@ export class RDSManager {
         })),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ModifyDBParameterGroup');
 
       return {
         success: true,
@@ -1619,7 +1652,7 @@ export class RDSManager {
         })),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ResetDBParameterGroup');
 
       return {
         success: true,
@@ -1666,7 +1699,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBSubnetGroups');
 
       if (response.DBSubnetGroups) {
         for (const group of response.DBSubnetGroups) {
@@ -1696,7 +1729,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateDBSubnetGroup');
       const group = response.DBSubnetGroup
         ? this.mapDBSubnetGroup(response.DBSubnetGroup)
         : null;
@@ -1731,7 +1764,7 @@ export class RDSManager {
         SubnetIds: options.subnetIds,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ModifyDBSubnetGroup');
       const group = response.DBSubnetGroup
         ? this.mapDBSubnetGroup(response.DBSubnetGroup)
         : null;
@@ -1765,7 +1798,7 @@ export class RDSManager {
         DBSubnetGroupName: dbSubnetGroupName,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteDBSubnetGroup');
 
       return {
         success: true,
@@ -1870,7 +1903,7 @@ export class RDSManager {
     }> = [];
 
     try {
-      const maintenanceResponse = await client.send(maintenanceCommand);
+      const maintenanceResponse = await this.withRetry(() => client.send(maintenanceCommand), 'DescribePendingMaintenanceActions');
       const resourceActions = maintenanceResponse.PendingMaintenanceActions?.[0];
       
       if (resourceActions?.PendingMaintenanceActionDetails) {
@@ -1941,7 +1974,7 @@ export class RDSManager {
         OptInType: options.optInType,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ApplyPendingMaintenanceAction');
 
       return {
         success: true,
@@ -1979,7 +2012,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBInstanceAutomatedBackups');
 
       if (response.DBInstanceAutomatedBackups) {
         for (const backup of response.DBInstanceAutomatedBackups) {
@@ -2007,7 +2040,7 @@ export class RDSManager {
         DbiResourceId: dbiResourceId,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DeleteDBInstanceAutomatedBackup');
       const backup = response.DBInstanceAutomatedBackup
         ? this.mapAutomatedBackup(response.DBInstanceAutomatedBackup)
         : null;
@@ -2045,7 +2078,7 @@ export class RDSManager {
         BackupRetentionPeriod: options.backupRetentionPeriod,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'StartDBInstanceAutomatedBackupsReplication');
       const backup = response.DBInstanceAutomatedBackup
         ? this.mapAutomatedBackup(response.DBInstanceAutomatedBackup)
         : null;
@@ -2079,7 +2112,7 @@ export class RDSManager {
         SourceDBInstanceArn: sourceDBInstanceArn,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'StopDBInstanceAutomatedBackupsReplication');
       const backup = response.DBInstanceAutomatedBackup
         ? this.mapAutomatedBackup(response.DBInstanceAutomatedBackup)
         : null;
@@ -2144,7 +2177,7 @@ export class RDSManager {
         // Note: For cross-region replica, use PreSignedUrl instead of SourceRegion
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateDBInstanceReadReplica');
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -2179,7 +2212,7 @@ export class RDSManager {
         PreferredBackupWindow: options.preferredBackupWindow,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PromoteReadReplica');
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -2281,7 +2314,7 @@ export class RDSManager {
         ForceFailover: options.forceFailover,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'RebootDBInstance');
       const instance = response.DBInstance
         ? this.mapDBInstance(response.DBInstance)
         : null;
@@ -2408,7 +2441,7 @@ export class RDSManager {
         TargetDBInstanceIdentifier: options.targetDBInstanceIdentifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'FailoverDBCluster');
 
       return {
         success: true,
@@ -2453,7 +2486,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeEvents');
 
       if (response.Events) {
         for (const event of response.Events) {
@@ -2483,7 +2516,7 @@ export class RDSManager {
       SourceType: options.sourceType,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'DescribeEventCategories');
 
     return (response.EventCategoriesMapList || []).map((m) => ({
       sourceType: m.SourceType || '',
@@ -2517,7 +2550,7 @@ export class RDSManager {
         Tags: this.recordToTags(options.tags),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateEventSubscription');
       const subscription = response.EventSubscription
         ? this.mapEventSubscription(response.EventSubscription)
         : null;
@@ -2551,7 +2584,7 @@ export class RDSManager {
         SubscriptionName: subscriptionName,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DeleteEventSubscription');
       const subscription = response.EventSubscription
         ? this.mapEventSubscription(response.EventSubscription)
         : null;
@@ -2595,7 +2628,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeEventSubscriptions');
 
       if (response.EventSubscriptionsList) {
         for (const sub of response.EventSubscriptionsList) {
@@ -2634,7 +2667,7 @@ export class RDSManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeDBLogFiles');
 
       if (response.DescribeDBLogFiles) {
         for (const file of response.DescribeDBLogFiles) {
@@ -2671,7 +2704,7 @@ export class RDSManager {
       NumberOfLines: options.numberOfLines,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'DownloadDBLogFilePortion');
 
     return {
       logFileData: response.LogFileData || '',

@@ -108,6 +108,8 @@ import type {
   LambdaArchitecture,
 } from './types.js';
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 // ============================================================================
 // Lambda Manager Class
 // ============================================================================
@@ -115,10 +117,23 @@ import type {
 export class LambdaManager {
   private config: LambdaClientConfig;
   private defaultRegion: string;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: LambdaClientConfig = {}) {
+  constructor(config: LambdaClientConfig = {}, retryOptions?: AWSRetryOptions) {
     this.config = config;
     this.defaultRegion = config.region || process.env.AWS_REGION || 'us-east-1';
+    this.retryOptions = retryOptions ?? {};
+  }
+
+  // --------------------------------------------------------------------------
+  // Private Helpers
+  // --------------------------------------------------------------------------
+
+  /**
+   * Execute an AWS API call with retry logic for transient failures
+   */
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, { ...this.retryOptions, label });
   }
 
   // --------------------------------------------------------------------------
@@ -424,7 +439,10 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'ListFunctions'
+      );
 
       if (response.Functions) {
         for (const fn of response.Functions) {
@@ -454,7 +472,10 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        'GetFunction'
+      );
 
       if (response.Configuration) {
         const fn = this.mapFunctionConfiguration(response.Configuration);
@@ -537,7 +558,7 @@ export class LambdaManager {
         Tags: options.tags,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateFunction');
       const fn = response.FunctionArn
         ? this.mapFunctionConfiguration(response)
         : null;
@@ -573,7 +594,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteFunction');
 
       return {
         success: true,
@@ -609,7 +630,7 @@ export class LambdaManager {
         Architectures: options.architectures,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'UpdateFunctionCode');
       const fn = this.mapFunctionConfiguration(response);
 
       return {
@@ -647,7 +668,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetFunctionConfiguration');
       return this.mapFunctionConfiguration(response);
     } catch (error) {
       if ((error as Error).name === 'ResourceNotFoundException') {
@@ -713,7 +734,7 @@ export class LambdaManager {
           : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'UpdateFunctionConfiguration');
       const fn = this.mapFunctionConfiguration(response);
 
       return {
@@ -756,7 +777,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListEventSourceMappings');
 
       if (response.EventSourceMappings) {
         for (const mapping of response.EventSourceMappings) {
@@ -784,7 +805,7 @@ export class LambdaManager {
         UUID: uuid,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetEventSourceMapping');
       return this.mapEventSourceMapping(response);
     } catch (error) {
       if ((error as Error).name === 'ResourceNotFoundException') {
@@ -848,7 +869,7 @@ export class LambdaManager {
           : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateEventSourceMapping');
       const mapping = this.mapEventSourceMapping(response);
 
       return {
@@ -922,7 +943,7 @@ export class LambdaManager {
           : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'UpdateEventSourceMapping');
       const mapping = this.mapEventSourceMapping(response);
 
       return {
@@ -954,7 +975,7 @@ export class LambdaManager {
         UUID: uuid,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteEventSourceMapping');
 
       return {
         success: true,
@@ -991,7 +1012,7 @@ export class LambdaManager {
         FunctionUrlAuthType: options.functionUrlAuthType,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'AddPermission');
 
       return {
         success: true,
@@ -1028,7 +1049,7 @@ export class LambdaManager {
         RevisionId: options.revisionId,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'RemovePermission');
 
       return {
         success: true,
@@ -1060,7 +1081,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetPolicy');
 
       return {
         policy: response.Policy || '',
@@ -1176,7 +1197,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListLayers');
 
       if (response.Layers) {
         for (const layer of response.Layers) {
@@ -1213,7 +1234,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListLayerVersions');
 
       if (response.LayerVersions) {
         for (const version of response.LayerVersions) {
@@ -1243,7 +1264,7 @@ export class LambdaManager {
         VersionNumber: versionNumber,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetLayerVersion');
 
       return {
         layerVersionArn: response.LayerVersionArn || '',
@@ -1294,7 +1315,7 @@ export class LambdaManager {
         CompatibleArchitectures: options.compatibleArchitectures,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PublishLayerVersion');
 
       return {
         success: true,
@@ -1332,7 +1353,7 @@ export class LambdaManager {
         VersionNumber: versionNumber,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteLayerVersion');
 
       return {
         success: true,
@@ -1420,7 +1441,7 @@ export class LambdaManager {
         RevisionId: options.revisionId,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PublishVersion');
 
       return {
         success: true,
@@ -1462,7 +1483,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListVersionsByFunction');
 
       if (response.Versions) {
         for (const v of response.Versions) {
@@ -1500,7 +1521,7 @@ export class LambdaManager {
           : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateAlias');
       const alias = this.mapAlias(response);
 
       return {
@@ -1536,7 +1557,7 @@ export class LambdaManager {
         RevisionId: options.revisionId,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'UpdateAlias');
       const alias = this.mapAlias(response);
 
       return {
@@ -1570,7 +1591,7 @@ export class LambdaManager {
         Name: name,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteAlias');
 
       return {
         success: true,
@@ -1602,7 +1623,7 @@ export class LambdaManager {
         Name: name,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetAlias');
       return this.mapAlias(response);
     } catch (error) {
       if ((error as Error).name === 'ResourceNotFoundException') {
@@ -1633,7 +1654,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListAliases');
 
       if (response.Aliases) {
         for (const alias of response.Aliases) {
@@ -1693,7 +1714,7 @@ export class LambdaManager {
       });
 
       try {
-        const response = await client.send(command);
+        const response = await this.withRetry(() => client.send(command), 'GetMetricStatistics');
         return { metricName, datapoints: response.Datapoints || [] };
       } catch {
         return { metricName, datapoints: [] };
@@ -1734,7 +1755,7 @@ export class LambdaManager {
         limit: options.limit || 100,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'FilterLogEvents');
 
       return (response.events || []).map((event) => ({
         timestamp: event.timestamp,
@@ -1773,7 +1794,7 @@ export class LambdaManager {
         limit,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeLogStreams');
 
       return (response.logStreams || []).map((stream) => ({
         logStreamName: stream.logStreamName || '',
@@ -1814,7 +1835,7 @@ export class LambdaManager {
         limit: options.limit || 100,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetLogEvents');
 
       return (response.events || []).map((event) => ({
         timestamp: event.timestamp,
@@ -1849,7 +1870,7 @@ export class LambdaManager {
         ReservedConcurrentExecutions: reservedConcurrentExecutions,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PutFunctionConcurrency');
 
       return {
         success: true,
@@ -1882,7 +1903,7 @@ export class LambdaManager {
         FunctionName: functionName,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteFunctionConcurrency');
 
       return {
         success: true,
@@ -1912,7 +1933,7 @@ export class LambdaManager {
         FunctionName: functionName,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetFunctionConcurrency');
 
       return {
         functionName,
@@ -1941,7 +1962,7 @@ export class LambdaManager {
         ProvisionedConcurrentExecutions: options.provisionedConcurrentExecutions,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'PutProvisionedConcurrencyConfig');
 
       return {
         success: true,
@@ -1982,7 +2003,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteProvisionedConcurrencyConfig');
 
       return {
         success: true,
@@ -2014,7 +2035,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetProvisionedConcurrencyConfig');
 
       return {
         functionName,
@@ -2056,7 +2077,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListProvisionedConcurrencyConfigs');
 
       if (response.ProvisionedConcurrencyConfigs) {
         for (const config of response.ProvisionedConcurrencyConfigs) {
@@ -2187,7 +2208,7 @@ export class LambdaManager {
             Payload: Buffer.from(payload),
           });
 
-          return client.send(command);
+          return this.withRetry(() => client.send(command), 'Invoke');
         });
 
       const results = await Promise.all(invocations);
@@ -2234,7 +2255,7 @@ export class LambdaManager {
       Qualifier: options.qualifier,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'Invoke');
 
     return {
       statusCode: response.StatusCode || 0,
@@ -2279,7 +2300,7 @@ export class LambdaManager {
         InvokeMode: options.invokeMode,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateFunctionUrlConfig');
 
       return {
         success: true,
@@ -2339,7 +2360,7 @@ export class LambdaManager {
         InvokeMode: options.invokeMode,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'UpdateFunctionUrlConfig');
 
       return {
         success: true,
@@ -2377,7 +2398,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'DeleteFunctionUrlConfig');
 
       return {
         success: true,
@@ -2409,7 +2430,7 @@ export class LambdaManager {
         Qualifier: qualifier,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'GetFunctionUrlConfig');
       return this.mapFunctionUrl(response);
     } catch (error) {
       if ((error as Error).name === 'ResourceNotFoundException') {
@@ -2438,7 +2459,7 @@ export class LambdaManager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ListFunctionUrlConfigs');
 
       if (response.FunctionUrlConfigs) {
         for (const url of response.FunctionUrlConfigs) {
@@ -2472,7 +2493,7 @@ export class LambdaManager {
         Tags: tags,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'TagResource');
 
       return {
         success: true,
@@ -2504,7 +2525,7 @@ export class LambdaManager {
         TagKeys: tagKeys,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'UntagResource');
 
       return {
         success: true,
@@ -2533,7 +2554,7 @@ export class LambdaManager {
       Resource: resourceArn,
     });
 
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'ListTags');
     return response.Tags || {};
   }
 
@@ -2548,7 +2569,7 @@ export class LambdaManager {
     const client = this.getLambdaClient(region);
 
     const command = new GetAccountSettingsCommand({});
-    const response = await client.send(command);
+    const response = await this.withRetry(() => client.send(command), 'GetAccountSettings');
 
     return {
       accountLimit: response.AccountLimit

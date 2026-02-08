@@ -12,6 +12,8 @@
  * - Data protection policies
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   SNSClient,
   CreateTopicCommand,
@@ -222,13 +224,26 @@ export interface SNSOperationResult<T = unknown> {
 export class SNSManager {
   private client: SNSClient;
   private config: SNSManagerConfig;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: SNSManagerConfig = {}) {
+  constructor(config: SNSManagerConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
+    this.retryOptions = retryOptions;
     this.client = new SNSClient({
       region: config.region,
       credentials: config.credentials,
       maxAttempts: config.maxRetries ?? 3,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
     });
   }
 
@@ -273,19 +288,25 @@ export class SNSManager {
         ([Key, Value]) => ({ Key, Value })
       );
 
-      const response = await this.client.send(new CreateTopicCommand({
-        Name: topicName,
-        Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        Tags: tags.length > 0 ? tags : undefined,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreateTopicCommand({
+          Name: topicName,
+          Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+          Tags: tags.length > 0 ? tags : undefined,
+        })),
+        'CreateTopic'
+      );
 
       // Set redrive policy if specified
       if (config.redrivePolicy && response.TopicArn) {
-        await this.client.send(new SetTopicAttributesCommand({
-          TopicArn: response.TopicArn,
-          AttributeName: 'RedrivePolicy',
-          AttributeValue: JSON.stringify(config.redrivePolicy),
-        }));
+        await this.withRetry(
+          () => this.client.send(new SetTopicAttributesCommand({
+            TopicArn: response.TopicArn,
+            AttributeName: 'RedrivePolicy',
+            AttributeValue: JSON.stringify(config.redrivePolicy),
+          })),
+          'SetTopicAttributes'
+        );
       }
 
       return {
@@ -305,9 +326,12 @@ export class SNSManager {
    */
   async deleteTopic(topicArn: string): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new DeleteTopicCommand({
-        TopicArn: topicArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeleteTopicCommand({
+          TopicArn: topicArn,
+        })),
+        'DeleteTopic'
+      );
 
       return { success: true };
     } catch (error) {
@@ -324,8 +348,8 @@ export class SNSManager {
   async getTopic(topicArn: string): Promise<SNSOperationResult<TopicMetrics>> {
     try {
       const [attributesResponse, tagsResponse] = await Promise.all([
-        this.client.send(new GetTopicAttributesCommand({ TopicArn: topicArn })),
-        this.client.send(new ListTagsForResourceCommand({ ResourceArn: topicArn })).catch(() => ({ Tags: [] })),
+        this.withRetry(() => this.client.send(new GetTopicAttributesCommand({ TopicArn: topicArn })), 'GetTopicAttributes'),
+        this.withRetry(() => this.client.send(new ListTagsForResourceCommand({ ResourceArn: topicArn })), 'ListTagsForResource').catch(() => ({ Tags: [] })),
       ]);
 
       const attrs = attributesResponse.Attributes ?? {};
@@ -371,9 +395,12 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListTopicsCommand({
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListTopicsCommand({
+            NextToken: nextToken,
+          })),
+          'ListTopics'
+        );
 
         topics.push(...(response.Topics ?? []));
         nextToken = response.NextToken;
@@ -397,11 +424,14 @@ export class SNSManager {
     attributeValue: string
   ): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new SetTopicAttributesCommand({
-        TopicArn: topicArn,
-        AttributeName: attributeName,
-        AttributeValue: attributeValue,
-      }));
+      await this.withRetry(
+        () => this.client.send(new SetTopicAttributesCommand({
+          TopicArn: topicArn,
+          AttributeName: attributeName,
+          AttributeValue: attributeValue,
+        })),
+        'SetTopicAttributes'
+      );
 
       return { success: true };
     } catch (error) {
@@ -442,13 +472,16 @@ export class SNSManager {
         attributes.SubscriptionRoleArn = config.subscriptionRoleArn;
       }
 
-      const response = await this.client.send(new SubscribeCommand({
-        TopicArn: config.topicArn,
-        Protocol: config.protocol,
-        Endpoint: config.endpoint,
-        Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
-        ReturnSubscriptionArn: config.returnSubscriptionArn ?? true,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new SubscribeCommand({
+          TopicArn: config.topicArn,
+          Protocol: config.protocol,
+          Endpoint: config.endpoint,
+          Attributes: Object.keys(attributes).length > 0 ? attributes : undefined,
+          ReturnSubscriptionArn: config.returnSubscriptionArn ?? true,
+        })),
+        'Subscribe'
+      );
 
       return {
         success: true,
@@ -467,9 +500,12 @@ export class SNSManager {
    */
   async unsubscribe(subscriptionArn: string): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new UnsubscribeCommand({
-        SubscriptionArn: subscriptionArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new UnsubscribeCommand({
+          SubscriptionArn: subscriptionArn,
+        })),
+        'Unsubscribe'
+      );
 
       return { success: true };
     } catch (error) {
@@ -489,11 +525,14 @@ export class SNSManager {
     authenticateOnUnsubscribe?: boolean
   ): Promise<SNSOperationResult<{ subscriptionArn: string }>> {
     try {
-      const response = await this.client.send(new ConfirmSubscriptionCommand({
-        TopicArn: topicArn,
-        Token: token,
-        AuthenticateOnUnsubscribe: authenticateOnUnsubscribe ? 'true' : undefined,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ConfirmSubscriptionCommand({
+          TopicArn: topicArn,
+          Token: token,
+          AuthenticateOnUnsubscribe: authenticateOnUnsubscribe ? 'true' : undefined,
+        })),
+        'ConfirmSubscription'
+      );
 
       return {
         success: true,
@@ -512,9 +551,12 @@ export class SNSManager {
    */
   async getSubscriptionAttributes(subscriptionArn: string): Promise<SNSOperationResult<Record<string, string>>> {
     try {
-      const response = await this.client.send(new GetSubscriptionAttributesCommand({
-        SubscriptionArn: subscriptionArn,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new GetSubscriptionAttributesCommand({
+          SubscriptionArn: subscriptionArn,
+        })),
+        'GetSubscriptionAttributes'
+      );
 
       return { success: true, data: response.Attributes ?? {} };
     } catch (error) {
@@ -534,11 +576,14 @@ export class SNSManager {
     attributeValue: string
   ): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new SetSubscriptionAttributesCommand({
-        SubscriptionArn: subscriptionArn,
-        AttributeName: attributeName,
-        AttributeValue: attributeValue,
-      }));
+      await this.withRetry(
+        () => this.client.send(new SetSubscriptionAttributesCommand({
+          SubscriptionArn: subscriptionArn,
+          AttributeName: attributeName,
+          AttributeValue: attributeValue,
+        })),
+        'SetSubscriptionAttributes'
+      );
 
       return { success: true };
     } catch (error) {
@@ -559,16 +604,22 @@ export class SNSManager {
   ): Promise<SNSOperationResult<void>> {
     try {
       await Promise.all([
-        this.client.send(new SetSubscriptionAttributesCommand({
-          SubscriptionArn: subscriptionArn,
-          AttributeName: 'FilterPolicy',
-          AttributeValue: JSON.stringify(filterPolicy),
-        })),
-        this.client.send(new SetSubscriptionAttributesCommand({
-          SubscriptionArn: subscriptionArn,
-          AttributeName: 'FilterPolicyScope',
-          AttributeValue: scope,
-        })),
+        this.withRetry(
+          () => this.client.send(new SetSubscriptionAttributesCommand({
+            SubscriptionArn: subscriptionArn,
+            AttributeName: 'FilterPolicy',
+            AttributeValue: JSON.stringify(filterPolicy),
+          })),
+          'SetSubscriptionAttributes'
+        ),
+        this.withRetry(
+          () => this.client.send(new SetSubscriptionAttributesCommand({
+            SubscriptionArn: subscriptionArn,
+            AttributeName: 'FilterPolicyScope',
+            AttributeValue: scope,
+          })),
+          'SetSubscriptionAttributes'
+        ),
       ]);
 
       return { success: true };
@@ -589,9 +640,12 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListSubscriptionsCommand({
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListSubscriptionsCommand({
+            NextToken: nextToken,
+          })),
+          'ListSubscriptions'
+        );
 
         subscriptions.push(...(response.Subscriptions ?? []));
         nextToken = response.NextToken;
@@ -615,10 +669,13 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListSubscriptionsByTopicCommand({
-          TopicArn: topicArn,
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListSubscriptionsByTopicCommand({
+            TopicArn: topicArn,
+            NextToken: nextToken,
+          })),
+          'ListSubscriptionsByTopic'
+        );
 
         subscriptions.push(...(response.Subscriptions ?? []));
         nextToken = response.NextToken;
@@ -657,17 +714,20 @@ export class SNSManager {
         }
       }
 
-      const response = await this.client.send(new PublishCommand({
-        TopicArn: config.topicArn,
-        TargetArn: config.targetArn,
-        PhoneNumber: config.phoneNumber,
-        Message: config.message,
-        MessageStructure: config.messageStructure,
-        Subject: config.subject,
-        MessageAttributes: messageAttributes,
-        MessageDeduplicationId: config.messageDeduplicationId,
-        MessageGroupId: config.messageGroupId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new PublishCommand({
+          TopicArn: config.topicArn,
+          TargetArn: config.targetArn,
+          PhoneNumber: config.phoneNumber,
+          Message: config.message,
+          MessageStructure: config.messageStructure,
+          Subject: config.subject,
+          MessageAttributes: messageAttributes,
+          MessageDeduplicationId: config.messageDeduplicationId,
+          MessageGroupId: config.messageGroupId,
+        })),
+        'Publish'
+      );
 
       return {
         success: true,
@@ -715,10 +775,13 @@ export class SNSManager {
         };
       });
 
-      const response = await this.client.send(new PublishBatchCommand({
-        TopicArn: config.topicArn,
-        PublishBatchRequestEntries: entries,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new PublishBatchCommand({
+          TopicArn: config.topicArn,
+          PublishBatchRequestEntries: entries,
+        })),
+        'PublishBatch'
+      );
 
       return {
         success: true,
@@ -762,12 +825,15 @@ export class SNSManager {
     try {
       const message = JSON.stringify(messages);
 
-      const response = await this.client.send(new PublishCommand({
-        TopicArn: topicArn,
-        Message: message,
-        MessageStructure: 'json',
-        Subject: subject,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new PublishCommand({
+          TopicArn: topicArn,
+          Message: message,
+          MessageStructure: 'json',
+          Subject: subject,
+        })),
+        'Publish'
+      );
 
       return {
         success: true,
@@ -792,11 +858,14 @@ export class SNSManager {
     config: CreatePlatformApplicationConfig
   ): Promise<SNSOperationResult<{ platformApplicationArn: string }>> {
     try {
-      const response = await this.client.send(new CreatePlatformApplicationCommand({
-        Name: config.name,
-        Platform: config.platform,
-        Attributes: config.attributes,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreatePlatformApplicationCommand({
+          Name: config.name,
+          Platform: config.platform,
+          Attributes: config.attributes,
+        })),
+        'CreatePlatformApplication'
+      );
 
       return {
         success: true,
@@ -815,9 +884,12 @@ export class SNSManager {
    */
   async deletePlatformApplication(platformApplicationArn: string): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new DeletePlatformApplicationCommand({
-        PlatformApplicationArn: platformApplicationArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeletePlatformApplicationCommand({
+          PlatformApplicationArn: platformApplicationArn,
+        })),
+        'DeletePlatformApplication'
+      );
 
       return { success: true };
     } catch (error) {
@@ -837,9 +909,12 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListPlatformApplicationsCommand({
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListPlatformApplicationsCommand({
+            NextToken: nextToken,
+          })),
+          'ListPlatformApplications'
+        );
 
         applications.push(...(response.PlatformApplications ?? []));
         nextToken = response.NextToken;
@@ -861,12 +936,15 @@ export class SNSManager {
     config: CreatePlatformEndpointConfig
   ): Promise<SNSOperationResult<{ endpointArn: string }>> {
     try {
-      const response = await this.client.send(new CreatePlatformEndpointCommand({
-        PlatformApplicationArn: config.platformApplicationArn,
-        Token: config.token,
-        CustomUserData: config.customUserData,
-        Attributes: config.attributes,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreatePlatformEndpointCommand({
+          PlatformApplicationArn: config.platformApplicationArn,
+          Token: config.token,
+          CustomUserData: config.customUserData,
+          Attributes: config.attributes,
+        })),
+        'CreatePlatformEndpoint'
+      );
 
       return {
         success: true,
@@ -885,9 +963,12 @@ export class SNSManager {
    */
   async deletePlatformEndpoint(endpointArn: string): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new DeleteEndpointCommand({
-        EndpointArn: endpointArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeleteEndpointCommand({
+          EndpointArn: endpointArn,
+        })),
+        'DeleteEndpoint'
+      );
 
       return { success: true };
     } catch (error) {
@@ -907,10 +988,13 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListEndpointsByPlatformApplicationCommand({
-          PlatformApplicationArn: platformApplicationArn,
-          NextToken: nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListEndpointsByPlatformApplicationCommand({
+            PlatformApplicationArn: platformApplicationArn,
+            NextToken: nextToken,
+          })),
+          'ListEndpointsByPlatformApplication'
+        );
 
         endpoints.push(...(response.Endpoints ?? []));
         nextToken = response.NextToken;
@@ -981,11 +1065,14 @@ export class SNSManager {
         [platform]: JSON.stringify(payload),
       };
 
-      const response = await this.client.send(new PublishCommand({
-        TargetArn: endpointArn,
-        Message: JSON.stringify(messageStructure),
-        MessageStructure: 'json',
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new PublishCommand({
+          TargetArn: endpointArn,
+          Message: JSON.stringify(messageStructure),
+          MessageStructure: 'json',
+        })),
+        'Publish'
+      );
 
       return {
         success: true,
@@ -1008,16 +1095,19 @@ export class SNSManager {
    */
   async getSMSAttributes(): Promise<SNSOperationResult<Record<string, string>>> {
     try {
-      const response = await this.client.send(new GetSMSAttributesCommand({
-        attributes: [
-          'DefaultSenderID',
-          'DefaultSMSType',
-          'MonthlySpendLimit',
-          'DeliveryStatusIAMRole',
-          'DeliveryStatusSuccessSamplingRate',
-          'UsageReportS3Bucket',
-        ],
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new GetSMSAttributesCommand({
+          attributes: [
+            'DefaultSenderID',
+            'DefaultSMSType',
+            'MonthlySpendLimit',
+            'DeliveryStatusIAMRole',
+            'DeliveryStatusSuccessSamplingRate',
+            'UsageReportS3Bucket',
+          ],
+        })),
+        'GetSMSAttributes'
+      );
 
       return { success: true, data: response.attributes ?? {} };
     } catch (error) {
@@ -1054,7 +1144,10 @@ export class SNSManager {
         attributes.UsageReportS3Bucket = config.usageReportS3Bucket;
       }
 
-      await this.client.send(new SetSMSAttributesCommand({ attributes }));
+      await this.withRetry(
+        () => this.client.send(new SetSMSAttributesCommand({ attributes })),
+        'SetSMSAttributes'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1092,11 +1185,14 @@ export class SNSManager {
         };
       }
 
-      const response = await this.client.send(new PublishCommand({
-        PhoneNumber: phoneNumber,
-        Message: message,
-        MessageAttributes: Object.keys(messageAttributes).length > 0 ? messageAttributes : undefined,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new PublishCommand({
+          PhoneNumber: phoneNumber,
+          Message: message,
+          MessageAttributes: Object.keys(messageAttributes).length > 0 ? messageAttributes : undefined,
+        })),
+        'Publish'
+      );
 
       return {
         success: true,
@@ -1115,9 +1211,12 @@ export class SNSManager {
    */
   async checkPhoneNumberOptOut(phoneNumber: string): Promise<SNSOperationResult<boolean>> {
     try {
-      const response = await this.client.send(new CheckIfPhoneNumberIsOptedOutCommand({
-        phoneNumber,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CheckIfPhoneNumberIsOptedOutCommand({
+          phoneNumber,
+        })),
+        'CheckIfPhoneNumberIsOptedOut'
+      );
 
       return { success: true, data: response.isOptedOut ?? false };
     } catch (error) {
@@ -1137,9 +1236,12 @@ export class SNSManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.client.send(new ListPhoneNumbersOptedOutCommand({
-          nextToken,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListPhoneNumbersOptedOutCommand({
+            nextToken,
+          })),
+          'ListPhoneNumbersOptedOut'
+        );
 
         phoneNumbers.push(...(response.phoneNumbers ?? []));
         nextToken = response.nextToken;
@@ -1159,7 +1261,10 @@ export class SNSManager {
    */
   async optInPhoneNumber(phoneNumber: string): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new OptInPhoneNumberCommand({ phoneNumber }));
+      await this.withRetry(
+        () => this.client.send(new OptInPhoneNumberCommand({ phoneNumber })),
+        'OptInPhoneNumber'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1175,7 +1280,10 @@ export class SNSManager {
    */
   async getSMSSandboxStatus(): Promise<SNSOperationResult<{ isInSandbox: boolean }>> {
     try {
-      const response = await this.client.send(new GetSMSSandboxAccountStatusCommand({}));
+      const response = await this.withRetry(
+        () => this.client.send(new GetSMSSandboxAccountStatusCommand({})),
+        'GetSMSSandboxAccountStatus'
+      );
 
       return {
         success: true,
@@ -1198,9 +1306,12 @@ export class SNSManager {
    */
   async getDataProtectionPolicy(topicArn: string): Promise<SNSOperationResult<string>> {
     try {
-      const response = await this.client.send(new GetDataProtectionPolicyCommand({
-        ResourceArn: topicArn,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new GetDataProtectionPolicyCommand({
+          ResourceArn: topicArn,
+        })),
+        'GetDataProtectionPolicy'
+      );
 
       return { success: true, data: response.DataProtectionPolicy ?? '' };
     } catch (error) {
@@ -1244,10 +1355,13 @@ export class SNSManager {
     }
   ): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new PutDataProtectionPolicyCommand({
-        ResourceArn: topicArn,
-        DataProtectionPolicy: JSON.stringify(policy),
-      }));
+      await this.withRetry(
+        () => this.client.send(new PutDataProtectionPolicyCommand({
+          ResourceArn: topicArn,
+          DataProtectionPolicy: JSON.stringify(policy),
+        })),
+        'PutDataProtectionPolicy'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1267,10 +1381,13 @@ export class SNSManager {
    */
   async tagResource(resourceArn: string, tags: Record<string, string>): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new TagResourceCommand({
-        ResourceArn: resourceArn,
-        Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
-      }));
+      await this.withRetry(
+        () => this.client.send(new TagResourceCommand({
+          ResourceArn: resourceArn,
+          Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
+        })),
+        'TagResource'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1286,10 +1403,13 @@ export class SNSManager {
    */
   async untagResource(resourceArn: string, tagKeys: string[]): Promise<SNSOperationResult<void>> {
     try {
-      await this.client.send(new UntagResourceCommand({
-        ResourceArn: resourceArn,
-        TagKeys: tagKeys,
-      }));
+      await this.withRetry(
+        () => this.client.send(new UntagResourceCommand({
+          ResourceArn: resourceArn,
+          TagKeys: tagKeys,
+        })),
+        'UntagResource'
+      );
 
       return { success: true };
     } catch (error) {

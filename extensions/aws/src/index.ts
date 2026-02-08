@@ -1519,3 +1519,64 @@ export class AWSPlugin {
 export function createAWSPlugin(options?: AWSPluginOptions): AWSPlugin {
   return new AWSPlugin(options);
 }
+
+// =============================================================================
+// Core Utilities
+// =============================================================================
+
+// Retry utilities
+export {
+  createAWSRetryRunner,
+  withAWSRetry,
+  awsRetry,
+  shouldRetryAWSError,
+  getAWSRetryAfterMs,
+  AWS_RETRY_DEFAULTS,
+  formatErrorMessage,
+  extractErrorCode,
+  type AWSRetryOptions,
+  type RetryConfig,
+  type RetryInfo,
+  type RetryOptions,
+} from "./retry.js";
+
+// Progress utilities
+export {
+  createAWSProgress,
+  withAWSProgress,
+  waitWithProgress,
+  createCloudFormationProgress,
+  createS3UploadProgress,
+  createS3DownloadProgress,
+  createEC2StateProgress,
+  createLambdaDeployProgress,
+  createRDSProgress,
+  createContainerDeployProgress,
+  createMultiStepProgress,
+  type AWSProgressOptions,
+} from "./progress.js";
+
+// Diagnostics utilities
+export {
+  enableAWSDiagnostics,
+  disableAWSDiagnostics,
+  isAWSDiagnosticsEnabled,
+  setAWSDiagnosticsEnabled,
+  emitAWSDiagnosticEvent,
+  onAWSDiagnosticEvent,
+  instrumentedAWSCall,
+  createInstrumentedClient,
+  emitCredentialRefreshEvent,
+  emitResourceChangeEvent,
+  resetAWSDiagnosticsForTest,
+  type AWSApiEvent,
+  type AWSApiCallEvent,
+  type AWSApiErrorEvent,
+  type AWSCredentialRefreshEvent,
+  type AWSResourceChangeEvent,
+  type AWSApiEventInput,
+  type AWSApiCallEventInput,
+  type AWSApiErrorEventInput,
+  type AWSCredentialRefreshEventInput,
+  type AWSResourceChangeEventInput,
+} from "./diagnostics.js";

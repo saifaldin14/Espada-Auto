@@ -13,6 +13,8 @@
  * - Lambda triggers
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   CognitoIdentityProviderClient,
   CreateUserPoolCommand,
@@ -332,9 +334,11 @@ export class CognitoManager {
   private userPoolClient: CognitoIdentityProviderClient;
   private identityClient: CognitoIdentityClient;
   private config: CognitoManagerConfig;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: CognitoManagerConfig = {}) {
+  constructor(config: CognitoManagerConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
+    this.retryOptions = retryOptions;
     
     this.userPoolClient = new CognitoIdentityProviderClient({
       region: config.region,
@@ -346,6 +350,17 @@ export class CognitoManager {
       region: config.region,
       credentials: config.credentials,
       maxAttempts: config.maxRetries ?? 3,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
     });
   }
 
@@ -395,7 +410,7 @@ export class CognitoManager {
         } : undefined,
       }));
 
-      const response = await this.userPoolClient.send(new CreateUserPoolCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new CreateUserPoolCommand({
         PoolName: config.poolName,
         UsernameAttributes: config.usernameAttributes,
         AliasAttributes: config.aliasAttributes,
@@ -439,11 +454,11 @@ export class CognitoManager {
         } : undefined,
         DeletionProtection: config.deletionProtection,
         UserPoolTags: { ...this.config.defaultTags, ...config.tags },
-      }));
+      })), 'CreateUserPool');
 
       // Configure MFA if specified
       if (config.mfaConfiguration && config.mfaConfiguration !== 'OFF') {
-        await this.userPoolClient.send(new SetUserPoolMfaConfigCommand({
+        await this.withRetry(() => this.userPoolClient.send(new SetUserPoolMfaConfigCommand({
           UserPoolId: response.UserPool?.Id,
           MfaConfiguration: config.mfaConfiguration,
           SoftwareTokenMfaConfiguration: config.softwareTokenMfaEnabled ? {
@@ -457,7 +472,7 @@ export class CognitoManager {
               SnsRegion: config.smsConfiguration.snsRegion,
             },
           } : undefined,
-        }));
+        })), 'SetUserPoolMfaConfig');
       }
 
       return { success: true, data: response.UserPool };
@@ -474,9 +489,12 @@ export class CognitoManager {
    */
   async deleteUserPool(userPoolId: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new DeleteUserPoolCommand({
-        UserPoolId: userPoolId,
-      }));
+      await this.withRetry(
+        () => this.userPoolClient.send(new DeleteUserPoolCommand({
+          UserPoolId: userPoolId,
+        })),
+        'DeleteUserPool'
+      );
 
       return { success: true };
     } catch (error) {
@@ -493,11 +511,11 @@ export class CognitoManager {
   async getUserPool(userPoolId: string): Promise<CognitoOperationResult<UserPoolMetrics>> {
     try {
       const [poolResponse, clientsResponse, groupsResponse, providersResponse, tagsResponse] = await Promise.all([
-        this.userPoolClient.send(new DescribeUserPoolCommand({ UserPoolId: userPoolId })),
-        this.userPoolClient.send(new ListUserPoolClientsCommand({ UserPoolId: userPoolId, MaxResults: 60 })),
-        this.userPoolClient.send(new ListGroupsCommand({ UserPoolId: userPoolId })),
-        this.userPoolClient.send(new ListIdentityProvidersCommand({ UserPoolId: userPoolId })),
-        this.userPoolClient.send(new ListTagsForResourceCommand({ ResourceArn: `arn:aws:cognito-idp:${this.config.region}:*:userpool/${userPoolId}` })).catch(() => ({ Tags: {} })),
+        this.withRetry(() => this.userPoolClient.send(new DescribeUserPoolCommand({ UserPoolId: userPoolId })), 'DescribeUserPool'),
+        this.withRetry(() => this.userPoolClient.send(new ListUserPoolClientsCommand({ UserPoolId: userPoolId, MaxResults: 60 })), 'ListUserPoolClients'),
+        this.withRetry(() => this.userPoolClient.send(new ListGroupsCommand({ UserPoolId: userPoolId })), 'ListGroups'),
+        this.withRetry(() => this.userPoolClient.send(new ListIdentityProvidersCommand({ UserPoolId: userPoolId })), 'ListIdentityProviders'),
+        this.withRetry(() => this.userPoolClient.send(new ListTagsForResourceCommand({ ResourceArn: `arn:aws:cognito-idp:${this.config.region}:*:userpool/${userPoolId}` })), 'ListTagsForResource').catch(() => ({ Tags: {} })),
       ]);
 
       const pool = poolResponse.UserPool!;
@@ -554,16 +572,16 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListUserPoolsCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListUserPoolsCommand({
           MaxResults: maxResults ? Math.min(maxResults - pools.length, 60) : 60,
           NextToken: nextToken,
-        }));
+        })), 'ListUserPools');
 
         // Get full details for each pool
         for (const pool of response.UserPools ?? []) {
-          const details = await this.userPoolClient.send(new DescribeUserPoolCommand({
+          const details = await this.withRetry(() => this.userPoolClient.send(new DescribeUserPoolCommand({
             UserPoolId: pool.Id,
-          }));
+          })), 'DescribeUserPool');
           if (details.UserPool) {
             pools.push(details.UserPool);
           }
@@ -592,7 +610,7 @@ export class CognitoManager {
    */
   async createAppClient(config: CreateAppClientConfig): Promise<CognitoOperationResult<UserPoolClientType>> {
     try {
-      const response = await this.userPoolClient.send(new CreateUserPoolClientCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new CreateUserPoolClientCommand({
         UserPoolId: config.userPoolId,
         ClientName: config.clientName,
         GenerateSecret: config.generateSecret,
@@ -618,7 +636,7 @@ export class CognitoManager {
         AuthSessionValidity: config.authSessionValidity,
         ReadAttributes: config.readAttributes,
         WriteAttributes: config.writeAttributes,
-      }));
+      })), 'CreateUserPoolClient');
 
       return { success: true, data: response.UserPoolClient };
     } catch (error) {
@@ -634,10 +652,10 @@ export class CognitoManager {
    */
   async deleteAppClient(userPoolId: string, clientId: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new DeleteUserPoolClientCommand({
+      await this.withRetry(() => this.userPoolClient.send(new DeleteUserPoolClientCommand({
         UserPoolId: userPoolId,
         ClientId: clientId,
-      }));
+      })), 'DeleteUserPoolClient');
 
       return { success: true };
     } catch (error) {
@@ -657,18 +675,18 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListUserPoolClientsCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListUserPoolClientsCommand({
           UserPoolId: userPoolId,
           MaxResults: 60,
           NextToken: nextToken,
-        }));
+        })), 'ListUserPoolClients');
 
         // Get full details for each client
         for (const client of response.UserPoolClients ?? []) {
-          const details = await this.userPoolClient.send(new DescribeUserPoolClientCommand({
+          const details = await this.withRetry(() => this.userPoolClient.send(new DescribeUserPoolClientCommand({
             UserPoolId: userPoolId,
             ClientId: client.ClientId,
-          }));
+          })), 'DescribeUserPoolClient');
           if (details.UserPoolClient) {
             clients.push(details.UserPoolClient);
           }
@@ -695,7 +713,7 @@ export class CognitoManager {
    */
   async createUser(config: CreateUserConfig): Promise<CognitoOperationResult<UserType>> {
     try {
-      const response = await this.userPoolClient.send(new AdminCreateUserCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new AdminCreateUserCommand({
         UserPoolId: config.userPoolId,
         Username: config.username,
         TemporaryPassword: config.temporaryPassword,
@@ -706,7 +724,7 @@ export class CognitoManager {
         MessageAction: config.messageAction,
         ForceAliasCreation: config.forceAliasCreation,
         DesiredDeliveryMediums: config.desiredDeliveryMediums,
-      }));
+      })), 'AdminCreateUser');
 
       return { success: true, data: response.User };
     } catch (error) {
@@ -722,10 +740,10 @@ export class CognitoManager {
    */
   async deleteUser(userPoolId: string, username: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminDeleteUserCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminDeleteUserCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminDeleteUser');
 
       return { success: true };
     } catch (error) {
@@ -749,10 +767,10 @@ export class CognitoManager {
     mfaOptions?: MFAOptionType[];
   }>> {
     try {
-      const response = await this.userPoolClient.send(new AdminGetUserCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new AdminGetUserCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminGetUser');
 
       const attributes: Record<string, string> = {};
       for (const attr of response.UserAttributes ?? []) {
@@ -797,13 +815,13 @@ export class CognitoManager {
       let paginationToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListUsersCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListUsersCommand({
           UserPoolId: userPoolId,
           Filter: options?.filter,
           Limit: options?.limit ? Math.min(options.limit - users.length, 60) : 60,
           AttributesToGet: options?.attributesToGet,
           PaginationToken: paginationToken,
-        }));
+        })), 'ListUsers');
 
         users.push(...(response.Users ?? []));
         paginationToken = response.PaginationToken;
@@ -829,14 +847,14 @@ export class CognitoManager {
     attributes: { name: string; value: string }[]
   ): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminUpdateUserAttributesCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminUpdateUserAttributesCommand({
         UserPoolId: userPoolId,
         Username: username,
         UserAttributes: attributes.map(attr => ({
           Name: attr.name,
           Value: attr.value,
         })),
-      }));
+      })), 'AdminUpdateUserAttributes');
 
       return { success: true };
     } catch (error) {
@@ -852,10 +870,10 @@ export class CognitoManager {
    */
   async enableUser(userPoolId: string, username: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminEnableUserCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminEnableUserCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminEnableUser');
 
       return { success: true };
     } catch (error) {
@@ -871,10 +889,10 @@ export class CognitoManager {
    */
   async disableUser(userPoolId: string, username: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminDisableUserCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminDisableUserCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminDisableUser');
 
       return { success: true };
     } catch (error) {
@@ -890,10 +908,10 @@ export class CognitoManager {
    */
   async resetUserPassword(userPoolId: string, username: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminResetUserPasswordCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminResetUserPasswordCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminResetUserPassword');
 
       return { success: true };
     } catch (error) {
@@ -914,12 +932,12 @@ export class CognitoManager {
     permanent: boolean = true
   ): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminSetUserPasswordCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminSetUserPasswordCommand({
         UserPoolId: userPoolId,
         Username: username,
         Password: password,
         Permanent: permanent,
-      }));
+      })), 'AdminSetUserPassword');
 
       return { success: true };
     } catch (error) {
@@ -935,10 +953,10 @@ export class CognitoManager {
    */
   async signOutUser(userPoolId: string, username: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminUserGlobalSignOutCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminUserGlobalSignOutCommand({
         UserPoolId: userPoolId,
         Username: username,
-      }));
+      })), 'AdminUserGlobalSignOut');
 
       return { success: true };
     } catch (error) {
@@ -958,13 +976,13 @@ export class CognitoManager {
    */
   async createGroup(config: CreateGroupConfig): Promise<CognitoOperationResult<GroupType>> {
     try {
-      const response = await this.userPoolClient.send(new CreateGroupCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new CreateGroupCommand({
         UserPoolId: config.userPoolId,
         GroupName: config.groupName,
         Description: config.description,
         Precedence: config.precedence,
         RoleArn: config.roleArn,
-      }));
+      })), 'CreateGroup');
 
       return { success: true, data: response.Group };
     } catch (error) {
@@ -980,10 +998,10 @@ export class CognitoManager {
    */
   async deleteGroup(userPoolId: string, groupName: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new DeleteGroupCommand({
+      await this.withRetry(() => this.userPoolClient.send(new DeleteGroupCommand({
         UserPoolId: userPoolId,
         GroupName: groupName,
-      }));
+      })), 'DeleteGroup');
 
       return { success: true };
     } catch (error) {
@@ -1003,11 +1021,11 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListGroupsCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListGroupsCommand({
           UserPoolId: userPoolId,
           Limit: 60,
           NextToken: nextToken,
-        }));
+        })), 'ListGroups');
 
         groups.push(...(response.Groups ?? []));
         nextToken = response.NextToken;
@@ -1027,11 +1045,11 @@ export class CognitoManager {
    */
   async addUserToGroup(userPoolId: string, username: string, groupName: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminAddUserToGroupCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminAddUserToGroupCommand({
         UserPoolId: userPoolId,
         Username: username,
         GroupName: groupName,
-      }));
+      })), 'AdminAddUserToGroup');
 
       return { success: true };
     } catch (error) {
@@ -1047,11 +1065,11 @@ export class CognitoManager {
    */
   async removeUserFromGroup(userPoolId: string, username: string, groupName: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new AdminRemoveUserFromGroupCommand({
+      await this.withRetry(() => this.userPoolClient.send(new AdminRemoveUserFromGroupCommand({
         UserPoolId: userPoolId,
         Username: username,
         GroupName: groupName,
-      }));
+      })), 'AdminRemoveUserFromGroup');
 
       return { success: true };
     } catch (error) {
@@ -1071,12 +1089,12 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListUsersInGroupCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListUsersInGroupCommand({
           UserPoolId: userPoolId,
           GroupName: groupName,
           Limit: 60,
           NextToken: nextToken,
-        }));
+        })), 'ListUsersInGroup');
 
         users.push(...(response.Users ?? []));
         nextToken = response.NextToken;
@@ -1100,12 +1118,12 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new AdminListGroupsForUserCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new AdminListGroupsForUserCommand({
           UserPoolId: userPoolId,
           Username: username,
           Limit: 60,
           NextToken: nextToken,
-        }));
+        })), 'AdminListGroupsForUser');
 
         groups.push(...(response.Groups ?? []));
         nextToken = response.NextToken;
@@ -1129,14 +1147,14 @@ export class CognitoManager {
    */
   async createIdentityProvider(config: CreateIdentityProviderConfig): Promise<CognitoOperationResult<IdentityProviderType>> {
     try {
-      const response = await this.userPoolClient.send(new CreateIdentityProviderCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new CreateIdentityProviderCommand({
         UserPoolId: config.userPoolId,
         ProviderName: config.providerName,
         ProviderType: config.providerType,
         ProviderDetails: config.providerDetails,
         AttributeMapping: config.attributeMapping,
         IdpIdentifiers: config.idpIdentifiers,
-      }));
+      })), 'CreateIdentityProvider');
 
       return { success: true, data: response.IdentityProvider };
     } catch (error) {
@@ -1152,10 +1170,10 @@ export class CognitoManager {
    */
   async deleteIdentityProvider(userPoolId: string, providerName: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new DeleteIdentityProviderCommand({
+      await this.withRetry(() => this.userPoolClient.send(new DeleteIdentityProviderCommand({
         UserPoolId: userPoolId,
         ProviderName: providerName,
-      }));
+      })), 'DeleteIdentityProvider');
 
       return { success: true };
     } catch (error) {
@@ -1175,18 +1193,18 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.userPoolClient.send(new ListIdentityProvidersCommand({
+        const response = await this.withRetry(() => this.userPoolClient.send(new ListIdentityProvidersCommand({
           UserPoolId: userPoolId,
           MaxResults: 60,
           NextToken: nextToken,
-        }));
+        })), 'ListIdentityProviders');
 
         // Get full details for each provider
         for (const provider of response.Providers ?? []) {
-          const details = await this.userPoolClient.send(new DescribeIdentityProviderCommand({
+          const details = await this.withRetry(() => this.userPoolClient.send(new DescribeIdentityProviderCommand({
             UserPoolId: userPoolId,
             ProviderName: provider.ProviderName,
-          }));
+          })), 'DescribeIdentityProvider');
           if (details.IdentityProvider) {
             providers.push(details.IdentityProvider);
           }
@@ -1217,13 +1235,13 @@ export class CognitoManager {
     customDomainConfig?: { certificateArn: string }
   ): Promise<CognitoOperationResult<{ cloudFrontDomain?: string }>> {
     try {
-      const response = await this.userPoolClient.send(new CreateUserPoolDomainCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new CreateUserPoolDomainCommand({
         UserPoolId: userPoolId,
         Domain: domain,
         CustomDomainConfig: customDomainConfig ? {
           CertificateArn: customDomainConfig.certificateArn,
         } : undefined,
-      }));
+      })), 'CreateUserPoolDomain');
 
       return {
         success: true,
@@ -1242,10 +1260,10 @@ export class CognitoManager {
    */
   async deleteDomain(userPoolId: string, domain: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.userPoolClient.send(new DeleteUserPoolDomainCommand({
+      await this.withRetry(() => this.userPoolClient.send(new DeleteUserPoolDomainCommand({
         UserPoolId: userPoolId,
         Domain: domain,
-      }));
+      })), 'DeleteUserPoolDomain');
 
       return { success: true };
     } catch (error) {
@@ -1261,9 +1279,9 @@ export class CognitoManager {
    */
   async getDomain(domain: string): Promise<CognitoOperationResult<DomainDescriptionType>> {
     try {
-      const response = await this.userPoolClient.send(new DescribeUserPoolDomainCommand({
+      const response = await this.withRetry(() => this.userPoolClient.send(new DescribeUserPoolDomainCommand({
         Domain: domain,
-      }));
+      })), 'DescribeUserPoolDomain');
 
       return { success: true, data: response.DomainDescription };
     } catch (error) {
@@ -1286,7 +1304,7 @@ export class CognitoManager {
     identityPoolName: string;
   }>> {
     try {
-      const response = await this.identityClient.send(new CreateIdentityPoolCommand({
+      const response = await this.withRetry(() => this.identityClient.send(new CreateIdentityPoolCommand({
         IdentityPoolName: config.identityPoolName,
         AllowUnauthenticatedIdentities: config.allowUnauthenticatedIdentities ?? false,
         AllowClassicFlow: config.allowClassicFlow,
@@ -1299,7 +1317,7 @@ export class CognitoManager {
         SamlProviderARNs: config.samlProviderARNs,
         OpenIdConnectProviderARNs: config.openIdConnectProviderARNs,
         IdentityPoolTags: { ...this.config.defaultTags, ...config.identityPoolTags },
-      }));
+      })), 'CreateIdentityPool');
 
       return {
         success: true,
@@ -1321,9 +1339,9 @@ export class CognitoManager {
    */
   async deleteIdentityPool(identityPoolId: string): Promise<CognitoOperationResult<void>> {
     try {
-      await this.identityClient.send(new DeleteIdentityPoolCommand({
+      await this.withRetry(() => this.identityClient.send(new DeleteIdentityPoolCommand({
         IdentityPoolId: identityPoolId,
-      }));
+      })), 'DeleteIdentityPool');
 
       return { success: true };
     } catch (error) {
@@ -1343,10 +1361,10 @@ export class CognitoManager {
       let nextToken: string | undefined;
 
       do {
-        const response = await this.identityClient.send(new ListIdentityPoolsCommand({
+        const response = await this.withRetry(() => this.identityClient.send(new ListIdentityPoolsCommand({
           MaxResults: maxResults ? Math.min(maxResults - pools.length, 60) : 60,
           NextToken: nextToken,
-        }));
+        })), 'ListIdentityPools');
 
         pools.push(...(response.IdentityPools ?? []));
         nextToken = response.NextToken;
@@ -1368,7 +1386,7 @@ export class CognitoManager {
    */
   async setIdentityPoolRoles(config: IdentityPoolRolesConfig): Promise<CognitoOperationResult<void>> {
     try {
-      await this.identityClient.send(new SetIdentityPoolRolesCommand({
+      await this.withRetry(() => this.identityClient.send(new SetIdentityPoolRolesCommand({
         IdentityPoolId: config.identityPoolId,
         Roles: {
           authenticated: config.authenticatedRoleArn,
@@ -1391,7 +1409,7 @@ export class CognitoManager {
             },
           ])
         ) : undefined,
-      }));
+      })), 'SetIdentityPoolRoles');
 
       return { success: true };
     } catch (error) {

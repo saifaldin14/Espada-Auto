@@ -12,6 +12,8 @@
  * - Alias records for AWS resources
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   Route53Client,
   CreateHostedZoneCommand,
@@ -227,15 +229,28 @@ export interface Route53OperationResult<T = unknown> {
 export class Route53Manager {
   private client: Route53Client;
   private config: Route53ManagerConfig;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: Route53ManagerConfig = {}) {
+  constructor(config: Route53ManagerConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
+    this.retryOptions = retryOptions;
     
     // Route 53 is a global service, always use us-east-1
     this.client = new Route53Client({
       region: 'us-east-1',
       credentials: config.credentials,
       maxAttempts: config.maxRetries ?? 3,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
     });
   }
 
@@ -248,19 +263,22 @@ export class Route53Manager {
    */
   async createHostedZone(config: CreateHostedZoneConfig): Promise<Route53OperationResult<HostedZone>> {
     try {
-      const response = await this.client.send(new CreateHostedZoneCommand({
-        Name: config.name,
-        CallerReference: `${config.name}-${Date.now()}`,
-        HostedZoneConfig: {
-          Comment: config.comment,
-          PrivateZone: config.privateZone ?? false,
-        },
-        VPC: config.privateZone && config.vpcId ? {
-          VPCId: config.vpcId,
-          VPCRegion: config.vpcRegion as VPCRegion | undefined,
-        } : undefined,
-        DelegationSetId: config.delegationSetId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreateHostedZoneCommand({
+          Name: config.name,
+          CallerReference: `${config.name}-${Date.now()}`,
+          HostedZoneConfig: {
+            Comment: config.comment,
+            PrivateZone: config.privateZone ?? false,
+          },
+          VPC: config.privateZone && config.vpcId ? {
+            VPCId: config.vpcId,
+            VPCRegion: config.vpcRegion as VPCRegion | undefined,
+          } : undefined,
+          DelegationSetId: config.delegationSetId,
+        })),
+        'CreateHostedZone'
+      );
 
       // Add tags if specified
       if (config.tags && Object.keys(config.tags).length > 0 && response.HostedZone?.Id) {
@@ -288,9 +306,9 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new DeleteHostedZoneCommand({
+      await this.withRetry(() => this.client.send(new DeleteHostedZoneCommand({
         Id: zoneId,
-      }));
+      })), 'DeleteHostedZone');
 
       return { success: true };
     } catch (error) {
@@ -309,13 +327,13 @@ export class Route53Manager {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
       const [zoneResponse, tagsResponse, dnssecResponse, loggingResponse] = await Promise.all([
-        this.client.send(new GetHostedZoneCommand({ Id: zoneId })),
-        this.client.send(new ListTagsForResourceCommand({
+        this.withRetry(() => this.client.send(new GetHostedZoneCommand({ Id: zoneId })), 'GetHostedZone'),
+        this.withRetry(() => this.client.send(new ListTagsForResourceCommand({
           ResourceType: 'hostedzone',
           ResourceId: zoneId,
-        })),
-        this.client.send(new GetDNSSECCommand({ HostedZoneId: zoneId })).catch(() => null),
-        this.client.send(new ListQueryLoggingConfigsCommand({ HostedZoneId: zoneId })).catch(() => null),
+        })), 'ListTagsForResource'),
+        this.withRetry(() => this.client.send(new GetDNSSECCommand({ HostedZoneId: zoneId })), 'GetDNSSEC').catch(() => null),
+        this.withRetry(() => this.client.send(new ListQueryLoggingConfigsCommand({ HostedZoneId: zoneId })), 'ListQueryLoggingConfigs').catch(() => null),
       ]);
 
       const zone = zoneResponse.HostedZone!;
@@ -360,10 +378,10 @@ export class Route53Manager {
       let marker: string | undefined;
 
       do {
-        const response = await this.client.send(new ListHostedZonesCommand({
+        const response = await this.withRetry(() => this.client.send(new ListHostedZonesCommand({
           Marker: marker,
           MaxItems: maxItems ? Math.min(maxItems - zones.length, 100) : 100,
-        }));
+        })), 'ListHostedZones');
 
         zones.push(...(response.HostedZones ?? []));
         marker = response.NextMarker;
@@ -388,10 +406,10 @@ export class Route53Manager {
       // Ensure domain ends with a dot
       const normalizedName = domainName.endsWith('.') ? domainName : `${domainName}.`;
       
-      const response = await this.client.send(new ListHostedZonesByNameCommand({
+      const response = await this.withRetry(() => this.client.send(new ListHostedZonesByNameCommand({
         DNSName: normalizedName,
         MaxItems: 1,
-      }));
+      })), 'ListHostedZonesByName');
 
       const zone = response.HostedZones?.find(z => z.Name === normalizedName);
       return { success: true, data: zone };
@@ -410,10 +428,10 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new UpdateHostedZoneCommentCommand({
+      await this.withRetry(() => this.client.send(new UpdateHostedZoneCommentCommand({
         Id: zoneId,
         Comment: comment,
-      }));
+      })), 'UpdateHostedZoneComment');
 
       return { success: true };
     } catch (error) {
@@ -514,7 +532,7 @@ export class Route53Manager {
         };
       }
 
-      const response = await this.client.send(new ChangeResourceRecordSetsCommand({
+      const response = await this.withRetry(() => this.client.send(new ChangeResourceRecordSetsCommand({
         HostedZoneId: zoneId,
         ChangeBatch: {
           Changes: [{
@@ -522,7 +540,7 @@ export class Route53Manager {
             ResourceRecordSet: resourceRecordSet,
           }],
         },
-      }));
+      })), 'ChangeResourceRecordSets');
 
       return {
         success: true,
@@ -579,13 +597,13 @@ export class Route53Manager {
         };
       });
 
-      const response = await this.client.send(new ChangeResourceRecordSetsCommand({
+      const response = await this.withRetry(() => this.client.send(new ChangeResourceRecordSetsCommand({
         HostedZoneId: zoneId,
         ChangeBatch: {
           Comment: comment,
           Changes: changeBatch,
         },
-      }));
+      })), 'ChangeResourceRecordSets');
 
       return {
         success: true,
@@ -617,12 +635,12 @@ export class Route53Manager {
       let startRecordType: RRType | undefined = options?.type as RRType | undefined;
 
       do {
-        const response = await this.client.send(new ListResourceRecordSetsCommand({
+        const response = await this.withRetry(() => this.client.send(new ListResourceRecordSetsCommand({
           HostedZoneId: zoneId,
           StartRecordName: startRecordName,
           StartRecordType: startRecordType,
           MaxItems: options?.maxItems ? Math.min(options.maxItems - records.length, 300) : 300,
-        }));
+        })), 'ListResourceRecordSets');
 
         records.push(...(response.ResourceRecordSets ?? []));
         
@@ -712,10 +730,10 @@ export class Route53Manager {
         };
       }
 
-      const response = await this.client.send(new CreateHealthCheckCommand({
+      const response = await this.withRetry(() => this.client.send(new CreateHealthCheckCommand({
         CallerReference: `healthcheck-${Date.now()}`,
         HealthCheckConfig: healthCheckConfig as any,
-      }));
+      })), 'CreateHealthCheck');
 
       // Add tags if specified
       if (config.tags && Object.keys(config.tags).length > 0 && response.HealthCheck?.Id) {
@@ -741,9 +759,9 @@ export class Route53Manager {
    */
   async deleteHealthCheck(healthCheckId: string): Promise<Route53OperationResult<void>> {
     try {
-      await this.client.send(new DeleteHealthCheckCommand({
+      await this.withRetry(() => this.client.send(new DeleteHealthCheckCommand({
         HealthCheckId: healthCheckId,
-      }));
+      })), 'DeleteHealthCheck');
 
       return { success: true };
     } catch (error) {
@@ -759,9 +777,9 @@ export class Route53Manager {
    */
   async getHealthCheck(healthCheckId: string): Promise<Route53OperationResult<HealthCheck>> {
     try {
-      const response = await this.client.send(new GetHealthCheckCommand({
+      const response = await this.withRetry(() => this.client.send(new GetHealthCheckCommand({
         HealthCheckId: healthCheckId,
-      }));
+      })), 'GetHealthCheck');
 
       return { success: true, data: response.HealthCheck };
     } catch (error) {
@@ -781,10 +799,10 @@ export class Route53Manager {
       let marker: string | undefined;
 
       do {
-        const response = await this.client.send(new ListHealthChecksCommand({
+        const response = await this.withRetry(() => this.client.send(new ListHealthChecksCommand({
           Marker: marker,
           MaxItems: maxItems ? Math.min(maxItems - healthChecks.length, 100) : 100,
-        }));
+        })), 'ListHealthChecks');
 
         healthChecks.push(...(response.HealthChecks ?? []));
         marker = response.NextMarker;
@@ -809,9 +827,9 @@ export class Route53Manager {
     observations: { region: string; ipAddress: string; status: string }[];
   }>> {
     try {
-      const response = await this.client.send(new GetHealthCheckStatusCommand({
+      const response = await this.withRetry(() => this.client.send(new GetHealthCheckStatusCommand({
         HealthCheckId: healthCheckId,
-      }));
+      })), 'GetHealthCheckStatus');
 
       return {
         success: true,
@@ -847,13 +865,13 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new AssociateVPCWithHostedZoneCommand({
+      await this.withRetry(() => this.client.send(new AssociateVPCWithHostedZoneCommand({
         HostedZoneId: zoneId,
         VPC: {
           VPCId: vpcId,
           VPCRegion: vpcRegion as VPCRegion,
         },
-      }));
+      })), 'AssociateVPCWithHostedZone');
 
       return { success: true };
     } catch (error) {
@@ -875,13 +893,13 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new DisassociateVPCFromHostedZoneCommand({
+      await this.withRetry(() => this.client.send(new DisassociateVPCFromHostedZoneCommand({
         HostedZoneId: zoneId,
         VPC: {
           VPCId: vpcId,
           VPCRegion: vpcRegion as VPCRegion,
         },
-      }));
+      })), 'DisassociateVPCFromHostedZone');
 
       return { success: true };
     } catch (error) {
@@ -906,10 +924,10 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      const response = await this.client.send(new CreateQueryLoggingConfigCommand({
+      const response = await this.withRetry(() => this.client.send(new CreateQueryLoggingConfigCommand({
         HostedZoneId: zoneId,
         CloudWatchLogsLogGroupArn: cloudWatchLogsLogGroupArn,
-      }));
+      })), 'CreateQueryLoggingConfig');
 
       return { success: true, data: response.QueryLoggingConfig };
     } catch (error) {
@@ -925,9 +943,9 @@ export class Route53Manager {
    */
   async disableQueryLogging(queryLoggingConfigId: string): Promise<Route53OperationResult<void>> {
     try {
-      await this.client.send(new DeleteQueryLoggingConfigCommand({
+      await this.withRetry(() => this.client.send(new DeleteQueryLoggingConfigCommand({
         Id: queryLoggingConfigId,
-      }));
+      })), 'DeleteQueryLoggingConfig');
 
       return { success: true };
     } catch (error) {
@@ -949,9 +967,9 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new EnableHostedZoneDNSSECCommand({
+      await this.withRetry(() => this.client.send(new EnableHostedZoneDNSSECCommand({
         HostedZoneId: zoneId,
-      }));
+      })), 'EnableHostedZoneDNSSEC');
 
       return { success: true };
     } catch (error) {
@@ -969,9 +987,9 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new DisableHostedZoneDNSSECCommand({
+      await this.withRetry(() => this.client.send(new DisableHostedZoneDNSSECCommand({
         HostedZoneId: zoneId,
-      }));
+      })), 'DisableHostedZoneDNSSEC');
 
       return { success: true };
     } catch (error) {
@@ -993,11 +1011,11 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      await this.client.send(new ChangeTagsForResourceCommand({
+      await this.withRetry(() => this.client.send(new ChangeTagsForResourceCommand({
         ResourceType: 'hostedzone',
         ResourceId: zoneId,
         AddTags: Object.entries({ ...this.config.defaultTags, ...tags }).map(([Key, Value]) => ({ Key, Value })),
-      }));
+      })), 'ChangeTagsForResource');
 
       return { success: true };
     } catch (error) {
@@ -1013,11 +1031,11 @@ export class Route53Manager {
    */
   async tagHealthCheck(healthCheckId: string, tags: Record<string, string>): Promise<Route53OperationResult<void>> {
     try {
-      await this.client.send(new ChangeTagsForResourceCommand({
+      await this.withRetry(() => this.client.send(new ChangeTagsForResourceCommand({
         ResourceType: 'healthcheck',
         ResourceId: healthCheckId,
         AddTags: Object.entries({ ...this.config.defaultTags, ...tags }).map(([Key, Value]) => ({ Key, Value })),
-      }));
+      })), 'ChangeTagsForResource');
 
       return { success: true };
     } catch (error) {
@@ -1041,9 +1059,9 @@ export class Route53Manager {
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        const response = await this.client.send(new GetChangeCommand({
+        const response = await this.withRetry(() => this.client.send(new GetChangeCommand({
           Id: id,
-        }));
+        })), 'GetChange');
 
         if (response.ChangeInfo?.Status === 'INSYNC') {
           return { success: true };
@@ -1084,12 +1102,12 @@ export class Route53Manager {
     try {
       const zoneId = hostedZoneId.replace('/hostedzone/', '');
       
-      const response = await this.client.send(new TestDNSAnswerCommand({
+      const response = await this.withRetry(() => this.client.send(new TestDNSAnswerCommand({
         HostedZoneId: zoneId,
         RecordName: recordName,
         RecordType: recordType as RRType,
         ResolverIP: resolverIP,
-      }));
+      })), 'TestDNSAnswer');
 
       return {
         success: true,
@@ -1119,8 +1137,8 @@ export class Route53Manager {
   }>> {
     try {
       const [zonesResponse, healthChecksResponse] = await Promise.all([
-        this.client.send(new GetHostedZoneCountCommand({})),
-        this.client.send(new GetHealthCheckCountCommand({})),
+        this.withRetry(() => this.client.send(new GetHostedZoneCountCommand({})), 'GetHostedZoneCount'),
+        this.withRetry(() => this.client.send(new GetHealthCheckCountCommand({})), 'GetHealthCheckCount'),
       ]);
 
       return {

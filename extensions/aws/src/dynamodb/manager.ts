@@ -10,6 +10,8 @@
  * - GSI/LSI management
  */
 
+import { withAWSRetry, type AWSRetryOptions } from '../retry.js';
+
 import {
   DynamoDBClient,
   CreateTableCommand,
@@ -292,9 +294,11 @@ export class DynamoDBManager {
   private docClient: DynamoDBDocumentClient;
   private autoScalingClient: ApplicationAutoScalingClient;
   private config: DynamoDBManagerConfig;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(config: DynamoDBManagerConfig = {}) {
+  constructor(config: DynamoDBManagerConfig = {}, retryOptions: AWSRetryOptions = {}) {
     this.config = config;
+    this.retryOptions = retryOptions;
     
     this.client = new DynamoDBClient({
       region: config.region,
@@ -316,6 +320,17 @@ export class DynamoDBManager {
     this.autoScalingClient = new ApplicationAutoScalingClient({
       region: config.region,
       credentials: config.credentials,
+    });
+  }
+
+  // --------------------------------------------------------------------------
+  // Retry Helper
+  // --------------------------------------------------------------------------
+
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, {
+      ...this.retryOptions,
+      label: label || this.retryOptions.label,
     });
   }
 
@@ -417,23 +432,26 @@ export class DynamoDBManager {
         ([Key, Value]) => ({ Key, Value })
       );
 
-      const response = await this.client.send(new CreateTableCommand({
-        TableName: config.tableName,
-        AttributeDefinitions: attributeDefinitions,
-        KeySchema: keySchema,
-        BillingMode: config.billingMode ?? 'PAY_PER_REQUEST',
-        ProvisionedThroughput: config.billingMode === 'PROVISIONED' ? {
-          ReadCapacityUnits: config.provisionedThroughput?.readCapacityUnits ?? 5,
-          WriteCapacityUnits: config.provisionedThroughput?.writeCapacityUnits ?? 5,
-        } : undefined,
-        GlobalSecondaryIndexes: globalSecondaryIndexes?.length ? globalSecondaryIndexes : undefined,
-        LocalSecondaryIndexes: localSecondaryIndexes?.length ? localSecondaryIndexes : undefined,
-        StreamSpecification: streamSpecification,
-        SSESpecification: sseSpecification,
-        Tags: tags.length ? tags : undefined,
-        TableClass: config.tableClass,
-        DeletionProtectionEnabled: config.deletionProtection,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreateTableCommand({
+          TableName: config.tableName,
+          AttributeDefinitions: attributeDefinitions,
+          KeySchema: keySchema,
+          BillingMode: config.billingMode ?? 'PAY_PER_REQUEST',
+          ProvisionedThroughput: config.billingMode === 'PROVISIONED' ? {
+            ReadCapacityUnits: config.provisionedThroughput?.readCapacityUnits ?? 5,
+            WriteCapacityUnits: config.provisionedThroughput?.writeCapacityUnits ?? 5,
+          } : undefined,
+          GlobalSecondaryIndexes: globalSecondaryIndexes?.length ? globalSecondaryIndexes : undefined,
+          LocalSecondaryIndexes: localSecondaryIndexes?.length ? localSecondaryIndexes : undefined,
+          StreamSpecification: streamSpecification,
+          SSESpecification: sseSpecification,
+          Tags: tags.length ? tags : undefined,
+          TableClass: config.tableClass,
+          DeletionProtectionEnabled: config.deletionProtection,
+        })),
+        'CreateTable'
+      );
 
       // Enable TTL if specified
       if (config.ttlAttribute) {
@@ -462,9 +480,12 @@ export class DynamoDBManager {
    */
   async deleteTable(tableName: string): Promise<DynamoDBOperationResult<TableDescription>> {
     try {
-      const response = await this.client.send(new DeleteTableCommand({
-        TableName: tableName,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new DeleteTableCommand({
+          TableName: tableName,
+        })),
+        'DeleteTable'
+      );
 
       return {
         success: true,
@@ -484,9 +505,9 @@ export class DynamoDBManager {
   async describeTable(tableName: string): Promise<DynamoDBOperationResult<TableMetrics>> {
     try {
       const [tableResponse, ttlResponse, pitrResponse] = await Promise.all([
-        this.client.send(new DescribeTableCommand({ TableName: tableName })),
-        this.client.send(new DescribeTimeToLiveCommand({ TableName: tableName })),
-        this.client.send(new DescribeContinuousBackupsCommand({ TableName: tableName })),
+        this.withRetry(() => this.client.send(new DescribeTableCommand({ TableName: tableName })), 'DescribeTable'),
+        this.withRetry(() => this.client.send(new DescribeTimeToLiveCommand({ TableName: tableName })), 'DescribeTimeToLive'),
+        this.withRetry(() => this.client.send(new DescribeContinuousBackupsCommand({ TableName: tableName })), 'DescribeContinuousBackups'),
       ]);
 
       const table = tableResponse.Table!;
@@ -532,10 +553,13 @@ export class DynamoDBManager {
       let exclusiveStartTableName: string | undefined;
 
       do {
-        const response = await this.client.send(new ListTablesCommand({
-          ExclusiveStartTableName: exclusiveStartTableName,
-          Limit: limit ? Math.min(limit - tables.length, 100) : 100,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListTablesCommand({
+            ExclusiveStartTableName: exclusiveStartTableName,
+            Limit: limit ? Math.min(limit - tables.length, 100) : 100,
+          })),
+          'ListTables'
+        );
 
         tables.push(...(response.TableNames ?? []));
         exclusiveStartTableName = response.LastEvaluatedTableName;
@@ -570,18 +594,21 @@ export class DynamoDBManager {
     }
   ): Promise<DynamoDBOperationResult<TableDescription>> {
     try {
-      const response = await this.client.send(new UpdateTableCommand({
-        TableName: tableName,
-        BillingMode: updates.billingMode,
-        ProvisionedThroughput: updates.provisionedThroughput ? {
-          ReadCapacityUnits: updates.provisionedThroughput.readCapacityUnits,
-          WriteCapacityUnits: updates.provisionedThroughput.writeCapacityUnits,
-        } : undefined,
-        GlobalSecondaryIndexUpdates: updates.gsiUpdates,
-        StreamSpecification: updates.streamSpecification,
-        DeletionProtectionEnabled: updates.deletionProtection,
-        TableClass: updates.tableClass,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new UpdateTableCommand({
+          TableName: tableName,
+          BillingMode: updates.billingMode,
+          ProvisionedThroughput: updates.provisionedThroughput ? {
+            ReadCapacityUnits: updates.provisionedThroughput.readCapacityUnits,
+            WriteCapacityUnits: updates.provisionedThroughput.writeCapacityUnits,
+          } : undefined,
+          GlobalSecondaryIndexUpdates: updates.gsiUpdates,
+          StreamSpecification: updates.streamSpecification,
+          DeletionProtectionEnabled: updates.deletionProtection,
+          TableClass: updates.tableClass,
+        })),
+        'UpdateTable'
+      );
 
       return {
         success: true,
@@ -604,13 +631,16 @@ export class DynamoDBManager {
    */
   async enableTTL(tableName: string, attributeName: string): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new UpdateTimeToLiveCommand({
-        TableName: tableName,
-        TimeToLiveSpecification: {
-          Enabled: true,
-          AttributeName: attributeName,
-        },
-      }));
+      await this.withRetry(
+        () => this.client.send(new UpdateTimeToLiveCommand({
+          TableName: tableName,
+          TimeToLiveSpecification: {
+            Enabled: true,
+            AttributeName: attributeName,
+          },
+        })),
+        'UpdateTimeToLive'
+      );
 
       return { success: true };
     } catch (error) {
@@ -626,13 +656,16 @@ export class DynamoDBManager {
    */
   async disableTTL(tableName: string, attributeName: string): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new UpdateTimeToLiveCommand({
-        TableName: tableName,
-        TimeToLiveSpecification: {
-          Enabled: false,
-          AttributeName: attributeName,
-        },
-      }));
+      await this.withRetry(
+        () => this.client.send(new UpdateTimeToLiveCommand({
+          TableName: tableName,
+          TimeToLiveSpecification: {
+            Enabled: false,
+            AttributeName: attributeName,
+          },
+        })),
+        'UpdateTimeToLive'
+      );
 
       return { success: true };
     } catch (error) {
@@ -652,12 +685,15 @@ export class DynamoDBManager {
    */
   async enablePointInTimeRecovery(tableName: string): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new UpdateContinuousBackupsCommand({
-        TableName: tableName,
-        PointInTimeRecoverySpecification: {
-          PointInTimeRecoveryEnabled: true,
-        },
-      }));
+      await this.withRetry(
+        () => this.client.send(new UpdateContinuousBackupsCommand({
+          TableName: tableName,
+          PointInTimeRecoverySpecification: {
+            PointInTimeRecoveryEnabled: true,
+          },
+        })),
+        'UpdateContinuousBackups'
+      );
 
       return { success: true };
     } catch (error) {
@@ -673,10 +709,13 @@ export class DynamoDBManager {
    */
   async createBackup(config: BackupConfig): Promise<DynamoDBOperationResult<{ backupArn: string }>> {
     try {
-      const response = await this.client.send(new CreateBackupCommand({
-        TableName: config.tableName,
-        BackupName: config.backupName,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new CreateBackupCommand({
+          TableName: config.tableName,
+          BackupName: config.backupName,
+        })),
+        'CreateBackup'
+      );
 
       return {
         success: true,
@@ -695,9 +734,12 @@ export class DynamoDBManager {
    */
   async deleteBackup(backupArn: string): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new DeleteBackupCommand({
-        BackupArn: backupArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DeleteBackupCommand({
+          BackupArn: backupArn,
+        })),
+        'DeleteBackup'
+      );
 
       return { success: true };
     } catch (error) {
@@ -717,10 +759,13 @@ export class DynamoDBManager {
       let exclusiveStartBackupArn: string | undefined;
 
       do {
-        const response = await this.client.send(new ListBackupsCommand({
-          TableName: tableName,
-          ExclusiveStartBackupArn: exclusiveStartBackupArn,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListBackupsCommand({
+            TableName: tableName,
+            ExclusiveStartBackupArn: exclusiveStartBackupArn,
+          })),
+          'ListBackups'
+        );
 
         backups.push(...(response.BackupSummaries ?? []));
         exclusiveStartBackupArn = response.LastEvaluatedBackupArn;
@@ -743,31 +788,34 @@ export class DynamoDBManager {
    */
   async restoreFromBackup(config: RestoreConfig): Promise<DynamoDBOperationResult<TableDescription>> {
     try {
-      const response = await this.client.send(new RestoreTableFromBackupCommand({
-        TargetTableName: config.targetTableName,
-        BackupArn: config.backupArn,
-        BillingModeOverride: config.billingModeOverride,
-        GlobalSecondaryIndexOverride: config.globalSecondaryIndexOverride?.map(gsi => ({
-          IndexName: gsi.indexName,
-          KeySchema: [
-            { AttributeName: gsi.partitionKey.name, KeyType: 'HASH' as const },
-            ...(gsi.sortKey ? [{ AttributeName: gsi.sortKey.name, KeyType: 'RANGE' as const }] : []),
-          ],
-          Projection: {
-            ProjectionType: gsi.projectionType,
-            NonKeyAttributes: gsi.projectionType === 'INCLUDE' ? gsi.nonKeyAttributes : undefined,
-          },
-          ProvisionedThroughput: gsi.provisionedThroughput ? {
-            ReadCapacityUnits: gsi.provisionedThroughput.readCapacityUnits,
-            WriteCapacityUnits: gsi.provisionedThroughput.writeCapacityUnits,
+      const response = await this.withRetry(
+        () => this.client.send(new RestoreTableFromBackupCommand({
+          TargetTableName: config.targetTableName,
+          BackupArn: config.backupArn,
+          BillingModeOverride: config.billingModeOverride,
+          GlobalSecondaryIndexOverride: config.globalSecondaryIndexOverride?.map(gsi => ({
+            IndexName: gsi.indexName,
+            KeySchema: [
+              { AttributeName: gsi.partitionKey.name, KeyType: 'HASH' as const },
+              ...(gsi.sortKey ? [{ AttributeName: gsi.sortKey.name, KeyType: 'RANGE' as const }] : []),
+            ],
+            Projection: {
+              ProjectionType: gsi.projectionType,
+              NonKeyAttributes: gsi.projectionType === 'INCLUDE' ? gsi.nonKeyAttributes : undefined,
+            },
+            ProvisionedThroughput: gsi.provisionedThroughput ? {
+              ReadCapacityUnits: gsi.provisionedThroughput.readCapacityUnits,
+              WriteCapacityUnits: gsi.provisionedThroughput.writeCapacityUnits,
+            } : undefined,
+          })),
+          SSESpecificationOverride: config.sseSpecificationOverride ? {
+            Enabled: config.sseSpecificationOverride.enabled,
+            SSEType: config.sseSpecificationOverride.kmsKeyId ? 'KMS' : 'AES256',
+            KMSMasterKeyId: config.sseSpecificationOverride.kmsKeyId,
           } : undefined,
         })),
-        SSESpecificationOverride: config.sseSpecificationOverride ? {
-          Enabled: config.sseSpecificationOverride.enabled,
-          SSEType: config.sseSpecificationOverride.kmsKeyId ? 'KMS' : 'AES256',
-          KMSMasterKeyId: config.sseSpecificationOverride.kmsKeyId,
-        } : undefined,
-      }));
+        'RestoreTableFromBackup'
+      );
 
       return {
         success: true,
@@ -790,12 +838,15 @@ export class DynamoDBManager {
    */
   async createGlobalTable(config: GlobalTableConfig): Promise<DynamoDBOperationResult<GlobalTableDescription>> {
     try {
-      const response = await this.client.send(new CreateGlobalTableCommand({
-        GlobalTableName: config.tableName,
-        ReplicationGroup: config.replicaRegions.map(region => ({
-          RegionName: region,
+      const response = await this.withRetry(
+        () => this.client.send(new CreateGlobalTableCommand({
+          GlobalTableName: config.tableName,
+          ReplicationGroup: config.replicaRegions.map(region => ({
+            RegionName: region,
+          })),
         })),
-      }));
+        'CreateGlobalTable'
+      );
 
       return {
         success: true,
@@ -817,10 +868,13 @@ export class DynamoDBManager {
     replicaUpdates: ReplicaUpdate[]
   ): Promise<DynamoDBOperationResult<GlobalTableDescription>> {
     try {
-      const response = await this.client.send(new UpdateGlobalTableCommand({
-        GlobalTableName: tableName,
-        ReplicaUpdates: replicaUpdates,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new UpdateGlobalTableCommand({
+          GlobalTableName: tableName,
+          ReplicaUpdates: replicaUpdates,
+        })),
+        'UpdateGlobalTable'
+      );
 
       return {
         success: true,
@@ -843,15 +897,21 @@ export class DynamoDBManager {
       let exclusiveStartGlobalTableName: string | undefined;
 
       do {
-        const response = await this.client.send(new ListGlobalTablesCommand({
-          ExclusiveStartGlobalTableName: exclusiveStartGlobalTableName,
-        }));
+        const response = await this.withRetry(
+          () => this.client.send(new ListGlobalTablesCommand({
+            ExclusiveStartGlobalTableName: exclusiveStartGlobalTableName,
+          })),
+          'ListGlobalTables'
+        );
 
         // Fetch details for each global table
         for (const gt of response.GlobalTables ?? []) {
-          const details = await this.client.send(new DescribeGlobalTableCommand({
-            GlobalTableName: gt.GlobalTableName,
-          }));
+          const details = await this.withRetry(
+            () => this.client.send(new DescribeGlobalTableCommand({
+              GlobalTableName: gt.GlobalTableName,
+            })),
+            'DescribeGlobalTable'
+          );
           if (details.GlobalTableDescription) {
             globalTables.push(details.GlobalTableDescription);
           }
@@ -1055,10 +1115,13 @@ export class DynamoDBManager {
     streamArn: string
   ): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new EnableKinesisStreamingDestinationCommand({
-        TableName: tableName,
-        StreamArn: streamArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new EnableKinesisStreamingDestinationCommand({
+          TableName: tableName,
+          StreamArn: streamArn,
+        })),
+        'EnableKinesisStreamingDestination'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1077,10 +1140,13 @@ export class DynamoDBManager {
     streamArn: string
   ): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.client.send(new DisableKinesisStreamingDestinationCommand({
-        TableName: tableName,
-        StreamArn: streamArn,
-      }));
+      await this.withRetry(
+        () => this.client.send(new DisableKinesisStreamingDestinationCommand({
+          TableName: tableName,
+          StreamArn: streamArn,
+        })),
+        'DisableKinesisStreamingDestination'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1101,19 +1167,25 @@ export class DynamoDBManager {
   async exportToS3(config: ExportConfig): Promise<DynamoDBOperationResult<ExportDescription>> {
     try {
       // Get table ARN
-      const tableResponse = await this.client.send(new DescribeTableCommand({
-        TableName: config.tableName,
-      }));
+      const tableResponse = await this.withRetry(
+        () => this.client.send(new DescribeTableCommand({
+          TableName: config.tableName,
+        })),
+        'DescribeTable'
+      );
 
-      const response = await this.client.send(new ExportTableToPointInTimeCommand({
-        TableArn: tableResponse.Table!.TableArn,
-        S3Bucket: config.s3Bucket,
-        S3Prefix: config.s3Prefix,
-        ExportFormat: config.exportFormat ?? 'DYNAMODB_JSON',
-        ExportTime: config.exportTime,
-        S3SseAlgorithm: config.s3SseAlgorithm,
-        S3SseKmsKeyId: config.s3SseKmsKeyId,
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ExportTableToPointInTimeCommand({
+          TableArn: tableResponse.Table!.TableArn,
+          S3Bucket: config.s3Bucket,
+          S3Prefix: config.s3Prefix,
+          ExportFormat: config.exportFormat ?? 'DYNAMODB_JSON',
+          ExportTime: config.exportTime,
+          S3SseAlgorithm: config.s3SseAlgorithm,
+          S3SseKmsKeyId: config.s3SseKmsKeyId,
+        })),
+        'ExportTableToPointInTime'
+      );
 
       return {
         success: true,
@@ -1154,29 +1226,32 @@ export class DynamoDBManager {
         });
       }
 
-      const response = await this.client.send(new ImportTableCommand({
-        S3BucketSource: {
-          S3Bucket: config.s3Bucket,
-          S3KeyPrefix: config.s3KeyPrefix,
-        },
-        InputFormat: config.inputFormat,
-        InputCompressionType: config.inputCompressionType,
-        TableCreationParameters: {
-          TableName: config.tableName,
-          AttributeDefinitions: attributeDefinitions,
-          KeySchema: keySchema,
-          BillingMode: config.tableCreationParameters.billingMode ?? 'PAY_PER_REQUEST',
-          ProvisionedThroughput: config.tableCreationParameters.provisionedThroughput ? {
-            ReadCapacityUnits: config.tableCreationParameters.provisionedThroughput.readCapacityUnits,
-            WriteCapacityUnits: config.tableCreationParameters.provisionedThroughput.writeCapacityUnits,
-          } : undefined,
-          SSESpecification: config.tableCreationParameters.sseSpecification ? {
-            Enabled: config.tableCreationParameters.sseSpecification.enabled,
-            SSEType: config.tableCreationParameters.sseSpecification.kmsKeyId ? 'KMS' : 'AES256',
-            KMSMasterKeyId: config.tableCreationParameters.sseSpecification.kmsKeyId,
-          } : undefined,
-        },
-      }));
+      const response = await this.withRetry(
+        () => this.client.send(new ImportTableCommand({
+          S3BucketSource: {
+            S3Bucket: config.s3Bucket,
+            S3KeyPrefix: config.s3KeyPrefix,
+          },
+          InputFormat: config.inputFormat,
+          InputCompressionType: config.inputCompressionType,
+          TableCreationParameters: {
+            TableName: config.tableName,
+            AttributeDefinitions: attributeDefinitions,
+            KeySchema: keySchema,
+            BillingMode: config.tableCreationParameters.billingMode ?? 'PAY_PER_REQUEST',
+            ProvisionedThroughput: config.tableCreationParameters.provisionedThroughput ? {
+              ReadCapacityUnits: config.tableCreationParameters.provisionedThroughput.readCapacityUnits,
+              WriteCapacityUnits: config.tableCreationParameters.provisionedThroughput.writeCapacityUnits,
+            } : undefined,
+            SSESpecification: config.tableCreationParameters.sseSpecification ? {
+              Enabled: config.tableCreationParameters.sseSpecification.enabled,
+              SSEType: config.tableCreationParameters.sseSpecification.kmsKeyId ? 'KMS' : 'AES256',
+              KMSMasterKeyId: config.tableCreationParameters.sseSpecification.kmsKeyId,
+            } : undefined,
+          },
+        })),
+        'ImportTable'
+      );
 
       return {
         success: true,
@@ -1207,13 +1282,16 @@ export class DynamoDBManager {
     }
   ): Promise<DynamoDBOperationResult<T | undefined>> {
     try {
-      const response = await this.docClient.send(new GetCommand({
-        TableName: tableName,
-        Key: key,
-        ConsistentRead: options?.consistentRead,
-        ProjectionExpression: options?.projectionExpression,
-        ExpressionAttributeNames: options?.expressionAttributeNames,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new GetCommand({
+          TableName: tableName,
+          Key: key,
+          ConsistentRead: options?.consistentRead,
+          ProjectionExpression: options?.projectionExpression,
+          ExpressionAttributeNames: options?.expressionAttributeNames,
+        })),
+        'Get'
+      );
 
       return {
         success: true,
@@ -1247,14 +1325,17 @@ export class DynamoDBManager {
     }
   ): Promise<DynamoDBOperationResult<Record<string, unknown> | undefined>> {
     try {
-      const response = await this.docClient.send(new PutCommand({
-        TableName: tableName,
-        Item: item,
-        ConditionExpression: options?.conditionExpression,
-        ExpressionAttributeNames: options?.expressionAttributeNames,
-        ExpressionAttributeValues: options?.expressionAttributeValues,
-        ReturnValues: options?.returnValues,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new PutCommand({
+          TableName: tableName,
+          Item: item,
+          ConditionExpression: options?.conditionExpression,
+          ExpressionAttributeNames: options?.expressionAttributeNames,
+          ExpressionAttributeValues: options?.expressionAttributeValues,
+          ReturnValues: options?.returnValues,
+        })),
+        'Put'
+      );
 
       return {
         success: true,
@@ -1289,15 +1370,18 @@ export class DynamoDBManager {
     }
   ): Promise<DynamoDBOperationResult<Record<string, unknown> | undefined>> {
     try {
-      const response = await this.docClient.send(new UpdateCommand({
-        TableName: tableName,
-        Key: key,
-        UpdateExpression: options.updateExpression,
-        ExpressionAttributeNames: options.expressionAttributeNames,
-        ExpressionAttributeValues: options.expressionAttributeValues,
-        ConditionExpression: options.conditionExpression,
-        ReturnValues: options.returnValues ?? 'ALL_NEW',
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new UpdateCommand({
+          TableName: tableName,
+          Key: key,
+          UpdateExpression: options.updateExpression,
+          ExpressionAttributeNames: options.expressionAttributeNames,
+          ExpressionAttributeValues: options.expressionAttributeValues,
+          ConditionExpression: options.conditionExpression,
+          ReturnValues: options.returnValues ?? 'ALL_NEW',
+        })),
+        'Update'
+      );
 
       return {
         success: true,
@@ -1331,14 +1415,17 @@ export class DynamoDBManager {
     }
   ): Promise<DynamoDBOperationResult<Record<string, unknown> | undefined>> {
     try {
-      const response = await this.docClient.send(new DeleteCommand({
-        TableName: tableName,
-        Key: key,
-        ConditionExpression: options?.conditionExpression,
-        ExpressionAttributeNames: options?.expressionAttributeNames,
-        ExpressionAttributeValues: options?.expressionAttributeValues,
-        ReturnValues: options?.returnValues,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new DeleteCommand({
+          TableName: tableName,
+          Key: key,
+          ConditionExpression: options?.conditionExpression,
+          ExpressionAttributeNames: options?.expressionAttributeNames,
+          ExpressionAttributeValues: options?.expressionAttributeValues,
+          ReturnValues: options?.returnValues,
+        })),
+        'Delete'
+      );
 
       return {
         success: true,
@@ -1366,19 +1453,22 @@ export class DynamoDBManager {
     options: QueryOptions
   ): Promise<DynamoDBOperationResult<{ items: T[]; lastEvaluatedKey?: Record<string, unknown>; count: number }>> {
     try {
-      const response = await this.docClient.send(new QueryCommand({
-        TableName: tableName,
-        IndexName: options.indexName,
-        KeyConditionExpression: options.keyConditionExpression,
-        ExpressionAttributeNames: options.expressionAttributeNames,
-        ExpressionAttributeValues: options.expressionAttributeValues,
-        FilterExpression: options.filterExpression,
-        ProjectionExpression: options.projectionExpression,
-        ScanIndexForward: options.scanIndexForward,
-        Limit: options.limit,
-        ConsistentRead: options.consistentRead,
-        ExclusiveStartKey: options.exclusiveStartKey,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new QueryCommand({
+          TableName: tableName,
+          IndexName: options.indexName,
+          KeyConditionExpression: options.keyConditionExpression,
+          ExpressionAttributeNames: options.expressionAttributeNames,
+          ExpressionAttributeValues: options.expressionAttributeValues,
+          FilterExpression: options.filterExpression,
+          ProjectionExpression: options.projectionExpression,
+          ScanIndexForward: options.scanIndexForward,
+          Limit: options.limit,
+          ConsistentRead: options.consistentRead,
+          ExclusiveStartKey: options.exclusiveStartKey,
+        })),
+        'Query'
+      );
 
       return {
         success: true,
@@ -1410,19 +1500,22 @@ export class DynamoDBManager {
     options?: ScanOptions
   ): Promise<DynamoDBOperationResult<{ items: T[]; lastEvaluatedKey?: Record<string, unknown>; count: number }>> {
     try {
-      const response = await this.docClient.send(new ScanCommand({
-        TableName: tableName,
-        IndexName: options?.indexName,
-        FilterExpression: options?.filterExpression,
-        ExpressionAttributeNames: options?.expressionAttributeNames,
-        ExpressionAttributeValues: options?.expressionAttributeValues,
-        ProjectionExpression: options?.projectionExpression,
-        Limit: options?.limit,
-        ConsistentRead: options?.consistentRead,
-        ExclusiveStartKey: options?.exclusiveStartKey,
-        Segment: options?.segment,
-        TotalSegments: options?.totalSegments,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new ScanCommand({
+          TableName: tableName,
+          IndexName: options?.indexName,
+          FilterExpression: options?.filterExpression,
+          ExpressionAttributeNames: options?.expressionAttributeNames,
+          ExpressionAttributeValues: options?.expressionAttributeValues,
+          ProjectionExpression: options?.projectionExpression,
+          Limit: options?.limit,
+          ConsistentRead: options?.consistentRead,
+          ExclusiveStartKey: options?.exclusiveStartKey,
+          Segment: options?.segment,
+          TotalSegments: options?.totalSegments,
+        })),
+        'Scan'
+      );
 
       return {
         success: true,
@@ -1459,9 +1552,12 @@ export class DynamoDBManager {
         requestItems[request.tableName] = { Keys: request.keys };
       }
 
-      const response = await this.docClient.send(new BatchGetCommand({
-        RequestItems: requestItems,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new BatchGetCommand({
+          RequestItems: requestItems,
+        })),
+        'BatchGet'
+      );
 
       return {
         success: true,
@@ -1500,9 +1596,12 @@ export class DynamoDBManager {
         });
       }
 
-      const response = await this.docClient.send(new BatchWriteCommand({
-        RequestItems: requestItems,
-      }));
+      const response = await this.withRetry(
+        () => this.docClient.send(new BatchWriteCommand({
+          RequestItems: requestItems,
+        })),
+        'BatchWrite'
+      );
 
       return {
         success: true,
@@ -1525,15 +1624,18 @@ export class DynamoDBManager {
     requests: { tableName: string; key: Record<string, unknown>; projectionExpression?: string }[]
   ): Promise<DynamoDBOperationResult<(T | undefined)[]>> {
     try {
-      const response = await this.docClient.send(new TransactGetCommand({
-        TransactItems: requests.map(req => ({
-          Get: {
-            TableName: req.tableName,
-            Key: req.key,
-            ProjectionExpression: req.projectionExpression,
-          },
+      const response = await this.withRetry(
+        () => this.docClient.send(new TransactGetCommand({
+          TransactItems: requests.map(req => ({
+            Get: {
+              TableName: req.tableName,
+              Key: req.key,
+              ProjectionExpression: req.projectionExpression,
+            },
+          })),
         })),
-      }));
+        'TransactGet'
+      );
 
       return {
         success: true,
@@ -1589,54 +1691,57 @@ export class DynamoDBManager {
     clientRequestToken?: string
   ): Promise<DynamoDBOperationResult<void>> {
     try {
-      await this.docClient.send(new TransactWriteCommand({
-        TransactItems: operations.map(op => {
-          switch (op.type) {
-            case 'put':
-              return {
-                Put: {
-                  TableName: op.tableName,
-                  Item: op.item,
-                  ConditionExpression: op.conditionExpression,
-                  ExpressionAttributeNames: op.expressionAttributeNames,
-                  ExpressionAttributeValues: op.expressionAttributeValues,
-                },
-              };
-            case 'update':
-              return {
-                Update: {
-                  TableName: op.tableName,
-                  Key: op.key,
-                  UpdateExpression: op.updateExpression,
-                  ConditionExpression: op.conditionExpression,
-                  ExpressionAttributeNames: op.expressionAttributeNames,
-                  ExpressionAttributeValues: op.expressionAttributeValues,
-                },
-              };
-            case 'delete':
-              return {
-                Delete: {
-                  TableName: op.tableName,
-                  Key: op.key,
-                  ConditionExpression: op.conditionExpression,
-                  ExpressionAttributeNames: op.expressionAttributeNames,
-                  ExpressionAttributeValues: op.expressionAttributeValues,
-                },
-              };
-            case 'conditionCheck':
-              return {
-                ConditionCheck: {
-                  TableName: op.tableName,
-                  Key: op.key,
-                  ConditionExpression: op.conditionExpression,
-                  ExpressionAttributeNames: op.expressionAttributeNames,
-                  ExpressionAttributeValues: op.expressionAttributeValues,
-                },
-              };
-          }
-        }),
-        ClientRequestToken: clientRequestToken,
-      }));
+      await this.withRetry(
+        () => this.docClient.send(new TransactWriteCommand({
+          TransactItems: operations.map(op => {
+            switch (op.type) {
+              case 'put':
+                return {
+                  Put: {
+                    TableName: op.tableName,
+                    Item: op.item,
+                    ConditionExpression: op.conditionExpression,
+                    ExpressionAttributeNames: op.expressionAttributeNames,
+                    ExpressionAttributeValues: op.expressionAttributeValues,
+                  },
+                };
+              case 'update':
+                return {
+                  Update: {
+                    TableName: op.tableName,
+                    Key: op.key,
+                    UpdateExpression: op.updateExpression,
+                    ConditionExpression: op.conditionExpression,
+                    ExpressionAttributeNames: op.expressionAttributeNames,
+                    ExpressionAttributeValues: op.expressionAttributeValues,
+                  },
+                };
+              case 'delete':
+                return {
+                  Delete: {
+                    TableName: op.tableName,
+                    Key: op.key,
+                    ConditionExpression: op.conditionExpression,
+                    ExpressionAttributeNames: op.expressionAttributeNames,
+                    ExpressionAttributeValues: op.expressionAttributeValues,
+                  },
+                };
+              case 'conditionCheck':
+                return {
+                  ConditionCheck: {
+                    TableName: op.tableName,
+                    Key: op.key,
+                    ConditionExpression: op.conditionExpression,
+                    ExpressionAttributeNames: op.expressionAttributeNames,
+                    ExpressionAttributeValues: op.expressionAttributeValues,
+                  },
+                };
+            }
+          }),
+          ClientRequestToken: clientRequestToken,
+        })),
+        'TransactWrite'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1656,14 +1761,20 @@ export class DynamoDBManager {
    */
   async tagTable(tableName: string, tags: Record<string, string>): Promise<DynamoDBOperationResult<void>> {
     try {
-      const tableResponse = await this.client.send(new DescribeTableCommand({
-        TableName: tableName,
-      }));
+      const tableResponse = await this.withRetry(
+        () => this.client.send(new DescribeTableCommand({
+          TableName: tableName,
+        })),
+        'DescribeTable'
+      );
 
-      await this.client.send(new TagResourceCommand({
-        ResourceArn: tableResponse.Table!.TableArn,
-        Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
-      }));
+      await this.withRetry(
+        () => this.client.send(new TagResourceCommand({
+          ResourceArn: tableResponse.Table!.TableArn,
+          Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
+        })),
+        'TagResource'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1679,14 +1790,20 @@ export class DynamoDBManager {
    */
   async untagTable(tableName: string, tagKeys: string[]): Promise<DynamoDBOperationResult<void>> {
     try {
-      const tableResponse = await this.client.send(new DescribeTableCommand({
-        TableName: tableName,
-      }));
+      const tableResponse = await this.withRetry(
+        () => this.client.send(new DescribeTableCommand({
+          TableName: tableName,
+        })),
+        'DescribeTable'
+      );
 
-      await this.client.send(new UntagResourceCommand({
-        ResourceArn: tableResponse.Table!.TableArn,
-        TagKeys: tagKeys,
-      }));
+      await this.withRetry(
+        () => this.client.send(new UntagResourceCommand({
+          ResourceArn: tableResponse.Table!.TableArn,
+          TagKeys: tagKeys,
+        })),
+        'UntagResource'
+      );
 
       return { success: true };
     } catch (error) {
@@ -1702,13 +1819,19 @@ export class DynamoDBManager {
    */
   async listTableTags(tableName: string): Promise<DynamoDBOperationResult<Record<string, string>>> {
     try {
-      const tableResponse = await this.client.send(new DescribeTableCommand({
-        TableName: tableName,
-      }));
+      const tableResponse = await this.withRetry(
+        () => this.client.send(new DescribeTableCommand({
+          TableName: tableName,
+        })),
+        'DescribeTable'
+      );
 
-      const tagsResponse = await this.client.send(new ListTagsOfResourceCommand({
-        ResourceArn: tableResponse.Table!.TableArn,
-      }));
+      const tagsResponse = await this.withRetry(
+        () => this.client.send(new ListTagsOfResourceCommand({
+          ResourceArn: tableResponse.Table!.TableArn,
+        })),
+        'ListTagsOfResource'
+      );
 
       const tags: Record<string, string> = {};
       for (const tag of tagsResponse.Tags ?? []) {

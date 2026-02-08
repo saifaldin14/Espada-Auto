@@ -20,9 +20,27 @@ interface CliContext {
   };
 }
 
-// Plugin API type for Espada integration
+// Plugin API type - using any for now due to tsconfig rootDir restrictions
+// In production, this would be properly typed via espada/plugin-sdk
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type EspadaPluginApi = any;
+
+// AWS-specific utilities (self-contained to avoid tsconfig issues)
+import {
+  formatErrorMessage,
+} from "./src/retry.js";
+import {
+  enableAWSDiagnostics,
+} from "./src/diagnostics.js";
+
+// Simple theme helper for CLI output (self-contained)
+const theme = {
+  error: (s: string) => `\x1b[31m${s}\x1b[0m`,
+  success: (s: string) => `\x1b[32m${s}\x1b[0m`,
+  warn: (s: string) => `\x1b[33m${s}\x1b[0m`,
+  info: (s: string) => `\x1b[34m${s}\x1b[0m`,
+  muted: (s: string) => `\x1b[90m${s}\x1b[0m`,
+};
 
 import {
   createCredentialsManager,
@@ -43,7 +61,6 @@ import {
   type AWSCLIWrapper,
   type IaCManager,
   type CostManager,
-  type InfrastructureTemplate,
   type AWSResourceType,
   TemplateVariable,
   TemplateOutput,
@@ -83,14 +100,10 @@ import {
 import {
   createBackupManager,
   type BackupManager,
-  BACKUP_PLAN_TEMPLATES,
 } from "./src/backup/index.js";
 
 import {
   createConversationalManager,
-  WIZARD_TEMPLATES,
-  INSIGHT_CHECKS,
-  QUERY_PATTERNS,
   type AWSConversationalManager,
 } from "./src/conversational/index.js";
 
@@ -109,6 +122,7 @@ import type {
   PolicyType,
   SCPCategory,
 } from "./src/organization/types.js";
+import { InfrastructureTemplate } from "./src/iac/types.js";
 
 // Global instances
 let credentialsManager: AWSCredentialsManager | null = null;
@@ -162,6 +176,43 @@ const configSchema = {
         items: { type: "string" },
         description: "Credential sources in order of preference",
       },
+      retry: {
+        type: "object",
+        description: "Retry configuration for AWS API calls",
+        properties: {
+          attempts: {
+            type: "number",
+            description: "Maximum number of retry attempts",
+            default: 3,
+          },
+          minDelayMs: {
+            type: "number",
+            description: "Minimum delay between retries in milliseconds",
+            default: 100,
+          },
+          maxDelayMs: {
+            type: "number",
+            description: "Maximum delay between retries in milliseconds",
+            default: 30000,
+          },
+        },
+      },
+      diagnostics: {
+        type: "object",
+        description: "Diagnostic and observability settings",
+        properties: {
+          enabled: {
+            type: "boolean",
+            description: "Enable AWS API call tracing",
+            default: false,
+          },
+          verbose: {
+            type: "boolean",
+            description: "Log retry attempts and detailed API info",
+            default: false,
+          },
+        },
+      },
       tagConfig: {
         type: "object",
         description: "Standard tag configuration",
@@ -194,27 +245,67 @@ const configSchema = {
   uiHints: {
     defaultRegion: {
       label: "Default Region",
-      help: "The default AWS region to use for operations",
+      help: "The default AWS region to use for operations (e.g., us-east-1, eu-west-1)",
+      placeholder: "us-east-1",
       advanced: false,
     },
     defaultProfile: {
       label: "Default Profile",
-      help: "The default AWS profile from ~/.aws/credentials",
+      help: "The default AWS profile from ~/.aws/credentials to use for authentication",
+      placeholder: "default",
       advanced: false,
     },
     credentialSources: {
       label: "Credential Sources",
-      help: "Order of credential sources to try (profile, environment, sso, instance)",
+      help: "Order of credential sources to try: profile, environment, sso, instance, container",
+      placeholder: "profile, environment, sso",
+      advanced: true,
+    },
+    "retry.attempts": {
+      label: "Retry Attempts",
+      help: "Maximum number of times to retry failed AWS API calls",
+      advanced: true,
+    },
+    "retry.minDelayMs": {
+      label: "Minimum Retry Delay",
+      help: "Minimum delay in milliseconds between retry attempts",
+      advanced: true,
+    },
+    "retry.maxDelayMs": {
+      label: "Maximum Retry Delay",
+      help: "Maximum delay in milliseconds between retry attempts",
+      advanced: true,
+    },
+    "diagnostics.enabled": {
+      label: "Enable Diagnostics",
+      help: "Enable AWS API call tracing for observability (works with diagnostics-otel extension)",
+      advanced: true,
+    },
+    "diagnostics.verbose": {
+      label: "Verbose Logging",
+      help: "Log detailed information about retries and API calls",
       advanced: true,
     },
     tagConfig: {
       label: "Tag Configuration",
-      help: "Configure required and optional tags for resources",
+      help: "Configure required and optional tags for all AWS resources",
+      advanced: true,
+    },
+    "tagConfig.requiredTags": {
+      label: "Required Tags",
+      help: "Tag keys that must be present on all created resources",
+      placeholder: "Environment, Project, Owner",
+      advanced: true,
+    },
+    "tagConfig.optionalTags": {
+      label: "Optional Tags",
+      help: "Tag keys that are recommended but not required",
+      placeholder: "CostCenter, Team",
       advanced: true,
     },
     defaultTags: {
       label: "Default Tags",
-      help: "Tags to apply to all created resources",
+      help: "Tags to automatically apply to all created resources",
       advanced: true,
     },
   },
@@ -224,6 +315,15 @@ interface AWSPluginConfig {
   defaultRegion?: string;
   defaultProfile?: string;
   credentialSources?: string[];
+  retry?: {
+    attempts?: number;
+    minDelayMs?: number;
+    maxDelayMs?: number;
+  };
+  diagnostics?: {
+    enabled?: boolean;
+    verbose?: boolean;
+  };
   tagConfig?: {
     requiredTags?: string[];
     optionalTags?: string[];
@@ -234,6 +334,15 @@ interface AWSPluginConfig {
 function getDefaultConfig(): AWSPluginConfig {
   return {
     defaultRegion: "us-east-1",
+    retry: {
+      attempts: 3,
+      minDelayMs: 100,
+      maxDelayMs: 30000,
+    },
+    diagnostics: {
+      enabled: false,
+      verbose: false,
+    },
   };
 }
 
@@ -248,10 +357,17 @@ const plugin = {
   configSchema,
 
   async register(api: EspadaPluginApi) {
-    console.log("[AWS] Registering AWS extension");
+    // Use the plugin's logger for consistent output
+    api.logger.info("Registering AWS extension");
 
     // Get plugin configuration
     const config = (api.pluginConfig as AWSPluginConfig) ?? getDefaultConfig();
+
+    // Configure diagnostics based on config
+    if (config.diagnostics?.enabled) {
+      enableAWSDiagnostics();
+      api.logger.info("AWS diagnostics enabled");
+    }
 
     // Initialize credentials manager
     credentialsManager = createCredentialsManager({
@@ -375,7 +491,7 @@ const plugin = {
                 console.log();
               }
             } catch (error) {
-              console.error("Failed to list instances:", error);
+              console.error(theme.error(`Failed to list instances: ${formatErrorMessage(error)}`));
             }
           });
 
@@ -394,12 +510,12 @@ const plugin = {
             try {
               const result = await ec2Manager.startInstances(instanceIds, { region: options.region });
               if (result.success) {
-                console.log(`Started instances: ${result.instanceIds.join(", ")}`);
+                console.log(theme.success(`Started instances: ${result.instanceIds.join(", ")}`));
               } else {
-                console.error(`Failed to start instances: ${result.error}`);
+                console.error(theme.error(`Failed to start instances: ${result.error}`));
               }
             } catch (error) {
-              console.error("Failed to start instances:", error);
+              console.error(theme.error(`Failed to start instances: ${formatErrorMessage(error)}`));
             }
           });
 
@@ -412,7 +528,7 @@ const plugin = {
             const options = (args[args.length - 1] ?? {}) as { region?: string; force?: boolean };
             const instanceIds = args.slice(0, -1).flat() as string[];
             if (!ec2Manager) {
-              console.error("EC2 manager not initialized");
+              console.error(theme.error("EC2 manager not initialized"));
               return;
             }
 
@@ -422,12 +538,12 @@ const plugin = {
                 force: options.force,
               });
               if (result.success) {
-                console.log(`Stopped instances: ${result.instanceIds.join(", ")}`);
+                console.log(theme.success(`Stopped instances: ${result.instanceIds.join(", ")}`));
               } else {
-                console.error(`Failed to stop instances: ${result.error}`);
+                console.error(theme.error(`Failed to stop instances: ${result.error}`));
               }
             } catch (error) {
-              console.error("Failed to stop instances:", error);
+              console.error(theme.error(`Failed to stop instances: ${formatErrorMessage(error)}`));
             }
           });
 
@@ -439,19 +555,19 @@ const plugin = {
             const options = (args[args.length - 1] ?? {}) as { region?: string };
             const instanceIds = args.slice(0, -1).flat() as string[];
             if (!ec2Manager) {
-              console.error("EC2 manager not initialized");
+              console.error(theme.error("EC2 manager not initialized"));
               return;
             }
 
             try {
               const result = await ec2Manager.terminateInstances(instanceIds, { region: options.region });
               if (result.success) {
-                console.log(`Terminated instances: ${result.instanceIds.join(", ")}`);
+                console.log(theme.success(`Terminated instances: ${result.instanceIds.join(", ")}`));
               } else {
-                console.error(`Failed to terminate instances: ${result.error}`);
+                console.error(theme.error(`Failed to terminate instances: ${result.error}`));
               }
             } catch (error) {
-              console.error("Failed to terminate instances:", error);
+              console.error(theme.error(`Failed to terminate instances: ${formatErrorMessage(error)}`));
             }
           });
 

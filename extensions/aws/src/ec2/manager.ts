@@ -117,6 +117,7 @@ import {
 } from "@aws-sdk/client-cloudwatch";
 
 import type { AWSCredentialsManager } from "../credentials/manager.js";
+import { withAWSRetry, type AWSRetryOptions } from "../retry.js";
 import type {
   EC2Instance,
   EC2InstanceState,
@@ -157,15 +158,24 @@ const DEFAULT_METRIC_STATISTICS = ["Average", "Maximum", "Minimum"];
 export class AWSEC2Manager {
   private credentialsManager: AWSCredentialsManager;
   private defaultRegion: string;
+  private retryOptions: AWSRetryOptions;
 
-  constructor(credentialsManager: AWSCredentialsManager, defaultRegion?: string) {
+  constructor(credentialsManager: AWSCredentialsManager, defaultRegion?: string, retryOptions?: AWSRetryOptions) {
     this.credentialsManager = credentialsManager;
     this.defaultRegion = defaultRegion ?? "us-east-1";
+    this.retryOptions = retryOptions ?? {};
   }
 
   // ===========================================================================
   // Private Helpers
   // ===========================================================================
+
+  /**
+   * Execute an AWS API call with retry logic for transient failures
+   */
+  private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
+    return withAWSRetry(fn, { ...this.retryOptions, label });
+  }
 
   private async getEC2Client(region?: string): Promise<EC2Client> {
     const credentials = await this.credentialsManager.getCredentials();
@@ -447,7 +457,10 @@ export class AWSEC2Manager {
         NextToken: nextToken,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        "DescribeInstances"
+      );
       
       for (const reservation of response.Reservations ?? []) {
         for (const instance of reservation.Instances ?? []) {
@@ -488,7 +501,10 @@ export class AWSEC2Manager {
         DryRun: options.dryRun,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        "StartInstances"
+      );
       
       const stateChanges = response.StartingInstances?.map((change) => ({
         instanceId: change.InstanceId ?? "",
@@ -534,7 +550,10 @@ export class AWSEC2Manager {
         Hibernate: options.hibernate,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(
+        () => client.send(command),
+        "StopInstances"
+      );
       
       const stateChanges = response.StoppingInstances?.map((change) => ({
         instanceId: change.InstanceId ?? "",
@@ -578,7 +597,7 @@ export class AWSEC2Manager {
         DryRun: options.dryRun,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'RebootInstances');
 
       return {
         success: true,
@@ -610,7 +629,7 @@ export class AWSEC2Manager {
         DryRun: options.dryRun,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'TerminateInstances');
       
       const stateChanges = response.TerminatingInstances?.map((change) => ({
         instanceId: change.InstanceId ?? "",
@@ -684,7 +703,7 @@ export class AWSEC2Manager {
         IncludeAllInstances: true,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeInstanceStatus');
       
       return response.InstanceStatuses?.map((status) => ({
         instanceId: status.InstanceId ?? "",
@@ -777,7 +796,7 @@ export class AWSEC2Manager {
         PrivateIpAddress: options.privateIpAddress,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'RunInstances');
       
       const instanceIds = response.Instances?.map((i) => i.InstanceId ?? "") ?? [];
 
@@ -830,7 +849,7 @@ export class AWSEC2Manager {
         SourceDestCheck: attribute.sourceDestCheck !== undefined ? { Value: attribute.sourceDestCheck } : undefined,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'ModifyInstanceAttribute');
 
       return {
         success: true,
@@ -872,7 +891,7 @@ export class AWSEC2Manager {
         NextToken: nextToken,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeLaunchTemplates');
       
       for (const lt of response.LaunchTemplates ?? []) {
         templates.push(this.mapLaunchTemplate(lt, options.region ?? this.defaultRegion));
@@ -944,7 +963,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateLaunchTemplate');
       
       if (response.LaunchTemplate) {
         return {
@@ -977,9 +996,9 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new DeleteLaunchTemplateCommand({
+      await this.withRetry(() => client.send(new DeleteLaunchTemplateCommand({
         LaunchTemplateId: launchTemplateId,
-      }));
+      })), 'DeleteLaunchTemplate');
 
       return { success: true };
     } catch (error) {
@@ -1011,7 +1030,7 @@ export class AWSEC2Manager {
         NextToken: nextToken,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeLaunchTemplateVersions');
       versions.push(...(response.LaunchTemplateVersions ?? []));
       nextToken = response.NextToken;
     } while (nextToken);
@@ -1054,7 +1073,7 @@ export class AWSEC2Manager {
         NextToken: nextToken,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeSecurityGroups');
       
       for (const sg of response.SecurityGroups ?? []) {
         securityGroups.push(this.mapSecurityGroup(sg, options.region ?? this.defaultRegion));
@@ -1103,7 +1122,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(createCommand);
+      const response = await this.withRetry(() => client.send(createCommand), 'CreateSecurityGroup');
       const groupId = response.GroupId;
 
       if (!groupId) {
@@ -1150,9 +1169,9 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new DeleteSecurityGroupCommand({
+      await this.withRetry(() => client.send(new DeleteSecurityGroupCommand({
         GroupId: groupId,
-      }));
+      })), 'DeleteSecurityGroup');
 
       return { success: true };
     } catch (error) {
@@ -1186,10 +1205,10 @@ export class AWSEC2Manager {
         PrefixListIds: rule.prefixListId ? [{ PrefixListId: rule.prefixListId, Description: rule.description }] : undefined,
       }));
 
-      await client.send(new AuthorizeSecurityGroupIngressCommand({
+      await this.withRetry(() => client.send(new AuthorizeSecurityGroupIngressCommand({
         GroupId: groupId,
         IpPermissions: ipPermissions,
-      }));
+      })), 'AuthorizeSecurityGroupIngress');
 
       return { success: true };
     } catch (error) {
@@ -1223,10 +1242,10 @@ export class AWSEC2Manager {
         PrefixListIds: rule.prefixListId ? [{ PrefixListId: rule.prefixListId, Description: rule.description }] : undefined,
       }));
 
-      await client.send(new AuthorizeSecurityGroupEgressCommand({
+      await this.withRetry(() => client.send(new AuthorizeSecurityGroupEgressCommand({
         GroupId: groupId,
         IpPermissions: ipPermissions,
-      }));
+      })), 'AuthorizeSecurityGroupEgress');
 
       return { success: true };
     } catch (error) {
@@ -1260,10 +1279,10 @@ export class AWSEC2Manager {
         PrefixListIds: rule.prefixListId ? [{ PrefixListId: rule.prefixListId }] : undefined,
       }));
 
-      await client.send(new RevokeSecurityGroupIngressCommand({
+      await this.withRetry(() => client.send(new RevokeSecurityGroupIngressCommand({
         GroupId: groupId,
         IpPermissions: ipPermissions,
-      }));
+      })), 'RevokeSecurityGroupIngress');
 
       return { success: true };
     } catch (error) {
@@ -1297,10 +1316,10 @@ export class AWSEC2Manager {
         PrefixListIds: rule.prefixListId ? [{ PrefixListId: rule.prefixListId }] : undefined,
       }));
 
-      await client.send(new RevokeSecurityGroupEgressCommand({
+      await this.withRetry(() => client.send(new RevokeSecurityGroupEgressCommand({
         GroupId: groupId,
         IpPermissions: ipPermissions,
-      }));
+      })), 'RevokeSecurityGroupEgress');
 
       return { success: true };
     } catch (error) {
@@ -1333,7 +1352,7 @@ export class AWSEC2Manager {
         KeyPairIds: options.keyPairIds,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeKeyPairs');
       
       return response.KeyPairs?.map((kp) => this.mapKeyPair(kp)) ?? [];
     } finally {
@@ -1367,7 +1386,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateKeyPair');
       
       return {
         success: true,
@@ -1419,7 +1438,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'ImportKeyPair');
       
       return {
         success: true,
@@ -1450,9 +1469,9 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new DeleteKeyPairCommand({
+      await this.withRetry(() => client.send(new DeleteKeyPairCommand({
         KeyName: keyName,
-      }));
+      })), 'DeleteKeyPair');
 
       return { success: true };
     } catch (error) {
@@ -1483,7 +1502,7 @@ export class AWSEC2Manager {
         InstanceIds: instanceIds,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'MonitorInstances');
 
       return {
         success: true,
@@ -1514,7 +1533,7 @@ export class AWSEC2Manager {
         InstanceIds: instanceIds,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'UnmonitorInstances');
 
       return {
         success: true,
@@ -1587,7 +1606,7 @@ export class AWSEC2Manager {
           Statistics: statistics as Statistic[],
         });
 
-        const response = await client.send(command);
+        const response = await this.withRetry(() => client.send(command), 'GetMetricStatistics');
         metrics[metric.key] = response.Datapoints?.map((dp) => ({
           timestamp: dp.Timestamp ?? new Date(),
           average: dp.Average,
@@ -1653,7 +1672,7 @@ export class AWSEC2Manager {
         MaxResults: options.maxResults ?? DEFAULT_MAX_RESULTS,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeImages');
       
       return response.Images?.map((img) => this.mapImage(img, options.region ?? this.defaultRegion)) ?? [];
     } finally {
@@ -1720,7 +1739,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateImage');
       
       return {
         success: true,
@@ -1746,9 +1765,9 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new DeregisterImageCommand({
+      await this.withRetry(() => client.send(new DeregisterImageCommand({
         ImageId: imageId,
-      }));
+      })), 'DeregisterImage');
 
       return { success: true };
     } catch (error) {
@@ -1804,7 +1823,7 @@ export class AWSEC2Manager {
         ] : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CopyImage');
       
       return {
         success: true,
@@ -1852,7 +1871,7 @@ export class AWSEC2Manager {
         Description: attribute.description ? { Value: attribute.description } : undefined,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'ModifyImageAttribute');
 
       return { success: true };
     } catch (error) {
@@ -1888,7 +1907,7 @@ export class AWSEC2Manager {
         NextToken: nextToken,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeAutoScalingGroups');
       
       for (const asg of response.AutoScalingGroups ?? []) {
         groups.push({
@@ -2004,7 +2023,7 @@ export class AWSEC2Manager {
         Tags: tags.length > 0 ? tags : undefined,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'CreateAutoScalingGroup');
 
       return { success: true };
     } catch (error) {
@@ -2051,7 +2070,7 @@ export class AWSEC2Manager {
         CapacityRebalance: updates.capacityRebalance,
       });
 
-      await client.send(command);
+      await this.withRetry(() => client.send(command), 'UpdateAutoScalingGroup');
 
       return { success: true };
     } catch (error) {
@@ -2074,10 +2093,10 @@ export class AWSEC2Manager {
     const client = await this.getAutoScalingClient(options.region);
 
     try {
-      await client.send(new DeleteAutoScalingGroupCommand({
+      await this.withRetry(() => client.send(new DeleteAutoScalingGroupCommand({
         AutoScalingGroupName: name,
         ForceDelete: options.forceDelete,
-      }));
+      })), 'DeleteAutoScalingGroup');
 
       return { success: true };
     } catch (error) {
@@ -2101,11 +2120,11 @@ export class AWSEC2Manager {
     const client = await this.getAutoScalingClient(options.region);
 
     try {
-      await client.send(new SetDesiredCapacityCommand({
+      await this.withRetry(() => client.send(new SetDesiredCapacityCommand({
         AutoScalingGroupName: name,
         DesiredCapacity: desiredCapacity,
         HonorCooldown: options.honorCooldown,
-      }));
+      })), 'SetDesiredCapacity');
 
       return { success: true };
     } catch (error) {
@@ -2144,7 +2163,7 @@ export class AWSEC2Manager {
         MaxRecords: options.maxRecords ?? DEFAULT_MAX_RESULTS,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeScalingActivities');
       
       return response.Activities?.map((activity) => ({
         activityId: activity.ActivityId ?? "",
@@ -2174,10 +2193,10 @@ export class AWSEC2Manager {
     const client = await this.getAutoScalingClient(region);
 
     try {
-      await client.send(new AttachLoadBalancerTargetGroupsCommand({
+      await this.withRetry(() => client.send(new AttachLoadBalancerTargetGroupsCommand({
         AutoScalingGroupName: autoScalingGroupName,
         TargetGroupARNs: targetGroupARNs,
-      }));
+      })), 'AttachLoadBalancerTargetGroups');
 
       return { success: true };
     } catch (error) {
@@ -2201,10 +2220,10 @@ export class AWSEC2Manager {
     const client = await this.getAutoScalingClient(region);
 
     try {
-      await client.send(new DetachLoadBalancerTargetGroupsCommand({
+      await this.withRetry(() => client.send(new DetachLoadBalancerTargetGroupsCommand({
         AutoScalingGroupName: autoScalingGroupName,
         TargetGroupARNs: targetGroupARNs,
-      }));
+      })), 'DetachLoadBalancerTargetGroups');
 
       return { success: true };
     } catch (error) {
@@ -2242,7 +2261,7 @@ export class AWSEC2Manager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeLoadBalancers');
       
       for (const lb of response.LoadBalancers ?? []) {
         loadBalancers.push({
@@ -2305,7 +2324,7 @@ export class AWSEC2Manager {
         Tags: tags.length > 0 ? tags : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateLoadBalancer');
       
       const lb = response.LoadBalancers?.[0];
       if (lb) {
@@ -2360,9 +2379,9 @@ export class AWSEC2Manager {
     const client = await this.getELBClient(region);
 
     try {
-      await client.send(new DeleteLoadBalancerCommand({
+      await this.withRetry(() => client.send(new DeleteLoadBalancerCommand({
         LoadBalancerArn: loadBalancerArn,
-      }));
+      })), 'DeleteLoadBalancer');
 
       return { success: true };
     } catch (error) {
@@ -2398,7 +2417,7 @@ export class AWSEC2Manager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeTargetGroups');
       
       for (const tg of response.TargetGroups ?? []) {
         targetGroups.push({
@@ -2463,7 +2482,7 @@ export class AWSEC2Manager {
         IpAddressType: options.ipAddressType,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateTargetGroup');
       
       const tg = response.TargetGroups?.[0];
       if (tg) {
@@ -2516,9 +2535,9 @@ export class AWSEC2Manager {
     const client = await this.getELBClient(region);
 
     try {
-      await client.send(new DeleteTargetGroupCommand({
+      await this.withRetry(() => client.send(new DeleteTargetGroupCommand({
         TargetGroupArn: targetGroupArn,
-      }));
+      })), 'DeleteTargetGroup');
 
       return { success: true };
     } catch (error) {
@@ -2542,14 +2561,14 @@ export class AWSEC2Manager {
     const client = await this.getELBClient(region);
 
     try {
-      await client.send(new RegisterTargetsCommand({
+      await this.withRetry(() => client.send(new RegisterTargetsCommand({
         TargetGroupArn: targetGroupArn,
         Targets: targets.map((t) => ({
           Id: t.id,
           Port: t.port,
           AvailabilityZone: t.availabilityZone,
         })),
-      }));
+      })), 'RegisterTargets');
 
       return { success: true };
     } catch (error) {
@@ -2573,14 +2592,14 @@ export class AWSEC2Manager {
     const client = await this.getELBClient(region);
 
     try {
-      await client.send(new DeregisterTargetsCommand({
+      await this.withRetry(() => client.send(new DeregisterTargetsCommand({
         TargetGroupArn: targetGroupArn,
         Targets: targets.map((t) => ({
           Id: t.id,
           Port: t.port,
           AvailabilityZone: t.availabilityZone,
         })),
-      }));
+      })), 'DeregisterTargets');
 
       return { success: true };
     } catch (error) {
@@ -2621,7 +2640,7 @@ export class AWSEC2Manager {
         })),
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeTargetHealth');
       
       return response.TargetHealthDescriptions?.map((thd) => ({
         target: {
@@ -2713,7 +2732,7 @@ export class AWSEC2Manager {
         Tags: tags.length > 0 ? tags : undefined,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'CreateListener');
       
       const listener = response.Listeners?.[0];
       if (listener) {
@@ -2752,9 +2771,9 @@ export class AWSEC2Manager {
     const client = await this.getELBClient(region);
 
     try {
-      await client.send(new DeleteListenerCommand({
+      await this.withRetry(() => client.send(new DeleteListenerCommand({
         ListenerArn: listenerArn,
-      }));
+      })), 'DeleteListener');
 
       return { success: true };
     } catch (error) {
@@ -2810,7 +2829,7 @@ export class AWSEC2Manager {
         Marker: marker,
       });
 
-      const response = await client.send(command);
+      const response = await this.withRetry(() => client.send(command), 'DescribeListeners');
       
       for (const l of response.Listeners ?? []) {
         listeners.push({
@@ -2852,10 +2871,10 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new CreateTagsCommand({
+      await this.withRetry(() => client.send(new CreateTagsCommand({
         Resources: resourceIds,
         Tags: Object.entries(tags).map(([Key, Value]) => ({ Key, Value })),
-      }));
+      })), 'CreateTags');
 
       return { success: true };
     } catch (error) {
@@ -2879,10 +2898,10 @@ export class AWSEC2Manager {
     const client = await this.getEC2Client(region);
 
     try {
-      await client.send(new DeleteTagsCommand({
+      await this.withRetry(() => client.send(new DeleteTagsCommand({
         Resources: resourceIds,
         Tags: tagKeys.map((Key) => ({ Key })),
-      }));
+      })), 'DeleteTags');
 
       return { success: true };
     } catch (error) {
