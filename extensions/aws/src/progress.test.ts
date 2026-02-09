@@ -178,10 +178,11 @@ describe("AWS Progress Utilities", () => {
         maxWaitMs: 500,
       });
 
-      // Advance past timeout
-      await vi.advanceTimersByTimeAsync(600);
-
-      await expect(waitPromise).rejects.toThrow("Timed out after 0.5s");
+      // Attach rejection handler immediately to prevent unhandled rejection,
+      // then flush all timers so the polling loop runs to timeout
+      const rejection = expect(waitPromise).rejects.toThrow("Timed out after 0.5s");
+      await vi.runAllTimersAsync();
+      await rejection;
     });
   });
 });

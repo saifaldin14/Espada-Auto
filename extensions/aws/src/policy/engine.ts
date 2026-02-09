@@ -89,6 +89,7 @@ export class PolicyEngine {
     // Auto-fix violations if enabled
     if (this.config.enableAutoFix) {
       await this.applyAutoFixes(resources, violations);
+      await this.applyAutoFixesForWarnings(resources, warnings);
     }
 
     const passed = violations.length === 0 || 
@@ -182,6 +183,38 @@ export class PolicyEngine {
   }
 
   /**
+   * Apply auto-fixes to warnings (for low/medium severity rules that have autoFix)
+   */
+  private async applyAutoFixesForWarnings(
+    resources: PlannedResource[],
+    warnings: PolicyWarning[],
+  ): Promise<void> {
+    // Find all auto-fixable rules that produce warnings (low/medium severity)
+    const autoFixableRules = this.rules.filter(r =>
+      r.autoFix && (r.severity === 'low' || r.severity === 'medium')
+    );
+
+    for (const warning of warnings) {
+      if (!warning.resourceId) continue;
+
+      const resourceIndex = resources.findIndex(r => r.id === warning.resourceId);
+      if (resourceIndex === -1) continue;
+
+      for (const rule of autoFixableRules) {
+        // Re-evaluate to see if this rule applies to this resource
+        const result = rule.evaluate(resources[resourceIndex], { security: { encryptionAtRest: true, encryptionInTransit: true, networkIsolation: 'private-subnet' } } as ApplicationIntent);
+        if (!result.passed && result.autoFixable) {
+          try {
+            resources[resourceIndex] = rule.autoFix!(resources[resourceIndex]);
+          } catch (error) {
+            console.error(`Failed to auto-fix warning:`, error);
+          }
+        }
+      }
+    }
+  }
+
+  /**
    * Validate a single resource against policies
    */
   async validateResource(
@@ -226,7 +259,7 @@ const BUILT_IN_POLICY_RULES: PolicyRule[] = [
       
       const encrypted = 
         resource.properties.storageEncrypted === true ||
-        resource.properties.encryption !== 'none' ||
+        (resource.properties.encryption !== undefined && resource.properties.encryption !== 'none') ||
         resource.properties.encrypted === true;
       
       return {

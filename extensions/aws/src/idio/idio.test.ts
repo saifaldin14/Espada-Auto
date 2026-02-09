@@ -220,8 +220,8 @@ describe('IDIOOrchestrator', () => {
 
       expect(result.success).toBe(true);
       if (result.data) {
-        const data = result.data as { estimatedMonthlyCostUsd?: number };
-        expect(typeof data.estimatedMonthlyCostUsd).toBe('number');
+        const data = result.data as { totalCostUsd?: number };
+        expect(typeof data.totalCostUsd).toBe('number');
       }
     });
 
@@ -230,8 +230,8 @@ describe('IDIOOrchestrator', () => {
       const result = await orchestrator.estimateCost(intent);
 
       if (result.success && result.data) {
-        const data = result.data as { breakdown?: unknown[] };
-        expect(data.breakdown).toBeDefined();
+        const data = result.data as { costBreakdown?: unknown[] };
+        expect(data.costBreakdown).toBeDefined();
       }
     });
   });
@@ -476,7 +476,7 @@ describe('Error Handling', () => {
   });
 
   it('should create PlanExecutionError with details', () => {
-    const error = new PlanExecutionError('plan-123', 'Execution failed');
+    const error = new PlanExecutionError('Execution failed', 'plan-123');
     
     expect(error.name).toBe('PlanExecutionError');
     expect(error.planId).toBe('plan-123');

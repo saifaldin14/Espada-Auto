@@ -99,6 +99,16 @@ import {
 } from "./src/backup/index.js";
 
 import {
+  createContainerManager,
+  type ContainerManager,
+} from "./src/containers/index.js";
+
+import {
+  createObservabilityManager,
+  type ObservabilityManager,
+} from "./src/observability/index.js";
+
+import {
   createConversationalManager,
   type AWSConversationalManager,
 } from "./src/conversational/index.js";
@@ -138,6 +148,8 @@ let securityManager: SecurityManager | null = null;
 let guardrailsManager: GuardrailsManager | null = null;
 let organizationManager: OrganizationManager | null = null;
 let backupManager: BackupManager | null = null;
+let containerManager: ContainerManager | null = null;
+let observabilityManager: ObservabilityManager | null = null;
 let conversationalManager: AWSConversationalManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
@@ -13718,6 +13730,272 @@ Use this tool to:
     );
 
     // =========================================================================
+    // AWS CONTAINERS (ECS/EKS/ECR) AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_containers",
+        label: "AWS Container Management",
+        description:
+          "Manage AWS container services: ECS clusters/services/tasks, EKS clusters/node groups, ECR repositories/images. Deploy, scale, and monitor containerized workloads.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_ecs_clusters", "get_ecs_cluster", "create_ecs_cluster", "update_ecs_cluster", "delete_ecs_cluster",
+                "list_ecs_services", "get_ecs_service", "create_ecs_service", "update_ecs_service", "scale_ecs_service", "delete_ecs_service",
+                "deploy_service", "rollback_service",
+                "list_ecs_tasks", "get_ecs_task", "run_ecs_task", "stop_ecs_task",
+                "list_task_definitions", "get_task_definition", "register_task_definition", "deregister_task_definition",
+                "list_container_instances", "drain_container_instance",
+                "list_eks_clusters", "get_eks_cluster", "create_eks_cluster", "update_eks_cluster", "update_eks_cluster_version", "delete_eks_cluster",
+                "list_eks_node_groups", "get_eks_node_group", "create_eks_node_group", "update_eks_node_group", "update_eks_node_group_version", "delete_eks_node_group",
+                "list_eks_fargate_profiles", "create_eks_fargate_profile", "delete_eks_fargate_profile",
+                "list_ecr_repositories", "get_ecr_repository", "create_ecr_repository", "delete_ecr_repository",
+                "list_ecr_images", "delete_ecr_images", "start_ecr_image_scan", "get_ecr_image_scan_findings",
+                "get_ecr_lifecycle_policy", "set_ecr_lifecycle_policy", "delete_ecr_lifecycle_policy",
+                "get_ecr_authorization_token",
+                "get_container_logs",
+              ],
+              description: "The container operation to perform",
+            },
+            clusterName: { type: "string", description: "ECS/EKS cluster name" },
+            serviceName: { type: "string", description: "ECS service name" },
+            taskArn: { type: "string", description: "ECS task ARN" },
+            taskDefinition: { type: "string", description: "Task definition family:revision or ARN" },
+            containerInstanceArn: { type: "string", description: "ECS container instance ARN" },
+            nodeGroupName: { type: "string", description: "EKS node group name" },
+            fargateProfileName: { type: "string", description: "EKS Fargate profile name" },
+            repositoryName: { type: "string", description: "ECR repository name" },
+            imageIds: { type: "array", items: { type: "object" }, description: "ECR image identifiers" },
+            desiredCount: { type: "number", description: "Desired task/replica count" },
+            name: { type: "string", description: "Resource name" },
+            config: { type: "object", description: "Creation/update configuration" },
+            region: { type: "string", description: "AWS region override" },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!containerManager) {
+            containerManager = createContainerManager({ defaultRegion: config.defaultRegion });
+          }
+          const action = params.action as string;
+          try {
+            switch (action) {
+              case "list_ecs_clusters": {
+                const result = await containerManager.listECSClusters();
+                return { content: [{ type: "text", text: `Found ${result.length} ECS cluster(s)` }], details: result };
+              }
+              case "get_ecs_cluster": {
+                const result = await containerManager.getECSCluster(params.clusterName as string);
+                return { content: [{ type: "text", text: result.success ? `Cluster: ${result.data?.clusterName} (${result.data?.status})` : `Error: ${result.error}` }], details: result };
+              }
+              case "create_ecs_cluster": {
+                const result = await containerManager.createECSCluster(params.config as any ?? { name: params.name as string });
+                return { content: [{ type: "text", text: result.success ? `✅ ECS cluster created: ${result.data?.clusterName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_ecs_cluster": {
+                const result = await containerManager.deleteECSCluster(params.clusterName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ECS cluster deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_ecs_services": {
+                const result = await containerManager.listECSServices({ cluster: params.clusterName as string });
+                return { content: [{ type: "text", text: `Found ${result.length} service(s)` }], details: result };
+              }
+              case "scale_ecs_service": {
+                const result = await containerManager.scaleECSService({ cluster: params.clusterName as string, service: params.serviceName as string, desiredCount: params.desiredCount as number });
+                return { content: [{ type: "text", text: result.success ? `✅ Scaled service to ${params.desiredCount} tasks` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_eks_clusters": {
+                const result = await containerManager.listEKSClusters();
+                return { content: [{ type: "text", text: `Found ${result.length} EKS cluster(s)` }], details: result };
+              }
+              case "get_eks_cluster": {
+                const result = await containerManager.getEKSCluster(params.clusterName as string);
+                return { content: [{ type: "text", text: result.success ? `EKS Cluster: ${result.data?.name} (${result.data?.status})` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_ecr_repositories": {
+                const result = await containerManager.listECRRepositories();
+                return { content: [{ type: "text", text: `Found ${result.length} ECR repositor(ies)` }], details: result };
+              }
+              case "create_ecr_repository": {
+                const result = await containerManager.createECRRepository(params.config as any ?? { name: params.repositoryName as string });
+                return { content: [{ type: "text", text: result.success ? `✅ ECR repository created` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_ecr_repository": {
+                const result = await containerManager.deleteECRRepository(params.repositoryName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ECR repository deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_ecr_images": {
+                const result = await containerManager.listECRImages({ repositoryName: params.repositoryName as string });
+                return { content: [{ type: "text", text: `Found ${result.length} image(s)` }], details: result };
+              }
+              case "start_ecr_image_scan": {
+                const result = await containerManager.startECRImageScan(params.repositoryName as string, params.imageIds as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Image scan started` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_container_logs": {
+                const result = await containerManager.getContainerLogs({ cluster: params.clusterName as string, taskId: params.taskArn as string, containerName: params.name as string });
+                return { content: [{ type: "text", text: result.success ? `Retrieved container logs` : `Error: ${result.error}` }], details: result };
+              }
+              default:
+                return { content: [{ type: "text", text: `Unknown container action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `Container operation error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_containers" },
+    );
+
+    // =========================================================================
+    // AWS OBSERVABILITY (CloudWatch/X-Ray/Synthetics) AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_observability",
+        label: "AWS Observability",
+        description:
+          "Manage AWS observability stack: CloudWatch alarms/metrics/dashboards/logs, X-Ray tracing, Synthetics canaries, and anomaly detection.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_alarms", "get_alarm", "create_alarm", "update_alarm", "delete_alarms",
+                "enable_alarm_actions", "disable_alarm_actions", "set_alarm_state",
+                "list_composite_alarms", "create_composite_alarm", "delete_composite_alarm",
+                "get_metric_data", "put_metric_data", "list_metrics", "get_metric_statistics",
+                "list_dashboards", "get_dashboard", "create_dashboard", "delete_dashboard",
+                "list_log_groups", "create_log_group", "delete_log_group",
+                "list_log_streams", "get_log_events", "filter_log_events",
+                "start_log_insights_query", "get_log_insights_results",
+                "get_xray_traces", "get_xray_trace_summaries", "get_xray_service_graph",
+                "list_canaries", "get_canary", "create_canary", "start_canary", "stop_canary", "delete_canary", "get_canary_runs",
+                "create_anomaly_detector", "delete_anomaly_detector", "list_anomaly_detectors",
+              ],
+              description: "The observability operation to perform",
+            },
+            alarmName: { type: "string", description: "CloudWatch alarm name" },
+            alarmNames: { type: "array", items: { type: "string" }, description: "Array of alarm names" },
+            metricName: { type: "string", description: "CloudWatch metric name" },
+            namespace: { type: "string", description: "CloudWatch metric namespace" },
+            dashboardName: { type: "string", description: "Dashboard name" },
+            logGroupName: { type: "string", description: "CloudWatch log group name" },
+            logStreamName: { type: "string", description: "CloudWatch log stream name" },
+            queryId: { type: "string", description: "Log Insights query ID" },
+            queryString: { type: "string", description: "Log Insights query string" },
+            canaryName: { type: "string", description: "Synthetics canary name" },
+            startTime: { type: "string", description: "Start time (ISO 8601)" },
+            endTime: { type: "string", description: "End time (ISO 8601)" },
+            config: { type: "object", description: "Creation/update configuration" },
+            region: { type: "string", description: "AWS region override" },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!observabilityManager) {
+            observabilityManager = createObservabilityManager({ defaultRegion: config.defaultRegion });
+          }
+          const action = params.action as string;
+          try {
+            switch (action) {
+              case "list_alarms": {
+                const result = await observabilityManager.listAlarms(params.config as any);
+                return { content: [{ type: "text", text: `Found ${result.length} alarm(s)` }], details: result };
+              }
+              case "get_alarm": {
+                const result = await observabilityManager.getAlarm(params.alarmName as string);
+                return { content: [{ type: "text", text: result.success ? `Alarm: ${result.data?.alarmName} — State: ${result.data?.stateValue}` : `Error: ${result.error}` }], details: result };
+              }
+              case "create_alarm": {
+                const result = await observabilityManager.createAlarm(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Alarm created` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_alarms": {
+                const result = await observabilityManager.deleteAlarms(params.alarmNames as string[]);
+                return { content: [{ type: "text", text: result.success ? `✅ Alarms deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_dashboards": {
+                const result = await observabilityManager.listDashboards();
+                return { content: [{ type: "text", text: `Found ${result.length} dashboard(s)` }], details: result };
+              }
+              case "create_dashboard": {
+                const result = await observabilityManager.putDashboard(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Dashboard created` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_log_groups": {
+                const result = await observabilityManager.listLogGroups(params.config as any);
+                return { content: [{ type: "text", text: `Found ${result.length} log group(s)` }], details: result };
+              }
+              case "create_log_group": {
+                const result = await observabilityManager.createLogGroup(params.logGroupName as string, params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Log group created: ${params.logGroupName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_log_group": {
+                const result = await observabilityManager.deleteLogGroup(params.logGroupName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ Log group deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "filter_log_events": {
+                const result = await observabilityManager.filterLogEvents(params.config as any);
+                return { content: [{ type: "text", text: `Found ${result.length} log event(s)` }], details: result };
+              }
+              case "start_log_insights_query": {
+                const result = await observabilityManager.startLogInsightsQuery(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Query started: ${result.data}` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_log_insights_results": {
+                const result = await observabilityManager.getLogInsightsQueryResults(params.queryId as string);
+                return { content: [{ type: "text", text: result.success ? `Query results retrieved` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_xray_traces": {
+                const result = await observabilityManager.getTraces(params.traceIds as string[]);
+                return { content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} trace(s)` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_xray_service_graph": {
+                const start = params.startTime ? new Date(params.startTime as string) : new Date(Date.now() - 3600000);
+                const end = params.endTime ? new Date(params.endTime as string) : new Date();
+                const result = await observabilityManager.getServiceMap(start, end);
+                return { content: [{ type: "text", text: result.success ? `Service map retrieved` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_canaries": {
+                const result = await observabilityManager.listCanaries();
+                return { content: [{ type: "text", text: `Found ${result.length} canary(ies)` }], details: result };
+              }
+              case "create_canary": {
+                const result = await observabilityManager.createCanary(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Canary created` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_canary": {
+                const result = await observabilityManager.deleteCanary(params.canaryName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ Canary deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_anomaly_detectors": {
+                const result = await observabilityManager.listAnomalyDetectors();
+                return { content: [{ type: "text", text: `Found ${result.length} anomaly detector(s)` }], details: result };
+              }
+              case "create_anomaly_detector": {
+                const result = await observabilityManager.putAnomalyDetector(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Anomaly detector created` : `Error: ${result.error}` }], details: result };
+              }
+              default:
+                return { content: [{ type: "text", text: `Unknown observability action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `Observability error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_observability" },
+    );
+
+    // =========================================================================
     // AWS CONVERSATIONAL UX AGENT TOOL
     // =========================================================================
 
@@ -15016,6 +15294,9 @@ ${topResources}`,
 
         costManager = createCostManager({ defaultRegion: config.defaultRegion });
 
+        containerManager = createContainerManager({ defaultRegion: config.defaultRegion });
+        observabilityManager = createObservabilityManager({ defaultRegion: config.defaultRegion });
+
         // Optionally probe identity on start
         try {
           await contextManager.initialize();
@@ -15048,6 +15329,8 @@ ${topResources}`,
         guardrailsManager = null;
         organizationManager = null;
         backupManager = null;
+        containerManager = null;
+        observabilityManager = null;
         conversationalManager = null;
         cliWrapper = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
@@ -15082,6 +15365,8 @@ export function getAWSManagers() {
     guardrails: guardrailsManager,
     organization: organizationManager,
     backup: backupManager,
+    containers: containerManager,
+    observability: observabilityManager,
     conversational: conversationalManager,
     cli: cliWrapper,
   };

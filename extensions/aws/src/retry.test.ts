@@ -193,11 +193,13 @@ describe("AWS Retry Utilities", () => {
       const fn = vi.fn().mockRejectedValue(throttleError);
 
       const resultPromise = runner(fn, "test-op");
-      
-      // Advance timers for all retries
-      await vi.advanceTimersByTimeAsync(50000);
-      
-      await expect(resultPromise).rejects.toThrow("ThrottlingException");
+
+      // Attach rejection handler immediately to prevent unhandled rejection,
+      // then flush all timers so the retry loop runs to completion
+      const rejection = expect(resultPromise).rejects.toThrow("ThrottlingException");
+      await vi.runAllTimersAsync();
+      await rejection;
+
       expect(fn).toHaveBeenCalledTimes(2);
     });
   });
