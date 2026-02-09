@@ -1,0 +1,16 @@
+export {
+  DynamoDBManager,
+  createDynamoDBManager,
+  type DynamoDBManagerConfig,
+  type DynamoDBOperationResult,
+  type TableConfig,
+  type QueryOptions,
+  type ScanOptions,
+  type BackupConfig,
+  type RestoreConfig,
+  type ExportConfig,
+  type ImportConfig,
+  type AutoScalingConfig,
+  type GlobalTableConfig,
+  type TableMetrics,
+} from "./manager.js";

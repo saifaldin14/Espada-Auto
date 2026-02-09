@@ -109,6 +109,42 @@ import {
 } from "./src/observability/index.js";
 
 import {
+  createDynamoDBManager,
+  type DynamoDBManager,
+} from "./src/dynamodb/index.js";
+
+import {
+  createSQSManager,
+  type SQSManager,
+} from "./src/sqs/index.js";
+
+import {
+  createSNSManager,
+  type SNSManager,
+} from "./src/sns/index.js";
+
+import {
+  createRoute53Manager,
+  type Route53Manager,
+  type RecordType,
+} from "./src/route53/index.js";
+
+import {
+  createCognitoManager,
+  type CognitoManager,
+} from "./src/cognito/index.js";
+
+import {
+  createAPIGatewayManager,
+  type APIGatewayManager,
+  type APIType,
+  type StageConfig,
+  type UsagePlanConfig,
+  type ApiKeyConfig,
+  type CreateHTTPApiConfig,
+} from "./src/apigateway/index.js";
+
+import {
   createConversationalManager,
   type AWSConversationalManager,
 } from "./src/conversational/index.js";
@@ -150,6 +186,12 @@ let organizationManager: OrganizationManager | null = null;
 let backupManager: BackupManager | null = null;
 let containerManager: ContainerManager | null = null;
 let observabilityManager: ObservabilityManager | null = null;
+let dynamoDBManager: DynamoDBManager | null = null;
+let sqsManager: SQSManager | null = null;
+let snsManager: SNSManager | null = null;
+let route53Manager: Route53Manager | null = null;
+let cognitoManager: CognitoManager | null = null;
+let apiGatewayManager: APIGatewayManager | null = null;
 let conversationalManager: AWSConversationalManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
@@ -13996,6 +14038,3026 @@ Use this tool to:
     );
 
     // =========================================================================
+    // AWS DYNAMODB MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_dynamodb",
+        label: "AWS DynamoDB Management",
+        description:
+          "Manage AWS DynamoDB tables, items, backups, global tables, auto-scaling, streams, and data operations (query, scan, batch, transactions).",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_tables",
+                "describe_table",
+                "create_table",
+                "delete_table",
+                "update_table",
+                "put_item",
+                "get_item",
+                "delete_item",
+                "update_item",
+                "query",
+                "scan",
+                "batch_get_items",
+                "batch_write_items",
+                "transact_write",
+                "enable_ttl",
+                "disable_ttl",
+                "enable_pitr",
+                "create_backup",
+                "delete_backup",
+                "list_backups",
+                "restore_from_backup",
+                "create_global_table",
+                "list_global_tables",
+                "configure_auto_scaling",
+                "remove_auto_scaling",
+                "export_to_s3",
+                "list_tags",
+                "tag_resource",
+                "untag_resource",
+              ],
+              description: "The DynamoDB operation to perform",
+            },
+            tableName: {
+              type: "string",
+              description: "The DynamoDB table name",
+            },
+            item: {
+              type: "object",
+              description: "The item to put/write (key-value pairs)",
+            },
+            key: {
+              type: "object",
+              description: "The primary key of the item",
+            },
+            updateExpression: {
+              type: "string",
+              description: "Update expression (e.g. 'SET #name = :name')",
+            },
+            conditionExpression: {
+              type: "string",
+              description: "Condition expression for conditional writes",
+            },
+            keyConditionExpression: {
+              type: "string",
+              description: "Key condition expression for query",
+            },
+            filterExpression: {
+              type: "string",
+              description: "Filter expression for query/scan",
+            },
+            projectionExpression: {
+              type: "string",
+              description: "Projection expression to select attributes",
+            },
+            expressionAttributeNames: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Expression attribute name substitutions",
+            },
+            expressionAttributeValues: {
+              type: "object",
+              description: "Expression attribute values",
+            },
+            indexName: {
+              type: "string",
+              description: "Name of a secondary index to query/scan",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of items to return or tables to list",
+            },
+            scanIndexForward: {
+              type: "boolean",
+              description: "Whether to scan index forward (ascending). Default true",
+            },
+            consistentRead: {
+              type: "boolean",
+              description: "Whether to use strongly consistent reads",
+            },
+            partitionKey: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                type: { type: "string", enum: ["S", "N", "B"] },
+              },
+              description: "Partition key definition for table creation",
+            },
+            sortKey: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                type: { type: "string", enum: ["S", "N", "B"] },
+              },
+              description: "Sort key definition for table creation",
+            },
+            billingMode: {
+              type: "string",
+              enum: ["PAY_PER_REQUEST", "PROVISIONED"],
+              description: "Table billing mode",
+            },
+            readCapacity: {
+              type: "number",
+              description: "Provisioned read capacity units",
+            },
+            writeCapacity: {
+              type: "number",
+              description: "Provisioned write capacity units",
+            },
+            ttlAttributeName: {
+              type: "string",
+              description: "Attribute name for TTL",
+            },
+            backupName: {
+              type: "string",
+              description: "Name for the backup",
+            },
+            backupArn: {
+              type: "string",
+              description: "ARN of a backup to restore or delete",
+            },
+            targetTableName: {
+              type: "string",
+              description: "Target table name for restore operations",
+            },
+            s3Bucket: {
+              type: "string",
+              description: "S3 bucket for export operations",
+            },
+            s3Prefix: {
+              type: "string",
+              description: "S3 prefix for export operations",
+            },
+            exportFormat: {
+              type: "string",
+              enum: ["DYNAMODB_JSON", "ION"],
+              description: "Export format",
+            },
+            replicationRegions: {
+              type: "array",
+              items: { type: "string" },
+              description: "Regions for global table replication",
+            },
+            requestItems: {
+              type: "object",
+              description: "Batch get/write request items keyed by table name",
+            },
+            transactItems: {
+              type: "array",
+              description: "Transaction items for transact_write",
+            },
+            minCapacity: {
+              type: "number",
+              description: "Minimum capacity for auto-scaling",
+            },
+            maxCapacity: {
+              type: "number",
+              description: "Maximum capacity for auto-scaling",
+            },
+            targetUtilization: {
+              type: "number",
+              description: "Target utilization percentage for auto-scaling (0-100)",
+            },
+            resourceArn: {
+              type: "string",
+              description: "Resource ARN for tagging operations",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+            tagKeys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Tag keys to remove",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!dynamoDBManager) {
+            return {
+              content: [{ type: "text", text: "Error: DynamoDB manager not initialized" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              case "list_tables": {
+                const result = await dynamoDBManager.listTables(params.limit as number | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const tables = result.data ?? [];
+                const summary = tables.length === 0
+                  ? "No DynamoDB tables found."
+                  : tables.map(t => `• ${t}`).join("\n");
+                return {
+                  content: [{ type: "text", text: `DynamoDB Tables:\n\n${summary}` }],
+                  details: { count: tables.length, tables },
+                };
+              }
+
+              case "describe_table": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.describeTable(tableName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const t = result.data;
+                const info = [
+                  `Table: ${t?.tableName}`,
+                  `Status: ${t?.tableStatus}`,
+                  `Item Count: ${t?.itemCount ?? "N/A"}`,
+                  `Size: ${t?.tableSizeBytes ? `${(t.tableSizeBytes / 1024 / 1024).toFixed(2)} MB` : "N/A"}`,
+                  `Billing: ${t?.billingMode}`,
+                  t?.provisionedReadCapacity ? `Read Capacity: ${t.provisionedReadCapacity}` : "",
+                  t?.provisionedWriteCapacity ? `Write Capacity: ${t.provisionedWriteCapacity}` : "",
+                  `GSIs: ${t?.gsiCount ?? 0}`,
+                  `LSIs: ${t?.lsiCount ?? 0}`,
+                  `Stream: ${t?.streamEnabled ? "Enabled" : "Disabled"}`,
+                ].filter(Boolean).join("\n");
+                return {
+                  content: [{ type: "text", text: info }],
+                  details: { table: t },
+                };
+              }
+
+              case "create_table": {
+                const tableName = params.tableName as string;
+                const partitionKey = params.partitionKey as { name: string; type: string } | undefined;
+                if (!tableName || !partitionKey) {
+                  return { content: [{ type: "text", text: "Error: tableName and partitionKey are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.createTable({
+                  tableName,
+                  partitionKey: { name: partitionKey.name, type: partitionKey.type as "S" | "N" | "B" },
+                  sortKey: params.sortKey ? { name: (params.sortKey as { name: string; type: string }).name, type: (params.sortKey as { name: string; type: string }).type as "S" | "N" | "B" } : undefined,
+                  billingMode: params.billingMode as "PAY_PER_REQUEST" | "PROVISIONED" | undefined,
+                  provisionedThroughput: params.readCapacity ? { readCapacityUnits: params.readCapacity as number, writeCapacityUnits: (params.writeCapacity as number) ?? 5 } : undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Table '${tableName}' created successfully` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_table": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.deleteTable(tableName);
+                return {
+                  content: [{ type: "text", text: result.success ? `Table '${tableName}' deleted` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "update_table": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.updateTable(tableName, {
+                  billingMode: params.billingMode as "PAY_PER_REQUEST" | "PROVISIONED" | undefined,
+                  provisionedThroughput: params.readCapacity ? { readCapacityUnits: params.readCapacity as number, writeCapacityUnits: (params.writeCapacity as number) ?? 5 } : undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Table '${tableName}' updated` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "put_item": {
+                const tableName = params.tableName as string;
+                const item = params.item as Record<string, unknown>;
+                if (!tableName || !item) {
+                  return { content: [{ type: "text", text: "Error: tableName and item are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.putItem(tableName, item, {
+                  conditionExpression: params.conditionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                  expressionAttributeValues: params.expressionAttributeValues as Record<string, unknown> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? "Item put successfully" : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_item": {
+                const tableName = params.tableName as string;
+                const key = params.key as Record<string, unknown>;
+                if (!tableName || !key) {
+                  return { content: [{ type: "text", text: "Error: tableName and key are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.getItem(tableName, key, {
+                  consistentRead: params.consistentRead as boolean | undefined,
+                  projectionExpression: params.projectionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Item: ${JSON.stringify(result.data, null, 2)}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_item": {
+                const tableName = params.tableName as string;
+                const key = params.key as Record<string, unknown>;
+                if (!tableName || !key) {
+                  return { content: [{ type: "text", text: "Error: tableName and key are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.deleteItem(tableName, key, {
+                  conditionExpression: params.conditionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                  expressionAttributeValues: params.expressionAttributeValues as Record<string, unknown> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? "Item deleted" : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "update_item": {
+                const tableName = params.tableName as string;
+                const key = params.key as Record<string, unknown>;
+                const updateExpression = params.updateExpression as string;
+                if (!tableName || !key || !updateExpression) {
+                  return { content: [{ type: "text", text: "Error: tableName, key, and updateExpression are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.updateItem(tableName, key, {
+                  updateExpression,
+                  conditionExpression: params.conditionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                  expressionAttributeValues: params.expressionAttributeValues as Record<string, unknown> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? "Item updated" : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "query": {
+                const tableName = params.tableName as string;
+                const keyConditionExpression = params.keyConditionExpression as string;
+                if (!tableName || !keyConditionExpression) {
+                  return { content: [{ type: "text", text: "Error: tableName and keyConditionExpression are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.query(tableName, {
+                  keyConditionExpression,
+                  filterExpression: params.filterExpression as string | undefined,
+                  projectionExpression: params.projectionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                  expressionAttributeValues: params.expressionAttributeValues as Record<string, unknown> | undefined,
+                  indexName: params.indexName as string | undefined,
+                  limit: params.limit as number | undefined,
+                  scanIndexForward: params.scanIndexForward as boolean | undefined,
+                  consistentRead: params.consistentRead as boolean | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return {
+                  content: [{ type: "text", text: `Query returned ${result.data?.items?.length ?? 0} items (count: ${result.data?.count ?? 0})` }],
+                  details: result.data,
+                };
+              }
+
+              case "scan": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.scan(tableName, {
+                  filterExpression: params.filterExpression as string | undefined,
+                  projectionExpression: params.projectionExpression as string | undefined,
+                  expressionAttributeNames: params.expressionAttributeNames as Record<string, string> | undefined,
+                  expressionAttributeValues: params.expressionAttributeValues as Record<string, unknown> | undefined,
+                  indexName: params.indexName as string | undefined,
+                  limit: params.limit as number | undefined,
+                  consistentRead: params.consistentRead as boolean | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return {
+                  content: [{ type: "text", text: `Scan returned ${result.data?.items?.length ?? 0} items (count: ${result.data?.count ?? 0})` }],
+                  details: result.data,
+                };
+              }
+
+              case "batch_get_items": {
+                const requestItems = params.requestItems as Record<string, { keys: Record<string, unknown>[] }>;
+                if (!requestItems) {
+                  return { content: [{ type: "text", text: "Error: requestItems is required" }], details: { error: "missing_parameter" } };
+                }
+                const batchGetRequests = Object.entries(requestItems).map(([tableName, val]) => ({ tableName, keys: val.keys }));
+                const result = await dynamoDBManager.batchGetItems(batchGetRequests);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const totalItems = Object.values(result.data ?? {}).reduce((sum, items) => sum + (items as unknown[]).length, 0);
+                return {
+                  content: [{ type: "text", text: `Batch get returned ${totalItems} items across ${Object.keys(result.data ?? {}).length} tables` }],
+                  details: result.data,
+                };
+              }
+
+              case "batch_write_items": {
+                const requestItems = params.requestItems as Record<string, Array<{ putItem?: Record<string, unknown>; deleteKey?: Record<string, unknown> }>>;
+                if (!requestItems) {
+                  return { content: [{ type: "text", text: "Error: requestItems is required" }], details: { error: "missing_parameter" } };
+                }
+                const batchWriteRequests = Object.entries(requestItems).map(([tbl, ops]) => ({
+                  tableName: tbl,
+                  operations: ops.map(op =>
+                    op.putItem
+                      ? { type: 'put' as const, item: op.putItem }
+                      : { type: 'delete' as const, key: op.deleteKey! }
+                  ),
+                }));
+                const result = await dynamoDBManager.batchWriteItems(batchWriteRequests);
+                return {
+                  content: [{ type: "text", text: result.success ? "Batch write completed" : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "transact_write": {
+                const transactItems = params.transactItems as Array<{
+                  type: "put" | "update" | "delete" | "conditionCheck";
+                  tableName: string;
+                  item?: Record<string, unknown>;
+                  key?: Record<string, unknown>;
+                  updateExpression?: string;
+                  conditionExpression?: string;
+                  expressionAttributeNames?: Record<string, string>;
+                  expressionAttributeValues?: Record<string, unknown>;
+                }>;
+                if (!transactItems || transactItems.length === 0) {
+                  return { content: [{ type: "text", text: "Error: transactItems is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.transactWriteItems(transactItems as Parameters<DynamoDBManager['transactWriteItems']>[0]);
+                return {
+                  content: [{ type: "text", text: result.success ? `Transaction with ${transactItems.length} operations completed` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "enable_ttl": {
+                const tableName = params.tableName as string;
+                const ttlAttributeName = params.ttlAttributeName as string;
+                if (!tableName || !ttlAttributeName) {
+                  return { content: [{ type: "text", text: "Error: tableName and ttlAttributeName are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.enableTTL(tableName, ttlAttributeName);
+                return {
+                  content: [{ type: "text", text: result.success ? `TTL enabled on '${tableName}' (attribute: ${ttlAttributeName})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "disable_ttl": {
+                const tableName = params.tableName as string;
+                const ttlAttributeName = params.ttlAttributeName as string;
+                if (!tableName || !ttlAttributeName) {
+                  return { content: [{ type: "text", text: "Error: tableName and ttlAttributeName are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.disableTTL(tableName, ttlAttributeName);
+                return {
+                  content: [{ type: "text", text: result.success ? `TTL disabled on '${tableName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "enable_pitr": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.enablePointInTimeRecovery(tableName);
+                return {
+                  content: [{ type: "text", text: result.success ? `Point-in-time recovery enabled on '${tableName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_backup": {
+                const tableName = params.tableName as string;
+                const backupName = params.backupName as string;
+                if (!tableName || !backupName) {
+                  return { content: [{ type: "text", text: "Error: tableName and backupName are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.createBackup({ tableName, backupName });
+                return {
+                  content: [{ type: "text", text: result.success ? `Backup '${backupName}' created (ARN: ${result.data?.backupArn})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_backup": {
+                const backupArn = params.backupArn as string;
+                if (!backupArn) {
+                  return { content: [{ type: "text", text: "Error: backupArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.deleteBackup(backupArn);
+                return {
+                  content: [{ type: "text", text: result.success ? "Backup deleted" : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_backups": {
+                const result = await dynamoDBManager.listBackups(params.tableName as string | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const backups = result.data ?? [];
+                const summary = backups.length === 0
+                  ? "No backups found."
+                  : backups.map(b => `• ${b.BackupName} (${b.BackupStatus}) - ${b.TableName}`).join("\n");
+                return {
+                  content: [{ type: "text", text: `DynamoDB Backups:\n\n${summary}` }],
+                  details: { count: backups.length, backups },
+                };
+              }
+
+              case "restore_from_backup": {
+                const targetTableName = params.targetTableName as string;
+                const backupArn = params.backupArn as string;
+                if (!targetTableName || !backupArn) {
+                  return { content: [{ type: "text", text: "Error: targetTableName and backupArn are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.restoreFromBackup({ targetTableName, backupArn });
+                return {
+                  content: [{ type: "text", text: result.success ? `Table '${targetTableName}' restoring from backup` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_global_table": {
+                const tableName = params.tableName as string;
+                const replicationRegions = params.replicationRegions as string[];
+                if (!tableName || !replicationRegions || replicationRegions.length === 0) {
+                  return { content: [{ type: "text", text: "Error: tableName and replicationRegions are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.createGlobalTable({ tableName, replicaRegions: replicationRegions });
+                return {
+                  content: [{ type: "text", text: result.success ? `Global table '${tableName}' created with replication to ${replicationRegions.join(", ")}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_global_tables": {
+                const result = await dynamoDBManager.listGlobalTables();
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const tables = result.data ?? [];
+                const summary = tables.length === 0
+                  ? "No global tables found."
+                  : tables.map(t => `• ${t.GlobalTableName} (${t.ReplicationGroup?.map(r => r.RegionName).join(", ")})`).join("\n");
+                return {
+                  content: [{ type: "text", text: `DynamoDB Global Tables:\n\n${summary}` }],
+                  details: { count: tables.length, tables },
+                };
+              }
+
+              case "configure_auto_scaling": {
+                const tableName = params.tableName as string;
+                const minCapacity = params.minCapacity as number;
+                const maxCapacity = params.maxCapacity as number;
+                const targetUtilization = params.targetUtilization as number;
+                if (!tableName || minCapacity == null || maxCapacity == null || targetUtilization == null) {
+                  return { content: [{ type: "text", text: "Error: tableName, minCapacity, maxCapacity, and targetUtilization are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.configureAutoScaling({
+                  tableName,
+                  minReadCapacity: minCapacity,
+                  maxReadCapacity: maxCapacity,
+                  minWriteCapacity: minCapacity,
+                  maxWriteCapacity: maxCapacity,
+                  targetReadUtilization: targetUtilization,
+                  targetWriteUtilization: targetUtilization,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Auto-scaling configured on '${tableName}' (${minCapacity}-${maxCapacity}, target: ${targetUtilization}%)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "remove_auto_scaling": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.removeAutoScaling(tableName);
+                return {
+                  content: [{ type: "text", text: result.success ? `Auto-scaling removed from '${tableName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "export_to_s3": {
+                const tableName = params.tableName as string;
+                const s3Bucket = params.s3Bucket as string;
+                if (!tableName || !s3Bucket) {
+                  return { content: [{ type: "text", text: "Error: tableName and s3Bucket are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.exportToS3({
+                  tableName,
+                  s3Bucket,
+                  s3Prefix: params.s3Prefix as string | undefined,
+                  exportFormat: params.exportFormat as "DYNAMODB_JSON" | "ION" | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Export started for '${tableName}' to s3://${s3Bucket}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_tags": {
+                const tableName = params.tableName as string;
+                if (!tableName) {
+                  return { content: [{ type: "text", text: "Error: tableName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await dynamoDBManager.listTableTags(tableName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const tagEntries = Object.entries(result.data ?? {});
+                const summary = tagEntries.length === 0
+                  ? "No tags found."
+                  : tagEntries.map(([k, v]) => `• ${k}: ${v}`).join("\n");
+                return {
+                  content: [{ type: "text", text: `Tags:\n\n${summary}` }],
+                  details: result.data,
+                };
+              }
+
+              case "tag_resource": {
+                const tableName = params.tableName as string;
+                const tags = params.tags as Record<string, string>;
+                if (!tableName || !tags) {
+                  return { content: [{ type: "text", text: "Error: tableName and tags are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.tagTable(tableName, tags);
+                return {
+                  content: [{ type: "text", text: result.success ? `Tags applied to '${tableName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "untag_resource": {
+                const tableName = params.tableName as string;
+                const tagKeys = params.tagKeys as string[];
+                if (!tableName || !tagKeys) {
+                  return { content: [{ type: "text", text: "Error: tableName and tagKeys are required" }], details: { error: "missing_parameters" } };
+                }
+                const result = await dynamoDBManager.untagTable(tableName, tagKeys);
+                return {
+                  content: [{ type: "text", text: result.success ? `Tags removed from '${tableName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `DynamoDB error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_dynamodb" },
+    );
+
+    // =========================================================================
+    // AWS SQS MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_sqs",
+        label: "AWS SQS Management",
+        description:
+          "Manage AWS SQS queues, messages, dead-letter queues, and message move tasks. Send, receive, and batch process messages.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_queues",
+                "create_queue",
+                "delete_queue",
+                "get_queue_url",
+                "get_queue_metrics",
+                "update_queue",
+                "purge_queue",
+                "send_message",
+                "send_message_batch",
+                "receive_messages",
+                "delete_message",
+                "delete_message_batch",
+                "change_message_visibility",
+                "list_dlq_source_queues",
+                "start_message_move_task",
+                "cancel_message_move_task",
+                "list_message_move_tasks",
+                "tag_queue",
+                "untag_queue",
+                "list_queue_tags",
+              ],
+              description: "The SQS operation to perform",
+            },
+            queueUrl: {
+              type: "string",
+              description: "The SQS queue URL",
+            },
+            queueName: {
+              type: "string",
+              description: "The queue name",
+            },
+            queueType: {
+              type: "string",
+              enum: ["standard", "fifo"],
+              description: "Queue type (standard or FIFO)",
+            },
+            messageBody: {
+              type: "string",
+              description: "Message body to send",
+            },
+            messageGroupId: {
+              type: "string",
+              description: "Message group ID for FIFO queues",
+            },
+            messageDeduplicationId: {
+              type: "string",
+              description: "Deduplication ID for FIFO queues",
+            },
+            delaySeconds: {
+              type: "number",
+              description: "Message delivery delay in seconds (0-900)",
+            },
+            messageAttributes: {
+              type: "object",
+              description: "Message attributes (key-value pairs)",
+            },
+            maxMessages: {
+              type: "number",
+              description: "Maximum number of messages to receive (1-10)",
+            },
+            waitTimeSeconds: {
+              type: "number",
+              description: "Wait time for long polling in seconds (0-20)",
+            },
+            visibilityTimeout: {
+              type: "number",
+              description: "Visibility timeout in seconds",
+            },
+            receiptHandle: {
+              type: "string",
+              description: "Receipt handle for message operations",
+            },
+            receiptHandles: {
+              type: "array",
+              items: { type: "string" },
+              description: "Receipt handles for batch operations",
+            },
+            messages: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  messageBody: { type: "string" },
+                  delaySeconds: { type: "number" },
+                  messageGroupId: { type: "string" },
+                },
+              },
+              description: "Messages for batch send",
+            },
+            sourceArn: {
+              type: "string",
+              description: "Source queue ARN for DLQ/move operations",
+            },
+            destinationArn: {
+              type: "string",
+              description: "Destination queue ARN for move operations",
+            },
+            taskHandle: {
+              type: "string",
+              description: "Task handle for message move operations",
+            },
+            maxNumberPerSecond: {
+              type: "number",
+              description: "Max messages per second for move task",
+            },
+            dlqArn: {
+              type: "string",
+              description: "Dead letter queue ARN",
+            },
+            maxReceiveCount: {
+              type: "number",
+              description: "Max receive count before moving to DLQ",
+            },
+            prefix: {
+              type: "string",
+              description: "Queue name prefix for listing",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+            tagKeys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Tag keys to remove",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!sqsManager) {
+            return { content: [{ type: "text", text: "Error: SQS manager not initialized" }], details: { error: "not_initialized" } };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              case "list_queues": {
+                const result = await sqsManager.listQueues(params.prefix as string | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const queues = result.data ?? [];
+                const summary = queues.length === 0 ? "No SQS queues found." : queues.map(q => `• ${q}`).join("\n");
+                return { content: [{ type: "text", text: `SQS Queues:\n\n${summary}` }], details: { count: queues.length, queues } };
+              }
+
+              case "create_queue": {
+                const queueName = params.queueName as string;
+                if (!queueName) return { content: [{ type: "text", text: "Error: queueName is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.createQueue({
+                  queueName,
+                  queueType: params.queueType as "standard" | "fifo" | undefined,
+                  visibilityTimeout: params.visibilityTimeout as number | undefined,
+                  delaySeconds: params.delaySeconds as number | undefined,
+                  deadLetterQueue: params.dlqArn ? { targetArn: params.dlqArn as string, maxReceiveCount: (params.maxReceiveCount as number) ?? 5 } : undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Queue '${queueName}' created (URL: ${result.data?.queueUrl})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_queue": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.deleteQueue(queueUrl);
+                return { content: [{ type: "text", text: result.success ? "Queue deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_queue_url": {
+                const queueName = params.queueName as string;
+                if (!queueName) return { content: [{ type: "text", text: "Error: queueName is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.getQueueUrl(queueName);
+                return { content: [{ type: "text", text: result.success ? `Queue URL: ${result.data}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_queue_metrics": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.getQueueMetrics(queueUrl);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const m = result.data;
+                const info = [
+                  `Messages Available: ${m?.approximateNumberOfMessages ?? "N/A"}`,
+                  `Messages In Flight: ${m?.approximateNumberOfMessagesNotVisible ?? "N/A"}`,
+                  `Messages Delayed: ${m?.approximateNumberOfMessagesDelayed ?? "N/A"}`,
+                  `Visibility Timeout: ${m?.visibilityTimeout ?? "N/A"}s`,
+                  `Queue Type: ${m?.queueType === "fifo" ? "FIFO" : "Standard"}`,
+                ].join("\n");
+                return { content: [{ type: "text", text: `Queue Metrics:\n\n${info}` }], details: m };
+              }
+
+              case "update_queue": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.updateQueue({
+                  queueUrl,
+                  visibilityTimeout: params.visibilityTimeout as number | undefined,
+                  delaySeconds: params.delaySeconds as number | undefined,
+                  deadLetterQueue: params.dlqArn ? { targetArn: params.dlqArn as string, maxReceiveCount: (params.maxReceiveCount as number) ?? 5 } : undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? "Queue updated" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "purge_queue": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.purgeQueue(queueUrl);
+                return { content: [{ type: "text", text: result.success ? "Queue purged" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "send_message": {
+                const queueUrl = params.queueUrl as string;
+                const messageBody = params.messageBody as string;
+                if (!queueUrl || !messageBody) return { content: [{ type: "text", text: "Error: queueUrl and messageBody are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.sendMessage({
+                  queueUrl,
+                  messageBody,
+                  delaySeconds: params.delaySeconds as number | undefined,
+                  messageGroupId: params.messageGroupId as string | undefined,
+                  messageDeduplicationId: params.messageDeduplicationId as string | undefined,
+                  messageAttributes: params.messageAttributes as Record<string, { dataType: string; stringValue?: string; binaryValue?: Uint8Array }> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Message sent (ID: ${result.data?.messageId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "send_message_batch": {
+                const queueUrl = params.queueUrl as string;
+                const messages = params.messages as Array<{ id: string; messageBody: string; delaySeconds?: number; messageGroupId?: string }>;
+                if (!queueUrl || !messages || messages.length === 0) return { content: [{ type: "text", text: "Error: queueUrl and messages are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.sendMessageBatch(queueUrl, messages);
+                const successes = (result.data ?? []).filter(r => r.success).length;
+                const failures = (result.data ?? []).filter(r => !r.success).length;
+                return { content: [{ type: "text", text: result.success ? `Batch sent: ${successes} successful, ${failures} failed` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "receive_messages": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.receiveMessages({
+                  queueUrl,
+                  maxNumberOfMessages: params.maxMessages as number | undefined,
+                  waitTimeSeconds: params.waitTimeSeconds as number | undefined,
+                  visibilityTimeout: params.visibilityTimeout as number | undefined,
+                });
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const msgs = result.data ?? [];
+                const summary = msgs.length === 0
+                  ? "No messages available."
+                  : msgs.map(m => `• ID: ${m.messageId}\n  Body: ${m.body?.slice(0, 100)}${(m.body?.length ?? 0) > 100 ? "..." : ""}`).join("\n");
+                return { content: [{ type: "text", text: `Received ${msgs.length} messages:\n\n${summary}` }], details: { count: msgs.length, messages: msgs } };
+              }
+
+              case "delete_message": {
+                const queueUrl = params.queueUrl as string;
+                const receiptHandle = params.receiptHandle as string;
+                if (!queueUrl || !receiptHandle) return { content: [{ type: "text", text: "Error: queueUrl and receiptHandle are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.deleteMessage(queueUrl, receiptHandle);
+                return { content: [{ type: "text", text: result.success ? "Message deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_message_batch": {
+                const queueUrl = params.queueUrl as string;
+                const receiptHandles = params.receiptHandles as string[];
+                if (!queueUrl || !receiptHandles || receiptHandles.length === 0) return { content: [{ type: "text", text: "Error: queueUrl and receiptHandles are required" }], details: { error: "missing_parameters" } };
+                const entries = receiptHandles.map((rh, i) => ({ id: String(i), receiptHandle: rh }));
+                const result = await sqsManager.deleteMessageBatch(queueUrl, entries);
+                return { content: [{ type: "text", text: result.success ? `Batch delete: ${(result.data ?? []).filter(r => r.success).length} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "change_message_visibility": {
+                const queueUrl = params.queueUrl as string;
+                const receiptHandle = params.receiptHandle as string;
+                const visibilityTimeout = params.visibilityTimeout as number;
+                if (!queueUrl || !receiptHandle || visibilityTimeout == null) return { content: [{ type: "text", text: "Error: queueUrl, receiptHandle, and visibilityTimeout are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.changeMessageVisibility(queueUrl, receiptHandle, visibilityTimeout);
+                return { content: [{ type: "text", text: result.success ? `Visibility timeout changed to ${visibilityTimeout}s` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_dlq_source_queues": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl (DLQ URL) is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.listDeadLetterSourceQueues(queueUrl);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const sources = result.data ?? [];
+                const summary = sources.length === 0 ? "No source queues found." : sources.map(q => `• ${q}`).join("\n");
+                return { content: [{ type: "text", text: `DLQ Source Queues:\n\n${summary}` }], details: { count: sources.length, sources } };
+              }
+
+              case "start_message_move_task": {
+                const sourceArn = params.sourceArn as string;
+                if (!sourceArn) return { content: [{ type: "text", text: "Error: sourceArn is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.startMessageMoveTask(
+                  sourceArn,
+                  params.destinationArn as string | undefined,
+                  params.maxNumberPerSecond as number | undefined,
+                );
+                return { content: [{ type: "text", text: result.success ? `Message move task started (handle: ${result.data?.taskHandle})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "cancel_message_move_task": {
+                const taskHandle = params.taskHandle as string;
+                if (!taskHandle) return { content: [{ type: "text", text: "Error: taskHandle is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.cancelMessageMoveTask(taskHandle);
+                return { content: [{ type: "text", text: result.success ? "Message move task cancelled" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_message_move_tasks": {
+                const sourceArn = params.sourceArn as string;
+                if (!sourceArn) return { content: [{ type: "text", text: "Error: sourceArn is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.listMessageMoveTasks(sourceArn);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const tasks = result.data ?? [];
+                return { content: [{ type: "text", text: `Message move tasks: ${tasks.length} found` }], details: { count: tasks.length, tasks } };
+              }
+
+              case "tag_queue": {
+                const queueUrl = params.queueUrl as string;
+                const tags = params.tags as Record<string, string>;
+                if (!queueUrl || !tags) return { content: [{ type: "text", text: "Error: queueUrl and tags are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.tagQueue(queueUrl, tags);
+                return { content: [{ type: "text", text: result.success ? "Tags applied" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "untag_queue": {
+                const queueUrl = params.queueUrl as string;
+                const tagKeys = params.tagKeys as string[];
+                if (!queueUrl || !tagKeys) return { content: [{ type: "text", text: "Error: queueUrl and tagKeys are required" }], details: { error: "missing_parameters" } };
+                const result = await sqsManager.untagQueue(queueUrl, tagKeys);
+                return { content: [{ type: "text", text: result.success ? "Tags removed" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_queue_tags": {
+                const queueUrl = params.queueUrl as string;
+                if (!queueUrl) return { content: [{ type: "text", text: "Error: queueUrl is required" }], details: { error: "missing_parameter" } };
+                const result = await sqsManager.listQueueTags(queueUrl);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const tagEntries = Object.entries(result.data ?? {});
+                const summary = tagEntries.length === 0 ? "No tags found." : tagEntries.map(([k, v]) => `• ${k}: ${v}`).join("\n");
+                return { content: [{ type: "text", text: `Queue Tags:\n\n${summary}` }], details: result.data };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `SQS error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_sqs" },
+    );
+
+    // =========================================================================
+    // AWS SNS MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_sns",
+        label: "AWS SNS Management",
+        description:
+          "Manage AWS SNS topics, subscriptions, and message publishing. Create topics, subscribe endpoints, publish messages, and manage platform applications for push notifications.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_topics",
+                "create_topic",
+                "delete_topic",
+                "get_topic",
+                "update_topic_attribute",
+                "subscribe",
+                "unsubscribe",
+                "list_subscriptions",
+                "list_subscriptions_by_topic",
+                "get_subscription_attributes",
+                "set_filter_policy",
+                "publish",
+                "publish_batch",
+                "create_platform_application",
+                "delete_platform_application",
+                "list_platform_applications",
+                "tag_resource",
+                "untag_resource",
+              ],
+              description: "The SNS operation to perform",
+            },
+            topicArn: {
+              type: "string",
+              description: "The SNS topic ARN",
+            },
+            topicName: {
+              type: "string",
+              description: "The topic name",
+            },
+            isFifo: {
+              type: "boolean",
+              description: "Whether this is a FIFO topic",
+            },
+            contentBasedDeduplication: {
+              type: "boolean",
+              description: "Enable content-based deduplication for FIFO topics",
+            },
+            protocol: {
+              type: "string",
+              enum: ["email", "email-json", "http", "https", "sqs", "sms", "lambda", "application", "firehose"],
+              description: "Subscription protocol",
+            },
+            endpoint: {
+              type: "string",
+              description: "Subscription endpoint (email, URL, ARN, phone number)",
+            },
+            subscriptionArn: {
+              type: "string",
+              description: "The subscription ARN",
+            },
+            attributeName: {
+              type: "string",
+              description: "Topic/subscription attribute name",
+            },
+            attributeValue: {
+              type: "string",
+              description: "Topic/subscription attribute value",
+            },
+            filterPolicy: {
+              type: "object",
+              description: "Filter policy for subscription",
+            },
+            filterPolicyScope: {
+              type: "string",
+              enum: ["MessageAttributes", "MessageBody"],
+              description: "Scope for filter policy",
+            },
+            message: {
+              type: "string",
+              description: "Message to publish",
+            },
+            subject: {
+              type: "string",
+              description: "Message subject",
+            },
+            messageGroupId: {
+              type: "string",
+              description: "Message group ID for FIFO topics",
+            },
+            messageDeduplicationId: {
+              type: "string",
+              description: "Deduplication ID for FIFO topics",
+            },
+            messageAttributes: {
+              type: "object",
+              description: "Message attributes",
+            },
+            messages: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  id: { type: "string" },
+                  message: { type: "string" },
+                  subject: { type: "string" },
+                },
+              },
+              description: "Messages for batch publish",
+            },
+            platformName: {
+              type: "string",
+              description: "Platform name (APNS, GCM, etc.)",
+            },
+            platformApplicationArn: {
+              type: "string",
+              description: "Platform application ARN",
+            },
+            platformCredential: {
+              type: "string",
+              description: "Platform credential (API key, certificate)",
+            },
+            resourceArn: {
+              type: "string",
+              description: "Resource ARN for tagging",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+            tagKeys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Tag keys to remove",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!snsManager) {
+            return { content: [{ type: "text", text: "Error: SNS manager not initialized" }], details: { error: "not_initialized" } };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              case "list_topics": {
+                const result = await snsManager.listTopics();
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const topics = result.data ?? [];
+                const summary = topics.length === 0 ? "No SNS topics found." : topics.map(t => `• ${t.TopicArn}`).join("\n");
+                return { content: [{ type: "text", text: `SNS Topics:\n\n${summary}` }], details: { count: topics.length, topics } };
+              }
+
+              case "create_topic": {
+                const topicName = params.topicName as string;
+                if (!topicName) return { content: [{ type: "text", text: "Error: topicName is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.createTopic({
+                  name: topicName,
+                  fifo: params.isFifo as boolean | undefined,
+                  contentBasedDeduplication: params.contentBasedDeduplication as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Topic '${topicName}' created (ARN: ${result.data?.topicArn})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_topic": {
+                const topicArn = params.topicArn as string;
+                if (!topicArn) return { content: [{ type: "text", text: "Error: topicArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.deleteTopic(topicArn);
+                return { content: [{ type: "text", text: result.success ? "Topic deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_topic": {
+                const topicArn = params.topicArn as string;
+                if (!topicArn) return { content: [{ type: "text", text: "Error: topicArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.getTopic(topicArn);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const t = result.data;
+                const info = [
+                  `Topic: ${t?.topicArn}`,
+                  `Subscriptions: ${t?.subscriptionsConfirmed ?? 0} confirmed, ${t?.subscriptionsPending ?? 0} pending`,
+                  `Display Name: ${t?.displayName || "N/A"}`,
+                ].join("\n");
+                return { content: [{ type: "text", text: info }], details: t };
+              }
+
+              case "update_topic_attribute": {
+                const topicArn = params.topicArn as string;
+                const attributeName = params.attributeName as string;
+                const attributeValue = params.attributeValue as string;
+                if (!topicArn || !attributeName || !attributeValue) return { content: [{ type: "text", text: "Error: topicArn, attributeName, and attributeValue are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.updateTopicAttribute(topicArn, attributeName, attributeValue);
+                return { content: [{ type: "text", text: result.success ? `Topic attribute '${attributeName}' updated` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "subscribe": {
+                const topicArn = params.topicArn as string;
+                const protocol = params.protocol as string;
+                const endpoint = params.endpoint as string;
+                if (!topicArn || !protocol || !endpoint) return { content: [{ type: "text", text: "Error: topicArn, protocol, and endpoint are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.subscribe({
+                  topicArn,
+                  protocol: protocol as "email" | "email-json" | "http" | "https" | "sqs" | "sms" | "lambda" | "application" | "firehose",
+                  endpoint,
+                  filterPolicy: params.filterPolicy as Record<string, string[]> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Subscribed (ARN: ${result.data?.subscriptionArn})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "unsubscribe": {
+                const subscriptionArn = params.subscriptionArn as string;
+                if (!subscriptionArn) return { content: [{ type: "text", text: "Error: subscriptionArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.unsubscribe(subscriptionArn);
+                return { content: [{ type: "text", text: result.success ? "Unsubscribed" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_subscriptions": {
+                const result = await snsManager.listSubscriptions();
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const subs = result.data ?? [];
+                const summary = subs.length === 0 ? "No subscriptions found." : subs.map(s => `• ${s.SubscriptionArn} (${s.Protocol} → ${s.Endpoint})`).join("\n");
+                return { content: [{ type: "text", text: `SNS Subscriptions:\n\n${summary}` }], details: { count: subs.length, subscriptions: subs } };
+              }
+
+              case "list_subscriptions_by_topic": {
+                const topicArn = params.topicArn as string;
+                if (!topicArn) return { content: [{ type: "text", text: "Error: topicArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.listSubscriptionsByTopic(topicArn);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const subs = result.data ?? [];
+                const summary = subs.length === 0 ? "No subscriptions." : subs.map(s => `• ${s.Protocol} → ${s.Endpoint} (${s.SubscriptionArn})`).join("\n");
+                return { content: [{ type: "text", text: `Topic Subscriptions:\n\n${summary}` }], details: { count: subs.length, subscriptions: subs } };
+              }
+
+              case "get_subscription_attributes": {
+                const subscriptionArn = params.subscriptionArn as string;
+                if (!subscriptionArn) return { content: [{ type: "text", text: "Error: subscriptionArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.getSubscriptionAttributes(subscriptionArn);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const attrs = Object.entries(result.data ?? {}).map(([k, v]) => `• ${k}: ${v}`).join("\n");
+                return { content: [{ type: "text", text: `Subscription Attributes:\n\n${attrs}` }], details: result.data };
+              }
+
+              case "set_filter_policy": {
+                const subscriptionArn = params.subscriptionArn as string;
+                const filterPolicy = params.filterPolicy as Record<string, string[]>;
+                if (!subscriptionArn || !filterPolicy) return { content: [{ type: "text", text: "Error: subscriptionArn and filterPolicy are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.setFilterPolicy(subscriptionArn, filterPolicy, params.filterPolicyScope as "MessageAttributes" | "MessageBody" | undefined);
+                return { content: [{ type: "text", text: result.success ? "Filter policy set" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "publish": {
+                const message = params.message as string;
+                if (!message) return { content: [{ type: "text", text: "Error: message is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.publish({
+                  topicArn: params.topicArn as string | undefined,
+                  message,
+                  subject: params.subject as string | undefined,
+                  messageGroupId: params.messageGroupId as string | undefined,
+                  messageDeduplicationId: params.messageDeduplicationId as string | undefined,
+                  messageAttributes: params.messageAttributes as Record<string, { dataType: 'String' | 'Number' | 'Binary' | 'String.Array'; stringValue?: string; binaryValue?: Uint8Array }> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Published (ID: ${result.data?.messageId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "publish_batch": {
+                const topicArn = params.topicArn as string;
+                const messages = params.messages as Array<{ id: string; message: string; subject?: string }>;
+                if (!topicArn || !messages || messages.length === 0) return { content: [{ type: "text", text: "Error: topicArn and messages are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.publishBatch({ topicArn, messages });
+                return { content: [{ type: "text", text: result.success ? `Batch published: ${result.data?.successful?.length ?? 0} sent, ${result.data?.failed?.length ?? 0} failed` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_platform_application": {
+                const platformName = params.platformName as string;
+                const name = params.topicName as string;
+                const platformCredential = params.platformCredential as string;
+                if (!platformName || !name || !platformCredential) return { content: [{ type: "text", text: "Error: platformName, topicName (as app name), and platformCredential are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.createPlatformApplication({ platform: platformName as 'ADM' | 'APNS' | 'APNS_SANDBOX' | 'GCM' | 'BAIDU' | 'WNS' | 'MPNS', name, attributes: { PlatformCredential: platformCredential } });
+                return { content: [{ type: "text", text: result.success ? `Platform application created (ARN: ${result.data?.platformApplicationArn})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_platform_application": {
+                const platformApplicationArn = params.platformApplicationArn as string;
+                if (!platformApplicationArn) return { content: [{ type: "text", text: "Error: platformApplicationArn is required" }], details: { error: "missing_parameter" } };
+                const result = await snsManager.deletePlatformApplication(platformApplicationArn);
+                return { content: [{ type: "text", text: result.success ? "Platform application deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_platform_applications": {
+                const result = await snsManager.listPlatformApplications();
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const apps = result.data ?? [];
+                const summary = apps.length === 0 ? "No platform applications." : apps.map(a => `• ${a.PlatformApplicationArn}`).join("\n");
+                return { content: [{ type: "text", text: `Platform Applications:\n\n${summary}` }], details: { count: apps.length, applications: apps } };
+              }
+
+              case "tag_resource": {
+                const resourceArn = params.resourceArn as string;
+                const tags = params.tags as Record<string, string>;
+                if (!resourceArn || !tags) return { content: [{ type: "text", text: "Error: resourceArn and tags are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.tagResource(resourceArn, tags);
+                return { content: [{ type: "text", text: result.success ? "Tags applied" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "untag_resource": {
+                const resourceArn = params.resourceArn as string;
+                const tagKeys = params.tagKeys as string[];
+                if (!resourceArn || !tagKeys) return { content: [{ type: "text", text: "Error: resourceArn and tagKeys are required" }], details: { error: "missing_parameters" } };
+                const result = await snsManager.untagResource(resourceArn, tagKeys);
+                return { content: [{ type: "text", text: result.success ? "Tags removed" : `Error: ${result.error}` }], details: result };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `SNS error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_sns" },
+    );
+
+    // =========================================================================
+    // AWS ROUTE 53 MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_route53",
+        label: "AWS Route 53 Management",
+        description:
+          "Manage AWS Route 53 DNS hosted zones, records, and health checks. Create zones, manage DNS records, configure health checks, and associate VPCs.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_hosted_zones",
+                "create_hosted_zone",
+                "delete_hosted_zone",
+                "get_hosted_zone",
+                "find_hosted_zone_by_name",
+                "update_hosted_zone_comment",
+                "list_records",
+                "get_record",
+                "create_record",
+                "upsert_record",
+                "delete_record",
+                "list_health_checks",
+                "create_health_check",
+                "delete_health_check",
+                "get_health_check",
+                "get_health_check_status",
+                "associate_vpc",
+                "disassociate_vpc",
+                "get_dns_answer",
+              ],
+              description: "The Route 53 operation to perform",
+            },
+            hostedZoneId: {
+              type: "string",
+              description: "The hosted zone ID",
+            },
+            domainName: {
+              type: "string",
+              description: "The domain name",
+            },
+            isPrivate: {
+              type: "boolean",
+              description: "Whether this is a private hosted zone",
+            },
+            vpcId: {
+              type: "string",
+              description: "VPC ID for private hosted zones",
+            },
+            vpcRegion: {
+              type: "string",
+              description: "VPC region for private hosted zones",
+            },
+            comment: {
+              type: "string",
+              description: "Comment for the hosted zone",
+            },
+            recordName: {
+              type: "string",
+              description: "DNS record name",
+            },
+            recordType: {
+              type: "string",
+              enum: ["A", "AAAA", "CAA", "CNAME", "DS", "MX", "NAPTR", "NS", "PTR", "SOA", "SPF", "SRV", "TXT"],
+              description: "DNS record type",
+            },
+            recordValues: {
+              type: "array",
+              items: { type: "string" },
+              description: "DNS record values",
+            },
+            ttl: {
+              type: "number",
+              description: "Record TTL in seconds",
+            },
+            aliasTarget: {
+              type: "object",
+              properties: {
+                hostedZoneId: { type: "string" },
+                dnsName: { type: "string" },
+                evaluateTargetHealth: { type: "boolean" },
+              },
+              description: "Alias target configuration",
+            },
+            weight: {
+              type: "number",
+              description: "Weight for weighted routing",
+            },
+            setIdentifier: {
+              type: "string",
+              description: "Set identifier for routing policies",
+            },
+            healthCheckId: {
+              type: "string",
+              description: "Health check ID",
+            },
+            healthCheckType: {
+              type: "string",
+              enum: ["HTTP", "HTTPS", "HTTP_STR_MATCH", "HTTPS_STR_MATCH", "TCP", "CALCULATED", "CLOUDWATCH_METRIC", "RECOVERY_CONTROL"],
+              description: "Health check type",
+            },
+            ipAddress: {
+              type: "string",
+              description: "IP address for health check",
+            },
+            port: {
+              type: "number",
+              description: "Port for health check",
+            },
+            resourcePath: {
+              type: "string",
+              description: "Resource path for health check",
+            },
+            searchString: {
+              type: "string",
+              description: "Search string for health check",
+            },
+            failureThreshold: {
+              type: "number",
+              description: "Failure threshold for health check",
+            },
+            requestInterval: {
+              type: "number",
+              description: "Request interval for health check (10 or 30 seconds)",
+            },
+            maxItems: {
+              type: "number",
+              description: "Maximum items to return",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!route53Manager) {
+            return { content: [{ type: "text", text: "Error: Route 53 manager not initialized" }], details: { error: "not_initialized" } };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              case "list_hosted_zones": {
+                const result = await route53Manager.listHostedZones(params.maxItems as number | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const zones = result.data ?? [];
+                const summary = zones.length === 0 ? "No hosted zones found." : zones.map(z => `• ${z.Name} (${z.Id}) - ${z.Config?.PrivateZone ? "Private" : "Public"} - ${z.ResourceRecordSetCount} records`).join("\n");
+                return { content: [{ type: "text", text: `Route 53 Hosted Zones:\n\n${summary}` }], details: { count: zones.length, zones } };
+              }
+
+              case "create_hosted_zone": {
+                const domainName = params.domainName as string;
+                if (!domainName) return { content: [{ type: "text", text: "Error: domainName is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.createHostedZone({
+                  name: domainName,
+                  privateZone: params.isPrivate as boolean | undefined,
+                  vpcId: params.vpcId as string | undefined,
+                  vpcRegion: params.vpcRegion as string | undefined,
+                  comment: params.comment as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Hosted zone created for '${domainName}' (ID: ${result.data?.Id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_hosted_zone": {
+                const hostedZoneId = params.hostedZoneId as string;
+                if (!hostedZoneId) return { content: [{ type: "text", text: "Error: hostedZoneId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.deleteHostedZone(hostedZoneId);
+                return { content: [{ type: "text", text: result.success ? "Hosted zone deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_hosted_zone": {
+                const hostedZoneId = params.hostedZoneId as string;
+                if (!hostedZoneId) return { content: [{ type: "text", text: "Error: hostedZoneId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.getHostedZone(hostedZoneId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const z = result.data;
+                const info = [
+                  `Zone: ${z?.name} (${z?.hostedZoneId})`,
+                  `Type: ${z?.privateZone ? "Private" : "Public"}`,
+                  `Record Count: ${z?.recordCount}`,
+                  `Name Servers: ${z?.nameServers?.join(", ") || "N/A"}`,
+                  z?.comment ? `Comment: ${z.comment}` : "",
+                ].filter(Boolean).join("\n");
+                return { content: [{ type: "text", text: info }], details: z };
+              }
+
+              case "find_hosted_zone_by_name": {
+                const domainName = params.domainName as string;
+                if (!domainName) return { content: [{ type: "text", text: "Error: domainName is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.findHostedZoneByName(domainName);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                if (!result.data) return { content: [{ type: "text", text: `No hosted zone found for '${domainName}'` }], details: { found: false } };
+                return { content: [{ type: "text", text: `Found: ${result.data.Name} (${result.data.Id})` }], details: result.data };
+              }
+
+              case "update_hosted_zone_comment": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const comment = params.comment as string;
+                if (!hostedZoneId || !comment) return { content: [{ type: "text", text: "Error: hostedZoneId and comment are required" }], details: { error: "missing_parameters" } };
+                const result = await route53Manager.updateHostedZoneComment(hostedZoneId, comment);
+                return { content: [{ type: "text", text: result.success ? "Comment updated" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_records": {
+                const hostedZoneId = params.hostedZoneId as string;
+                if (!hostedZoneId) return { content: [{ type: "text", text: "Error: hostedZoneId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.listRecords(hostedZoneId, {
+                  type: params.recordType as RecordType | undefined,
+                  name: params.recordName as string | undefined,
+                  maxItems: params.maxItems as number | undefined,
+                });
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const records = result.data ?? [];
+                const summary = records.length === 0 ? "No records found." : records.map(r => `• ${r.Name} ${r.Type} ${r.TTL ? `TTL:${r.TTL}` : "ALIAS"} → ${r.ResourceRecords?.map(rr => rr.Value).join(", ") || r.AliasTarget?.DNSName || ""}`).join("\n");
+                return { content: [{ type: "text", text: `DNS Records:\n\n${summary}` }], details: { count: records.length, records } };
+              }
+
+              case "get_record": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const recordName = params.recordName as string;
+                const recordType = params.recordType as string;
+                if (!hostedZoneId || !recordName || !recordType) return { content: [{ type: "text", text: "Error: hostedZoneId, recordName, and recordType are required" }], details: { error: "missing_parameters" } };
+                const result = await route53Manager.getRecord(hostedZoneId, recordName, recordType as RecordType);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                if (!result.data) return { content: [{ type: "text", text: `Record '${recordName}' (${recordType}) not found` }], details: { found: false } };
+                const r = result.data;
+                return { content: [{ type: "text", text: `${r.Name} ${r.Type} TTL:${r.TTL ?? "ALIAS"} → ${r.ResourceRecords?.map(rr => rr.Value).join(", ") || r.AliasTarget?.DNSName || ""}` }], details: r };
+              }
+
+              case "create_record":
+              case "upsert_record":
+              case "delete_record": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const recordName = params.recordName as string;
+                const recordType = params.recordType as string;
+                if (!hostedZoneId || !recordName || !recordType) return { content: [{ type: "text", text: "Error: hostedZoneId, recordName, and recordType are required" }], details: { error: "missing_parameters" } };
+                const config = {
+                  hostedZoneId,
+                  name: recordName,
+                  type: recordType as "A" | "AAAA" | "CNAME" | "MX" | "TXT" | "NS" | "SOA" | "SRV" | "CAA" | "DS" | "NAPTR" | "PTR" | "SPF",
+                  values: params.recordValues as string[] | undefined,
+                  ttl: params.ttl as number | undefined,
+                  aliasTarget: params.aliasTarget as { hostedZoneId: string; dnsName: string; evaluateTargetHealth?: boolean } | undefined,
+                  weight: params.weight as number | undefined,
+                  setIdentifier: params.setIdentifier as string | undefined,
+                  healthCheckId: params.healthCheckId as string | undefined,
+                };
+                const fn = action === "create_record" ? route53Manager.createRecord : action === "upsert_record" ? route53Manager.upsertRecord : route53Manager.deleteRecord;
+                const result = await fn.call(route53Manager, config);
+                const verb = action === "create_record" ? "created" : action === "upsert_record" ? "upserted" : "deleted";
+                return { content: [{ type: "text", text: result.success ? `Record ${verb}: ${recordName} (${recordType})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_health_checks": {
+                const result = await route53Manager.listHealthChecks(params.maxItems as number | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const checks = result.data ?? [];
+                const summary = checks.length === 0 ? "No health checks found." : checks.map(h => `• ${h.Id} (${h.HealthCheckConfig?.Type}) - ${h.HealthCheckConfig?.FullyQualifiedDomainName || h.HealthCheckConfig?.IPAddress || "N/A"}`).join("\n");
+                return { content: [{ type: "text", text: `Health Checks:\n\n${summary}` }], details: { count: checks.length, healthChecks: checks } };
+              }
+
+              case "create_health_check": {
+                const healthCheckType = params.healthCheckType as string;
+                if (!healthCheckType) return { content: [{ type: "text", text: "Error: healthCheckType is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.createHealthCheck({
+                  type: healthCheckType as "HTTP" | "HTTPS" | "HTTP_STR_MATCH" | "HTTPS_STR_MATCH" | "TCP" | "CALCULATED" | "CLOUDWATCH_METRIC" | "RECOVERY_CONTROL",
+                  fqdn: params.domainName as string | undefined,
+                  ipAddress: params.ipAddress as string | undefined,
+                  port: params.port as number | undefined,
+                  resourcePath: params.resourcePath as string | undefined,
+                  searchString: params.searchString as string | undefined,
+                  failureThreshold: params.failureThreshold as number | undefined,
+                  requestInterval: params.requestInterval as number | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Health check created (ID: ${result.data?.Id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_health_check": {
+                const healthCheckId = params.healthCheckId as string;
+                if (!healthCheckId) return { content: [{ type: "text", text: "Error: healthCheckId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.deleteHealthCheck(healthCheckId);
+                return { content: [{ type: "text", text: result.success ? "Health check deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_health_check": {
+                const healthCheckId = params.healthCheckId as string;
+                if (!healthCheckId) return { content: [{ type: "text", text: "Error: healthCheckId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.getHealthCheck(healthCheckId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                return { content: [{ type: "text", text: `Health Check: ${result.data?.Id} (${result.data?.HealthCheckConfig?.Type})` }], details: result.data };
+              }
+
+              case "get_health_check_status": {
+                const healthCheckId = params.healthCheckId as string;
+                if (!healthCheckId) return { content: [{ type: "text", text: "Error: healthCheckId is required" }], details: { error: "missing_parameter" } };
+                const result = await route53Manager.getHealthCheckStatus(healthCheckId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const observations = result.data?.observations ?? [];
+                const summary = observations.map(o => `• ${o.region}: ${o.status} (${o.ipAddress})`).join("\n");
+                return { content: [{ type: "text", text: `Health check ${result.data?.healthCheckId}:\n\n${summary}` }], details: result.data };
+              }
+
+              case "associate_vpc": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const vpcId = params.vpcId as string;
+                const vpcRegion = params.vpcRegion as string;
+                if (!hostedZoneId || !vpcId || !vpcRegion) return { content: [{ type: "text", text: "Error: hostedZoneId, vpcId, and vpcRegion are required" }], details: { error: "missing_parameters" } };
+                const result = await route53Manager.associateVPCWithHostedZone(hostedZoneId, vpcId, vpcRegion);
+                return { content: [{ type: "text", text: result.success ? `VPC ${vpcId} associated with zone` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "disassociate_vpc": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const vpcId = params.vpcId as string;
+                const vpcRegion = params.vpcRegion as string;
+                if (!hostedZoneId || !vpcId || !vpcRegion) return { content: [{ type: "text", text: "Error: hostedZoneId, vpcId, and vpcRegion are required" }], details: { error: "missing_parameters" } };
+                const result = await route53Manager.disassociateVPCFromHostedZone(hostedZoneId, vpcId, vpcRegion);
+                return { content: [{ type: "text", text: result.success ? `VPC ${vpcId} disassociated from zone` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_dns_answer": {
+                const hostedZoneId = params.hostedZoneId as string;
+                const recordName = params.recordName as string;
+                const recordType = params.recordType as string;
+                if (!hostedZoneId || !recordName || !recordType) return { content: [{ type: "text", text: "Error: hostedZoneId, recordName, and recordType are required" }], details: { error: "missing_parameters" } };
+                const result = await route53Manager.testDNSAnswer(hostedZoneId, recordName, recordType as RecordType);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                return { content: [{ type: "text", text: `DNS Answer: ${JSON.stringify(result.data, null, 2)}` }], details: result.data };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `Route 53 error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_route53" },
+    );
+
+    // =========================================================================
+    // AWS COGNITO MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_cognito",
+        label: "AWS Cognito Management",
+        description:
+          "Manage AWS Cognito user pools, users, groups, app clients, and identity providers. Handle user authentication, authorization, and identity management.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_user_pools",
+                "create_user_pool",
+                "delete_user_pool",
+                "get_user_pool",
+                "list_users",
+                "create_user",
+                "delete_user",
+                "get_user",
+                "enable_user",
+                "disable_user",
+                "reset_user_password",
+                "set_user_password",
+                "sign_out_user",
+                "list_groups",
+                "create_group",
+                "delete_group",
+                "add_user_to_group",
+                "remove_user_from_group",
+                "list_users_in_group",
+                "list_app_clients",
+                "create_app_client",
+                "delete_app_client",
+                "list_identity_providers",
+                "create_identity_provider",
+                "delete_identity_provider",
+              ],
+              description: "The Cognito operation to perform",
+            },
+            userPoolId: {
+              type: "string",
+              description: "The Cognito user pool ID",
+            },
+            userPoolName: {
+              type: "string",
+              description: "Name for a new user pool",
+            },
+            username: {
+              type: "string",
+              description: "The username",
+            },
+            password: {
+              type: "string",
+              description: "The password",
+            },
+            permanent: {
+              type: "boolean",
+              description: "Whether the password is permanent",
+            },
+            email: {
+              type: "string",
+              description: "User email address",
+            },
+            phoneNumber: {
+              type: "string",
+              description: "User phone number",
+            },
+            temporaryPassword: {
+              type: "string",
+              description: "Temporary password for new users",
+            },
+            userAttributes: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  value: { type: "string" },
+                },
+              },
+              description: "User attributes",
+            },
+            groupName: {
+              type: "string",
+              description: "The group name",
+            },
+            groupDescription: {
+              type: "string",
+              description: "Description for a group",
+            },
+            precedence: {
+              type: "number",
+              description: "Group precedence (lower = higher priority)",
+            },
+            roleArn: {
+              type: "string",
+              description: "IAM role ARN for the group",
+            },
+            clientId: {
+              type: "string",
+              description: "App client ID",
+            },
+            clientName: {
+              type: "string",
+              description: "Name for a new app client",
+            },
+            generateSecret: {
+              type: "boolean",
+              description: "Whether to generate a client secret",
+            },
+            callbackURLs: {
+              type: "array",
+              items: { type: "string" },
+              description: "Callback URLs for the app client",
+            },
+            logoutURLs: {
+              type: "array",
+              items: { type: "string" },
+              description: "Logout URLs for the app client",
+            },
+            authFlows: {
+              type: "array",
+              items: { type: "string" },
+              description: "Explicit auth flows (e.g., ALLOW_USER_PASSWORD_AUTH)",
+            },
+            providerName: {
+              type: "string",
+              description: "Identity provider name",
+            },
+            providerType: {
+              type: "string",
+              enum: ["Google", "Facebook", "LoginWithAmazon", "SignInWithApple", "SAML", "OIDC"],
+              description: "Identity provider type",
+            },
+            providerDetails: {
+              type: "object",
+              description: "Provider details (client ID, secret, etc.)",
+            },
+            attributeMapping: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Attribute mapping for identity provider",
+            },
+            filter: {
+              type: "string",
+              description: "Filter expression for listing users",
+            },
+            maxResults: {
+              type: "number",
+              description: "Maximum number of results to return",
+            },
+            mfaConfiguration: {
+              type: "string",
+              enum: ["OFF", "ON", "OPTIONAL"],
+              description: "MFA configuration for the user pool",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!cognitoManager) {
+            return { content: [{ type: "text", text: "Error: Cognito manager not initialized" }], details: { error: "not_initialized" } };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              case "list_user_pools": {
+                const result = await cognitoManager.listUserPools(params.maxResults as number | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const pools = result.data ?? [];
+                const summary = pools.length === 0 ? "No user pools found." : pools.map(p => `• ${p.Name} (${p.Id}) - Status: ${p.Status}`).join("\n");
+                return { content: [{ type: "text", text: `Cognito User Pools:\n\n${summary}` }], details: { count: pools.length, userPools: pools } };
+              }
+
+              case "create_user_pool": {
+                const userPoolName = params.userPoolName as string;
+                if (!userPoolName) return { content: [{ type: "text", text: "Error: userPoolName is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.createUserPool({
+                  poolName: userPoolName,
+                  mfaConfiguration: params.mfaConfiguration as "OFF" | "ON" | "OPTIONAL" | undefined,
+                  autoVerifiedAttributes: params.email ? ["email"] : undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `User pool '${userPoolName}' created (ID: ${result.data?.Id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_user_pool": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.deleteUserPool(userPoolId);
+                return { content: [{ type: "text", text: result.success ? "User pool deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_user_pool": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.getUserPool(userPoolId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const p = result.data;
+                const info = [
+                  `Pool: ${p?.userPoolName} (${p?.userPoolId})`,
+                  `Status: ${p?.status}`,
+                  `Users: ${p?.estimatedNumberOfUsers ?? "N/A"}`,
+                  `MFA: ${p?.mfaConfiguration ?? "N/A"}`,
+                  `App Clients: ${p?.appClientCount ?? "N/A"}`,
+                  `Identity Providers: ${p?.identityProviderCount ?? "N/A"}`,
+                ].join("\n");
+                return { content: [{ type: "text", text: info }], details: p };
+              }
+
+              case "list_users": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.listUsers(userPoolId, {
+                  filter: params.filter as string | undefined,
+                  limit: params.maxResults as number | undefined,
+                });
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const users = result.data ?? [];
+                const summary = users.length === 0 ? "No users found." : users.map(u => `• ${u.Username} (${u.UserStatus}) - Enabled: ${u.Enabled}`).join("\n");
+                return { content: [{ type: "text", text: `Users:\n\n${summary}` }], details: { count: users.length, users } };
+              }
+
+              case "create_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const attrs = params.userAttributes as Array<{ name: string; value: string }> | undefined;
+                const emailAttr = params.email ? [{ name: 'email', value: params.email as string }] : [];
+                const phoneAttr = params.phoneNumber ? [{ name: 'phone_number', value: params.phoneNumber as string }] : [];
+                const allAttrs = [...emailAttr, ...phoneAttr, ...(attrs ?? [])];
+                const result = await cognitoManager.createUser({
+                  userPoolId,
+                  username,
+                  temporaryPassword: params.temporaryPassword as string | undefined,
+                  userAttributes: allAttrs.length > 0 ? allAttrs : undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `User '${username}' created` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.deleteUser(userPoolId, username);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.getUser(userPoolId, username);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                return { content: [{ type: "text", text: `User: ${result.data?.username} (${result.data?.userStatus}) - Enabled: ${result.data?.enabled}` }], details: result.data };
+              }
+
+              case "enable_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.enableUser(userPoolId, username);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' enabled` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "disable_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.disableUser(userPoolId, username);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' disabled` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "reset_user_password": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.resetUserPassword(userPoolId, username);
+                return { content: [{ type: "text", text: result.success ? `Password reset for '${username}'` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "set_user_password": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                const password = params.password as string;
+                if (!userPoolId || !username || !password) return { content: [{ type: "text", text: "Error: userPoolId, username, and password are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.setUserPassword(userPoolId, username, password, params.permanent as boolean | undefined);
+                return { content: [{ type: "text", text: result.success ? `Password set for '${username}'` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "sign_out_user": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                if (!userPoolId || !username) return { content: [{ type: "text", text: "Error: userPoolId and username are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.signOutUser(userPoolId, username);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' signed out` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_groups": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.listGroups(userPoolId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const groups = result.data ?? [];
+                const summary = groups.length === 0 ? "No groups found." : groups.map(g => `• ${g.GroupName} (precedence: ${g.Precedence ?? "N/A"})`).join("\n");
+                return { content: [{ type: "text", text: `Groups:\n\n${summary}` }], details: { count: groups.length, groups } };
+              }
+
+              case "create_group": {
+                const userPoolId = params.userPoolId as string;
+                const groupName = params.groupName as string;
+                if (!userPoolId || !groupName) return { content: [{ type: "text", text: "Error: userPoolId and groupName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.createGroup({
+                  userPoolId,
+                  groupName,
+                  description: params.groupDescription as string | undefined,
+                  precedence: params.precedence as number | undefined,
+                  roleArn: params.roleArn as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Group '${groupName}' created` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_group": {
+                const userPoolId = params.userPoolId as string;
+                const groupName = params.groupName as string;
+                if (!userPoolId || !groupName) return { content: [{ type: "text", text: "Error: userPoolId and groupName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.deleteGroup(userPoolId, groupName);
+                return { content: [{ type: "text", text: result.success ? `Group '${groupName}' deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "add_user_to_group": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                const groupName = params.groupName as string;
+                if (!userPoolId || !username || !groupName) return { content: [{ type: "text", text: "Error: userPoolId, username, and groupName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.addUserToGroup(userPoolId, username, groupName);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' added to group '${groupName}'` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "remove_user_from_group": {
+                const userPoolId = params.userPoolId as string;
+                const username = params.username as string;
+                const groupName = params.groupName as string;
+                if (!userPoolId || !username || !groupName) return { content: [{ type: "text", text: "Error: userPoolId, username, and groupName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.removeUserFromGroup(userPoolId, username, groupName);
+                return { content: [{ type: "text", text: result.success ? `User '${username}' removed from group '${groupName}'` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_users_in_group": {
+                const userPoolId = params.userPoolId as string;
+                const groupName = params.groupName as string;
+                if (!userPoolId || !groupName) return { content: [{ type: "text", text: "Error: userPoolId and groupName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.listUsersInGroup(userPoolId, groupName);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const users = result.data ?? [];
+                const summary = users.length === 0 ? "No users in group." : users.map(u => `• ${u.Username} (${u.UserStatus})`).join("\n");
+                return { content: [{ type: "text", text: `Users in '${groupName}':\n\n${summary}` }], details: { count: users.length, users } };
+              }
+
+              case "list_app_clients": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.listAppClients(userPoolId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const clients = result.data ?? [];
+                const summary = clients.length === 0 ? "No app clients found." : clients.map(c => `• ${c.ClientName} (${c.ClientId})`).join("\n");
+                return { content: [{ type: "text", text: `App Clients:\n\n${summary}` }], details: { count: clients.length, clients } };
+              }
+
+              case "create_app_client": {
+                const userPoolId = params.userPoolId as string;
+                const clientName = params.clientName as string;
+                if (!userPoolId || !clientName) return { content: [{ type: "text", text: "Error: userPoolId and clientName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.createAppClient({
+                  userPoolId,
+                  clientName,
+                  generateSecret: params.generateSecret as boolean | undefined,
+                  callbackURLs: params.callbackURLs as string[] | undefined,
+                  logoutURLs: params.logoutURLs as string[] | undefined,
+                  explicitAuthFlows: params.authFlows as ('ALLOW_ADMIN_USER_PASSWORD_AUTH' | 'ALLOW_CUSTOM_AUTH' | 'ALLOW_USER_PASSWORD_AUTH' | 'ALLOW_USER_SRP_AUTH' | 'ALLOW_REFRESH_TOKEN_AUTH')[] | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `App client '${clientName}' created (ID: ${result.data?.ClientId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_app_client": {
+                const userPoolId = params.userPoolId as string;
+                const clientId = params.clientId as string;
+                if (!userPoolId || !clientId) return { content: [{ type: "text", text: "Error: userPoolId and clientId are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.deleteAppClient(userPoolId, clientId);
+                return { content: [{ type: "text", text: result.success ? "App client deleted" : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_identity_providers": {
+                const userPoolId = params.userPoolId as string;
+                if (!userPoolId) return { content: [{ type: "text", text: "Error: userPoolId is required" }], details: { error: "missing_parameter" } };
+                const result = await cognitoManager.listIdentityProviders(userPoolId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const providers = result.data ?? [];
+                const summary = providers.length === 0 ? "No identity providers." : providers.map(p => `• ${p.ProviderName} (${p.ProviderType})`).join("\n");
+                return { content: [{ type: "text", text: `Identity Providers:\n\n${summary}` }], details: { count: providers.length, providers } };
+              }
+
+              case "create_identity_provider": {
+                const userPoolId = params.userPoolId as string;
+                const providerName = params.providerName as string;
+                const providerType = params.providerType as string;
+                const providerDetails = params.providerDetails as Record<string, string>;
+                if (!userPoolId || !providerName || !providerType || !providerDetails) return { content: [{ type: "text", text: "Error: userPoolId, providerName, providerType, and providerDetails are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.createIdentityProvider({
+                  userPoolId,
+                  providerName,
+                  providerType: providerType as "Google" | "Facebook" | "LoginWithAmazon" | "SignInWithApple" | "SAML" | "OIDC",
+                  providerDetails,
+                  attributeMapping: params.attributeMapping as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Identity provider '${providerName}' created` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_identity_provider": {
+                const userPoolId = params.userPoolId as string;
+                const providerName = params.providerName as string;
+                if (!userPoolId || !providerName) return { content: [{ type: "text", text: "Error: userPoolId and providerName are required" }], details: { error: "missing_parameters" } };
+                const result = await cognitoManager.deleteIdentityProvider(userPoolId, providerName);
+                return { content: [{ type: "text", text: result.success ? `Identity provider '${providerName}' deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error) {
+            return { content: [{ type: "text", text: `Cognito error: ${error}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_cognito" },
+    );
+
+    // =========================================================================
+    // AWS API GATEWAY MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_apigateway",
+        label: "AWS API Gateway",
+        description: `Manage AWS API Gateway REST, HTTP, and WebSocket APIs with comprehensive lifecycle operations.
+
+ACTIONS:
+  REST API: create_rest_api, get_rest_api, list_rest_apis, delete_rest_api, import_rest_api, export_rest_api
+  HTTP API: create_http_api, get_http_api, list_http_apis, delete_http_api, import_http_api, export_http_api
+  Resources (REST): create_resource, list_resources, delete_resource
+  Methods (REST): create_method, delete_method
+  Integrations (REST): create_integration, create_lambda_proxy_integration
+  Routes (HTTP): create_route, list_routes, delete_route
+  HTTP Integrations: create_http_integration, create_http_lambda_integration, list_http_integrations
+  Stages: create_rest_stage, create_http_stage, list_rest_stages, list_http_stages, delete_rest_stage, delete_http_stage
+  Deployments: create_rest_deployment, create_http_deployment
+  Authorizers: create_rest_authorizer, create_http_authorizer, list_rest_authorizers, list_http_authorizers
+  Usage Plans: create_usage_plan, list_usage_plans
+  API Keys: create_api_key, list_api_keys, add_api_key_to_usage_plan
+  Domains: create_rest_domain, create_http_domain, create_base_path_mapping, create_api_mapping
+  Utilities: get_api_metrics, get_invoke_url, flush_stage_cache`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "create_rest_api", "get_rest_api", "list_rest_apis", "delete_rest_api", "import_rest_api", "export_rest_api",
+                "create_http_api", "get_http_api", "list_http_apis", "delete_http_api", "import_http_api", "export_http_api",
+                "create_resource", "list_resources", "delete_resource",
+                "create_method", "delete_method",
+                "create_integration", "create_lambda_proxy_integration",
+                "create_route", "list_routes", "delete_route",
+                "create_http_integration", "create_http_lambda_integration", "list_http_integrations",
+                "create_rest_stage", "create_http_stage", "list_rest_stages", "list_http_stages", "delete_rest_stage", "delete_http_stage",
+                "create_rest_deployment", "create_http_deployment",
+                "create_rest_authorizer", "create_http_authorizer", "list_rest_authorizers", "list_http_authorizers",
+                "create_usage_plan", "list_usage_plans",
+                "create_api_key", "list_api_keys", "add_api_key_to_usage_plan",
+                "create_rest_domain", "create_http_domain", "create_base_path_mapping", "create_api_mapping",
+                "get_api_metrics", "get_invoke_url", "flush_stage_cache",
+              ],
+              description: "The API Gateway operation to perform",
+            },
+            // Common identifiers
+            restApiId: { type: "string", description: "REST API ID" },
+            apiId: { type: "string", description: "HTTP/WebSocket API ID" },
+            name: { type: "string", description: "Name for the resource being created" },
+            description: { type: "string", description: "Description" },
+            tags: { type: "object", additionalProperties: { type: "string" }, description: "Tags" },
+
+            // REST API creation
+            endpointType: { type: "string", enum: ["EDGE", "REGIONAL", "PRIVATE"], description: "Endpoint type for REST API" },
+            binaryMediaTypes: { type: "array", items: { type: "string" }, description: "Binary media types" },
+            minimumCompressionSize: { type: "number", description: "Minimum compression size in bytes" },
+            apiKeySource: { type: "string", enum: ["HEADER", "AUTHORIZER"], description: "API key source" },
+
+            // HTTP API creation
+            protocolType: { type: "string", enum: ["HTTP", "WEBSOCKET"], description: "Protocol type for HTTP API" },
+            corsEnabled: { type: "boolean", description: "Enable CORS with permissive defaults" },
+            corsConfiguration: { type: "object", description: "CORS configuration object" },
+            routeSelectionExpression: { type: "string", description: "Route selection expression" },
+            disableExecuteApiEndpoint: { type: "boolean", description: "Disable default execute-api endpoint" },
+
+            // Resource operations
+            parentId: { type: "string", description: "Parent resource ID" },
+            pathPart: { type: "string", description: "Path part for the resource" },
+            resourceId: { type: "string", description: "Resource ID" },
+
+            // Method operations
+            httpMethod: { type: "string", description: "HTTP method (GET, POST, PUT, DELETE, etc.)" },
+            authorizationType: { type: "string", enum: ["NONE", "AWS_IAM", "CUSTOM", "COGNITO_USER_POOLS", "JWT"], description: "Authorization type" },
+            authorizerId: { type: "string", description: "Authorizer ID" },
+            apiKeyRequired: { type: "boolean", description: "Whether API key is required" },
+            operationName: { type: "string", description: "Operation name" },
+            requestParameters: { type: "object", description: "Request parameters" },
+            requestModels: { type: "object", description: "Request models" },
+            requestValidatorId: { type: "string", description: "Request validator ID" },
+
+            // Integration operations
+            integrationType: { type: "string", enum: ["AWS", "AWS_PROXY", "HTTP", "HTTP_PROXY", "MOCK"], description: "Integration type" },
+            integrationHttpMethod: { type: "string", description: "Integration HTTP method" },
+            uri: { type: "string", description: "Integration URI" },
+            lambdaArn: { type: "string", description: "Lambda function ARN" },
+            connectionType: { type: "string", enum: ["INTERNET", "VPC_LINK"], description: "Connection type" },
+            connectionId: { type: "string", description: "VPC Link connection ID" },
+            credentials: { type: "string", description: "Integration credentials ARN" },
+            requestTemplates: { type: "object", additionalProperties: { type: "string" }, description: "Request templates" },
+            passthroughBehavior: { type: "string", enum: ["WHEN_NO_MATCH", "WHEN_NO_TEMPLATES", "NEVER"], description: "Passthrough behavior" },
+            contentHandling: { type: "string", enum: ["CONVERT_TO_BINARY", "CONVERT_TO_TEXT"], description: "Content handling" },
+            timeoutInMillis: { type: "number", description: "Timeout in milliseconds" },
+
+            // Route operations (HTTP API)
+            routeKey: { type: "string", description: "Route key (e.g., 'GET /items', '$default')" },
+            routeId: { type: "string", description: "Route ID" },
+            target: { type: "string", description: "Route target (e.g., integrations/{integrationId})" },
+
+            // HTTP Integration
+            integrationUri: { type: "string", description: "Integration URI for HTTP API" },
+            integrationMethod: { type: "string", description: "Integration method for HTTP API" },
+            payloadFormatVersion: { type: "string", enum: ["1.0", "2.0"], description: "Payload format version" },
+
+            // Stage operations
+            stageName: { type: "string", description: "Stage name" },
+            deploymentId: { type: "string", description: "Deployment ID" },
+            cacheClusterEnabled: { type: "boolean", description: "Enable cache cluster" },
+            cacheClusterSize: { type: "string", enum: ["0.5", "1.6", "6.1", "13.5", "28.4", "58.2", "118", "237"], description: "Cache cluster size" },
+            variables: { type: "object", additionalProperties: { type: "string" }, description: "Stage variables" },
+            throttling: { type: "object", properties: { burstLimit: { type: "number" }, rateLimit: { type: "number" } }, description: "Throttling settings" },
+            accessLogSettings: { type: "object", properties: { destinationArn: { type: "string" }, format: { type: "string" } }, description: "Access log settings" },
+            tracingEnabled: { type: "boolean", description: "Enable X-Ray tracing" },
+            autoDeploy: { type: "boolean", description: "Auto-deploy for HTTP API stage" },
+
+            // Authorizer operations
+            authorizerType: { type: "string", enum: ["TOKEN", "REQUEST", "COGNITO_USER_POOLS", "JWT"], description: "Authorizer type" },
+            authorizerUri: { type: "string", description: "Authorizer Lambda URI" },
+            authorizerCredentials: { type: "string", description: "Authorizer credentials ARN" },
+            identitySource: { type: "string", description: "Identity source expression" },
+            identityValidationExpression: { type: "string", description: "Identity validation regex" },
+            authorizerResultTtlInSeconds: { type: "number", description: "Authorizer result TTL" },
+            providerArns: { type: "array", items: { type: "string" }, description: "Cognito user pool ARNs" },
+            jwtIssuer: { type: "string", description: "JWT issuer URL" },
+            jwtAudience: { type: "array", items: { type: "string" }, description: "JWT audience" },
+
+            // Usage plan operations
+            apiStages: { type: "array", items: { type: "object" }, description: "API stages for usage plan" },
+            quota: { type: "object", properties: { limit: { type: "number" }, period: { type: "string", enum: ["DAY", "WEEK", "MONTH"] } }, description: "Quota settings" },
+
+            // API key operations
+            enabled: { type: "boolean", description: "Whether API key is enabled" },
+            value: { type: "string", description: "API key value" },
+            stageKeys: { type: "array", items: { type: "object" }, description: "Stage keys for API key" },
+            usagePlanId: { type: "string", description: "Usage plan ID" },
+            keyId: { type: "string", description: "API key ID" },
+
+            // Domain operations
+            domainName: { type: "string", description: "Custom domain name" },
+            certificateArn: { type: "string", description: "ACM certificate ARN" },
+            regionalCertificateArn: { type: "string", description: "Regional ACM certificate ARN" },
+            securityPolicy: { type: "string", enum: ["TLS_1_0", "TLS_1_2"], description: "TLS security policy" },
+            basePath: { type: "string", description: "Base path for mapping" },
+            stage: { type: "string", description: "Stage for base path mapping" },
+
+            // Import/Export
+            specification: { type: "string", description: "OpenAPI/Swagger specification body" },
+            failOnWarnings: { type: "boolean", description: "Fail import on warnings" },
+            exportType: { type: "string", enum: ["oas30", "swagger"], description: "Export format type" },
+            exportFormat: { type: "string", enum: ["json", "yaml", "JSON", "YAML"], description: "Export output format" },
+
+            // Metrics
+            apiType: { type: "string", enum: ["REST", "HTTP", "WEBSOCKET"], description: "API type" },
+
+            // List options
+            limit: { type: "number", description: "Maximum number of items to return" },
+            includeValues: { type: "boolean", description: "Include API key values in list" },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!apiGatewayManager) {
+            return { content: [{ type: "text", text: "API Gateway manager not initialized. Run authenticate first." }], details: { error: "not_initialized" } };
+          }
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+
+              // ================================================================
+              // REST API Operations
+              // ================================================================
+
+              case "create_rest_api": {
+                const name = params.name as string;
+                if (!name) return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRestApi({
+                  name,
+                  description: params.description as string | undefined,
+                  endpointType: params.endpointType as "EDGE" | "REGIONAL" | "PRIVATE" | undefined,
+                  binaryMediaTypes: params.binaryMediaTypes as string[] | undefined,
+                  minimumCompressionSize: params.minimumCompressionSize as number | undefined,
+                  apiKeySource: params.apiKeySource as "HEADER" | "AUTHORIZER" | undefined,
+                  disableExecuteApiEndpoint: params.disableExecuteApiEndpoint as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `REST API created: ${result.data?.name} (${result.data?.id})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_rest_api": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.getRestApi(restApiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const api = result.data;
+                const info = [
+                  `API: ${api?.name} (${api?.id})`,
+                  `Description: ${api?.description ?? "N/A"}`,
+                  `Endpoint: ${api?.endpointConfiguration?.types?.[0] ?? "N/A"}`,
+                  `Created: ${api?.createdDate?.toISOString() ?? "N/A"}`,
+                ].join("\n");
+                return { content: [{ type: "text", text: info }], details: result.data };
+              }
+
+              case "list_rest_apis": {
+                const result = await apiGatewayManager.listRestApis(params.limit as number | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const apis = result.data ?? [];
+                const lines = apis.map(a => `• ${a.name} (${a.id}) - ${a.endpointConfiguration?.types?.[0] ?? "N/A"}`);
+                return { content: [{ type: "text", text: `Found ${apis.length} REST APIs:\n${lines.join("\n")}` }], details: apis };
+              }
+
+              case "delete_rest_api": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteRestApi(restApiId);
+                return { content: [{ type: "text", text: result.success ? `REST API ${restApiId} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "import_rest_api": {
+                const specification = params.specification as string;
+                if (!specification) return { content: [{ type: "text", text: "Error: specification is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.importRestApi({
+                  body: specification,
+                  failOnWarnings: params.failOnWarnings as boolean | undefined,
+                  basePath: params.basePath as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `REST API imported: ${result.data?.name} (${result.data?.id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "export_rest_api": {
+                const restApiId = params.restApiId as string;
+                const stageName = params.stageName as string;
+                if (!restApiId || !stageName) return { content: [{ type: "text", text: "Error: restApiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const exportType = (params.exportType as "oas30" | "swagger") ?? "oas30";
+                const format = params.exportFormat === "yaml" ? "application/yaml" as const : "application/json" as const;
+                const result = await apiGatewayManager.exportRestApi(restApiId, stageName, exportType, format);
+                return { content: [{ type: "text", text: result.success ? `Exported API specification:\n${result.data}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // HTTP API Operations
+              // ================================================================
+
+              case "create_http_api": {
+                const name = params.name as string;
+                if (!name) return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpApi({
+                  name,
+                  description: params.description as string | undefined,
+                  protocolType: (params.protocolType as "HTTP" | "WEBSOCKET") ?? "HTTP",
+                  corsConfiguration: params.corsEnabled ? {
+                    allowHeaders: ["*"],
+                    allowMethods: ["*"],
+                    allowOrigins: ["*"],
+                  } : params.corsConfiguration as CreateHTTPApiConfig["corsConfiguration"],
+                  routeSelectionExpression: params.routeSelectionExpression as string | undefined,
+                  disableExecuteApiEndpoint: params.disableExecuteApiEndpoint as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `HTTP API created: ${result.data?.Name} (${result.data?.ApiId})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_http_api": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.getHttpApi(apiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const api = result.data;
+                const info = [
+                  `API: ${api?.Name} (${api?.ApiId})`,
+                  `Protocol: ${api?.ProtocolType}`,
+                  `Endpoint: ${api?.ApiEndpoint ?? "N/A"}`,
+                  `Created: ${api?.CreatedDate?.toISOString() ?? "N/A"}`,
+                ].join("\n");
+                return { content: [{ type: "text", text: info }], details: result.data };
+              }
+
+              case "list_http_apis": {
+                const result = await apiGatewayManager.listHttpApis();
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const apis = result.data ?? [];
+                const lines = apis.map(a => `• ${a.Name} (${a.ApiId}) - ${a.ProtocolType}`);
+                return { content: [{ type: "text", text: `Found ${apis.length} HTTP/WebSocket APIs:\n${lines.join("\n")}` }], details: apis };
+              }
+
+              case "delete_http_api": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteHttpApi(apiId);
+                return { content: [{ type: "text", text: result.success ? `HTTP API ${apiId} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "import_http_api": {
+                const specification = params.specification as string;
+                if (!specification) return { content: [{ type: "text", text: "Error: specification is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.importHttpApi(
+                  specification,
+                  params.basePath as string | undefined,
+                  params.failOnWarnings as boolean | undefined,
+                );
+                return { content: [{ type: "text", text: result.success ? `HTTP API imported: ${result.data?.Name} (${result.data?.ApiId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "export_http_api": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const outputType = (params.exportFormat === "yaml" || params.exportFormat === "YAML") ? "YAML" as const : "JSON" as const;
+                const result = await apiGatewayManager.exportHttpApi(apiId, params.stageName as string | undefined, "1.0", outputType);
+                return { content: [{ type: "text", text: result.success ? `Exported API specification:\n${result.data}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Resource Operations (REST API)
+              // ================================================================
+
+              case "create_resource": {
+                const restApiId = params.restApiId as string;
+                const parentId = params.parentId as string;
+                const pathPart = params.pathPart as string;
+                if (!restApiId || !parentId || !pathPart) return { content: [{ type: "text", text: "Error: restApiId, parentId, and pathPart are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createResource({ restApiId, parentId, pathPart });
+                return { content: [{ type: "text", text: result.success ? `Resource created: ${result.data?.pathPart} (${result.data?.id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_resources": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listResources(restApiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const resources = result.data ?? [];
+                const lines = resources.map(r => `• ${r.path ?? r.pathPart} (${r.id}) - Methods: ${Object.keys(r.resourceMethods ?? {}).join(", ") || "none"}`);
+                return { content: [{ type: "text", text: `Found ${resources.length} resources:\n${lines.join("\n")}` }], details: resources };
+              }
+
+              case "delete_resource": {
+                const restApiId = params.restApiId as string;
+                const resourceId = params.resourceId as string;
+                if (!restApiId || !resourceId) return { content: [{ type: "text", text: "Error: restApiId and resourceId are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteResource(restApiId, resourceId);
+                return { content: [{ type: "text", text: result.success ? `Resource ${resourceId} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Method Operations (REST API)
+              // ================================================================
+
+              case "create_method": {
+                const restApiId = params.restApiId as string;
+                const resourceId = params.resourceId as string;
+                const httpMethod = params.httpMethod as string;
+                if (!restApiId || !resourceId || !httpMethod) return { content: [{ type: "text", text: "Error: restApiId, resourceId, and httpMethod are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createMethod({
+                  restApiId, resourceId, httpMethod,
+                  authorizationType: (params.authorizationType as "NONE" | "AWS_IAM" | "CUSTOM" | "COGNITO_USER_POOLS") ?? "NONE",
+                  authorizerId: params.authorizerId as string | undefined,
+                  apiKeyRequired: params.apiKeyRequired as boolean | undefined,
+                  operationName: params.operationName as string | undefined,
+                  requestParameters: params.requestParameters as Record<string, boolean> | undefined,
+                  requestModels: params.requestModels as Record<string, string> | undefined,
+                  requestValidatorId: params.requestValidatorId as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Method ${httpMethod} created on resource ${resourceId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_method": {
+                const restApiId = params.restApiId as string;
+                const resourceId = params.resourceId as string;
+                const httpMethod = params.httpMethod as string;
+                if (!restApiId || !resourceId || !httpMethod) return { content: [{ type: "text", text: "Error: restApiId, resourceId, and httpMethod are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteMethod(restApiId, resourceId, httpMethod);
+                return { content: [{ type: "text", text: result.success ? `Method ${httpMethod} deleted from resource ${resourceId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Integration Operations (REST API)
+              // ================================================================
+
+              case "create_integration": {
+                const restApiId = params.restApiId as string;
+                const resourceId = params.resourceId as string;
+                const httpMethod = params.httpMethod as string;
+                const type = params.integrationType as "AWS" | "AWS_PROXY" | "HTTP" | "HTTP_PROXY" | "MOCK";
+                if (!restApiId || !resourceId || !httpMethod || !type) return { content: [{ type: "text", text: "Error: restApiId, resourceId, httpMethod, and integrationType are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createIntegration({
+                  restApiId, resourceId, httpMethod, type,
+                  integrationHttpMethod: params.integrationHttpMethod as string | undefined,
+                  uri: params.uri as string | undefined,
+                  connectionType: params.connectionType as "INTERNET" | "VPC_LINK" | undefined,
+                  connectionId: params.connectionId as string | undefined,
+                  credentials: params.credentials as string | undefined,
+                  requestParameters: params.requestParameters as Record<string, string> | undefined,
+                  requestTemplates: params.requestTemplates as Record<string, string> | undefined,
+                  passthroughBehavior: params.passthroughBehavior as "WHEN_NO_MATCH" | "WHEN_NO_TEMPLATES" | "NEVER" | undefined,
+                  contentHandling: params.contentHandling as "CONVERT_TO_BINARY" | "CONVERT_TO_TEXT" | undefined,
+                  timeoutInMillis: params.timeoutInMillis as number | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Integration created: ${type} on ${httpMethod} ${resourceId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_lambda_proxy_integration": {
+                const restApiId = params.restApiId as string;
+                const resourceId = params.resourceId as string;
+                const httpMethod = params.httpMethod as string;
+                const lambdaArn = params.lambdaArn as string;
+                if (!restApiId || !resourceId || !httpMethod || !lambdaArn) return { content: [{ type: "text", text: "Error: restApiId, resourceId, httpMethod, and lambdaArn are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createLambdaProxyIntegration(restApiId, resourceId, httpMethod, lambdaArn, params.credentials as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `Lambda proxy integration created for ${lambdaArn}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Route Operations (HTTP API)
+              // ================================================================
+
+              case "create_route": {
+                const apiId = params.apiId as string;
+                const routeKey = params.routeKey as string;
+                if (!apiId || !routeKey) return { content: [{ type: "text", text: "Error: apiId and routeKey are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRoute({
+                  apiId, routeKey,
+                  target: params.target as string | undefined,
+                  authorizationType: params.authorizationType as "NONE" | "AWS_IAM" | "CUSTOM" | "JWT" | undefined,
+                  authorizerId: params.authorizerId as string | undefined,
+                  apiKeyRequired: params.apiKeyRequired as boolean | undefined,
+                  operationName: params.operationName as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Route created: ${routeKey} (${result.data?.RouteId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_routes": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listRoutes(apiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const routes = result.data ?? [];
+                const lines = routes.map(r => `• ${r.RouteKey} (${r.RouteId}) → ${r.Target ?? "no target"}`);
+                return { content: [{ type: "text", text: `Found ${routes.length} routes:\n${lines.join("\n")}` }], details: routes };
+              }
+
+              case "delete_route": {
+                const apiId = params.apiId as string;
+                const routeId = params.routeId as string;
+                if (!apiId || !routeId) return { content: [{ type: "text", text: "Error: apiId and routeId are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteRoute(apiId, routeId);
+                return { content: [{ type: "text", text: result.success ? `Route ${routeId} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // HTTP API Integration Operations
+              // ================================================================
+
+              case "create_http_integration": {
+                const apiId = params.apiId as string;
+                const integrationType = params.integrationType as "AWS_PROXY" | "HTTP_PROXY" | "MOCK";
+                if (!apiId || !integrationType) return { content: [{ type: "text", text: "Error: apiId and integrationType are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpIntegration({
+                  apiId, integrationType,
+                  integrationUri: params.integrationUri as string | undefined,
+                  integrationMethod: params.integrationMethod as string | undefined,
+                  connectionType: params.connectionType as "INTERNET" | "VPC_LINK" | undefined,
+                  connectionId: params.connectionId as string | undefined,
+                  payloadFormatVersion: params.payloadFormatVersion as "1.0" | "2.0" | undefined,
+                  timeoutInMillis: params.timeoutInMillis as number | undefined,
+                  description: params.description as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `HTTP integration created: ${result.data?.IntegrationId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_http_lambda_integration": {
+                const apiId = params.apiId as string;
+                const lambdaArn = params.lambdaArn as string;
+                if (!apiId || !lambdaArn) return { content: [{ type: "text", text: "Error: apiId and lambdaArn are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpLambdaIntegration(apiId, lambdaArn, params.payloadFormatVersion as "1.0" | "2.0" | undefined);
+                return { content: [{ type: "text", text: result.success ? `Lambda integration created: ${result.data?.IntegrationId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_http_integrations": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listHttpIntegrations(apiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const integrations = result.data ?? [];
+                const lines = integrations.map(i => `• ${i.IntegrationId} (${i.IntegrationType}) → ${i.IntegrationUri ?? "N/A"}`);
+                return { content: [{ type: "text", text: `Found ${integrations.length} integrations:\n${lines.join("\n")}` }], details: integrations };
+              }
+
+              // ================================================================
+              // Stage Operations
+              // ================================================================
+
+              case "create_rest_stage": {
+                const restApiId = params.restApiId as string;
+                const stageName = params.stageName as string;
+                if (!restApiId || !stageName) return { content: [{ type: "text", text: "Error: restApiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRestStage({
+                  restApiId, stageName,
+                  deploymentId: params.deploymentId as string | undefined,
+                  description: params.description as string | undefined,
+                  cacheClusterEnabled: params.cacheClusterEnabled as boolean | undefined,
+                  cacheClusterSize: params.cacheClusterSize as StageConfig["cacheClusterSize"],
+                  variables: params.variables as Record<string, string> | undefined,
+                  tracingEnabled: params.tracingEnabled as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `REST stage created: ${result.data?.stageName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_http_stage": {
+                const apiId = params.apiId as string;
+                const stageName = params.stageName as string;
+                if (!apiId || !stageName) return { content: [{ type: "text", text: "Error: apiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpStage({
+                  apiId, stageName,
+                  deploymentId: params.deploymentId as string | undefined,
+                  description: params.description as string | undefined,
+                  variables: params.variables as Record<string, string> | undefined,
+                  throttling: params.throttling as StageConfig["throttling"],
+                  accessLogSettings: params.accessLogSettings as StageConfig["accessLogSettings"],
+                  autoDeploy: params.autoDeploy as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `HTTP stage created: ${result.data?.StageName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_rest_stages": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listRestStages(restApiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const stages = result.data ?? [];
+                const lines = stages.map(s => `• ${s.stageName} (deployment: ${s.deploymentId ?? "N/A"})`);
+                return { content: [{ type: "text", text: `Found ${stages.length} stages:\n${lines.join("\n")}` }], details: stages };
+              }
+
+              case "list_http_stages": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listHttpStages(apiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const stages = result.data ?? [];
+                const lines = stages.map(s => `• ${s.StageName} (auto-deploy: ${s.AutoDeploy ?? false})`);
+                return { content: [{ type: "text", text: `Found ${stages.length} stages:\n${lines.join("\n")}` }], details: stages };
+              }
+
+              case "delete_rest_stage": {
+                const restApiId = params.restApiId as string;
+                const stageName = params.stageName as string;
+                if (!restApiId || !stageName) return { content: [{ type: "text", text: "Error: restApiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteRestStage(restApiId, stageName);
+                return { content: [{ type: "text", text: result.success ? `Stage ${stageName} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_http_stage": {
+                const apiId = params.apiId as string;
+                const stageName = params.stageName as string;
+                if (!apiId || !stageName) return { content: [{ type: "text", text: "Error: apiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.deleteHttpStage(apiId, stageName);
+                return { content: [{ type: "text", text: result.success ? `Stage ${stageName} deleted` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Deployment Operations
+              // ================================================================
+
+              case "create_rest_deployment": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRestDeployment(restApiId, params.stageName as string | undefined, params.description as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `Deployment created: ${result.data?.id}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_http_deployment": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpDeployment(apiId, params.stageName as string | undefined, params.description as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `Deployment created: ${result.data?.deploymentId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Authorizer Operations
+              // ================================================================
+
+              case "create_rest_authorizer": {
+                const restApiId = params.restApiId as string;
+                const name = params.name as string;
+                const type = params.authorizerType as "TOKEN" | "REQUEST" | "COGNITO_USER_POOLS";
+                if (!restApiId || !name || !type) return { content: [{ type: "text", text: "Error: restApiId, name, and authorizerType are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRestAuthorizer({
+                  restApiId, name, type,
+                  authorizerUri: params.authorizerUri as string | undefined,
+                  authorizerCredentials: params.authorizerCredentials as string | undefined,
+                  identitySource: params.identitySource as string | undefined,
+                  identityValidationExpression: params.identityValidationExpression as string | undefined,
+                  authorizerResultTtlInSeconds: params.authorizerResultTtlInSeconds as number | undefined,
+                  providerArns: params.providerArns as string[] | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `REST authorizer created: ${result.data?.name} (${result.data?.id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_http_authorizer": {
+                const apiId = params.apiId as string;
+                const name = params.name as string;
+                const type = params.authorizerType as "REQUEST" | "JWT";
+                if (!apiId || !name || !type) return { content: [{ type: "text", text: "Error: apiId, name, and authorizerType are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpAuthorizer({
+                  apiId, name, type,
+                  authorizerUri: params.authorizerUri as string | undefined,
+                  authorizerCredentials: params.authorizerCredentials as string | undefined,
+                  identitySource: params.identitySource as string | undefined,
+                  authorizerResultTtlInSeconds: params.authorizerResultTtlInSeconds as number | undefined,
+                  jwtConfiguration: params.jwtIssuer ? {
+                    issuer: params.jwtIssuer as string,
+                    audience: params.jwtAudience as string[] | undefined,
+                  } : undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `HTTP authorizer created: ${result.data?.Name} (${result.data?.AuthorizerId})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_rest_authorizers": {
+                const restApiId = params.restApiId as string;
+                if (!restApiId) return { content: [{ type: "text", text: "Error: restApiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listRestAuthorizers(restApiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const authorizers = result.data ?? [];
+                const lines = authorizers.map(a => `• ${a.name} (${a.id}) - ${a.type}`);
+                return { content: [{ type: "text", text: `Found ${authorizers.length} authorizers:\n${lines.join("\n")}` }], details: authorizers };
+              }
+
+              case "list_http_authorizers": {
+                const apiId = params.apiId as string;
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.listHttpAuthorizers(apiId);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const authorizers = result.data ?? [];
+                const lines = authorizers.map(a => `• ${a.Name} (${a.AuthorizerId}) - ${a.AuthorizerType}`);
+                return { content: [{ type: "text", text: `Found ${authorizers.length} authorizers:\n${lines.join("\n")}` }], details: authorizers };
+              }
+
+              // ================================================================
+              // Usage Plan & API Key Operations
+              // ================================================================
+
+              case "create_usage_plan": {
+                const name = params.name as string;
+                if (!name) return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createUsagePlan({
+                  name,
+                  description: params.description as string | undefined,
+                  apiStages: params.apiStages as UsagePlanConfig["apiStages"],
+                  quota: params.quota as UsagePlanConfig["quota"],
+                  throttle: params.throttling as UsagePlanConfig["throttle"],
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Usage plan created: ${result.data?.name} (${result.data?.id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_usage_plans": {
+                const result = await apiGatewayManager.listUsagePlans();
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const plans = result.data ?? [];
+                const lines = plans.map(p => `• ${p.name} (${p.id})`);
+                return { content: [{ type: "text", text: `Found ${plans.length} usage plans:\n${lines.join("\n")}` }], details: plans };
+              }
+
+              case "create_api_key": {
+                const name = params.name as string;
+                if (!name) return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createApiKey({
+                  name,
+                  description: params.description as string | undefined,
+                  enabled: params.enabled as boolean | undefined,
+                  value: params.value as string | undefined,
+                  stageKeys: params.stageKeys as ApiKeyConfig["stageKeys"],
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `API key created: ${result.data?.name} (${result.data?.id})` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_api_keys": {
+                const result = await apiGatewayManager.listApiKeys(params.includeValues as boolean | undefined);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const keys = result.data ?? [];
+                const lines = keys.map(k => `• ${k.name} (${k.id}) - ${k.enabled ? "Enabled" : "Disabled"}`);
+                return { content: [{ type: "text", text: `Found ${keys.length} API keys:\n${lines.join("\n")}` }], details: keys };
+              }
+
+              case "add_api_key_to_usage_plan": {
+                const usagePlanId = params.usagePlanId as string;
+                const keyId = params.keyId as string;
+                if (!usagePlanId || !keyId) return { content: [{ type: "text", text: "Error: usagePlanId and keyId are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.addApiKeyToUsagePlan(usagePlanId, keyId);
+                return { content: [{ type: "text", text: result.success ? `API key ${keyId} added to usage plan ${usagePlanId}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Custom Domain Operations
+              // ================================================================
+
+              case "create_rest_domain": {
+                const domainName = params.domainName as string;
+                if (!domainName) return { content: [{ type: "text", text: "Error: domainName is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createRestDomain({
+                  domainName,
+                  certificateArn: params.certificateArn as string | undefined,
+                  regionalCertificateArn: params.regionalCertificateArn as string | undefined,
+                  endpointType: params.endpointType as "EDGE" | "REGIONAL" | undefined,
+                  securityPolicy: params.securityPolicy as "TLS_1_0" | "TLS_1_2" | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Domain created: ${result.data?.domainName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_http_domain": {
+                const domainName = params.domainName as string;
+                if (!domainName) return { content: [{ type: "text", text: "Error: domainName is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createHttpDomain({
+                  domainName,
+                  certificateArn: params.certificateArn as string | undefined,
+                  regionalCertificateArn: params.regionalCertificateArn as string | undefined,
+                  securityPolicy: params.securityPolicy as "TLS_1_0" | "TLS_1_2" | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Domain created: ${result.data?.DomainName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_base_path_mapping": {
+                const domainName = params.domainName as string;
+                const restApiId = params.restApiId as string;
+                if (!domainName || !restApiId) return { content: [{ type: "text", text: "Error: domainName and restApiId are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createBasePathMapping({
+                  domainName, restApiId,
+                  basePath: params.basePath as string | undefined,
+                  stage: params.stage as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `Base path mapping created on ${domainName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "create_api_mapping": {
+                const domainName = params.domainName as string;
+                const apiId = params.apiId as string;
+                if (!domainName || !apiId) return { content: [{ type: "text", text: "Error: domainName and apiId are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.createApiMapping({
+                  domainName, apiId,
+                  basePath: params.basePath as string | undefined,
+                  stage: params.stage as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `API mapping created on ${domainName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Utility Operations
+              // ================================================================
+
+              case "get_api_metrics": {
+                const apiId = (params.apiId ?? params.restApiId) as string;
+                const apiType = (params.apiType as APIType) ?? "REST";
+                if (!apiId) return { content: [{ type: "text", text: "Error: apiId (or restApiId) is required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.getApiMetrics(apiId, apiType);
+                if (!result.success) return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                const m = result.data;
+                const info = [
+                  `API: ${m?.apiName} (${m?.apiId})`,
+                  `Type: ${m?.apiType}`,
+                  `Endpoint: ${m?.endpointType ?? m?.protocol ?? "N/A"}`,
+                  `Stages: ${m?.stages?.join(", ") || "none"}`,
+                  m?.resources != null ? `Resources: ${m.resources}` : "",
+                  m?.routes != null ? `Routes: ${m.routes}` : "",
+                  m?.methods != null ? `Methods: ${m.methods}` : "",
+                  `Authorizers: ${m?.authorizers ?? 0}`,
+                  `Deployments: ${m?.deployments ?? 0}`,
+                  `Created: ${m?.createdDate?.toISOString() ?? "N/A"}`,
+                ].filter(Boolean).join("\n");
+                return { content: [{ type: "text", text: info }], details: result.data };
+              }
+
+              case "get_invoke_url": {
+                const apiId = (params.apiId ?? params.restApiId) as string;
+                const stageName = params.stageName as string;
+                const apiType = (params.apiType as APIType) ?? "REST";
+                if (!apiId || !stageName) return { content: [{ type: "text", text: "Error: apiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const url = apiGatewayManager.getInvokeUrl(apiId, stageName, apiType);
+                return { content: [{ type: "text", text: `Invoke URL: ${url}` }], details: { url } };
+              }
+
+              case "flush_stage_cache": {
+                const restApiId = params.restApiId as string;
+                const stageName = params.stageName as string;
+                if (!restApiId || !stageName) return { content: [{ type: "text", text: "Error: restApiId and stageName are required" }], details: { error: "missing_parameter" } };
+                const result = await apiGatewayManager.flushStageCache(restApiId, stageName);
+                return { content: [{ type: "text", text: result.success ? `Cache flushed for stage ${stageName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `API Gateway error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_apigateway" },
+    );
+
+    // =========================================================================
     // AWS CONVERSATIONAL UX AGENT TOOL
     // =========================================================================
 
@@ -15296,6 +18358,12 @@ ${topResources}`,
 
         containerManager = createContainerManager({ defaultRegion: config.defaultRegion });
         observabilityManager = createObservabilityManager({ defaultRegion: config.defaultRegion });
+        dynamoDBManager = createDynamoDBManager({ region: config.defaultRegion });
+        sqsManager = createSQSManager({ region: config.defaultRegion });
+        snsManager = createSNSManager({ region: config.defaultRegion });
+        route53Manager = createRoute53Manager({ region: config.defaultRegion });
+        cognitoManager = createCognitoManager({ region: config.defaultRegion });
+        apiGatewayManager = createAPIGatewayManager({ region: config.defaultRegion });
 
         // Optionally probe identity on start
         try {
@@ -15331,6 +18399,12 @@ ${topResources}`,
         backupManager = null;
         containerManager = null;
         observabilityManager = null;
+        dynamoDBManager = null;
+        sqsManager = null;
+        snsManager = null;
+        route53Manager = null;
+        cognitoManager = null;
+        apiGatewayManager = null;
         conversationalManager = null;
         cliWrapper = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
@@ -15367,6 +18441,12 @@ export function getAWSManagers() {
     backup: backupManager,
     containers: containerManager,
     observability: observabilityManager,
+    dynamodb: dynamoDBManager,
+    sqs: sqsManager,
+    sns: snsManager,
+    route53: route53Manager,
+    cognito: cognitoManager,
+    apiGateway: apiGatewayManager,
     conversational: conversationalManager,
     cli: cliWrapper,
   };
