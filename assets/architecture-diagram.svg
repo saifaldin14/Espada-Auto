@@ -1,0 +1,198 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="gatewayGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#16213e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="channelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0f3460;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#533483;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a1a2e;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#e94560;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#c23152;stop-opacity:1" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+    <marker id="arrowRight" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#e94560"/>
+    </marker>
+    <marker id="arrowLeft" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="10 0, 0 3.5, 10 7" fill="#e94560"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="520" rx="12" fill="#0a0a1a"/>
+
+  <!-- Title -->
+  <text x="480" y="38" text-anchor="middle" fill="#fff" font-size="20" font-weight="700">⚔️ Espada — Architecture Overview</text>
+
+  <!-- ═══ LEFT COLUMN: Messaging Channels ═══ -->
+  <text x="130" y="75" text-anchor="middle" fill="#7ec8e3" font-size="13" font-weight="600" letter-spacing="1">MESSAGING CHANNELS</text>
+
+  <!-- Channel items -->
+  <g filter="url(#shadow)">
+    <rect x="30" y="90" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="112" fill="#25D366" font-size="15">💬</text>
+    <text x="70" y="112" fill="#e0e0e0" font-size="13">WhatsApp</text>
+    <text x="200" y="112" fill="#666" font-size="10" text-anchor="end">Baileys</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="130" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="152" fill="#0088cc" font-size="15">✈️</text>
+    <text x="70" y="152" fill="#e0e0e0" font-size="13">Telegram</text>
+    <text x="200" y="152" fill="#666" font-size="10" text-anchor="end">grammY</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="170" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="192" fill="#E01E5A" font-size="15">🔧</text>
+    <text x="70" y="192" fill="#e0e0e0" font-size="13">Slack</text>
+    <text x="200" y="192" fill="#666" font-size="10" text-anchor="end">Bolt</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="210" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="232" fill="#5865F2" font-size="15">🎮</text>
+    <text x="70" y="232" fill="#e0e0e0" font-size="13">Discord</text>
+    <text x="200" y="232" fill="#666" font-size="10" text-anchor="end">discord.js</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="250" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="272" fill="#3b82f6" font-size="15">📡</text>
+    <text x="70" y="272" fill="#e0e0e0" font-size="13">Signal</text>
+    <text x="200" y="272" fill="#666" font-size="10" text-anchor="end">signal-cli</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="290" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="312" fill="#34C759" font-size="15">🍎</text>
+    <text x="70" y="312" fill="#e0e0e0" font-size="13">iMessage</text>
+    <text x="200" y="312" fill="#666" font-size="10" text-anchor="end">imsg</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="330" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="352" fill="#9333ea" font-size="15">🏢</text>
+    <text x="70" y="352" fill="#e0e0e0" font-size="13">MS Teams</text>
+    <text x="200" y="352" fill="#666" font-size="10" text-anchor="end">Bot Framework</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="370" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="392" fill="#34a853" font-size="15">💼</text>
+    <text x="70" y="392" fill="#e0e0e0" font-size="13">Google Chat</text>
+    <text x="200" y="392" fill="#666" font-size="10" text-anchor="end">Chat API</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="410" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="432" fill="#0dbd8b" font-size="15">🔗</text>
+    <text x="70" y="432" fill="#e0e0e0" font-size="13">Matrix</text>
+    <text x="200" y="432" fill="#666" font-size="10" text-anchor="end">matrix-js-sdk</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="30" y="450" width="200" height="34" rx="6" fill="url(#channelGrad)" stroke="#0f3460" stroke-width="1"/>
+    <text x="48" y="472" fill="#60a5fa" font-size="15">🌐</text>
+    <text x="70" y="472" fill="#e0e0e0" font-size="13">WebChat</text>
+    <text x="200" y="472" fill="#666" font-size="10" text-anchor="end">Gateway WS</text>
+  </g>
+
+  <!-- ═══ CENTER: Gateway ═══ -->
+  <g filter="url(#shadow)">
+    <rect x="320" y="85" width="310" height="400" rx="12" fill="url(#gatewayGrad)" stroke="#e94560" stroke-width="2"/>
+    <text x="475" y="115" text-anchor="middle" fill="#e94560" font-size="16" font-weight="700">ESPADA GATEWAY</text>
+    <text x="475" y="135" text-anchor="middle" fill="#666" font-size="11">ws://127.0.0.1:18789</text>
+
+    <!-- Control Plane box -->
+    <rect x="345" y="150" width="260" height="60" rx="8" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="475" y="175" text-anchor="middle" fill="#7ec8e3" font-size="12" font-weight="600">Control Plane</text>
+    <text x="475" y="195" text-anchor="middle" fill="#888" font-size="10">Sessions · Channels · Tools · Events</text>
+
+    <!-- AI Agent box -->
+    <rect x="365" y="225" width="220" height="55" rx="8" fill="url(#agentGrad)"/>
+    <text x="475" y="250" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">🤖 AI Agent</text>
+    <text x="475" y="268" text-anchor="middle" fill="#ffcdd2" font-size="10">RPC Mode · Tool Streaming</text>
+
+    <!-- Sub-components -->
+    <rect x="345" y="295" width="120" height="36" rx="6" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="405" y="318" text-anchor="middle" fill="#a0a0a0" font-size="11">🖥️ CLI</text>
+
+    <rect x="485" y="295" width="120" height="36" rx="6" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="545" y="318" text-anchor="middle" fill="#a0a0a0" font-size="11">🌐 WebChat UI</text>
+
+    <rect x="345" y="345" width="120" height="36" rx="6" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="405" y="368" text-anchor="middle" fill="#a0a0a0" font-size="11">🍎 macOS App</text>
+
+    <rect x="485" y="345" width="120" height="36" rx="6" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="545" y="368" text-anchor="middle" fill="#a0a0a0" font-size="11">📱 iOS / Android</text>
+
+    <!-- Extensions label -->
+    <rect x="345" y="395" width="260" height="36" rx="6" fill="#1a1a3e" stroke="#533483" stroke-width="1"/>
+    <text x="475" y="418" text-anchor="middle" fill="#b388ff" font-size="11">🔌 Extensions (AWS · Infra · Memory · …)</text>
+
+    <!-- Plugins label -->
+    <rect x="345" y="440" width="260" height="30" rx="6" fill="#1a1a3e" stroke="#333" stroke-width="1"/>
+    <text x="475" y="460" text-anchor="middle" fill="#888" font-size="10">🛡️ Security · DM Pairing · Sandbox · Doctor</text>
+  </g>
+
+  <!-- ═══ RIGHT COLUMN: Cloud Providers ═══ -->
+  <text x="810" y="75" text-anchor="middle" fill="#b388ff" font-size="13" font-weight="600" letter-spacing="1">CLOUD PROVIDERS</text>
+
+  <g filter="url(#shadow)">
+    <rect x="710" y="90" width="200" height="50" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="116" fill="#FF9900" font-size="14">☁️</text>
+    <text x="752" y="116" fill="#e0e0e0" font-size="13" font-weight="600">AWS</text>
+    <text x="752" y="132" fill="#888" font-size="9">EC2 · S3 · Lambda · ECS · IAM</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="710" y="150" width="200" height="50" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="176" fill="#4285F4" font-size="14">☁️</text>
+    <text x="752" y="176" fill="#e0e0e0" font-size="13" font-weight="600">Azure</text>
+    <text x="752" y="192" fill="#888" font-size="9">VMs · Storage · Functions</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="710" y="210" width="200" height="50" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="236" fill="#34a853" font-size="14">☁️</text>
+    <text x="752" y="236" fill="#e0e0e0" font-size="13" font-weight="600">GCP</text>
+    <text x="752" y="252" fill="#888" font-size="9">Compute · Cloud Run · GKE</text>
+  </g>
+
+  <text x="810" y="290" text-anchor="middle" fill="#b388ff" font-size="13" font-weight="600" letter-spacing="1">ORCHESTRATION</text>
+
+  <g filter="url(#shadow)">
+    <rect x="710" y="300" width="200" height="42" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="326" fill="#326ce5" font-size="14">⚙️</text>
+    <text x="752" y="326" fill="#e0e0e0" font-size="13">Kubernetes</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="710" y="350" width="200" height="42" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="376" fill="#2496ED" font-size="14">🐳</text>
+    <text x="752" y="376" fill="#e0e0e0" font-size="13">Docker</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="710" y="400" width="200" height="42" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="426" fill="#7B42BC" font-size="14">🏗️</text>
+    <text x="752" y="426" fill="#e0e0e0" font-size="13">Terraform</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="710" y="450" width="200" height="42" rx="8" fill="url(#cloudGrad)" stroke="#533483" stroke-width="1"/>
+    <text x="730" y="476" fill="#FF9900" font-size="14">📋</text>
+    <text x="752" y="476" fill="#e0e0e0" font-size="13">CloudFormation</text>
+  </g>
+
+  <!-- ═══ ARROWS ═══ -->
+  <!-- Channels → Gateway -->
+  <line x1="235" y1="230" x2="315" y2="230" stroke="#e94560" stroke-width="2.5" marker-end="url(#arrowRight)"/>
+  <line x1="235" y1="300" x2="315" y2="300" stroke="#e94560" stroke-width="2.5" marker-start="url(#arrowLeft)"/>
+
+  <text x="275" y="222" text-anchor="middle" fill="#e94560" font-size="9" font-weight="600">inbound</text>
+  <text x="275" y="315" text-anchor="middle" fill="#e94560" font-size="9" font-weight="600">outbound</text>
+
+  <!-- Gateway → Cloud -->
+  <line x1="635" y1="200" x2="705" y2="200" stroke="#b388ff" stroke-width="2.5" marker-end="url(#arrowRight)"/>
+  <line x1="635" y1="370" x2="705" y2="370" stroke="#b388ff" stroke-width="2.5" marker-end="url(#arrowRight)"/>
+
+  <text x="670" y="192" text-anchor="middle" fill="#b388ff" font-size="9" font-weight="600">deploy</text>
+  <text x="670" y="362" text-anchor="middle" fill="#b388ff" font-size="9" font-weight="600">orchestrate</text>
+</svg>
