@@ -11,6 +11,8 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseIni } from "ini";
@@ -209,6 +211,7 @@ export class AWSCredentialsManager {
           ssoAccountId: v.sso_account_id ?? existing.ssoAccountId,
           ssoRoleName: v.sso_role_name ?? existing.ssoRoleName,
           externalId: v.external_id ?? existing.externalId,
+          credentialProcess: v.credential_process ?? existing.credentialProcess,
           durationSeconds: v.duration_seconds 
             ? parseInt(v.duration_seconds, 10) 
             : existing.durationSeconds,
@@ -287,6 +290,11 @@ export class AWSCredentialsManager {
           mfaCodeProvider: this.mfaCodeProvider.bind(this),
         }),
         condition: () => !!profileConfig?.roleArn,
+      },
+      {
+        source: "credential-process",
+        provider: () => this.fromCredentialProcess(profileConfig!.credentialProcess!),
+        condition: () => !!profileConfig?.credentialProcess,
       },
       {
         source: "profile",
@@ -404,6 +412,79 @@ export class AWSCredentialsManager {
     throw new Error(
       "MFA authentication required. Please provide MFA code through the CLI or environment.",
     );
+  }
+
+  /**
+   * Resolve credentials via the `credential_process` profile directive.
+   *
+   * The external process must emit JSON to stdout:
+   * { Version: 1, AccessKeyId, SecretAccessKey, SessionToken?, Expiration? }
+   */
+  private fromCredentialProcess(
+    command: string,
+  ): AwsCredentialIdentityProvider {
+    const exec = promisify(execFile);
+    return async () => {
+      const parts = command.split(/\s+/);
+      const [binary, ...args] = parts;
+      const { stdout } = await exec(binary, args, { timeout: 30_000 });
+      const json = JSON.parse(stdout);
+
+      if (json.Version !== 1) {
+        throw new Error(`credential_process returned unsupported version: ${json.Version}`);
+      }
+
+      return {
+        accessKeyId: json.AccessKeyId,
+        secretAccessKey: json.SecretAccessKey,
+        sessionToken: json.SessionToken,
+        expiration: json.Expiration ? new Date(json.Expiration) : undefined,
+      };
+    };
+  }
+
+  /**
+   * Check the health of the current credentials.
+   *
+   * Returns account info on success or a descriptive error on failure.
+   */
+  async healthCheck(
+    profile?: string,
+    region?: string,
+  ): Promise<{
+    ok: boolean;
+    accountId?: string;
+    arn?: string;
+    expiresAt?: Date;
+    error?: string;
+  }> {
+    try {
+      const { credentials, expiresAt } = await this.getCredentials(profile, region);
+      const targetRegion = region ?? this.options.defaultRegion;
+
+      const client = new STSClient({
+        region: targetRegion,
+        credentials: {
+          accessKeyId: credentials.accessKeyId,
+          secretAccessKey: credentials.secretAccessKey,
+          sessionToken: credentials.sessionToken,
+        },
+      });
+
+      const identity = await client.send(new GetCallerIdentityCommand({}));
+
+      return {
+        ok: true,
+        accountId: identity.Account,
+        arn: identity.Arn,
+        expiresAt,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   /**

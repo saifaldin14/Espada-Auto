@@ -19,7 +19,8 @@ export type AWSCredentialSource =
   | "instance-metadata"
   | "container-credentials"
   | "web-identity"
-  | "assumed-role";
+  | "assumed-role"
+  | "credential-process";
 
 /**
  * AWS credentials configuration
@@ -47,6 +48,7 @@ export type AWSProfile = {
   ssoAccountId?: string;
   ssoRoleName?: string;
   externalId?: string;
+  credentialProcess?: string;
   durationSeconds?: number;
 };
 

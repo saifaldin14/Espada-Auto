@@ -9,9 +9,25 @@
  */
 
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { S3Client } from "@aws-sdk/client-s3";
 import { IAMClient } from "@aws-sdk/client-iam";
 import { STSClient } from "@aws-sdk/client-sts";
+import { LambdaClient } from "@aws-sdk/client-lambda";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { RDSClient } from "@aws-sdk/client-rds";
+import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
+import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
 import { CloudTrailClient } from "@aws-sdk/client-cloudtrail";
+import { SNSClient } from "@aws-sdk/client-sns";
+import { SQSClient } from "@aws-sdk/client-sqs";
+import { ECSClient } from "@aws-sdk/client-ecs";
+import { EKSClient } from "@aws-sdk/client-eks";
+import { ECRClient } from "@aws-sdk/client-ecr";
+import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
+import { SSMClient } from "@aws-sdk/client-ssm";
+import { KMSClient } from "@aws-sdk/client-kms";
+import { Route53Client } from "@aws-sdk/client-route-53";
+import { ElastiCacheClient } from "@aws-sdk/client-elasticache";
 import { OrganizationsClient } from "@aws-sdk/client-organizations";
 import { ResourceGroupsTaggingAPIClient } from "@aws-sdk/client-resource-groups-tagging-api";
 import type { AWSCredentials, AWSServiceName, ClientPoolConfig, ClientPoolEntry, ClientPoolStats } from "../types.js";
@@ -40,9 +56,25 @@ type ClientConstructor = new (config: {
 
 const CLIENT_FACTORIES: Partial<Record<AWSServiceName, ClientConstructor>> = {
   ec2: EC2Client,
+  s3: S3Client,
   iam: IAMClient,
   sts: STSClient,
+  lambda: LambdaClient,
+  dynamodb: DynamoDBClient,
+  rds: RDSClient,
+  cloudformation: CloudFormationClient,
+  cloudwatch: CloudWatchClient,
   cloudtrail: CloudTrailClient,
+  sns: SNSClient,
+  sqs: SQSClient,
+  ecs: ECSClient,
+  eks: EKSClient,
+  ecr: ECRClient,
+  secretsmanager: SecretsManagerClient,
+  ssm: SSMClient,
+  kms: KMSClient,
+  route53: Route53Client,
+  elasticache: ElastiCacheClient,
   organizations: OrganizationsClient,
   resourcegroupstaggingapi: ResourceGroupsTaggingAPIClient,
 };
@@ -232,6 +264,182 @@ export class AWSClientPoolManager {
       credentials,
       profile,
     );
+  }
+
+  /**
+   * Get S3 client
+   */
+  async getS3Client(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<S3Client> {
+    return this.getClient<S3Client>("s3", region, credentials, profile);
+  }
+
+  /**
+   * Get Lambda client
+   */
+  async getLambdaClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<LambdaClient> {
+    return this.getClient<LambdaClient>("lambda", region, credentials, profile);
+  }
+
+  /**
+   * Get DynamoDB client
+   */
+  async getDynamoDBClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<DynamoDBClient> {
+    return this.getClient<DynamoDBClient>("dynamodb", region, credentials, profile);
+  }
+
+  /**
+   * Get RDS client
+   */
+  async getRDSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<RDSClient> {
+    return this.getClient<RDSClient>("rds", region, credentials, profile);
+  }
+
+  /**
+   * Get CloudFormation client
+   */
+  async getCloudFormationClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<CloudFormationClient> {
+    return this.getClient<CloudFormationClient>("cloudformation", region, credentials, profile);
+  }
+
+  /**
+   * Get CloudWatch client
+   */
+  async getCloudWatchClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<CloudWatchClient> {
+    return this.getClient<CloudWatchClient>("cloudwatch", region, credentials, profile);
+  }
+
+  /**
+   * Get SNS client
+   */
+  async getSNSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<SNSClient> {
+    return this.getClient<SNSClient>("sns", region, credentials, profile);
+  }
+
+  /**
+   * Get SQS client
+   */
+  async getSQSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<SQSClient> {
+    return this.getClient<SQSClient>("sqs", region, credentials, profile);
+  }
+
+  /**
+   * Get ECS client
+   */
+  async getECSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<ECSClient> {
+    return this.getClient<ECSClient>("ecs", region, credentials, profile);
+  }
+
+  /**
+   * Get EKS client
+   */
+  async getEKSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<EKSClient> {
+    return this.getClient<EKSClient>("eks", region, credentials, profile);
+  }
+
+  /**
+   * Get ECR client
+   */
+  async getECRClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<ECRClient> {
+    return this.getClient<ECRClient>("ecr", region, credentials, profile);
+  }
+
+  /**
+   * Get Secrets Manager client
+   */
+  async getSecretsManagerClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<SecretsManagerClient> {
+    return this.getClient<SecretsManagerClient>("secretsmanager", region, credentials, profile);
+  }
+
+  /**
+   * Get SSM (Systems Manager) client
+   */
+  async getSSMClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<SSMClient> {
+    return this.getClient<SSMClient>("ssm", region, credentials, profile);
+  }
+
+  /**
+   * Get KMS client
+   */
+  async getKMSClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<KMSClient> {
+    return this.getClient<KMSClient>("kms", region, credentials, profile);
+  }
+
+  /**
+   * Get Route53 client
+   */
+  async getRoute53Client(
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<Route53Client> {
+    // Route53 is a global service, always use us-east-1
+    return this.getClient<Route53Client>("route53", "us-east-1", credentials, profile);
+  }
+
+  /**
+   * Get ElastiCache client
+   */
+  async getElastiCacheClient(
+    region: string,
+    credentials: AWSCredentials,
+    profile?: string,
+  ): Promise<ElastiCacheClient> {
+    return this.getClient<ElastiCacheClient>("elasticache", region, credentials, profile);
   }
 
   /**

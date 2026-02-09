@@ -696,6 +696,19 @@ export function getTemplatesByCategory(category: string): IntentTemplate[] {
 }
 
 /**
+ * Full-text search across template name, description, category, and tags.
+ */
+export function searchTemplates(query: string): IntentTemplate[] {
+  const q = query.toLowerCase();
+  return INFRASTRUCTURE_CATALOG.filter(t => {
+    const haystack = [t.name, t.description, t.category, ...t.tags]
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(q);
+  });
+}
+
+/**
  * Search templates by tags
  */
 export function searchTemplatesByTags(tags: string[]): IntentTemplate[] {

@@ -907,7 +907,74 @@ export type {
 // Utility Exports
 // =============================================================================
 
-export { which } from "./utils/which.js";
+export {
+  which,
+  commandExists,
+  parseArn,
+  buildArn,
+  classifyError,
+  retry,
+  paginate,
+  formatBytes,
+  formatDuration,
+  formatCost,
+  truncate,
+} from "./utils/index.js";
+
+export type {
+  ParsedArn,
+  AWSErrorCategory,
+  ClassifiedError,
+  RetryOptions as UtilRetryOptions,
+  PaginateOptions,
+} from "./utils/index.js";
+
+// =============================================================================
+// Policy Engine Exports
+// =============================================================================
+
+export {
+  PolicyEngine,
+  createPolicyEngine,
+  COMPLIANCE_POLICY_SETS,
+} from "./policy/index.js";
+
+export type {
+  PolicyRule,
+  PolicyEvaluationResult,
+  PolicyEngineConfig,
+} from "./policy/index.js";
+
+// =============================================================================
+// Reconciliation Engine Exports
+// =============================================================================
+
+export {
+  ReconciliationEngine,
+  createReconciliationEngine,
+  createReconciliationSchedule,
+  createReconciliationWorkflow,
+} from "./reconciliation/index.js";
+
+export type {
+  ReconciliationConfig,
+  ReconciliationContext,
+} from "./reconciliation/index.js";
+
+// =============================================================================
+// Infrastructure Catalog Exports
+// =============================================================================
+
+export {
+  INFRASTRUCTURE_CATALOG,
+  getTemplate,
+  getTemplatesByCategory,
+  searchTemplates,
+  searchTemplatesByTags,
+  applyTemplate,
+  listTemplates,
+  getCategories,
+} from "./catalog/index.js";
 
 // =============================================================================
 // Enterprise Services Module (Database, API, Messaging, DNS, Identity)
@@ -1232,25 +1299,7 @@ export {
   createIntentCompiler,
 } from "./intent/compiler.js";
 
-export {
-  PolicyEngine,
-  createPolicyEngine,
-} from "./policy/engine.js";
-
-export {
-  INFRASTRUCTURE_CATALOG,
-  getTemplate,
-  getTemplatesByCategory,
-  searchTemplatesByTags,
-  applyTemplate,
-  listTemplates,
-  getCategories,
-} from "./catalog/templates.js";
-
-export {
-  ReconciliationEngine,
-  createReconciliationEngine,
-} from "./reconciliation/engine.js";
+// PolicyEngine, catalog, and reconciliation exports are above (via barrel index.ts files)
 
 export {
   IDIOOrchestrator,
@@ -1295,26 +1344,7 @@ export type {
   RemediationAction as IntentRemediationAction,
 } from "./intent/types.js";
 
-export type {
-  // Policy Types
-  PolicyRule,
-  PolicyEvaluationResult,
-} from "./policy/engine.js";
-
-export {
-  COMPLIANCE_POLICY_SETS,
-} from "./policy/engine.js";
-
-export type {
-  // Reconciliation Types
-  ReconciliationConfig,
-  ReconciliationContext,
-} from "./reconciliation/engine.js";
-
-export {
-  createReconciliationSchedule,
-  createReconciliationWorkflow,
-} from "./reconciliation/engine.js";
+// PolicyEngine, catalog, and reconciliation exports are above (via barrel index.ts files)
 
 // =============================================================================
 // Plugin Interface
