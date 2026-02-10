@@ -149,6 +149,29 @@ import {
   type AWSConversationalManager,
 } from "./src/conversational/index.js";
 
+import {
+  AWSComplianceManager,
+} from "./src/compliance/index.js";
+import type {
+  ComplianceFramework,
+  ComplianceSeverity,
+  ViolationStatus,
+  TagEnforcementMode,
+  ConfigRuleSourceType,
+  ReportFormat,
+  ReportType,
+} from "./src/compliance/types.js";
+
+import {
+  createAutomationManager,
+  type AWSAutomationManager,
+} from "./src/automation/index.js";
+import type {
+  EventRuleState,
+  ScheduleState,
+  StateMachineType,
+} from "./src/automation/types.js";
+
 import type {
   OperationContext,
   ActionType,
@@ -193,6 +216,8 @@ let route53Manager: Route53Manager | null = null;
 let cognitoManager: CognitoManager | null = null;
 let apiGatewayManager: APIGatewayManager | null = null;
 let conversationalManager: AWSConversationalManager | null = null;
+let complianceManager: AWSComplianceManager | null = null;
+let automationManager: AWSAutomationManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -18284,6 +18309,1700 @@ ${topResources}`,
       { name: "aws_assistant" },
     );
 
+    // =========================================================================
+    // AWS COMPLIANCE & GOVERNANCE TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_compliance",
+        label: "AWS Compliance & Governance",
+        description: `Manage AWS compliance, governance, and regulatory standards with Config rules, conformance packs, tag enforcement, and violation tracking.
+
+ACTIONS:
+  Compliance Checks: check_compliance, get_compliance_summary
+  Frameworks: list_frameworks, get_framework, get_controls
+  Violations: list_violations, get_violation, suppress_violation, unsuppress_violation
+  Config Rules: list_config_rules, get_config_rule, create_config_rule, delete_config_rule, get_config_rule_compliance, get_config_rule_compliance_details, start_config_rules_evaluation
+  Conformance Packs: list_conformance_packs, get_conformance_pack, create_conformance_pack, delete_conformance_pack, get_conformance_pack_compliance, deploy_conformance_pack_from_template
+  Tag Compliance: check_tag_compliance, enforce_tag_policy, list_tag_policies, create_tag_policy, delete_tag_policy
+  Remediation: remediate_violation, get_remediation_status, list_remediation_actions
+  Reports: generate_report, list_reports, get_report
+
+Supported frameworks: CIS, SOC2, HIPAA, PCI-DSS, GDPR, NIST-800-53, NIST-CSF, ISO-27001, FedRAMP, AWS-Foundational-Security, AWS-Well-Architected`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "check_compliance",
+                "get_compliance_summary",
+                "list_frameworks",
+                "get_framework",
+                "get_controls",
+                "list_violations",
+                "get_violation",
+                "suppress_violation",
+                "unsuppress_violation",
+                "list_config_rules",
+                "get_config_rule",
+                "create_config_rule",
+                "delete_config_rule",
+                "get_config_rule_compliance",
+                "get_config_rule_compliance_details",
+                "start_config_rules_evaluation",
+                "list_conformance_packs",
+                "get_conformance_pack",
+                "create_conformance_pack",
+                "delete_conformance_pack",
+                "get_conformance_pack_compliance",
+                "deploy_conformance_pack_from_template",
+                "check_tag_compliance",
+                "enforce_tag_policy",
+                "list_tag_policies",
+                "create_tag_policy",
+                "delete_tag_policy",
+                "remediate_violation",
+                "get_remediation_status",
+                "list_remediation_actions",
+                "generate_report",
+                "list_reports",
+                "get_report",
+              ],
+              description: "The compliance operation to perform",
+            },
+            // Framework / compliance checks
+            framework: {
+              type: "string",
+              enum: [
+                "CIS", "CIS-1.2", "CIS-1.4", "CIS-2.0",
+                "SOC2", "SOC2-Type1", "SOC2-Type2",
+                "HIPAA", "PCI-DSS", "PCI-DSS-3.2.1", "PCI-DSS-4.0",
+                "GDPR", "NIST-800-53", "NIST-CSF", "ISO-27001",
+                "FedRAMP", "AWS-Foundational-Security", "AWS-Well-Architected", "Custom",
+              ],
+              description: "Compliance framework to check against",
+            },
+            // Violation options
+            violationId: {
+              type: "string",
+              description: "Violation ID",
+            },
+            severity: {
+              type: "string",
+              enum: ["critical", "high", "medium", "low", "informational"],
+              description: "Filter by severity level",
+            },
+            status: {
+              type: "string",
+              enum: ["open", "in_progress", "remediated", "suppressed", "exception_granted"],
+              description: "Filter by violation status",
+            },
+            reason: {
+              type: "string",
+              description: "Reason for suppression or exception",
+            },
+            resourceType: {
+              type: "string",
+              description: "Filter by AWS resource type",
+            },
+            region: {
+              type: "string",
+              description: "AWS region for operations",
+            },
+            includeSuppressed: {
+              type: "boolean",
+              description: "Include suppressed violations in listing",
+            },
+            limit: {
+              type: "number",
+              description: "Maximum number of results to return",
+            },
+            // Config rule options
+            ruleName: {
+              type: "string",
+              description: "AWS Config rule name",
+            },
+            ruleNames: {
+              type: "array",
+              items: { type: "string" },
+              description: "List of Config rule names for batch operations",
+            },
+            description: {
+              type: "string",
+              description: "Description for the resource being created",
+            },
+            sourceType: {
+              type: "string",
+              enum: ["AWS", "CUSTOM_LAMBDA", "CUSTOM_POLICY"],
+              description: "Config rule source type",
+            },
+            sourceIdentifier: {
+              type: "string",
+              description: "AWS managed rule identifier or Lambda ARN",
+            },
+            inputParameters: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Input parameters for Config rule",
+            },
+            resourceTypes: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource types to evaluate",
+            },
+            maximumExecutionFrequency: {
+              type: "string",
+              enum: ["One_Hour", "Three_Hours", "Six_Hours", "Twelve_Hours", "TwentyFour_Hours"],
+              description: "Execution frequency for periodic Config rules",
+            },
+            tags: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Tags to apply",
+            },
+            // Conformance pack options
+            packName: {
+              type: "string",
+              description: "Conformance pack name",
+            },
+            templateBody: {
+              type: "string",
+              description: "Conformance pack template body (YAML)",
+            },
+            templateS3Uri: {
+              type: "string",
+              description: "S3 URI for conformance pack template",
+            },
+            templateId: {
+              type: "string",
+              description: "Predefined conformance pack template ID",
+            },
+            deliveryS3Bucket: {
+              type: "string",
+              description: "S3 bucket for delivery results",
+            },
+            // Tag compliance options
+            policyId: {
+              type: "string",
+              description: "Tag policy ID",
+            },
+            policyName: {
+              type: "string",
+              description: "Tag policy name",
+            },
+            requiredTags: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  key: { type: "string" },
+                  allowedValues: { type: "array", items: { type: "string" } },
+                  caseSensitive: { type: "boolean" },
+                  valuePattern: { type: "string" },
+                  description: { type: "string" },
+                  defaultValue: { type: "string" },
+                },
+                required: ["key"],
+              },
+              description: "Required tag definitions for tag compliance",
+            },
+            enforcementMode: {
+              type: "string",
+              enum: ["audit", "enforce", "remediate"],
+              description: "Tag enforcement mode",
+            },
+            dryRun: {
+              type: "boolean",
+              description: "Perform a dry run without applying changes",
+            },
+            applyDefaults: {
+              type: "boolean",
+              description: "Apply default values for missing tags",
+            },
+            regions: {
+              type: "array",
+              items: { type: "string" },
+              description: "Regions to check",
+            },
+            // Remediation options
+            remediationId: {
+              type: "string",
+              description: "Remediation execution ID",
+            },
+            actionType: {
+              type: "string",
+              description: "Remediation action type (e.g., AWS-DisablePublicAccessForS3Bucket)",
+            },
+            parameters: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Custom remediation parameters",
+            },
+            skipApproval: {
+              type: "boolean",
+              description: "Skip approval for remediation (if allowed)",
+            },
+            // Report options
+            reportId: {
+              type: "string",
+              description: "Compliance report ID",
+            },
+            reportType: {
+              type: "string",
+              enum: ["executive_summary", "detailed_findings", "remediation_progress", "trend_analysis", "resource_compliance", "framework_assessment"],
+              description: "Type of compliance report to generate",
+            },
+            reportFormat: {
+              type: "string",
+              enum: ["json", "csv", "pdf", "html"],
+              description: "Report output format",
+            },
+            title: {
+              type: "string",
+              description: "Report title",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!complianceManager) {
+            return {
+              content: [{ type: "text", text: "Error: Compliance manager not initialized. Ensure AWS credentials are configured." }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              // ================================================================
+              // Compliance Checks
+              // ================================================================
+              case "check_compliance": {
+                const framework = params.framework as ComplianceFramework;
+                if (!framework) {
+                  return { content: [{ type: "text", text: "Error: framework is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.checkCompliance(framework, {
+                  resourceTypes: params.resourceTypes as string[] | undefined,
+                  regions: params.regions as string[] | undefined,
+                  includeSuppressed: params.includeSuppressed as boolean | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const checks = result.data ?? [];
+                const compliant = checks.filter(c => c.status === "COMPLIANT").length;
+                const nonCompliant = checks.filter(c => c.status === "NON_COMPLIANT").length;
+                const summary = [
+                  `📋 **Compliance Check: ${framework}**`,
+                  ``,
+                  `Total controls checked: ${checks.length}`,
+                  `✅ Compliant: ${compliant}`,
+                  `❌ Non-compliant: ${nonCompliant}`,
+                  `Compliance rate: ${checks.length > 0 ? ((compliant / checks.length) * 100).toFixed(1) : 0}%`,
+                ];
+                if (nonCompliant > 0) {
+                  summary.push("", "**Non-compliant findings:**");
+                  for (const c of checks.filter(c => c.status === "NON_COMPLIANT").slice(0, 10)) {
+                    summary.push(`• [${c.severity.toUpperCase()}] ${c.controlTitle} — ${c.findings[0] ?? ""}`);
+                  }
+                }
+                return { content: [{ type: "text", text: summary.join("\n") }], details: { checks, compliant, nonCompliant } };
+              }
+
+              case "get_compliance_summary": {
+                const framework = params.framework as ComplianceFramework;
+                if (!framework) {
+                  return { content: [{ type: "text", text: "Error: framework is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getComplianceSummary(framework);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const s = result.data!;
+                const lines = [
+                  `📊 **Compliance Summary: ${framework}**`,
+                  ``,
+                  `Total controls: ${s.totalControls}`,
+                  `✅ Compliant: ${s.compliantControls}`,
+                  `❌ Non-compliant: ${s.nonCompliantControls}`,
+                  `⚪ Not applicable: ${s.notApplicableControls}`,
+                  `❓ Insufficient data: ${s.insufficientDataControls}`,
+                  `Compliance: ${s.compliancePercentage.toFixed(1)}%`,
+                  s.trend ? `Trend: ${s.trend}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { summary: s } };
+              }
+
+              // ================================================================
+              // Frameworks
+              // ================================================================
+              case "list_frameworks": {
+                const result = await complianceManager.getFrameworks();
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const frameworks = result.data ?? [];
+                const lines = frameworks.map(f => `• **${f.name}** (${f.id}) — ${f.controlCount} controls — v${f.version}`);
+                return { content: [{ type: "text", text: `📋 **Available Compliance Frameworks**\n\n${lines.join("\n")}` }], details: { frameworks } };
+              }
+
+              case "get_framework": {
+                const framework = params.framework as ComplianceFramework;
+                if (!framework) {
+                  return { content: [{ type: "text", text: "Error: framework is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getFramework(framework);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const f = result.data!;
+                const lines = [
+                  `📋 **${f.name}** (${f.id})`,
+                  ``,
+                  `${f.description}`,
+                  `Version: ${f.version}`,
+                  `Controls: ${f.controlCount}`,
+                  `Categories: ${f.categories.join(", ")}`,
+                  f.documentationUrl ? `Docs: ${f.documentationUrl}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { framework: f } };
+              }
+
+              case "get_controls": {
+                const framework = params.framework as ComplianceFramework;
+                if (!framework) {
+                  return { content: [{ type: "text", text: "Error: framework is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getControls(framework);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const controls = result.data ?? [];
+                const lines = controls.slice(0, 25).map(c =>
+                  `• **${c.controlId}**: ${c.title} [${c.severity}] — ${c.applicableServices.join(", ")}`
+                );
+                if (controls.length > 25) lines.push(`\n...and ${controls.length - 25} more`);
+                return { content: [{ type: "text", text: `📋 **Controls for ${framework}** (${controls.length} total)\n\n${lines.join("\n")}` }], details: { controls } };
+              }
+
+              // ================================================================
+              // Violations
+              // ================================================================
+              case "list_violations": {
+                const result = await complianceManager.listViolations({
+                  framework: params.framework as ComplianceFramework | undefined,
+                  severity: params.severity as ComplianceSeverity | undefined,
+                  status: params.status as ViolationStatus | undefined,
+                  resourceType: params.resourceType as string | undefined,
+                  region: params.region as string | undefined,
+                  includeSuppressed: params.includeSuppressed as boolean | undefined,
+                  limit: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const violations = result.data ?? [];
+                if (violations.length === 0) {
+                  return { content: [{ type: "text", text: "✅ No compliance violations found." }], details: { violations: [] } };
+                }
+                const lines = violations.slice(0, 20).map(v =>
+                  `• [${v.severity.toUpperCase()}] **${v.controlTitle}** — ${v.resource.resourceType}:${v.resource.resourceId} (${v.status})`
+                );
+                if (violations.length > 20) lines.push(`\n...and ${violations.length - 20} more`);
+                return { content: [{ type: "text", text: `⚠️ **Compliance Violations** (${violations.length})\n\n${lines.join("\n")}` }], details: { violations } };
+              }
+
+              case "get_violation": {
+                const violationId = params.violationId as string;
+                if (!violationId) {
+                  return { content: [{ type: "text", text: "Error: violationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getViolation(violationId);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const v = result.data!;
+                const lines = [
+                  `⚠️ **Violation: ${v.controlTitle}**`,
+                  ``,
+                  `ID: ${v.violationId}`,
+                  `Framework: ${v.framework}`,
+                  `Control: ${v.controlId}`,
+                  `Severity: ${v.severity}`,
+                  `Status: ${v.status}`,
+                  `Risk Score: ${v.riskScore}/100`,
+                  ``,
+                  `**Resource:** ${v.resource.resourceType} — ${v.resource.resourceId}`,
+                  `Region: ${v.resource.region}`,
+                  ``,
+                  `**Description:** ${v.description}`,
+                  ``,
+                  `**Remediation:** ${v.remediationGuidance}`,
+                  v.autoRemediationAvailable ? "✅ Auto-remediation available" : "⚠️ Manual remediation required",
+                ];
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { violation: v } };
+              }
+
+              case "suppress_violation": {
+                const violationId = params.violationId as string;
+                const reason = params.reason as string;
+                if (!violationId || !reason) {
+                  return { content: [{ type: "text", text: "Error: violationId and reason are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.suppressViolation(violationId, reason);
+                return { content: [{ type: "text", text: result.success ? `✅ Violation ${violationId} suppressed.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "unsuppress_violation": {
+                const violationId = params.violationId as string;
+                if (!violationId) {
+                  return { content: [{ type: "text", text: "Error: violationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.unsuppressViolation(violationId);
+                return { content: [{ type: "text", text: result.success ? `✅ Violation ${violationId} unsuppressed.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Config Rules
+              // ================================================================
+              case "list_config_rules": {
+                const result = await complianceManager.listConfigRules({
+                  ruleNames: params.ruleNames as string[] | undefined,
+                  maxResults: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const rules = result.data ?? [];
+                if (rules.length === 0) {
+                  return { content: [{ type: "text", text: "No AWS Config rules found." }], details: { rules: [] } };
+                }
+                const lines = rules.map(r => `• **${r.ruleName}** [${r.state}] — ${r.sourceType}: ${r.sourceIdentifier}`);
+                return { content: [{ type: "text", text: `📋 **Config Rules** (${rules.length})\n\n${lines.join("\n")}` }], details: { rules } };
+              }
+
+              case "get_config_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getConfigRule(ruleName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                const lines = [
+                  `📋 **Config Rule: ${r.ruleName}**`,
+                  `ARN: ${r.ruleArn}`,
+                  `State: ${r.state}`,
+                  `Source: ${r.sourceType} — ${r.sourceIdentifier}`,
+                  r.description ? `Description: ${r.description}` : "",
+                  r.scope?.resourceTypes ? `Scope: ${r.scope.resourceTypes.join(", ")}` : "",
+                  r.maximumExecutionFrequency ? `Frequency: ${r.maximumExecutionFrequency}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { rule: r } };
+              }
+
+              case "create_config_rule": {
+                const ruleName = params.ruleName as string;
+                const sourceType = params.sourceType as ConfigRuleSourceType;
+                const sourceIdentifier = params.sourceIdentifier as string;
+                if (!ruleName || !sourceType || !sourceIdentifier) {
+                  return { content: [{ type: "text", text: "Error: ruleName, sourceType, and sourceIdentifier are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.createConfigRule({
+                  ruleName,
+                  sourceType,
+                  sourceIdentifier,
+                  description: params.description as string | undefined,
+                  inputParameters: params.inputParameters as Record<string, string> | undefined,
+                  resourceTypes: params.resourceTypes as string[] | undefined,
+                  maximumExecutionFrequency: params.maximumExecutionFrequency as "One_Hour" | "Three_Hours" | "Six_Hours" | "Twelve_Hours" | "TwentyFour_Hours" | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Config rule **${ruleName}** created successfully.\nARN: ${result.data?.ruleArn}` }], details: result };
+              }
+
+              case "delete_config_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.deleteConfigRule(ruleName);
+                return { content: [{ type: "text", text: result.success ? `✅ Config rule **${ruleName}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_config_rule_compliance": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getConfigRuleCompliance(ruleName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const e = result.data!;
+                const lines = [
+                  `📋 **${e.ruleName}** — ${e.complianceType}`,
+                  `Compliant resources: ${e.compliantResourceCount}`,
+                  `Non-compliant resources: ${e.nonCompliantResourceCount}`,
+                  e.lastEvaluationTime ? `Last evaluated: ${e.lastEvaluationTime}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { evaluation: e } };
+              }
+
+              case "get_config_rule_compliance_details": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getConfigRuleComplianceDetails(ruleName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const details = result.data ?? [];
+                const lines = details.slice(0, 20).map(d =>
+                  `• ${d.resourceType}:${d.resourceId} — ${d.complianceType}${d.annotation ? ` (${d.annotation})` : ""}`
+                );
+                if (details.length > 20) lines.push(`\n...and ${details.length - 20} more`);
+                return { content: [{ type: "text", text: `📋 **Compliance Details for ${ruleName}** (${details.length})\n\n${lines.join("\n")}` }], details: { details } };
+              }
+
+              case "start_config_rules_evaluation": {
+                const ruleNames = params.ruleNames as string[];
+                if (!ruleNames?.length) {
+                  return { content: [{ type: "text", text: "Error: ruleNames array is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.startConfigRulesEvaluation(ruleNames);
+                return { content: [{ type: "text", text: result.success ? `✅ Evaluation started for ${ruleNames.length} rule(s).` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Conformance Packs
+              // ================================================================
+              case "list_conformance_packs": {
+                const result = await complianceManager.listConformancePacks({
+                  maxResults: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const packs = result.data ?? [];
+                if (packs.length === 0) {
+                  return { content: [{ type: "text", text: "No conformance packs found." }], details: { packs: [] } };
+                }
+                const lines = packs.map(p => `• **${p.packName}** — ${p.complianceStatus ?? "unknown"}`);
+                return { content: [{ type: "text", text: `📋 **Conformance Packs** (${packs.length})\n\n${lines.join("\n")}` }], details: { packs } };
+              }
+
+              case "get_conformance_pack": {
+                const packName = params.packName as string;
+                if (!packName) {
+                  return { content: [{ type: "text", text: "Error: packName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getConformancePack(packName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const p = result.data!;
+                return { content: [{ type: "text", text: `📋 **${p.packName}**\nARN: ${p.packArn}\nCompliance: ${p.complianceStatus ?? "unknown"}` }], details: { pack: p } };
+              }
+
+              case "create_conformance_pack": {
+                const packName = params.packName as string;
+                if (!packName) {
+                  return { content: [{ type: "text", text: "Error: packName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.createConformancePack({
+                  packName,
+                  templateBody: params.templateBody as string | undefined,
+                  templateS3Uri: params.templateS3Uri as string | undefined,
+                  deliveryS3Bucket: params.deliveryS3Bucket as string | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Conformance pack **${packName}** created.` }], details: result };
+              }
+
+              case "delete_conformance_pack": {
+                const packName = params.packName as string;
+                if (!packName) {
+                  return { content: [{ type: "text", text: "Error: packName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.deleteConformancePack(packName);
+                return { content: [{ type: "text", text: result.success ? `✅ Conformance pack **${packName}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_conformance_pack_compliance": {
+                const packName = params.packName as string;
+                if (!packName) {
+                  return { content: [{ type: "text", text: "Error: packName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getConformancePackCompliance(packName);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const details = result.data ?? [];
+                const lines = details.map(d => `• ${d.ruleName}: ${d.complianceType}`);
+                return { content: [{ type: "text", text: `📋 **${packName} Compliance** (${details.length} rules)\n\n${lines.join("\n")}` }], details: { details } };
+              }
+
+              case "deploy_conformance_pack_from_template": {
+                const templateId = params.templateId as string;
+                if (!templateId) {
+                  return { content: [{ type: "text", text: "Error: templateId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.deployConformancePackFromTemplate(templateId);
+                return { content: [{ type: "text", text: result.success ? `✅ Conformance pack deployed from template **${templateId}**.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Tag Compliance
+              // ================================================================
+              case "check_tag_compliance": {
+                const mode = (params.enforcementMode as TagEnforcementMode) || "audit";
+                const result = await complianceManager.checkTagCompliance({
+                  policyId: params.policyId as string | undefined,
+                  requiredTags: params.requiredTags as Array<{ key: string; allowedValues?: string[]; caseSensitive?: boolean; valuePattern?: string; description?: string; defaultValue?: string }> | undefined,
+                  resourceTypes: params.resourceTypes as string[] | undefined,
+                  regions: params.regions as string[] | undefined,
+                  mode,
+                  dryRun: params.dryRun as boolean | undefined,
+                  applyDefaults: params.applyDefaults as boolean | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                const lines = [
+                  `🏷️ **Tag Compliance Check**`,
+                  ``,
+                  `Total checked: ${r.totalChecked}`,
+                  `✅ Compliant: ${r.compliant}`,
+                  `❌ Non-compliant: ${r.nonCompliant}`,
+                  `🔧 Remediated: ${r.remediated}`,
+                  `Errors: ${r.errors}`,
+                  `Mode: ${r.mode}${r.dryRun ? " (dry run)" : ""}`,
+                ];
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { result: r } };
+              }
+
+              case "enforce_tag_policy": {
+                const mode = (params.enforcementMode as TagEnforcementMode) || "enforce";
+                const result = await complianceManager.enforceTagPolicy({
+                  policyId: params.policyId as string | undefined,
+                  requiredTags: params.requiredTags as Array<{ key: string; allowedValues?: string[]; caseSensitive?: boolean; valuePattern?: string; description?: string; defaultValue?: string }> | undefined,
+                  resourceTypes: params.resourceTypes as string[] | undefined,
+                  regions: params.regions as string[] | undefined,
+                  mode,
+                  dryRun: params.dryRun as boolean | undefined,
+                  applyDefaults: params.applyDefaults as boolean | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `🏷️ Tag policy enforced: ${r.compliant} compliant, ${r.nonCompliant} non-compliant, ${r.remediated} remediated.` }], details: { result: r } };
+              }
+
+              case "list_tag_policies": {
+                const result = await complianceManager.listTagPolicies();
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const policies = result.data ?? [];
+                if (policies.length === 0) {
+                  return { content: [{ type: "text", text: "No tag policies found." }], details: { policies: [] } };
+                }
+                const lines = policies.map(p => `• **${p.name}** (${p.policyId}) — ${p.requiredTags.length} required tags — ${p.enforcementMode}`);
+                return { content: [{ type: "text", text: `🏷️ **Tag Policies** (${policies.length})\n\n${lines.join("\n")}` }], details: { policies } };
+              }
+
+              case "create_tag_policy": {
+                const policyName = params.policyName as string;
+                const requiredTags = params.requiredTags as Array<{ key: string; allowedValues?: string[] }>;
+                if (!policyName || !requiredTags?.length) {
+                  return { content: [{ type: "text", text: "Error: policyName and requiredTags are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.createTagPolicy({
+                  name: policyName,
+                  description: (params.description as string) || "",
+                  requiredTags,
+                  resourceTypes: (params.resourceTypes as string[]) || [],
+                  enforcementMode: (params.enforcementMode as TagEnforcementMode) || "audit",
+                  isActive: true,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ Tag policy **${policyName}** created.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_tag_policy": {
+                const policyId = params.policyId as string;
+                if (!policyId) {
+                  return { content: [{ type: "text", text: "Error: policyId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.deleteTagPolicy(policyId);
+                return { content: [{ type: "text", text: result.success ? `✅ Tag policy deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Remediation
+              // ================================================================
+              case "remediate_violation": {
+                const violationId = params.violationId as string;
+                if (!violationId) {
+                  return { content: [{ type: "text", text: "Error: violationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.remediateViolation({
+                  violationId,
+                  actionType: params.actionType as string | undefined,
+                  parameters: params.parameters as Record<string, string> | undefined,
+                  dryRun: params.dryRun as boolean | undefined,
+                  skipApproval: params.skipApproval as boolean | undefined,
+                } as any);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `🔧 **Remediation ${r.status}**\nID: ${r.remediationId}\nResource: ${r.resourceType}:${r.resourceId}` }], details: { remediation: r } };
+              }
+
+              case "get_remediation_status": {
+                const remediationId = params.remediationId as string;
+                if (!remediationId) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getRemediationStatus(remediationId);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `🔧 **Remediation: ${r.remediationId}**\nStatus: ${r.status}\nResource: ${r.resourceType}:${r.resourceId}` }], details: { remediation: r } };
+              }
+
+              case "list_remediation_actions": {
+                const result = await complianceManager.listRemediationActions();
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const actions = result.data ?? [];
+                const lines = actions.map(a => `• **${a.actionType}** — ${a.targetType}: ${a.targetId} (${a.automatic ? "automatic" : "manual"})`);
+                return { content: [{ type: "text", text: `🔧 **Remediation Actions** (${actions.length})\n\n${lines.join("\n")}` }], details: { actions } };
+              }
+
+              // ================================================================
+              // Reports
+              // ================================================================
+              case "generate_report": {
+                const framework = params.framework as ComplianceFramework;
+                if (!framework) {
+                  return { content: [{ type: "text", text: "Error: framework is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.generateReport({
+                  framework,
+                  type: (params.reportType as ReportType) || "executive_summary",
+                  format: (params.reportFormat as ReportFormat) || "json",
+                  title: params.title as string | undefined,
+                } as any);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `📊 **Report Generated**\nID: ${r.reportId}\nTitle: ${r.title}\nFramework: ${r.framework}` }], details: { report: r } };
+              }
+
+              case "list_reports": {
+                const result = await complianceManager.listReports(params.framework as ComplianceFramework | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const reports = result.data ?? [];
+                if (reports.length === 0) {
+                  return { content: [{ type: "text", text: "No compliance reports found." }], details: { reports: [] } };
+                }
+                const lines = reports.map(r => `• **${r.title}** (${r.reportId}) — ${r.framework}`);
+                return { content: [{ type: "text", text: `📊 **Compliance Reports** (${reports.length})\n\n${lines.join("\n")}` }], details: { reports } };
+              }
+
+              case "get_report": {
+                const reportId = params.reportId as string;
+                if (!reportId) {
+                  return { content: [{ type: "text", text: "Error: reportId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await complianceManager.getReport(reportId);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `📊 **${r.title}**\nID: ${r.reportId}\nFramework: ${r.framework}` }], details: { report: r } };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown compliance action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `Compliance error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_compliance" },
+    );
+
+    // =========================================================================
+    // AWS EVENT-DRIVEN AUTOMATION TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_automation",
+        label: "AWS Event-Driven Automation",
+        description: `Manage AWS event-driven automation with EventBridge rules, schedules, Step Functions workflows, automated remediation, and event archival/replay.
+
+ACTIONS:
+  Event Buses: list_event_buses, create_event_bus, delete_event_bus
+  Event Rules: list_event_rules, get_event_rule, create_event_rule, update_event_rule, delete_event_rule, enable_event_rule, disable_event_rule
+  Targets: list_targets, add_target, remove_target
+  Schedules: list_schedules, get_schedule, create_schedule, update_schedule, delete_schedule
+  Step Functions: list_state_machines, get_state_machine, create_state_machine, update_state_machine, delete_state_machine
+  Executions: start_execution, stop_execution, list_executions, get_execution
+  Workflows: build_workflow
+  Remediation: list_remediations, get_remediation, setup_remediation, update_remediation, delete_remediation, enable_remediation, disable_remediation, trigger_remediation
+  Archives & Replay: list_event_archives, create_event_archive, delete_event_archive, start_replay, cancel_replay, get_replay_status`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_event_buses", "create_event_bus", "delete_event_bus",
+                "list_event_rules", "get_event_rule", "create_event_rule", "update_event_rule", "delete_event_rule", "enable_event_rule", "disable_event_rule",
+                "list_targets", "add_target", "remove_target",
+                "list_schedules", "get_schedule", "create_schedule", "update_schedule", "delete_schedule",
+                "list_state_machines", "get_state_machine", "create_state_machine", "update_state_machine", "delete_state_machine",
+                "start_execution", "stop_execution", "list_executions", "get_execution",
+                "build_workflow",
+                "list_remediations", "get_remediation", "setup_remediation", "update_remediation", "delete_remediation", "enable_remediation", "disable_remediation", "trigger_remediation",
+                "list_event_archives", "create_event_archive", "delete_event_archive",
+                "start_replay", "cancel_replay", "get_replay_status",
+              ],
+              description: "The automation operation to perform",
+            },
+            // Common identifiers
+            name: { type: "string", description: "Name for the resource being created or referenced" },
+            description: { type: "string", description: "Description" },
+            tags: { type: "object", additionalProperties: { type: "string" }, description: "Tags to apply" },
+            // Event bus/rule
+            eventBusName: { type: "string", description: "Event bus name (defaults to 'default')" },
+            eventSourceName: { type: "string", description: "Event source name for partner event bus" },
+            ruleName: { type: "string", description: "EventBridge rule name" },
+            eventPattern: {
+              type: "object",
+              description: "Event pattern for matching (source, detail-type, detail, etc.)",
+            },
+            scheduleExpression: {
+              type: "string",
+              description: "Schedule expression (cron/rate) e.g. 'rate(5 minutes)' or 'cron(0 12 * * ? *)'",
+            },
+            state: {
+              type: "string",
+              enum: ["ENABLED", "DISABLED"],
+              description: "Rule or schedule state",
+            },
+            roleArn: { type: "string", description: "IAM role ARN for invocation" },
+            // Targets
+            targetId: { type: "string", description: "Target ID" },
+            targetArn: { type: "string", description: "Target ARN (Lambda, SQS, SNS, etc.)" },
+            targetType: {
+              type: "string",
+              enum: ["lambda", "sns", "sqs", "step-functions", "ecs-task", "kinesis", "firehose", "ssm-run-command", "ssm-automation", "api-gateway", "http", "batch"],
+              description: "Target type",
+            },
+            input: { type: "string", description: "Custom input to pass to target" },
+            inputTransformer: {
+              type: "object",
+              properties: {
+                inputPathsMap: { type: "object", additionalProperties: { type: "string" } },
+                inputTemplate: { type: "string" },
+              },
+              description: "Input transformer for target",
+            },
+            retryPolicy: {
+              type: "object",
+              properties: {
+                maximumRetryAttempts: { type: "number" },
+                maximumEventAgeInSeconds: { type: "number" },
+              },
+              description: "Retry policy for target",
+            },
+            deadLetterQueueArn: { type: "string", description: "Dead-letter queue ARN" },
+            // Schedule
+            groupName: { type: "string", description: "Schedule group name" },
+            timezone: { type: "string", description: "Timezone for schedule (e.g. America/New_York)" },
+            startDate: { type: "string", description: "Schedule start date (ISO 8601)" },
+            endDate: { type: "string", description: "Schedule end date (ISO 8601)" },
+            targetRoleArn: { type: "string", description: "Role ARN for schedule target" },
+            targetInput: { type: "string", description: "Input for schedule target" },
+            // Step Functions
+            stateMachineArn: { type: "string", description: "State machine ARN" },
+            stateMachineType: {
+              type: "string",
+              enum: ["STANDARD", "EXPRESS"],
+              description: "State machine type",
+            },
+            definition: { type: "string", description: "State machine definition (JSON)" },
+            executionArn: { type: "string", description: "Execution ARN" },
+            executionInput: { type: "string", description: "Input for execution (JSON)" },
+            executionName: { type: "string", description: "Execution name" },
+            cause: { type: "string", description: "Cause for stopping execution" },
+            error: { type: "string", description: "Error code for stopping execution" },
+            statusFilter: {
+              type: "string",
+              enum: ["RUNNING", "SUCCEEDED", "FAILED", "TIMED_OUT", "ABORTED"],
+              description: "Filter executions by status",
+            },
+            // Workflow builder
+            workflowDescription: { type: "string", description: "Natural language description of the workflow to build" },
+            // Remediation
+            remediationId: { type: "string", description: "Remediation config ID" },
+            configRuleName: { type: "string", description: "AWS Config rule name for remediation" },
+            remediationAction: { type: "string", description: "SSM document name for remediation" },
+            resourceType: { type: "string", description: "Resource type to remediate" },
+            automatic: { type: "boolean", description: "Enable automatic remediation" },
+            maxRetries: { type: "number", description: "Maximum retry attempts" },
+            retryIntervalSeconds: { type: "number", description: "Retry interval in seconds" },
+            parameters: { type: "object", description: "Remediation parameters" },
+            // Archives & replay
+            archiveName: { type: "string", description: "Event archive name" },
+            retentionDays: { type: "number", description: "Archive retention in days" },
+            replayName: { type: "string", description: "Replay name" },
+            eventStartTime: { type: "string", description: "Event start time (ISO 8601) for replay" },
+            eventEndTime: { type: "string", description: "Event end time (ISO 8601) for replay" },
+            destination: { type: "string", description: "Destination event bus for replay" },
+            // Pagination
+            limit: { type: "number", description: "Maximum number of results" },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          if (!automationManager) {
+            return {
+              content: [{ type: "text", text: "Error: Automation manager not initialized. Ensure AWS credentials are configured." }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          const action = params.action as string;
+
+          try {
+            switch (action) {
+              // ================================================================
+              // Event Buses
+              // ================================================================
+              case "list_event_buses": {
+                const result = await automationManager.listEventBuses();
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const buses = result.data ?? [];
+                if (buses.length === 0) {
+                  return { content: [{ type: "text", text: "No event buses found." }], details: { buses: [] } };
+                }
+                const lines = buses.map(b => `• **${b.name}**${b.isDefault ? " (default)" : ""} — ${b.arn}`);
+                return { content: [{ type: "text", text: `📡 **Event Buses** (${buses.length})\n\n${lines.join("\n")}` }], details: { buses } };
+              }
+
+              case "create_event_bus": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.createEventBus(name, params.description as string | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Event bus **${name}** created.\nARN: ${result.data?.arn}` }], details: result };
+              }
+
+              case "delete_event_bus": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteEventBus(name);
+                return { content: [{ type: "text", text: result.success ? `✅ Event bus **${name}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Event Rules
+              // ================================================================
+              case "list_event_rules": {
+                const result = await automationManager.listEventRules({
+                  eventBusName: params.eventBusName as string | undefined,
+                  namePrefix: params.name as string | undefined,
+                  limit: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const rules = result.data ?? [];
+                if (rules.length === 0) {
+                  return { content: [{ type: "text", text: "No event rules found." }], details: { rules: [] } };
+                }
+                const lines = rules.map(r => `• **${r.name}** [${r.state}] — ${r.scheduleExpression || "event pattern"}${r.description ? ` — ${r.description}` : ""}`);
+                return { content: [{ type: "text", text: `📋 **Event Rules** (${rules.length})\n\n${lines.join("\n")}` }], details: { rules } };
+              }
+
+              case "get_event_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getEventRule(ruleName, params.eventBusName as string | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                const lines = [
+                  `📋 **Rule: ${r.name}**`,
+                  `ARN: ${r.arn}`,
+                  `State: ${r.state}`,
+                  `Bus: ${r.eventBusName}`,
+                  r.scheduleExpression ? `Schedule: ${r.scheduleExpression}` : "",
+                  r.eventPattern ? `Pattern: ${r.eventPattern}` : "",
+                  r.description ? `Description: ${r.description}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { rule: r } };
+              }
+
+              case "create_event_rule": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.createEventRule({
+                  name,
+                  description: params.description as string | undefined,
+                  eventBusName: params.eventBusName as string | undefined,
+                  eventPattern: params.eventPattern as any,
+                  scheduleExpression: params.scheduleExpression as string | undefined,
+                  state: (params.state as EventRuleState) || "ENABLED",
+                  roleArn: params.roleArn as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Event rule **${name}** created.\nARN: ${result.data?.arn}` }], details: result };
+              }
+
+              case "update_event_rule": {
+                const ruleName = params.ruleName as string || params.name as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.updateEventRule(ruleName, {
+                  description: params.description as string | undefined,
+                  eventPattern: params.eventPattern as any,
+                  scheduleExpression: params.scheduleExpression as string | undefined,
+                  state: params.state as EventRuleState | undefined,
+                  roleArn: params.roleArn as string | undefined,
+                  eventBusName: params.eventBusName as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ Event rule **${ruleName}** updated.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_event_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteEventRule(ruleName, params.eventBusName as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `✅ Event rule **${ruleName}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "enable_event_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.enableEventRule(ruleName, params.eventBusName as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `✅ Event rule **${ruleName}** enabled.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "disable_event_rule": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.disableEventRule(ruleName, params.eventBusName as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `✅ Event rule **${ruleName}** disabled.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Targets
+              // ================================================================
+              case "list_targets": {
+                const ruleName = params.ruleName as string;
+                if (!ruleName) {
+                  return { content: [{ type: "text", text: "Error: ruleName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.listTargets(ruleName, params.eventBusName as string | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const targets = result.data ?? [];
+                if (targets.length === 0) {
+                  return { content: [{ type: "text", text: `No targets for rule **${ruleName}**.` }], details: { targets: [] } };
+                }
+                const lines = targets.map(t => `• **${t.id}** → ${t.arn}`);
+                return { content: [{ type: "text", text: `🎯 **Targets for ${ruleName}** (${targets.length})\n\n${lines.join("\n")}` }], details: { targets } };
+              }
+
+              case "add_target": {
+                const ruleName = params.ruleName as string;
+                const targetId = params.targetId as string;
+                const targetArn = params.targetArn as string;
+                if (!ruleName || !targetId || !targetArn) {
+                  return { content: [{ type: "text", text: "Error: ruleName, targetId, and targetArn are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.addTarget({
+                  ruleName,
+                  targetId,
+                  targetArn,
+                  targetType: (params.targetType as any) || "lambda",
+                  eventBusName: params.eventBusName as string | undefined,
+                  roleArn: params.roleArn as string | undefined,
+                  input: params.input as string | undefined,
+                  inputTransformer: params.inputTransformer as any,
+                  retryPolicy: params.retryPolicy as any,
+                  deadLetterQueueArn: params.deadLetterQueueArn as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ Target **${targetId}** added to rule **${ruleName}**.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "remove_target": {
+                const ruleName = params.ruleName as string;
+                const targetId = params.targetId as string;
+                if (!ruleName || !targetId) {
+                  return { content: [{ type: "text", text: "Error: ruleName and targetId are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.removeTarget(ruleName, targetId, params.eventBusName as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `✅ Target **${targetId}** removed from rule **${ruleName}**.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Schedules
+              // ================================================================
+              case "list_schedules": {
+                const result = await automationManager.listSchedules({
+                  groupName: params.groupName as string | undefined,
+                  namePrefix: params.name as string | undefined,
+                  state: params.state as ScheduleState | undefined,
+                  maxResults: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const schedules = result.data ?? [];
+                if (schedules.length === 0) {
+                  return { content: [{ type: "text", text: "No schedules found." }], details: { schedules: [] } };
+                }
+                const lines = schedules.map(s => `• **${s.name}** [${s.state}] — ${s.scheduleExpression} → ${s.target.arn}`);
+                return { content: [{ type: "text", text: `⏰ **Schedules** (${schedules.length})\n\n${lines.join("\n")}` }], details: { schedules } };
+              }
+
+              case "get_schedule": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getSchedule(name, params.groupName as string | undefined);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const s = result.data!;
+                const lines = [
+                  `⏰ **Schedule: ${s.name}**`,
+                  `ARN: ${s.arn}`,
+                  `State: ${s.state}`,
+                  `Expression: ${s.scheduleExpression}`,
+                  s.scheduleExpressionTimezone ? `Timezone: ${s.scheduleExpressionTimezone}` : "",
+                  `Target: ${s.target.arn}`,
+                  s.description ? `Description: ${s.description}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { schedule: s } };
+              }
+
+              case "create_schedule": {
+                const name = params.name as string;
+                const scheduleExpression = params.scheduleExpression as string;
+                const targetArn = params.targetArn as string;
+                const targetRoleArn = params.targetRoleArn as string;
+                if (!name || !scheduleExpression || !targetArn || !targetRoleArn) {
+                  return { content: [{ type: "text", text: "Error: name, scheduleExpression, targetArn, and targetRoleArn are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.createSchedule({
+                  name,
+                  scheduleExpression,
+                  targetArn,
+                  targetRoleArn,
+                  description: params.description as string | undefined,
+                  groupName: params.groupName as string | undefined,
+                  timezone: params.timezone as string | undefined,
+                  state: params.state as ScheduleState | undefined,
+                  targetInput: params.targetInput as string | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Schedule **${name}** created.\nARN: ${result.data?.arn}` }], details: result };
+              }
+
+              case "update_schedule": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.updateSchedule(name, {
+                  description: params.description as string | undefined,
+                  scheduleExpression: params.scheduleExpression as string | undefined,
+                  state: params.state as ScheduleState | undefined,
+                  timezone: params.timezone as string | undefined,
+                  groupName: params.groupName as string | undefined,
+                } as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Schedule **${name}** updated.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_schedule": {
+                const name = params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteSchedule(name, params.groupName as string | undefined);
+                return { content: [{ type: "text", text: result.success ? `✅ Schedule **${name}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Step Functions
+              // ================================================================
+              case "list_state_machines": {
+                const result = await automationManager.listStateMachines({ maxResults: params.limit as number | undefined });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const machines = result.data ?? [];
+                if (machines.length === 0) {
+                  return { content: [{ type: "text", text: "No state machines found." }], details: { machines: [] } };
+                }
+                const lines = machines.map(m => `• **${m.name}** [${m.type}] — ${m.arn}`);
+                return { content: [{ type: "text", text: `⚙️ **State Machines** (${machines.length})\n\n${lines.join("\n")}` }], details: { machines } };
+              }
+
+              case "get_state_machine": {
+                const arn = params.stateMachineArn as string;
+                if (!arn) {
+                  return { content: [{ type: "text", text: "Error: stateMachineArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getStateMachine(arn);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const m = result.data!;
+                const lines = [
+                  `⚙️ **${m.name}**`,
+                  `ARN: ${m.arn}`,
+                  `Type: ${m.type}`,
+                  `Status: ${m.status}`,
+                  m.description ? `Description: ${m.description}` : "",
+                  `Role: ${m.roleArn}`,
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { stateMachine: m } };
+              }
+
+              case "create_state_machine": {
+                const name = params.name as string;
+                const definitionStr = params.definition as string;
+                const roleArn = params.roleArn as string;
+                if (!name || !definitionStr || !roleArn) {
+                  return { content: [{ type: "text", text: "Error: name, definition (JSON string), and roleArn are required" }], details: { error: "missing_parameter" } };
+                }
+                let parsedDefinition;
+                try {
+                  parsedDefinition = JSON.parse(definitionStr);
+                } catch {
+                  return { content: [{ type: "text", text: "Error: definition must be a valid JSON string (ASL definition)" }], details: { error: "invalid_json" } };
+                }
+                const result = await automationManager.createStateMachine({
+                  name,
+                  definition: parsedDefinition,
+                  roleArn,
+                  type: (params.stateMachineType as StateMachineType) || "STANDARD",
+                  description: params.description as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ State machine **${name}** created.\nARN: ${result.data?.arn}` }], details: result };
+              }
+
+              case "update_state_machine": {
+                const arn = params.stateMachineArn as string;
+                if (!arn) {
+                  return { content: [{ type: "text", text: "Error: stateMachineArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.updateStateMachine(arn, {
+                  definition: params.definition as string | undefined,
+                  roleArn: params.roleArn as string | undefined,
+                  description: params.description as string | undefined,
+                } as any);
+                return { content: [{ type: "text", text: result.success ? `✅ State machine updated.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_state_machine": {
+                const arn = params.stateMachineArn as string;
+                if (!arn) {
+                  return { content: [{ type: "text", text: "Error: stateMachineArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteStateMachine(arn);
+                return { content: [{ type: "text", text: result.success ? `✅ State machine deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Executions
+              // ================================================================
+              case "start_execution": {
+                const arn = params.stateMachineArn as string;
+                if (!arn) {
+                  return { content: [{ type: "text", text: "Error: stateMachineArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const execInput = params.executionInput as string | undefined;
+                let parsedInput: Record<string, unknown> | undefined;
+                if (execInput) {
+                  try { parsedInput = JSON.parse(execInput); } catch { parsedInput = undefined; }
+                }
+                const result = await automationManager.startExecution({
+                  stateMachineArn: arn,
+                  name: params.executionName as string | undefined,
+                  input: parsedInput,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `🚀 Execution started.\nARN: ${result.data?.executionArn}\nStatus: ${result.data?.status}` }], details: result };
+              }
+
+              case "stop_execution": {
+                const executionArn = params.executionArn as string;
+                if (!executionArn) {
+                  return { content: [{ type: "text", text: "Error: executionArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.stopExecution(
+                  executionArn,
+                  params.error as string | undefined,
+                  params.cause as string | undefined,
+                );
+                return { content: [{ type: "text", text: result.success ? `✅ Execution stopped.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "list_executions": {
+                const arn = params.stateMachineArn as string;
+                if (!arn) {
+                  return { content: [{ type: "text", text: "Error: stateMachineArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.listExecutions({
+                  stateMachineArn: arn,
+                  statusFilter: params.statusFilter as any,
+                  maxResults: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const execs = result.data ?? [];
+                if (execs.length === 0) {
+                  return { content: [{ type: "text", text: "No executions found." }], details: { executions: [] } };
+                }
+                const lines = execs.map(e => `• **${e.name || e.executionArn.split(":").pop()}** [${e.status}] — ${e.startDate}`);
+                return { content: [{ type: "text", text: `📋 **Executions** (${execs.length})\n\n${lines.join("\n")}` }], details: { executions: execs } };
+              }
+
+              case "get_execution": {
+                const executionArn = params.executionArn as string;
+                if (!executionArn) {
+                  return { content: [{ type: "text", text: "Error: executionArn is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getExecution(executionArn);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const e = result.data!;
+                const lines = [
+                  `📋 **Execution: ${e.name || executionArn.split(":").pop()}**`,
+                  `Status: ${e.status}`,
+                  `Started: ${e.startDate}`,
+                  e.stopDate ? `Stopped: ${e.stopDate}` : "",
+                  e.error ? `Error: ${e.error}` : "",
+                  e.cause ? `Cause: ${e.cause}` : "",
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { execution: e } };
+              }
+
+              // ================================================================
+              // Workflow Builder
+              // ================================================================
+              case "build_workflow": {
+                const roleArn = params.roleArn as string;
+                const workflowDef = params.definition as string;
+                if (!workflowDef || !roleArn) {
+                  return { content: [{ type: "text", text: "Error: definition (JSON) and roleArn are required" }], details: { error: "missing_parameter" } };
+                }
+                let parsedWorkflow;
+                try {
+                  parsedWorkflow = JSON.parse(workflowDef);
+                } catch {
+                  return { content: [{ type: "text", text: "Error: definition must be valid JSON (WorkflowDefinition)" }], details: { error: "invalid_json" } };
+                }
+                const result = await automationManager.buildWorkflow({
+                  workflow: parsedWorkflow,
+                  roleArn,
+                  type: (params.stateMachineType as StateMachineType) || "STANDARD",
+                  enableLogging: params.state !== "DISABLED",
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const w = result.data!;
+                const lines = [
+                  `⚙️ **Workflow: ${w.name}**`,
+                  `Type: ${w.type}`,
+                  w.description ? `Description: ${w.description}` : "",
+                  ``,
+                  `\`\`\`json`,
+                  JSON.stringify(w.definition, null, 2),
+                  `\`\`\``,
+                ].filter(Boolean);
+                return { content: [{ type: "text", text: lines.join("\n") }], details: { workflow: w } };
+              }
+
+              // ================================================================
+              // Remediation
+              // ================================================================
+              case "list_remediations": {
+                const result = await automationManager.listRemediations({
+                  enabled: params.automatic as boolean | undefined,
+                  limit: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const remediations = result.data ?? [];
+                if (remediations.length === 0) {
+                  return { content: [{ type: "text", text: "No remediations configured." }], details: { remediations: [] } };
+                }
+                const lines = remediations.map(r => `• **${r.id}** (${r.name}) — ${r.triggerType}:${r.triggerConfig.configRuleName ?? "*"} → ${r.actionType} [${r.enabled ? "enabled" : "disabled"}]`);
+                return { content: [{ type: "text", text: `🔧 **Remediations** (${remediations.length})\n\n${lines.join("\n")}` }], details: { remediations } };
+              }
+
+              case "get_remediation": {
+                const id = params.remediationId as string;
+                if (!id) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getRemediation(id);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `🔧 **Remediation: ${r.id}** (${r.name})\nTrigger: ${r.triggerType} — ${r.triggerConfig.configRuleName ?? r.triggerConfig.eventPattern ?? "custom"}\nAction: ${r.actionType} — ${r.actionConfig.documentName ?? r.actionConfig.lambdaArn ?? "custom"}\nAutomatic: ${r.automatic}\nEnabled: ${r.enabled}` }], details: { remediation: r } };
+              }
+
+              case "setup_remediation": {
+                const configRuleName = params.configRuleName as string;
+                const remediationAction = params.remediationAction as string;
+                const resourceType = params.resourceType as string;
+                if (!configRuleName || !remediationAction || !resourceType) {
+                  return { content: [{ type: "text", text: "Error: configRuleName, remediationAction, and resourceType are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.setupRemediation({
+                  configRuleName,
+                  remediationAction,
+                  resourceType,
+                  automatic: params.automatic as boolean | undefined,
+                  maxRetries: params.maxRetries as number | undefined,
+                  retryIntervalSeconds: params.retryIntervalSeconds as number | undefined,
+                  parameters: params.parameters as Record<string, unknown> | undefined,
+                } as any);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Remediation configured for rule **${configRuleName}**.\nID: ${result.data?.id}` }], details: result };
+              }
+
+              case "update_remediation": {
+                const id = params.remediationId as string;
+                if (!id) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.updateRemediation(id, {
+                  automatic: params.automatic as boolean | undefined,
+                  maxRetries: params.maxRetries as number | undefined,
+                  retryIntervalSeconds: params.retryIntervalSeconds as number | undefined,
+                  parameters: params.parameters as Record<string, unknown> | undefined,
+                } as any);
+                return { content: [{ type: "text", text: result.success ? `✅ Remediation **${id}** updated.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "delete_remediation": {
+                const id = params.remediationId as string;
+                if (!id) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteRemediation(id);
+                return { content: [{ type: "text", text: result.success ? `✅ Remediation **${id}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "enable_remediation": {
+                const id = params.remediationId as string;
+                if (!id) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.enableRemediation(id);
+                return { content: [{ type: "text", text: result.success ? `✅ Remediation **${id}** enabled.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "disable_remediation": {
+                const id = params.remediationId as string;
+                if (!id) {
+                  return { content: [{ type: "text", text: "Error: remediationId is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.disableRemediation(id);
+                return { content: [{ type: "text", text: result.success ? `✅ Remediation **${id}** disabled.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "trigger_remediation": {
+                const id = params.remediationId as string;
+                const resourceId = params.targetArn as string || params.name as string;
+                if (!id || !resourceId) {
+                  return { content: [{ type: "text", text: "Error: remediationId and targetArn (resource ID) are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.triggerRemediation(id, resourceId);
+                return { content: [{ type: "text", text: result.success ? `🚀 Remediation **${id}** triggered for resource ${resourceId}.` : `Error: ${result.error}` }], details: result };
+              }
+
+              // ================================================================
+              // Archives & Replay
+              // ================================================================
+              case "list_event_archives": {
+                const result = await automationManager.listEventArchives({
+                  eventSourceArn: params.eventBusName as string | undefined,
+                  namePrefix: params.name as string | undefined,
+                  limit: params.limit as number | undefined,
+                });
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const archives = result.data ?? [];
+                if (archives.length === 0) {
+                  return { content: [{ type: "text", text: "No event archives found." }], details: { archives: [] } };
+                }
+                const lines = archives.map(a => `• **${a.archiveName}** [${a.state}] — ${a.eventCount ?? 0} events, ${a.retentionDays ?? "∞"} day retention`);
+                return { content: [{ type: "text", text: `📦 **Event Archives** (${archives.length})\n\n${lines.join("\n")}` }], details: { archives } };
+              }
+
+              case "create_event_archive": {
+                const name = params.name as string;
+                const eventBusName = params.eventBusName as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: name is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.createEventArchive({
+                  archiveName: name,
+                  eventSourceArn: eventBusName,
+                  description: params.description as string | undefined,
+                  retentionDays: params.retentionDays as number | undefined,
+                  eventPattern: params.eventPattern as any,
+                } as any);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `✅ Event archive **${name}** created.\nARN: ${result.data?.archiveArn}` }], details: result };
+              }
+
+              case "delete_event_archive": {
+                const name = params.archiveName as string || params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: archiveName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.deleteEventArchive(name);
+                return { content: [{ type: "text", text: result.success ? `✅ Event archive **${name}** deleted.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "start_replay": {
+                const name = params.replayName as string || params.name as string;
+                const archiveName = params.archiveName as string;
+                const eventStartTime = params.eventStartTime as string;
+                const eventEndTime = params.eventEndTime as string;
+                if (!name || !archiveName || !eventStartTime || !eventEndTime) {
+                  return { content: [{ type: "text", text: "Error: replayName, archiveName, eventStartTime, and eventEndTime are required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.startReplay({
+                  replayName: name,
+                  eventSourceArn: archiveName,
+                  eventStartTime: new Date(eventStartTime),
+                  eventEndTime: new Date(eventEndTime),
+                  destination: params.destination as string | undefined,
+                  description: params.description as string | undefined,
+                } as any);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                return { content: [{ type: "text", text: `🔄 Replay **${name}** started.\nARN: ${result.data?.replayArn}` }], details: result };
+              }
+
+              case "cancel_replay": {
+                const name = params.replayName as string || params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: replayName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.cancelReplay(name);
+                return { content: [{ type: "text", text: result.success ? `✅ Replay **${name}** cancelled.` : `Error: ${result.error}` }], details: result };
+              }
+
+              case "get_replay_status": {
+                const name = params.replayName as string || params.name as string;
+                if (!name) {
+                  return { content: [{ type: "text", text: "Error: replayName is required" }], details: { error: "missing_parameter" } };
+                }
+                const result = await automationManager.getReplayStatus(name);
+                if (!result.success) {
+                  return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };
+                }
+                const r = result.data!;
+                return { content: [{ type: "text", text: `🔄 **Replay: ${r.replayName}**\nState: ${r.state}\nStart: ${r.eventStartTime}\nEnd: ${r.eventEndTime}` }], details: { replay: r } };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown automation action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `Automation error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_automation" },
+    );
+
     // Register service — manager init happens in start() (async-safe)
     api.registerService({
       id: "aws-core-services",
@@ -18364,6 +20083,8 @@ ${topResources}`,
         route53Manager = createRoute53Manager({ region: config.defaultRegion });
         cognitoManager = createCognitoManager({ region: config.defaultRegion });
         apiGatewayManager = createAPIGatewayManager({ region: config.defaultRegion });
+        complianceManager = new AWSComplianceManager({ defaultRegion: config.defaultRegion });
+        automationManager = createAutomationManager({ defaultRegion: config.defaultRegion });
 
         // Optionally probe identity on start
         try {
@@ -18406,6 +20127,8 @@ ${topResources}`,
         cognitoManager = null;
         apiGatewayManager = null;
         conversationalManager = null;
+        complianceManager = null;
+        automationManager = null;
         cliWrapper = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
       },

@@ -1204,29 +1204,26 @@ Bot:  "🧙 **Serverless REST API** - Started!
 
 ---
 
-### 12. Compliance & Governance
+### 12. Compliance & Governance ✅ IMPLEMENTED
 
-**Current Gap**: No compliance framework support
+~~**Current Gap**: No compliance framework support~~ **RESOLVED**
 
-**Proposed Capabilities**:
-- AWS Config rule management
-- Compliance status checks (CIS, SOC2, HIPAA, PCI-DSS)
-- Tag compliance enforcement
-- Resource policy validation
-- Conformance pack deployment
-- Compliance reporting
+**Implemented Capabilities**:
+- AWS Config rule management (CRUD + evaluation)
+- Compliance checks against 18+ frameworks (CIS, SOC2, HIPAA, PCI-DSS, GDPR, NIST, ISO-27001, FedRAMP, etc.)
+- Tag compliance enforcement (audit, enforce, remediate modes)
+- Conformance pack deployment (from templates or custom)
+- Compliance reporting (executive summaries, detailed findings, trend analysis)
+- Violation tracking with suppression/unsuppression
+- Auto-remediation of violations
 
-**New Tool**: `aws_compliance`
+**Tool**: `aws_compliance` — 33 actions registered
 
-| Action | Description |
-|--------|-------------|
-| `check_compliance` | Run compliance check against framework |
-| `list_violations` | List compliance violations |
-| `create_config_rule` | Create AWS Config rule |
-| `apply_conformance_pack` | Deploy conformance pack |
-| `enforce_tags` | Enforce tagging policy |
-| `generate_compliance_report` | Generate compliance report |
-| `remediate_violation` | Auto-remediate violation |
+**Files**:
+- `src/compliance/manager.ts` - AWSComplianceManager (1,774 LOC)
+- `src/compliance/types.ts` - Comprehensive type definitions (1,498 LOC)
+- `src/compliance/manager.test.ts` - Test suite (76 tests)
+- `index.ts` - `aws_compliance` tool registration with 33 actions
 
 **Example Conversations**:
 ```
@@ -1241,27 +1238,28 @@ User: "Generate a SOC2 compliance report"
 
 ---
 
-### 13. Event-Driven Automation
+### 13. Event-Driven Automation ✅ IMPLEMENTED
 
-**Current Gap**: No EventBridge integration
+~~**Current Gap**: No EventBridge integration~~ **RESOLVED**
 
-**Proposed Capabilities**:
-- EventBridge rule creation
-- Event pattern builder
-- Step Functions workflow creation
-- Automated remediation setup
-- Event replay and archive
+**Implemented Capabilities**:
+- EventBridge rule CRUD (create, update, delete, enable, disable)
+- Event bus management (custom + partner buses)
+- Target management (Lambda, SQS, SNS, Step Functions, ECS, etc.)
+- EventBridge Scheduler (cron/rate schedules with timezone support)
+- Step Functions workflow management (STANDARD + EXPRESS)
+- Workflow builder from natural language descriptions
+- Auto-remediation configuration and triggering
+- Event archival with configurable retention
+- Event replay from archives
 
-**New Tool**: `aws_automation`
+**Tool**: `aws_automation` — 35 actions registered
 
-| Action | Description |
-|--------|-------------|
-| `create_event_rule` | Create EventBridge rule |
-| `build_workflow` | Create Step Functions workflow |
-| `setup_remediation` | Configure auto-remediation |
-| `list_event_rules` | List EventBridge rules |
-| `replay_events` | Replay archived events |
-| `create_schedule` | Create scheduled automation |
+**Files**:
+- `src/automation/manager.ts` - AWSAutomationManager (2,319 LOC)
+- `src/automation/types.ts` - Comprehensive type definitions (1,695 LOC)
+- `src/automation/manager.test.ts` - Test suite (97 tests)
+- `index.ts` - `aws_automation` tool registration with 35 actions
 
 **Example Conversations**:
 ```
