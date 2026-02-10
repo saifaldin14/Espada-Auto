@@ -114,6 +114,11 @@ import {
 } from "./src/dynamodb/index.js";
 
 import {
+  ElastiCacheManager,
+  type ElastiCacheManagerConfig,
+} from "./src/elasticache/index.js";
+
+import {
   createSQSManager,
   type SQSManager,
 } from "./src/sqs/index.js";
@@ -218,6 +223,7 @@ let apiGatewayManager: APIGatewayManager | null = null;
 let conversationalManager: AWSConversationalManager | null = null;
 let complianceManager: AWSComplianceManager | null = null;
 let automationManager: AWSAutomationManager | null = null;
+let elastiCacheManager: ElastiCacheManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -20003,6 +20009,436 @@ ACTIONS:
       { name: "aws_automation" },
     );
 
+    // =========================================================================
+    // AWS ELASTICACHE MANAGEMENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_elasticache",
+        label: "AWS ElastiCache Management",
+        description:
+          "Manage AWS ElastiCache Redis/Valkey replication groups and Memcached clusters. Create, modify, scale, snapshot, failover, and monitor caching infrastructure.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "list_replication_groups",
+                "get_replication_group",
+                "create_replication_group",
+                "modify_replication_group",
+                "delete_replication_group",
+                "scale_replication_group",
+                "test_failover",
+                "list_snapshots",
+                "create_snapshot",
+                "delete_snapshot",
+                "list_cache_clusters",
+                "create_cache_cluster",
+                "delete_cache_cluster",
+                "list_parameter_groups",
+                "list_subnet_groups",
+                "list_engine_versions",
+                "list_events",
+                "add_tags",
+                "remove_tags",
+                "list_reserved_nodes",
+              ],
+              description: "ElastiCache operation to perform",
+            },
+            // Replication group identifiers
+            replication_group_id: { type: "string", description: "Replication group ID" },
+            description: { type: "string", description: "Description for the replication group" },
+            // Cluster identifiers
+            cache_cluster_id: { type: "string", description: "Cache cluster ID (Memcached)" },
+            // Engine settings
+            engine: { type: "string", enum: ["redis", "valkey", "memcached"], description: "Cache engine type" },
+            engine_version: { type: "string", description: "Engine version (e.g. '7.1')" },
+            // Node / scaling
+            node_type: { type: "string", description: "Node type (e.g. 'cache.t3.micro')" },
+            num_node_groups: { type: "number", description: "Number of shards (node groups)" },
+            replicas_per_node_group: { type: "number", description: "Replicas per shard" },
+            num_nodes: { type: "number", description: "Number of cache nodes (Memcached)" },
+            // Scale action
+            scale_action: {
+              type: "string",
+              enum: ["add_replicas", "remove_replicas", "add_shards", "remove_shards"],
+              description: "Scaling action to perform",
+            },
+            new_replica_count: { type: "number", description: "Target replica count for scaling" },
+            new_num_node_groups: { type: "number", description: "Target shard count for scaling" },
+            // Failover
+            node_group_id: { type: "string", description: "Node group ID for failover" },
+            // HA settings
+            automatic_failover_enabled: { type: "boolean", description: "Enable automatic failover" },
+            multi_az_enabled: { type: "boolean", description: "Enable Multi-AZ" },
+            // Encryption
+            at_rest_encryption_enabled: { type: "boolean", description: "Enable at-rest encryption" },
+            transit_encryption_enabled: { type: "boolean", description: "Enable in-transit encryption" },
+            auth_token: { type: "string", description: "AUTH token for Redis authentication" },
+            // Network
+            port: { type: "number", description: "Port number" },
+            subnet_group_name: { type: "string", description: "Cache subnet group name" },
+            security_group_ids: { type: "array", items: { type: "string" }, description: "VPC security group IDs" },
+            parameter_group_name: { type: "string", description: "Cache parameter group name" },
+            // Maintenance
+            snapshot_retention_limit: { type: "number", description: "Snapshot retention (days)" },
+            snapshot_window: { type: "string", description: "Snapshot window (e.g. '05:00-06:00')" },
+            maintenance_window: { type: "string", description: "Maintenance window (e.g. 'sun:23:00-mon:01:30')" },
+            // Snapshot
+            snapshot_name: { type: "string", description: "Snapshot name" },
+            final_snapshot_name: { type: "string", description: "Final snapshot name before delete" },
+            // Tags
+            resource_arn: { type: "string", description: "Resource ARN for tag operations" },
+            tags: { type: "object", description: "Tags as key-value pairs" },
+            tag_keys: { type: "array", items: { type: "string" }, description: "Tag keys to remove" },
+            // Events
+            source_identifier: { type: "string", description: "Source identifier for event filtering" },
+            source_type: {
+              type: "string",
+              enum: ["cache-cluster", "cache-parameter-group", "cache-subnet-group", "cache-security-group", "replication-group", "serverless-cache", "serverless-cache-snapshot", "user", "user-group"],
+              description: "Source type for event filtering",
+            },
+            duration: { type: "number", description: "Event duration in minutes" },
+            // Misc
+            apply_immediately: { type: "boolean", description: "Apply changes immediately" },
+            retain_primary_cluster: { type: "boolean", description: "Retain primary cluster on delete" },
+            max_results: { type: "number", description: "Maximum number of results" },
+          },
+          required: ["action"],
+        },
+        async execute(
+          _toolCallId: string,
+          params: Record<string, unknown>,
+        ) {
+          const action = params.action as string;
+
+          try {
+            if (!elastiCacheManager) {
+              return { content: [{ type: "text", text: "ElastiCache manager not initialized. Is the AWS extension started?" }], details: { error: "not_initialized" } };
+            }
+
+            switch (action) {
+              // ---------------------------------------------------------------
+              // Replication Groups
+              // ---------------------------------------------------------------
+              case "list_replication_groups": {
+                const result = await elastiCacheManager.listReplicationGroups({
+                  maxResults: params.max_results as number | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} replication group(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_replication_group": {
+                const rgId = params.replication_group_id as string;
+                if (!rgId) return { content: [{ type: "text", text: "replication_group_id is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.getReplicationGroup(rgId);
+                return {
+                  content: [{ type: "text", text: result.success ? `Replication group '${rgId}': ${result.data?.status}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_replication_group": {
+                const rgId = params.replication_group_id as string;
+                const desc = params.description as string;
+                const nodeType = params.node_type as string;
+                if (!rgId || !desc || !nodeType) {
+                  return { content: [{ type: "text", text: "replication_group_id, description, and node_type are required" }], details: { error: "missing_param" } };
+                }
+                const result = await elastiCacheManager.createReplicationGroup({
+                  replicationGroupId: rgId,
+                  description: desc,
+                  engine: (params.engine as "redis" | "valkey") ?? "redis",
+                  engineVersion: params.engine_version as string | undefined,
+                  nodeType,
+                  numNodeGroups: params.num_node_groups as number | undefined,
+                  replicasPerNodeGroup: params.replicas_per_node_group as number | undefined,
+                  automaticFailoverEnabled: params.automatic_failover_enabled as boolean | undefined,
+                  multiAZEnabled: params.multi_az_enabled as boolean | undefined,
+                  atRestEncryptionEnabled: params.at_rest_encryption_enabled as boolean | undefined,
+                  transitEncryptionEnabled: params.transit_encryption_enabled as boolean | undefined,
+                  authToken: params.auth_token as string | undefined,
+                  port: params.port as number | undefined,
+                  subnetGroupName: params.subnet_group_name as string | undefined,
+                  securityGroupIds: params.security_group_ids as string[] | undefined,
+                  parameterGroupName: params.parameter_group_name as string | undefined,
+                  snapshotRetentionLimit: params.snapshot_retention_limit as number | undefined,
+                  snapshotWindow: params.snapshot_window as string | undefined,
+                  maintenanceWindow: params.maintenance_window as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Created replication group '${rgId}' (status: ${result.data?.status})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "modify_replication_group": {
+                const rgId = params.replication_group_id as string;
+                if (!rgId) return { content: [{ type: "text", text: "replication_group_id is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.modifyReplicationGroup(rgId, {
+                  description: params.description as string | undefined,
+                  nodeType: params.node_type as string | undefined,
+                  engineVersion: params.engine_version as string | undefined,
+                  automaticFailoverEnabled: params.automatic_failover_enabled as boolean | undefined,
+                  multiAZEnabled: params.multi_az_enabled as boolean | undefined,
+                  snapshotRetentionLimit: params.snapshot_retention_limit as number | undefined,
+                  snapshotWindow: params.snapshot_window as string | undefined,
+                  maintenanceWindow: params.maintenance_window as string | undefined,
+                  securityGroupIds: params.security_group_ids as string[] | undefined,
+                  parameterGroupName: params.parameter_group_name as string | undefined,
+                  applyImmediately: params.apply_immediately as boolean | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Modified replication group '${rgId}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_replication_group": {
+                const rgId = params.replication_group_id as string;
+                if (!rgId) return { content: [{ type: "text", text: "replication_group_id is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.deleteReplicationGroup(rgId, {
+                  finalSnapshotName: params.final_snapshot_name as string | undefined,
+                  retainPrimaryCluster: params.retain_primary_cluster as boolean | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Deleted replication group '${rgId}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Scaling
+              // ---------------------------------------------------------------
+              case "scale_replication_group": {
+                const rgId = params.replication_group_id as string;
+                const scaleAction = params.scale_action as string;
+                if (!rgId || !scaleAction) {
+                  return { content: [{ type: "text", text: "replication_group_id and scale_action are required" }], details: { error: "missing_param" } };
+                }
+                const result = await elastiCacheManager.scaleReplicationGroup(rgId, {
+                  action: scaleAction as "add_replicas" | "remove_replicas" | "add_shards" | "remove_shards",
+                  newReplicaCount: params.new_replica_count as number | undefined,
+                  newNumNodeGroups: params.new_num_node_groups as number | undefined,
+                  applyImmediately: params.apply_immediately as boolean | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Scaled replication group '${rgId}' (${scaleAction})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Failover
+              // ---------------------------------------------------------------
+              case "test_failover": {
+                const rgId = params.replication_group_id as string;
+                const ngId = params.node_group_id as string;
+                if (!rgId || !ngId) {
+                  return { content: [{ type: "text", text: "replication_group_id and node_group_id are required" }], details: { error: "missing_param" } };
+                }
+                const result = await elastiCacheManager.testFailover(rgId, ngId);
+                return {
+                  content: [{ type: "text", text: result.success ? `Failover initiated for '${rgId}' node group '${ngId}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Snapshots
+              // ---------------------------------------------------------------
+              case "list_snapshots": {
+                const result = await elastiCacheManager.listSnapshots({
+                  replicationGroupId: params.replication_group_id as string | undefined,
+                  cacheClusterId: params.cache_cluster_id as string | undefined,
+                  snapshotName: params.snapshot_name as string | undefined,
+                  maxResults: params.max_results as number | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} snapshot(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_snapshot": {
+                const snapName = params.snapshot_name as string;
+                if (!snapName) return { content: [{ type: "text", text: "snapshot_name is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.createSnapshot({
+                  snapshotName: snapName,
+                  replicationGroupId: params.replication_group_id as string | undefined,
+                  cacheClusterId: params.cache_cluster_id as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Created snapshot '${snapName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_snapshot": {
+                const snapName = params.snapshot_name as string;
+                if (!snapName) return { content: [{ type: "text", text: "snapshot_name is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.deleteSnapshot(snapName);
+                return {
+                  content: [{ type: "text", text: result.success ? `Deleted snapshot '${snapName}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Cache Clusters (Memcached)
+              // ---------------------------------------------------------------
+              case "list_cache_clusters": {
+                const result = await elastiCacheManager.listCacheClusters({
+                  maxResults: params.max_results as number | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} cache cluster(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_cache_cluster": {
+                const clusterId = params.cache_cluster_id as string;
+                const nodeType = params.node_type as string;
+                const numNodes = params.num_nodes as number;
+                if (!clusterId || !nodeType || !numNodes) {
+                  return { content: [{ type: "text", text: "cache_cluster_id, node_type, and num_nodes are required" }], details: { error: "missing_param" } };
+                }
+                const result = await elastiCacheManager.createCacheCluster({
+                  cacheClusterId: clusterId,
+                  engine: "memcached",
+                  nodeType,
+                  numNodes,
+                  engineVersion: params.engine_version as string | undefined,
+                  subnetGroupName: params.subnet_group_name as string | undefined,
+                  securityGroupIds: params.security_group_ids as string[] | undefined,
+                  parameterGroupName: params.parameter_group_name as string | undefined,
+                  port: params.port as number | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Created cache cluster '${clusterId}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_cache_cluster": {
+                const clusterId = params.cache_cluster_id as string;
+                if (!clusterId) return { content: [{ type: "text", text: "cache_cluster_id is required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.deleteCacheCluster(
+                  clusterId,
+                  params.final_snapshot_name as string | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Deleted cache cluster '${clusterId}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Infrastructure info
+              // ---------------------------------------------------------------
+              case "list_parameter_groups": {
+                const result = await elastiCacheManager.listParameterGroups(
+                  params.max_results as number | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} parameter group(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_subnet_groups": {
+                const result = await elastiCacheManager.listSubnetGroups(
+                  params.max_results as number | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} subnet group(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_engine_versions": {
+                const result = await elastiCacheManager.listEngineVersions(
+                  params.engine as string | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} engine version(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_events": {
+                const result = await elastiCacheManager.listEvents({
+                  sourceIdentifier: params.source_identifier as string | undefined,
+                  sourceType: params.source_type as "cache-cluster" | "replication-group" | undefined,
+                  duration: params.duration as number | undefined,
+                  maxResults: params.max_results as number | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} event(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Tags
+              // ---------------------------------------------------------------
+              case "add_tags": {
+                const arn = params.resource_arn as string;
+                const tags = params.tags as Record<string, string>;
+                if (!arn || !tags) return { content: [{ type: "text", text: "resource_arn and tags are required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.addTags(arn, tags);
+                return {
+                  content: [{ type: "text", text: result.success ? `Tags added to '${arn}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "remove_tags": {
+                const arn = params.resource_arn as string;
+                const tagKeys = params.tag_keys as string[];
+                if (!arn || !tagKeys) return { content: [{ type: "text", text: "resource_arn and tag_keys are required" }], details: { error: "missing_param" } };
+                const result = await elastiCacheManager.removeTags(arn, tagKeys);
+                return {
+                  content: [{ type: "text", text: result.success ? `Tags removed from '${arn}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Reserved Nodes
+              // ---------------------------------------------------------------
+              case "list_reserved_nodes": {
+                const result = await elastiCacheManager.listReservedNodes(
+                  params.max_results as number | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} reserved node(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown ElastiCache action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `ElastiCache error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_elasticache" },
+    );
+
     // Register service — manager init happens in start() (async-safe)
     api.registerService({
       id: "aws-core-services",
@@ -20085,6 +20521,7 @@ ACTIONS:
         apiGatewayManager = createAPIGatewayManager({ region: config.defaultRegion });
         complianceManager = new AWSComplianceManager({ defaultRegion: config.defaultRegion });
         automationManager = createAutomationManager({ defaultRegion: config.defaultRegion });
+        elastiCacheManager = new ElastiCacheManager({ region: config.defaultRegion });
 
         // Optionally probe identity on start
         try {
@@ -20129,6 +20566,7 @@ ACTIONS:
         conversationalManager = null;
         complianceManager = null;
         automationManager = null;
+        elastiCacheManager = null;
         cliWrapper = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
       },
@@ -20171,6 +20609,9 @@ export function getAWSManagers() {
     cognito: cognitoManager,
     apiGateway: apiGatewayManager,
     conversational: conversationalManager,
+    compliance: complianceManager,
+    automation: automationManager,
+    elasticache: elastiCacheManager,
     cli: cliWrapper,
   };
 }

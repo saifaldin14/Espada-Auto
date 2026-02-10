@@ -1276,11 +1276,11 @@ User: "Schedule a Lambda to run every day at midnight"
 
 ### 14. Additional Database Services
 
-**Current Gap**: Only RDS supported
+**Current Gap**: Only RDS supported — **DynamoDB ✅ IMPLEMENTED** — **ElastiCache ✅ IMPLEMENTED**
 
 **Proposed Additions**:
 
-#### DynamoDB Tool: `aws_dynamodb`
+#### DynamoDB Tool: `aws_dynamodb` ✅ IMPLEMENTED
 | Action | Description |
 |--------|-------------|
 | `list_tables` | List DynamoDB tables |
@@ -1292,15 +1292,29 @@ User: "Schedule a Lambda to run every day at midnight"
 | `enable_pitr` | Enable point-in-time recovery |
 | `create_global_table` | Create global table |
 
-#### ElastiCache Tool: `aws_elasticache`
+#### ElastiCache Tool: `aws_elasticache` ✅ IMPLEMENTED
 | Action | Description |
 |--------|-------------|
-| `list_clusters` | List Redis/Memcached clusters |
-| `create_cluster` | Create cache cluster |
-| `modify_cluster` | Modify cluster configuration |
-| `create_snapshot` | Create cluster snapshot |
-| `failover` | Initiate failover |
-| `scale_cluster` | Scale cluster nodes |
+| `list_replication_groups` | List Redis/Valkey replication groups |
+| `get_replication_group` | Get details of a replication group |
+| `create_replication_group` | Create replication group (Redis/Valkey) |
+| `modify_replication_group` | Modify replication group settings |
+| `delete_replication_group` | Delete replication group |
+| `scale_replication_group` | Scale replicas or shards |
+| `test_failover` | Initiate failover test |
+| `list_snapshots` | List snapshots |
+| `create_snapshot` | Create snapshot |
+| `delete_snapshot` | Delete snapshot |
+| `list_cache_clusters` | List cache clusters (Memcached) |
+| `create_cache_cluster` | Create Memcached cluster |
+| `delete_cache_cluster` | Delete cache cluster |
+| `list_parameter_groups` | List parameter groups |
+| `list_subnet_groups` | List subnet groups |
+| `list_engine_versions` | List available engine versions |
+| `list_events` | List ElastiCache events |
+| `add_tags` | Add tags to resources |
+| `remove_tags` | Remove tags from resources |
+| `list_reserved_nodes` | List reserved cache nodes |
 
 **Example Conversations**:
 ```

@@ -68,7 +68,17 @@
     "scheduled-automation",
     "auto-remediation",
     "event-archives",
-    "event-replay"
+    "event-replay",
+    "elasticache-replication-groups",
+    "elasticache-memcached-clusters",
+    "elasticache-snapshots",
+    "elasticache-failover",
+    "elasticache-scaling",
+    "elasticache-parameter-groups",
+    "elasticache-subnet-groups",
+    "elasticache-events",
+    "elasticache-tagging",
+    "elasticache-reserved-nodes"
   ],
   "configSchema": {
     "type": "object",
