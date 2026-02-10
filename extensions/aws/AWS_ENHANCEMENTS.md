@@ -1327,27 +1327,44 @@ User: "Enable point-in-time recovery on the orders table"
 
 ---
 
-### 15. AI/ML Services Integration
+### 15. AI/ML Services Integration ✅ IMPLEMENTED
 
-**Current Gap**: No SageMaker or AI service support
+**Status**: Fully implemented with SageMaker, Bedrock, Comprehend, Rekognition, and Translate support.
 
-**Proposed Capabilities**:
-- SageMaker notebook management
-- Model training and deployment
-- Bedrock model access
-- Rekognition, Comprehend, Translate operations
+**Module**: `src/ai/` — `AWSAIManager` class with 6 SDK clients (SageMaker, Bedrock, BedrockRuntime, Comprehend, Rekognition, Translate).
 
-**New Tool**: `aws_ai`
+**Tool**: `aws_ai` (30 actions)
 
 | Action | Description |
 |--------|-------------|
-| `list_notebooks` | List SageMaker notebooks |
-| `create_notebook` | Create SageMaker notebook |
-| `deploy_model` | Deploy ML model to endpoint |
+| `list_notebooks` | List SageMaker notebook instances |
+| `describe_notebook` | Describe a notebook instance |
+| `create_notebook` | Create a new notebook instance |
+| `start_notebook` | Start a stopped notebook |
+| `stop_notebook` | Stop a running notebook |
+| `delete_notebook` | Delete a notebook instance |
 | `list_endpoints` | List SageMaker endpoints |
-| `invoke_bedrock` | Invoke Bedrock foundation model |
-| `analyze_text` | Comprehend text analysis |
-| `analyze_image` | Rekognition image analysis |
+| `describe_endpoint` | Describe endpoint details |
+| `delete_endpoint` | Delete a SageMaker endpoint |
+| `list_models` | List SageMaker models |
+| `describe_model` | Describe model details |
+| `list_training_jobs` | List training jobs |
+| `describe_training_job` | Describe training job details |
+| `list_foundation_models` | List Bedrock foundation models |
+| `get_foundation_model` | Get foundation model details |
+| `invoke_model` | Invoke a Bedrock model |
+| `detect_sentiment` | Comprehend sentiment analysis |
+| `detect_entities` | Comprehend entity detection |
+| `detect_key_phrases` | Comprehend key phrase extraction |
+| `detect_language` | Comprehend language detection |
+| `detect_pii` | Comprehend PII entity detection |
+| `detect_labels` | Rekognition image label detection |
+| `detect_faces` | Rekognition face detection |
+| `detect_text` | Rekognition text detection |
+| `recognize_celebrities` | Rekognition celebrity recognition |
+| `detect_moderation_labels` | Rekognition content moderation |
+| `translate_text` | Translate text between languages |
+| `list_languages` | List supported translation languages |
 
 ---
 
@@ -1368,7 +1385,7 @@ User: "Enable point-in-time recovery on the orders table"
 | **P3** | DR & Backup | Medium - Resilience | Medium | RDS, EC2 |
 | **P3** | Event Automation | Low - Advanced | Medium | Lambda |
 | **P3** | DynamoDB/ElastiCache | Low - Database expansion | Medium | VPC |
-| **P4** | AI/ML Services | Low - Specialized | High | S3 |
+| **P4** | AI/ML Services | Low - Specialized | High | S3 | ✅ Done |
 
 ---
 

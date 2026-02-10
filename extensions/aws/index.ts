@@ -119,6 +119,10 @@ import {
 } from "./src/elasticache/index.js";
 
 import {
+  AWSAIManager,
+} from "./src/ai/index.js";
+
+import {
   createSQSManager,
   type SQSManager,
 } from "./src/sqs/index.js";
@@ -224,6 +228,7 @@ let conversationalManager: AWSConversationalManager | null = null;
 let complianceManager: AWSComplianceManager | null = null;
 let automationManager: AWSAutomationManager | null = null;
 let elastiCacheManager: ElastiCacheManager | null = null;
+let aiManager: AWSAIManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
 
 /**
@@ -20439,6 +20444,441 @@ ACTIONS:
       { name: "aws_elasticache" },
     );
 
+    // =========================================================================
+    // AWS AI/ML SERVICES TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_ai",
+        label: "AWS AI/ML Services",
+        description:
+          "Manage AWS AI/ML services: SageMaker notebooks, endpoints, models, and training jobs; Bedrock foundation model listing and invocation; Comprehend text analysis (sentiment, entities, key phrases, PII, language detection); Rekognition image analysis (labels, faces, text, celebrities, moderation); Translate text translation.",
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                // SageMaker
+                "list_notebooks",
+                "describe_notebook",
+                "create_notebook",
+                "start_notebook",
+                "stop_notebook",
+                "delete_notebook",
+                "list_endpoints",
+                "describe_endpoint",
+                "delete_endpoint",
+                "list_models",
+                "describe_model",
+                "list_training_jobs",
+                "describe_training_job",
+                // Bedrock
+                "list_foundation_models",
+                "get_foundation_model",
+                "invoke_model",
+                // Comprehend
+                "detect_sentiment",
+                "detect_entities",
+                "detect_key_phrases",
+                "detect_language",
+                "detect_pii",
+                // Rekognition
+                "detect_labels",
+                "detect_faces",
+                "detect_text",
+                "recognize_celebrities",
+                "detect_moderation_labels",
+                // Translate
+                "translate_text",
+                "list_languages",
+              ],
+              description: "AI/ML operation to perform",
+            },
+            // SageMaker
+            notebook_instance_name: { type: "string", description: "SageMaker notebook instance name" },
+            instance_type: { type: "string", description: "ML instance type (e.g. 'ml.t3.medium')" },
+            role_arn: { type: "string", description: "IAM role ARN for SageMaker" },
+            volume_size_gb: { type: "number", description: "EBS volume size in GB" },
+            direct_internet_access: { type: "string", enum: ["Enabled", "Disabled"], description: "Direct internet access" },
+            subnet_id: { type: "string", description: "Subnet ID for notebook" },
+            security_group_ids: { type: "array", items: { type: "string" }, description: "Security group IDs" },
+            endpoint_name: { type: "string", description: "SageMaker endpoint name" },
+            model_name: { type: "string", description: "SageMaker model name" },
+            training_job_name: { type: "string", description: "Training job name" },
+            // Bedrock
+            model_id: { type: "string", description: "Bedrock foundation model ID (e.g. 'anthropic.claude-3-sonnet')" },
+            body: { type: "string", description: "JSON request body for model invocation" },
+            content_type: { type: "string", description: "Content type (default: application/json)" },
+            accept: { type: "string", description: "Accept type (default: application/json)" },
+            provider_filter: { type: "string", description: "Filter foundation models by provider (e.g. 'Anthropic')" },
+            // Comprehend / Translate
+            text: { type: "string", description: "Text to analyze or translate" },
+            language_code: { type: "string", description: "Language code (e.g. 'en', 'fr')" },
+            source_language_code: { type: "string", description: "Source language code for translation" },
+            target_language_code: { type: "string", description: "Target language code for translation" },
+            // Rekognition
+            s3_bucket: { type: "string", description: "S3 bucket containing image" },
+            s3_key: { type: "string", description: "S3 object key for image" },
+            max_labels: { type: "number", description: "Max labels to return (Rekognition)" },
+            min_confidence: { type: "number", description: "Minimum confidence threshold" },
+            // General
+            tags: { type: "object", description: "Tags as key-value pairs" },
+            max_results: { type: "number", description: "Maximum number of results" },
+          },
+          required: ["action"],
+        },
+        async execute(
+          _toolCallId: string,
+          params: Record<string, unknown>,
+        ) {
+          const action = params.action as string;
+
+          try {
+            if (!aiManager) {
+              return { content: [{ type: "text", text: "AI manager not initialized. Is the AWS extension started?" }], details: { error: "not_initialized" } };
+            }
+
+            switch (action) {
+              // ---------------------------------------------------------------
+              // SageMaker — Notebook Instances
+              // ---------------------------------------------------------------
+              case "list_notebooks": {
+                const result = await aiManager.listNotebookInstances(params.max_results as number | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} notebook instance(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "describe_notebook": {
+                const name = params.notebook_instance_name as string;
+                if (!name) return { content: [{ type: "text", text: "notebook_instance_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.describeNotebookInstance(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Notebook '${name}': ${result.data?.status} (${result.data?.instanceType})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create_notebook": {
+                const name = params.notebook_instance_name as string;
+                const instanceType = params.instance_type as string;
+                const roleArn = params.role_arn as string;
+                if (!name || !instanceType || !roleArn) {
+                  return { content: [{ type: "text", text: "notebook_instance_name, instance_type, and role_arn are required" }], details: { error: "missing_param" } };
+                }
+                const result = await aiManager.createNotebookInstance({
+                  notebookInstanceName: name,
+                  instanceType,
+                  roleArn,
+                  directInternetAccess: params.direct_internet_access as "Enabled" | "Disabled" | undefined,
+                  volumeSizeInGB: params.volume_size_gb as number | undefined,
+                  subnetId: params.subnet_id as string | undefined,
+                  securityGroupIds: params.security_group_ids as string[] | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `Created notebook '${name}' (ARN: ${result.data?.arn})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "start_notebook": {
+                const name = params.notebook_instance_name as string;
+                if (!name) return { content: [{ type: "text", text: "notebook_instance_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.startNotebookInstance(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Started notebook '${name}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "stop_notebook": {
+                const name = params.notebook_instance_name as string;
+                if (!name) return { content: [{ type: "text", text: "notebook_instance_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.stopNotebookInstance(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Stopped notebook '${name}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_notebook": {
+                const name = params.notebook_instance_name as string;
+                if (!name) return { content: [{ type: "text", text: "notebook_instance_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.deleteNotebookInstance(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Deleted notebook '${name}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // SageMaker — Endpoints
+              // ---------------------------------------------------------------
+              case "list_endpoints": {
+                const result = await aiManager.listEndpoints(params.max_results as number | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} endpoint(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "describe_endpoint": {
+                const name = params.endpoint_name as string;
+                if (!name) return { content: [{ type: "text", text: "endpoint_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.describeEndpoint(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Endpoint '${name}': ${result.data?.status}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_endpoint": {
+                const name = params.endpoint_name as string;
+                if (!name) return { content: [{ type: "text", text: "endpoint_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.deleteEndpoint(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Deleted endpoint '${name}'` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // SageMaker — Models & Training
+              // ---------------------------------------------------------------
+              case "list_models": {
+                const result = await aiManager.listModels(params.max_results as number | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} model(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "describe_model": {
+                const name = params.model_name as string;
+                if (!name) return { content: [{ type: "text", text: "model_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.describeModel(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Model '${name}' (ARN: ${result.data?.arn})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_training_jobs": {
+                const result = await aiManager.listTrainingJobs(params.max_results as number | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} training job(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "describe_training_job": {
+                const name = params.training_job_name as string;
+                if (!name) return { content: [{ type: "text", text: "training_job_name is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.describeTrainingJob(name);
+                return {
+                  content: [{ type: "text", text: result.success ? `Training job '${name}': ${result.data?.status}${result.data?.failureReason ? ` (${result.data.failureReason})` : ""}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Bedrock — Foundation Models
+              // ---------------------------------------------------------------
+              case "list_foundation_models": {
+                const result = await aiManager.listFoundationModels(params.provider_filter as string | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} foundation model(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_foundation_model": {
+                const modelId = params.model_id as string;
+                if (!modelId) return { content: [{ type: "text", text: "model_id is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.getFoundationModel(modelId);
+                return {
+                  content: [{ type: "text", text: result.success ? `Model '${modelId}': ${result.data?.modelName} by ${result.data?.providerName}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "invoke_model": {
+                const modelId = params.model_id as string;
+                const body = params.body as string;
+                if (!modelId || !body) {
+                  return { content: [{ type: "text", text: "model_id and body are required" }], details: { error: "missing_param" } };
+                }
+                const result = await aiManager.invokeModel({
+                  modelId,
+                  body,
+                  contentType: params.content_type as string | undefined,
+                  accept: params.accept as string | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? result.data!.body : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Comprehend — Text Analysis
+              // ---------------------------------------------------------------
+              case "detect_sentiment": {
+                const text = params.text as string;
+                if (!text) return { content: [{ type: "text", text: "text is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectSentiment(text, params.language_code as string | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Sentiment: ${result.data?.sentiment} (positive: ${(result.data?.sentimentScore.positive ?? 0).toFixed(2)})` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_entities": {
+                const text = params.text as string;
+                if (!text) return { content: [{ type: "text", text: "text is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectEntities(text, params.language_code as string | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} entity/entities` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_key_phrases": {
+                const text = params.text as string;
+                if (!text) return { content: [{ type: "text", text: "text is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectKeyPhrases(text, params.language_code as string | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} key phrase(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_language": {
+                const text = params.text as string;
+                if (!text) return { content: [{ type: "text", text: "text is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectDominantLanguage(text);
+                return {
+                  content: [{ type: "text", text: result.success ? `Detected ${result.data?.length ?? 0} language(s): ${result.data?.map((l) => `${l.languageCode} (${(l.score * 100).toFixed(0)}%)`).join(", ")}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_pii": {
+                const text = params.text as string;
+                if (!text) return { content: [{ type: "text", text: "text is required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectPiiEntities(text, params.language_code as string | undefined);
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} PII entity/entities` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Rekognition — Image Analysis
+              // ---------------------------------------------------------------
+              case "detect_labels": {
+                const bucket = params.s3_bucket as string;
+                const key = params.s3_key as string;
+                if (!bucket || !key) return { content: [{ type: "text", text: "s3_bucket and s3_key are required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectLabels(
+                  { s3Bucket: bucket, s3Key: key },
+                  params.max_labels as number | undefined,
+                  params.min_confidence as number | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Detected ${result.data?.length ?? 0} label(s): ${result.data?.map((l) => l.name).join(", ")}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_faces": {
+                const bucket = params.s3_bucket as string;
+                const key = params.s3_key as string;
+                if (!bucket || !key) return { content: [{ type: "text", text: "s3_bucket and s3_key are required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectFaces({ s3Bucket: bucket, s3Key: key });
+                return {
+                  content: [{ type: "text", text: result.success ? `Detected ${result.data?.length ?? 0} face(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_text": {
+                const bucket = params.s3_bucket as string;
+                const key = params.s3_key as string;
+                if (!bucket || !key) return { content: [{ type: "text", text: "s3_bucket and s3_key are required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectText({ s3Bucket: bucket, s3Key: key });
+                return {
+                  content: [{ type: "text", text: result.success ? `Detected ${result.data?.length ?? 0} text detection(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "recognize_celebrities": {
+                const bucket = params.s3_bucket as string;
+                const key = params.s3_key as string;
+                if (!bucket || !key) return { content: [{ type: "text", text: "s3_bucket and s3_key are required" }], details: { error: "missing_param" } };
+                const result = await aiManager.recognizeCelebrities({ s3Bucket: bucket, s3Key: key });
+                return {
+                  content: [{ type: "text", text: result.success ? `Recognized ${result.data?.length ?? 0} celebrity/celebrities: ${result.data?.map((c) => c.name).join(", ") ?? "none"}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detect_moderation_labels": {
+                const bucket = params.s3_bucket as string;
+                const key = params.s3_key as string;
+                if (!bucket || !key) return { content: [{ type: "text", text: "s3_bucket and s3_key are required" }], details: { error: "missing_param" } };
+                const result = await aiManager.detectModerationLabels(
+                  { s3Bucket: bucket, s3Key: key },
+                  params.min_confidence as number | undefined,
+                );
+                return {
+                  content: [{ type: "text", text: result.success ? `Found ${result.data?.length ?? 0} moderation label(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ---------------------------------------------------------------
+              // Translate
+              // ---------------------------------------------------------------
+              case "translate_text": {
+                const text = params.text as string;
+                const sourceLang = params.source_language_code as string;
+                const targetLang = params.target_language_code as string;
+                if (!text || !sourceLang || !targetLang) {
+                  return { content: [{ type: "text", text: "text, source_language_code, and target_language_code are required" }], details: { error: "missing_param" } };
+                }
+                const result = await aiManager.translateText(text, sourceLang, targetLang);
+                return {
+                  content: [{ type: "text", text: result.success ? `Translation (${result.data?.sourceLanguageCode} → ${result.data?.targetLanguageCode}): ${result.data?.translatedText}` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "list_languages": {
+                const result = await aiManager.listSupportedLanguages();
+                return {
+                  content: [{ type: "text", text: result.success ? `${result.data?.length ?? 0} supported language(s)` : `Error: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown AI action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `AI/ML error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_ai" },
+    );
+
     // Register service — manager init happens in start() (async-safe)
     api.registerService({
       id: "aws-core-services",
@@ -20522,6 +20962,7 @@ ACTIONS:
         complianceManager = new AWSComplianceManager({ defaultRegion: config.defaultRegion });
         automationManager = createAutomationManager({ defaultRegion: config.defaultRegion });
         elastiCacheManager = new ElastiCacheManager({ region: config.defaultRegion });
+        aiManager = new AWSAIManager({ region: config.defaultRegion });
 
         // Optionally probe identity on start
         try {
@@ -20567,6 +21008,7 @@ ACTIONS:
         complianceManager = null;
         automationManager = null;
         elastiCacheManager = null;
+        aiManager = null;
         cliWrapper = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
       },
@@ -20612,6 +21054,7 @@ export function getAWSManagers() {
     compliance: complianceManager,
     automation: automationManager,
     elasticache: elastiCacheManager,
+    ai: aiManager,
     cli: cliWrapper,
   };
 }
