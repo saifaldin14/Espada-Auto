@@ -197,7 +197,7 @@ export class IntentCompiler {
     const igwId = `igw-${randomUUID().slice(0, 8)}`;
     resources.push({
       id: igwId,
-      type: 'internet_gateway',
+      type: 'internet-gateway',
       service: 'ec2',
       properties: {
         vpcId,
@@ -215,7 +215,7 @@ export class IntentCompiler {
         const natId = `nat-${randomUUID().slice(0, 8)}`;
         resources.push({
           id: natId,
-          type: 'nat_gateway',
+          type: 'nat-gateway',
           service: 'ec2',
           properties: {
             subnetId: publicSubnetIds[i],
@@ -246,7 +246,7 @@ export class IntentCompiler {
     if (intent.tiers.some(t => t.type === 'web')) {
       resources.push({
         id: `sg-web-${randomUUID().slice(0, 8)}`,
-        type: 'security_group',
+        type: 'security-group',
         service: 'ec2',
         properties: {
           name: `${intent.name}-web-sg`,
@@ -270,7 +270,7 @@ export class IntentCompiler {
     if (intent.tiers.some(t => t.type === 'api')) {
       resources.push({
         id: `sg-app-${randomUUID().slice(0, 8)}`,
-        type: 'security_group',
+        type: 'security-group',
         service: 'ec2',
         properties: {
           name: `${intent.name}-app-sg`,
@@ -293,7 +293,7 @@ export class IntentCompiler {
     if (intent.tiers.some(t => t.type === 'database')) {
       resources.push({
         id: `sg-db-${randomUUID().slice(0, 8)}`,
-        type: 'security_group',
+        type: 'security-group',
         service: 'ec2',
         properties: {
           name: `${intent.name}-db-sg`,
@@ -316,7 +316,7 @@ export class IntentCompiler {
       if (tier.type === 'web' || tier.type === 'api') {
         resources.push({
           id: `role-${tier.type}-${randomUUID().slice(0, 8)}`,
-          type: 'iam_role',
+          type: 'iam-role',
           service: 'iam',
           properties: {
             name: `${intent.name}-${tier.type}-role`,
@@ -344,7 +344,7 @@ export class IntentCompiler {
     if (intent.security.encryptionAtRest) {
       resources.push({
         id: `kms-${randomUUID().slice(0, 8)}`,
-        type: 'kms_key',
+        type: 'kms-key',
         service: 'kms',
         properties: {
           description: `Encryption key for ${intent.name}`,
@@ -419,7 +419,7 @@ export class IntentCompiler {
     const dbId = `rds-${randomUUID().slice(0, 8)}`;
     resources.push({
       id: dbId,
-      type: 'rds_instance',
+      type: 'rds-instance',
       service: 'rds',
       properties: {
         identifier: `${intent.name}-db`,
@@ -452,7 +452,7 @@ export class IntentCompiler {
     if (intent.availability >= '99.99') {
       resources.push({
         id: `rds-replica-${randomUUID().slice(0, 8)}`,
-        type: 'rds_read_replica',
+        type: 'rds-read-replica',
         service: 'rds',
         properties: {
           sourceInstanceId: dbId,
@@ -484,7 +484,7 @@ export class IntentCompiler {
 
     resources.push({
       id: `elasticache-${randomUUID().slice(0, 8)}`,
-      type: 'elasticache_cluster',
+      type: 'elasticache-cluster',
       service: 'elasticache',
       properties: {
         clusterId: `${intent.name}-cache`,
@@ -517,7 +517,7 @@ export class IntentCompiler {
 
     resources.push({
       id: `s3-${randomUUID().slice(0, 8)}`,
-      type: 's3_bucket',
+      type: 's3-bucket',
       service: 's3',
       properties: {
         bucketName: `${intent.name}-storage-${Date.now()}`,
@@ -554,7 +554,7 @@ export class IntentCompiler {
 
     resources.push({
       id: `sqs-${randomUUID().slice(0, 8)}`,
-      type: 'sqs_queue',
+      type: 'sqs-queue',
       service: 'sqs',
       properties: {
         queueName: `${intent.name}-queue`,
@@ -608,7 +608,7 @@ export class IntentCompiler {
       // Lambda for burst/unpredictable traffic
       resources.push({
         id: `lambda-${tier.type}-${randomUUID().slice(0, 8)}`,
-        type: 'lambda_function',
+        type: 'lambda-function',
         service: 'lambda',
         properties: {
           functionName: `${intent.name}-${tier.type}`,
@@ -631,7 +631,7 @@ export class IntentCompiler {
       
       resources.push({
         id: taskDefId,
-        type: 'ecs_task_definition',
+        type: 'ecs-task-definition',
         service: 'ecs',
         properties: {
           family: `${intent.name}-${tier.type}`,
@@ -653,7 +653,7 @@ export class IntentCompiler {
 
       resources.push({
         id: serviceId,
-        type: 'ecs_service',
+        type: 'ecs-service',
         service: 'ecs',
         properties: {
           serviceName: `${intent.name}-${tier.type}`,
@@ -675,7 +675,7 @@ export class IntentCompiler {
       
       resources.push({
         id: launchTemplateId,
-        type: 'launch_template',
+        type: 'launch-template',
         service: 'ec2',
         properties: {
           name: `${intent.name}-${tier.type}-lt`,
@@ -691,7 +691,7 @@ export class IntentCompiler {
 
       resources.push({
         id: asgId,
-        type: 'autoscaling_group',
+        type: 'autoscaling-group',
         service: 'autoscaling',
         properties: {
           name: `${intent.name}-${tier.type}-asg`,
@@ -713,7 +713,7 @@ export class IntentCompiler {
       const albId = `alb-${randomUUID().slice(0, 8)}`;
       resources.push({
         id: albId,
-        type: 'application_load_balancer',
+        type: 'alb',
         service: 'elbv2',
         properties: {
           name: `${intent.name}-${tier.type}-alb`,
@@ -742,7 +742,7 @@ export class IntentCompiler {
     // CloudWatch Dashboard
     resources.push({
       id: `dashboard-${randomUUID().slice(0, 8)}`,
-      type: 'cloudwatch_dashboard',
+      type: 'cloudwatch-dashboard',
       service: 'cloudwatch',
       properties: {
         dashboardName: `${intent.name}-dashboard`,
@@ -768,7 +768,7 @@ export class IntentCompiler {
     for (const alarm of alarms) {
       resources.push({
         id: `alarm-${alarm.metric.toLowerCase()}-${randomUUID().slice(0, 8)}`,
-        type: 'cloudwatch_alarm',
+        type: 'cloudwatch-alarm',
         service: 'cloudwatch',
         properties: {
           alarmName: `${intent.name}-${alarm.metric}`,
@@ -804,7 +804,7 @@ export class IntentCompiler {
     // AWS Backup plan
     resources.push({
       id: `backup-plan-${randomUUID().slice(0, 8)}`,
-      type: 'backup_plan',
+      type: 'backup-plan',
       service: 'backup',
       properties: {
         backupPlanName: `${intent.name}-backup`,
@@ -829,7 +829,7 @@ export class IntentCompiler {
       for (const region of intent.additionalRegions) {
         resources.push({
           id: `backup-copy-${region}-${randomUUID().slice(0, 8)}`,
-          type: 'backup_copy_action',
+          type: 'backup-copy-action',
           service: 'backup',
           properties: {
             destinationBackupVaultArn: `arn:aws:backup:${region}:*:backup-vault:*`,

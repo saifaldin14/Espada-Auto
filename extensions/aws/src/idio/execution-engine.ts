@@ -33,6 +33,8 @@ import {
   ReleaseAddressCommand,
   RunInstancesCommand,
   TerminateInstancesCommand,
+  CreateLaunchTemplateCommand,
+  DeleteLaunchTemplateCommand,
   type Tag,
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
@@ -51,6 +53,7 @@ import {
   RDSClient,
   CreateDBInstanceCommand,
   CreateDBClusterCommand,
+  CreateDBInstanceReadReplicaCommand,
   DeleteDBInstanceCommand,
   DeleteDBClusterCommand,
 } from '@aws-sdk/client-rds';
@@ -68,6 +71,7 @@ import {
 import {
   AutoScalingClient,
   CreateAutoScalingGroupCommand,
+  CreateAutoScalingGroupCommandInput,
   CreateLaunchConfigurationCommand,
   DeleteAutoScalingGroupCommand,
   DeleteLaunchConfigurationCommand,
@@ -88,7 +92,9 @@ import {
 import {
   CloudWatchClient,
   PutMetricAlarmCommand,
+  PutDashboardCommand,
   DeleteAlarmsCommand,
+  DeleteDashboardsCommand,
 } from '@aws-sdk/client-cloudwatch';
 
 import {
@@ -106,6 +112,25 @@ import {
   ScheduleKeyDeletionCommand,
   type KeySpec,
 } from '@aws-sdk/client-kms';
+
+import {
+  LambdaClient,
+  CreateFunctionCommand,
+  DeleteFunctionCommand,
+  type Runtime,
+} from '@aws-sdk/client-lambda';
+
+import {
+  ElastiCacheClient,
+  CreateReplicationGroupCommand,
+  DeleteReplicationGroupCommand,
+} from '@aws-sdk/client-elasticache';
+
+import {
+  BackupClient,
+  CreateBackupPlanCommand,
+  DeleteBackupPlanCommand,
+} from '@aws-sdk/client-backup';
 
 // Import from existing managers
 import { DynamoDBManager, createDynamoDBManager } from '../dynamodb/manager.js';
@@ -241,6 +266,9 @@ export class AWSExecutionEngine {
   readonly cloudwatch: CloudWatchClient;
   readonly s3: S3Client;
   readonly kms: KMSClient;
+  readonly lambda: LambdaClient;
+  readonly elasticache: ElastiCacheClient;
+  readonly backup: BackupClient;
 
   // Enterprise Service Managers
   readonly dynamodb: DynamoDBManager;
@@ -285,6 +313,9 @@ export class AWSExecutionEngine {
     this.cloudwatch = new CloudWatchClient(clientConfig);
     this.s3 = new S3Client(clientConfig);
     this.kms = new KMSClient(clientConfig);
+    this.lambda = new LambdaClient(clientConfig);
+    this.elasticache = new ElastiCacheClient(clientConfig);
+    this.backup = new BackupClient(clientConfig);
 
     // Initialize enterprise managers
     this.dynamodb = createDynamoDBManager({ region: this.config.region, credentials: this.config.credentials });
@@ -383,6 +414,35 @@ export class AWSExecutionEngine {
     // Monitoring Resources
     this.createHandlers.set('cloudwatch-alarm', this.createCloudWatchAlarm.bind(this));
     this.rollbackHandlers.set('cloudwatch-alarm', this.deleteCloudWatchAlarm.bind(this));
+
+    this.createHandlers.set('cloudwatch-dashboard', this.createCloudWatchDashboard.bind(this));
+    this.rollbackHandlers.set('cloudwatch-dashboard', this.deleteCloudWatchDashboard.bind(this));
+
+    // Compute Resources (additional)
+    this.createHandlers.set('lambda-function', this.createLambdaFunction.bind(this));
+    this.rollbackHandlers.set('lambda-function', this.deleteLambdaFunction.bind(this));
+
+    this.createHandlers.set('launch-template', this.createLaunchTemplate.bind(this));
+    this.rollbackHandlers.set('launch-template', this.deleteLaunchTemplate.bind(this));
+
+    this.createHandlers.set('autoscaling-group', this.createAutoScalingGroup.bind(this));
+    this.rollbackHandlers.set('autoscaling-group', this.deleteAutoScalingGroup.bind(this));
+
+    // Cache Resources
+    this.createHandlers.set('elasticache-cluster', this.createElastiCacheCluster.bind(this));
+    this.rollbackHandlers.set('elasticache-cluster', this.deleteElastiCacheCluster.bind(this));
+
+    // Database Resources (additional)
+    this.createHandlers.set('rds-read-replica', this.createRDSReadReplica.bind(this));
+    this.rollbackHandlers.set('rds-read-replica', this.deleteRDSReadReplica.bind(this));
+
+    // Backup Resources
+    this.createHandlers.set('backup-plan', this.createBackupPlan.bind(this));
+    this.rollbackHandlers.set('backup-plan', this.deleteBackupPlan.bind(this));
+
+    // Backup copy actions are part of backup plans, registered as no-op for plan completeness
+    this.createHandlers.set('backup-copy-action', this.createBackupCopyAction.bind(this));
+    this.rollbackHandlers.set('backup-copy-action', this.deleteBackupCopyAction.bind(this));
   }
 
   // ==========================================================================
@@ -647,6 +707,15 @@ export class AWSExecutionEngine {
     const props = resource.properties;
     const resourceName = getResourceName(resource);
     
+    // Validate no CIDR conflicts with existing VPCs in the region
+    const existing = await this.ec2.send(new DescribeVpcsCommand({}));
+    const conflict = existing.Vpcs?.find(v => v.CidrBlock === (props.cidrBlock as string));
+    if (conflict) {
+      throw new Error(
+        `CIDR block ${props.cidrBlock} conflicts with existing VPC ${conflict.VpcId}`
+      );
+    }
+
     const response = await this.ec2.send(new CreateVpcCommand({
       CidrBlock: props.cidrBlock as string,
       TagSpecifications: [{
@@ -684,6 +753,19 @@ export class AWSExecutionEngine {
     const props = resource.properties;
     const vpcId = this.resolveDependency(props.vpcId as string, context);
     const resourceName = getResourceName(resource);
+
+    // Validate no CIDR conflicts with existing subnets in the target VPC
+    const existingSubnets = await this.ec2.send(new DescribeSubnetsCommand({
+      Filters: [{ Name: 'vpc-id', Values: [vpcId] }],
+    }));
+    const conflict = existingSubnets.Subnets?.find(
+      s => s.CidrBlock === (props.cidrBlock as string)
+    );
+    if (conflict) {
+      throw new Error(
+        `CIDR block ${props.cidrBlock} conflicts with existing subnet ${conflict.SubnetId} in VPC ${vpcId}`
+      );
+    }
 
     const response = await this.ec2.send(new CreateSubnetCommand({
       VpcId: vpcId,
@@ -1168,23 +1250,52 @@ export class AWSExecutionEngine {
       Tags: context.tags.map(t => ({ Key: t.Key!, Value: t.Value! })),
     }));
 
+    const albArn = response.LoadBalancers![0].LoadBalancerArn!;
+
+    // Create a default listener if a target group is specified
+    let listenerArn: string | undefined;
+    const targetGroupArn = props.defaultTargetGroupArn as string | undefined;
+    if (targetGroupArn) {
+      const resolvedTgArn = this.resolveDependency(targetGroupArn, context);
+      const listenerResponse = await this.elb.send(new CreateListenerCommand({
+        LoadBalancerArn: albArn,
+        Protocol: (props.listenerProtocol as string as 'HTTP' | 'HTTPS') ?? 'HTTP',
+        Port: (props.listenerPort as number) ?? 80,
+        DefaultActions: [{
+          Type: 'forward',
+          TargetGroupArn: resolvedTgArn,
+        }],
+      }));
+      listenerArn = listenerResponse.Listeners?.[0]?.ListenerArn;
+    }
+
     const result: InternalProvisionedResource = {
       plannedId: resource.id,
-      awsId: response.LoadBalancers![0].LoadBalancerArn!,
+      awsId: albArn,
       type: 'alb',
       status: 'creating',
       region: resource.region,
     };
     context.resourceMetadata.set(resource.id, {
       dnsName: response.LoadBalancers![0].DNSName,
+      listenerArn,
     });
     return result;
   }
 
   private async deleteALB(
     resource: ProvisionedResource,
-    _context: ResourceExecutionContext
+    context: ResourceExecutionContext
   ): Promise<void> {
+    // Delete the listener first if one was created
+    const metadata = context.resourceMetadata.get(resource.plannedId);
+    const listenerArn = metadata?.listenerArn as string | undefined;
+    if (listenerArn) {
+      await this.elb.send(new DeleteListenerCommand({
+        ListenerArn: listenerArn,
+      }));
+    }
+
     await this.elb.send(new DeleteLoadBalancerCommand({
       LoadBalancerArn: resource.awsId,
     }));
@@ -1472,6 +1583,7 @@ export class AWSExecutionEngine {
 
     // Attach inline policies
     const policies = props.policies as Array<{ name: string; document: object }> | undefined;
+    const policyNames: string[] = [];
     if (policies) {
       for (const policy of policies) {
         await this.iam.send(new PutRolePolicyCommand({
@@ -1479,7 +1591,23 @@ export class AWSExecutionEngine {
           PolicyName: policy.name,
           PolicyDocument: JSON.stringify(policy.document),
         }));
+        policyNames.push(policy.name);
       }
+    }
+
+    // Create an instance profile and attach the role if requested
+    let instanceProfileArn: string | undefined;
+    if (props.createInstanceProfile !== false) {
+      const profileResponse = await this.iam.send(new CreateInstanceProfileCommand({
+        InstanceProfileName: resourceName,
+        Tags: context.tags.map(t => ({ Key: t.Key!, Value: t.Value! })),
+      }));
+      instanceProfileArn = profileResponse.InstanceProfile?.Arn;
+
+      await this.iam.send(new AddRoleToInstanceProfileCommand({
+        InstanceProfileName: resourceName,
+        RoleName: resourceName,
+      }));
     }
 
     const result: InternalProvisionedResource = {
@@ -1491,6 +1619,9 @@ export class AWSExecutionEngine {
     };
     context.resourceMetadata.set(resource.id, {
       roleName: response.Role!.RoleName,
+      policyNames,
+      instanceProfileArn,
+      instanceProfileName: instanceProfileArn ? resourceName : undefined,
     });
     return result;
   }
@@ -1501,8 +1632,28 @@ export class AWSExecutionEngine {
   ): Promise<void> {
     const metadata = context.resourceMetadata.get(resource.plannedId);
     const roleName = metadata?.roleName as string;
-    
-    // Note: In production, would need to delete inline policies first
+    const policyNames = (metadata?.policyNames as string[]) ?? [];
+    const instanceProfileName = metadata?.instanceProfileName as string | undefined;
+
+    // Remove role from instance profile and delete the profile
+    if (instanceProfileName) {
+      await this.iam.send(new RemoveRoleFromInstanceProfileCommand({
+        InstanceProfileName: instanceProfileName,
+        RoleName: roleName,
+      }));
+      await this.iam.send(new DeleteInstanceProfileCommand({
+        InstanceProfileName: instanceProfileName,
+      }));
+    }
+
+    // Delete all inline policies before deleting the role
+    for (const policyName of policyNames) {
+      await this.iam.send(new DeleteRolePolicyCommand({
+        RoleName: roleName,
+        PolicyName: policyName,
+      }));
+    }
+
     await this.iam.send(new DeleteRoleCommand({
       RoleName: roleName,
     }));
@@ -1739,6 +1890,371 @@ export class AWSExecutionEngine {
     await this.cloudwatch.send(new DeleteAlarmsCommand({
       AlarmNames: [alarmName!],
     }));
+  }
+
+  // ==========================================================================
+  // CloudWatch Dashboard Handlers
+  // ==========================================================================
+
+  private async createCloudWatchDashboard(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    await this.cloudwatch.send(new PutDashboardCommand({
+      DashboardName: resourceName,
+      DashboardBody: JSON.stringify(props.dashboardBody ?? {
+        widgets: props.widgets ?? [],
+      }),
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: `arn:aws:cloudwatch::*:dashboard/${resourceName}`,
+      type: 'cloudwatch-dashboard',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteCloudWatchDashboard(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    const dashboardName = resource.awsId.split('/').pop();
+    await this.cloudwatch.send(new DeleteDashboardsCommand({
+      DashboardNames: [dashboardName!],
+    }));
+  }
+
+  // ==========================================================================
+  // Lambda Handlers
+  // ==========================================================================
+
+  private async createLambdaFunction(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    const result = await this.lambda.send(new CreateFunctionCommand({
+      FunctionName: resourceName,
+      Runtime: (props.runtime as Runtime) ?? 'nodejs20.x',
+      Handler: (props.handler as string) ?? 'index.handler',
+      Role: props.roleArn as string,
+      Code: {
+        ZipFile: props.zipFile as Uint8Array | undefined,
+        S3Bucket: props.s3Bucket as string | undefined,
+        S3Key: props.s3Key as string | undefined,
+      },
+      MemorySize: (props.memorySize as number) ?? 128,
+      Timeout: (props.timeout as number) ?? 30,
+      Environment: props.environment ? {
+        Variables: props.environment as Record<string, string>,
+      } : undefined,
+      Tags: Object.fromEntries(context.tags.map(t => [t.Key!, t.Value!])),
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: result.FunctionArn!,
+      type: 'lambda-function',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteLambdaFunction(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    const functionName = resource.awsId.split(':').pop();
+    await this.lambda.send(new DeleteFunctionCommand({
+      FunctionName: functionName!,
+    }));
+  }
+
+  // ==========================================================================
+  // Launch Template Handlers
+  // ==========================================================================
+
+  private async createLaunchTemplate(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    const result = await this.ec2.send(new CreateLaunchTemplateCommand({
+      LaunchTemplateName: resourceName,
+      LaunchTemplateData: {
+        ImageId: props.imageId as string | undefined,
+        InstanceType: (props.instanceType as _InstanceType) ?? 't3.micro',
+        KeyName: props.keyName as string | undefined,
+        SecurityGroupIds: props.securityGroupIds as string[] | undefined,
+        UserData: props.userData as string | undefined,
+        BlockDeviceMappings: props.blockDeviceMappings as any[] | undefined,
+      },
+      TagSpecifications: [{
+        ResourceType: 'launch-template',
+        Tags: context.tags,
+      }],
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: result.LaunchTemplate?.LaunchTemplateId!,
+      type: 'launch-template',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteLaunchTemplate(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    await this.ec2.send(new DeleteLaunchTemplateCommand({
+      LaunchTemplateId: resource.awsId,
+    }));
+  }
+
+  // ==========================================================================
+  // Auto Scaling Group Handlers
+  // ==========================================================================
+
+  private async createAutoScalingGroup(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    // Support both launch templates (preferred) and legacy launch configurations
+    let launchConfigName: string | undefined;
+    const asgInput: CreateAutoScalingGroupCommandInput = {
+      AutoScalingGroupName: resourceName,
+      MinSize: (props.minSize as number) ?? 1,
+      MaxSize: (props.maxSize as number) ?? 3,
+      DesiredCapacity: (props.desiredCapacity as number) ?? 1,
+      VPCZoneIdentifier: (props.subnetIds as string[])?.join(','),
+      TargetGroupARNs: props.targetGroupArns as string[] | undefined,
+      Tags: context.tags.map(t => ({
+        Key: t.Key!,
+        Value: t.Value!,
+        PropagateAtLaunch: true,
+      })),
+    };
+
+    if (props.launchTemplateId) {
+      asgInput.LaunchTemplate = {
+        LaunchTemplateId: props.launchTemplateId as string,
+        Version: '$Latest',
+      };
+    } else if (props.imageId && props.instanceType) {
+      // Fallback: create a legacy launch configuration for the ASG
+      launchConfigName = `${resourceName}-lc`;
+      await this.autoscaling.send(new CreateLaunchConfigurationCommand({
+        LaunchConfigurationName: launchConfigName,
+        ImageId: props.imageId as string,
+        InstanceType: props.instanceType as string,
+        KeyName: props.keyName as string | undefined,
+        SecurityGroups: props.securityGroupIds as string[] | undefined,
+      }));
+      asgInput.LaunchConfigurationName = launchConfigName;
+    }
+
+    await this.autoscaling.send(new CreateAutoScalingGroupCommand(asgInput as any));
+
+    return {
+      plannedId: resource.id,
+      awsId: resourceName,
+      type: 'autoscaling-group',
+      status: 'available',
+      region: resource.region,
+      metadata: launchConfigName ? { launchConfigName } : undefined,
+    };
+  }
+
+  private async deleteAutoScalingGroup(
+    resource: ProvisionedResource,
+    context: ResourceExecutionContext
+  ): Promise<void> {
+    await this.autoscaling.send(new DeleteAutoScalingGroupCommand({
+      AutoScalingGroupName: resource.awsId,
+      ForceDelete: true,
+    }));
+
+    // Clean up legacy launch configuration if one was created
+    const metadata = context.resourceMetadata.get(resource.plannedId);
+    const launchConfigName = metadata?.launchConfigName as string | undefined;
+    if (launchConfigName) {
+      await this.autoscaling.send(new DeleteLaunchConfigurationCommand({
+        LaunchConfigurationName: launchConfigName,
+      }));
+    }
+  }
+
+  // ==========================================================================
+  // ElastiCache Handlers
+  // ==========================================================================
+
+  private async createElastiCacheCluster(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+    // ElastiCache IDs must be lowercase and max 40 chars
+    const replicationGroupId = resourceName.toLowerCase().slice(0, 40);
+
+    const result = await this.elasticache.send(new CreateReplicationGroupCommand({
+      ReplicationGroupId: replicationGroupId,
+      ReplicationGroupDescription: (props.description as string) ?? `ElastiCache cluster for ${resourceName}`,
+      Engine: (props.engine as string) ?? 'redis',
+      CacheNodeType: (props.nodeType as string) ?? 'cache.t3.micro',
+      NumCacheClusters: (props.numCacheClusters as number) ?? 1,
+      AutomaticFailoverEnabled: (props.automaticFailover as boolean) ?? false,
+      Tags: context.tags.map(t => ({ Key: t.Key!, Value: t.Value! })),
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: result.ReplicationGroup?.ARN!,
+      type: 'elasticache-cluster',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteElastiCacheCluster(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    // Extract the replication group ID from the ARN
+    const replicationGroupId = resource.awsId.includes(':')
+      ? resource.awsId.split(':').pop()!
+      : resource.awsId;
+    await this.elasticache.send(new DeleteReplicationGroupCommand({
+      ReplicationGroupId: replicationGroupId,
+      RetainPrimaryCluster: false,
+    }));
+  }
+
+  // ==========================================================================
+  // RDS Read Replica Handlers
+  // ==========================================================================
+
+  private async createRDSReadReplica(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    const result = await this.rds.send(new CreateDBInstanceReadReplicaCommand({
+      DBInstanceIdentifier: resourceName,
+      SourceDBInstanceIdentifier: props.sourceDBInstanceIdentifier as string,
+      DBInstanceClass: (props.instanceClass as string) ?? 'db.t3.micro',
+      AvailabilityZone: props.availabilityZone as string | undefined,
+      PubliclyAccessible: (props.publiclyAccessible as boolean) ?? false,
+      Tags: context.tags.map(t => ({ Key: t.Key!, Value: t.Value! })),
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: result.DBInstance?.DBInstanceArn!,
+      type: 'rds-read-replica',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteRDSReadReplica(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    const instanceId = resource.awsId.split(':').pop();
+    await this.rds.send(new DeleteDBInstanceCommand({
+      DBInstanceIdentifier: instanceId!,
+      SkipFinalSnapshot: true,
+    }));
+  }
+
+  // ==========================================================================
+  // Backup Handlers
+  // ==========================================================================
+
+  private async createBackupPlan(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const resourceName = getResourceName(resource);
+
+    const result = await this.backup.send(new CreateBackupPlanCommand({
+      BackupPlan: {
+        BackupPlanName: resourceName,
+        Rules: (props.rules as any[]) ?? [{
+          RuleName: 'default-rule',
+          TargetBackupVaultName: (props.vaultName as string) ?? 'Default',
+          ScheduleExpression: (props.schedule as string) ?? 'cron(0 5 ? * * *)',
+          Lifecycle: {
+            DeleteAfterDays: (props.retentionDays as number) ?? 30,
+          },
+        }],
+      },
+      BackupPlanTags: Object.fromEntries(context.tags.map(t => [t.Key!, t.Value!])),
+    }));
+
+    return {
+      plannedId: resource.id,
+      awsId: result.BackupPlanId!,
+      type: 'backup-plan',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteBackupPlan(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    await this.backup.send(new DeleteBackupPlanCommand({
+      BackupPlanId: resource.awsId,
+    }));
+  }
+
+  // ==========================================================================
+  // Backup Copy Action Handlers (part of backup plans, thin resource)
+  // ==========================================================================
+
+  private async createBackupCopyAction(
+    resource: PlannedResource,
+    _context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    // Backup copy actions are configured within backup plan rules.
+    // This handler is a thin wrapper — the actual copy action is part
+    // of the backup plan rule definition. We track it for plan alignment.
+    const resourceName = getResourceName(resource);
+    return {
+      plannedId: resource.id,
+      awsId: `backup-copy-action:${resourceName}`,
+      type: 'backup-copy-action',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteBackupCopyAction(
+    _resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    // Copy actions are removed when the parent backup plan is deleted.
+    // No standalone deletion needed.
   }
 }
 
