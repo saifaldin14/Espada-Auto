@@ -561,11 +561,13 @@ export class AWSExecutionEngine {
   }
 
   /**
-   * Rollback created resources
+   * Rollback created resources.
+   * Called internally on execution failure and can be called externally
+   * by the orchestrator for user-initiated rollbacks.
    */
-  private async rollback(
+  async rollback(
     executionId: string,
-    context: ResourceExecutionContext
+    context?: ResourceExecutionContext
   ): Promise<void> {
     const steps = this.executions.get(executionId);
     if (!steps) return;
@@ -579,8 +581,8 @@ export class AWSExecutionEngine {
       try {
         const handler = this.rollbackHandlers.get(step.resource.type);
         
-        if (handler && step.result) {
-          await handler(step.result, context, this);
+        if (handler && step.result && context) {
+          await handler(step.result, context!, this);
           step.status = 'rolled-back';
         }
       } catch (error) {

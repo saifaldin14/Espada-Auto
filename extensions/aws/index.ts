@@ -175,6 +175,18 @@ import {
   createAutomationManager,
   type AWSAutomationManager,
 } from "./src/automation/index.js";
+
+import {
+  createIDIOOrchestrator,
+  IDIOOrchestrator,
+  type IDIOResult,
+} from "./src/idio/index.js";
+import {
+  IDIOToolHandler,
+  createIDIOToolHandler,
+} from "./src/idio/tools.js";
+import type { ApplicationIntent } from "./src/intent/types.js";
+
 import type {
   EventRuleState,
   ScheduleState,
@@ -230,6 +242,8 @@ let automationManager: AWSAutomationManager | null = null;
 let elastiCacheManager: ElastiCacheManager | null = null;
 let aiManager: AWSAIManager | null = null;
 let cliWrapper: AWSCLIWrapper | null = null;
+let idioOrchestrator: IDIOOrchestrator | null = null;
+let idioToolHandler: IDIOToolHandler | null = null;
 
 /**
  * AWS plugin configuration schema
@@ -17094,6 +17108,476 @@ ACTIONS:
     );
 
     // =========================================================================
+    // IDIO — INTENT-DRIVEN INFRASTRUCTURE ORCHESTRATION AGENT TOOL
+    // =========================================================================
+
+    api.registerTool(
+      {
+        name: "aws_idio",
+        label: "AWS Intent-Driven Infrastructure",
+        description: `Declarative, intent-driven AWS infrastructure orchestration. Describe WHAT you need (business requirements, compliance, budget, availability) and the system automatically figures out HOW to build it — selecting optimal services, sizing instances, configuring networking, security, monitoring, and DR.
+
+CAPABILITIES:
+
+1. CREATE INFRASTRUCTURE FROM INTENT
+   Specify high-level requirements and get a full infrastructure plan:
+   - Application tiers (web, api, database, cache, queue, storage, analytics)
+   - Compliance frameworks (HIPAA, SOC2, PCI-DSS, GDPR, ISO-27001, FedRAMP)
+   - Availability targets (99.9% to 99.999%)
+   - Cost constraints (monthly budget, alert thresholds)
+   - Security requirements (encryption, network isolation, WAF, DDoS protection)
+   - Disaster recovery (RTO/RPO, cross-region replication, automated failover)
+   - Traffic patterns (steady, burst, seasonal, unpredictable)
+   - Auto-scaling configuration
+
+2. USE PRE-BUILT TEMPLATES
+   Production-ready architecture patterns:
+   - three-tier-web: Classic web app with load balancer, app servers, database ($200-2K/mo)
+   - serverless-api: API Gateway + Lambda + DynamoDB ($10-200/mo)
+   - microservices: Container-based with service mesh ($1K-10K/mo)
+   - data-lake: S3-based data lake with analytics ($200-5K/mo)
+   - ml-platform: SageMaker-based ML training and inference ($500-10K/mo)
+   - static-website: S3 + CloudFront ($10-200/mo)
+   - event-driven: Event-based architecture
+
+3. VALIDATE & ESTIMATE COSTS
+   - Validate intent before deployment
+   - Get detailed cost breakdowns by service and tier
+   - Budget compliance checks
+
+4. EXECUTE & MANAGE
+   - Execute plans with dry-run support
+   - Check execution status and progress
+   - Rollback deployments safely
+
+5. DRIFT DETECTION & RECONCILIATION
+   - Detect configuration drift from desired state
+   - Compliance monitoring
+   - Auto-remediation of drift
+
+EXAMPLE USAGE:
+- "Deploy a production e-commerce platform with 99.99% uptime, PCI-DSS compliance, $10K/month budget"
+- "Create a serverless API for my startup, keep costs under $200/month"
+- "Set up a three-tier web app in staging with basic monitoring"
+- "I need an ML training platform with GPU instances in us-west-2"`,
+        parameters: {
+          type: "object",
+          properties: {
+            action: {
+              type: "string",
+              enum: [
+                "create_plan",
+                "create_from_template",
+                "validate_intent",
+                "estimate_cost",
+                "execute_plan",
+                "check_status",
+                "reconcile",
+                "rollback",
+                "list_templates",
+                "get_template_details",
+                "get_plan_details",
+              ],
+              description: "The IDIO action to perform",
+            },
+            // Plan creation parameters
+            name: {
+              type: "string",
+              description: "Application/infrastructure name (lowercase, alphanumeric with hyphens)",
+            },
+            environment: {
+              type: "string",
+              enum: ["development", "staging", "production"],
+              description: "Target environment for deployment",
+            },
+            primary_region: {
+              type: "string",
+              description: "Primary AWS region (e.g. us-east-1)",
+            },
+            tiers: {
+              type: "array",
+              description: "Application tiers to provision",
+              items: {
+                type: "object",
+                properties: {
+                  type: {
+                    type: "string",
+                    enum: ["web", "api", "database", "cache", "queue", "storage", "analytics"],
+                    description: "Tier type",
+                  },
+                  trafficPattern: {
+                    type: "string",
+                    enum: ["steady", "burst", "predictable-daily", "predictable-weekly", "seasonal", "unpredictable"],
+                    description: "Expected traffic pattern",
+                  },
+                  runtime: {
+                    type: "object",
+                    description: "Runtime configuration",
+                    properties: {
+                      language: { type: "string", enum: ["nodejs", "python", "java", "go", "dotnet", "ruby"] },
+                      containerImage: { type: "string" },
+                    },
+                  },
+                  scaling: {
+                    type: "object",
+                    description: "Auto-scaling config",
+                    properties: {
+                      min: { type: "number", description: "Min instances" },
+                      max: { type: "number", description: "Max instances" },
+                    },
+                  },
+                  dataSizeGb: {
+                    type: "number",
+                    description: "Data size in GB (for database/storage tiers)",
+                  },
+                },
+              },
+            },
+            compliance: {
+              type: "array",
+              description: "Compliance frameworks to enforce",
+              items: {
+                type: "string",
+                enum: ["hipaa", "soc2", "pci-dss", "gdpr", "iso27001", "fedramp", "none"],
+              },
+            },
+            cost: {
+              type: "object",
+              description: "Cost constraints",
+              properties: {
+                monthlyBudgetUsd: { type: "number", description: "Maximum monthly budget in USD" },
+                prioritizeCost: { type: "boolean", description: "Prioritize cost over performance" },
+                alertThreshold: { type: "number", description: "Alert at this % of budget" },
+              },
+            },
+            availability: {
+              type: "string",
+              enum: ["99.9", "99.95", "99.99", "99.999", "best-effort"],
+              description: "Availability requirement",
+            },
+            security: {
+              type: "object",
+              description: "Security requirements",
+              properties: {
+                encryptionAtRest: { type: "boolean" },
+                encryptionInTransit: { type: "boolean" },
+                networkIsolation: { type: "string", enum: ["none", "private-subnet", "vpc-isolated", "airgapped"] },
+                wafEnabled: { type: "boolean" },
+                ddosProtectionEnabled: { type: "boolean" },
+              },
+            },
+            disaster_recovery: {
+              type: "object",
+              description: "Disaster recovery requirements",
+              properties: {
+                rtoMinutes: { type: "number", description: "Recovery Time Objective in minutes" },
+                rpoMinutes: { type: "number", description: "Recovery Point Objective in minutes" },
+                crossRegionReplication: { type: "boolean" },
+                backupRetentionDays: { type: "number" },
+              },
+            },
+            // Template parameters
+            template_id: {
+              type: "string",
+              enum: ["three-tier-web", "microservices", "serverless-api", "data-lake", "ml-platform", "static-website", "event-driven"],
+              description: "Template ID for create_from_template",
+            },
+            template_parameters: {
+              type: "object",
+              description: "Template parameter overrides",
+            },
+            // Execution parameters
+            plan_id: {
+              type: "string",
+              description: "Plan ID (from create_plan or create_from_template)",
+            },
+            execution_id: {
+              type: "string",
+              description: "Execution ID (from execute_plan)",
+            },
+            dry_run: {
+              type: "boolean",
+              description: "Preview changes without creating resources",
+            },
+            skip_approval: {
+              type: "boolean",
+              description: "Skip manual approval for pre-approved plans",
+            },
+            auto_remediate: {
+              type: "boolean",
+              description: "Automatically fix detected drift during reconcile",
+            },
+            // Template browsing
+            category: {
+              type: "string",
+              enum: ["web", "api", "data", "ml", "security", "all"],
+              description: "Filter templates by category",
+            },
+          },
+          required: ["action"],
+        },
+        async execute(_toolCallId: string, params: Record<string, unknown>) {
+          const action = params.action as string;
+
+          if (!idioOrchestrator || !idioToolHandler) {
+            return {
+              content: [{ type: "text", text: "IDIO orchestrator not initialized. Is the AWS extension started?" }],
+              details: { error: "not_initialized" },
+            };
+          }
+
+          try {
+            switch (action) {
+              // =============================================================
+              // Infrastructure Planning
+              // =============================================================
+              case "create_plan": {
+                const name = params.name as string;
+                const environment = params.environment as string;
+                const primaryRegion = (params.primary_region as string) || config.defaultRegion || "us-east-1";
+                if (!name || !environment) {
+                  return { content: [{ type: "text", text: "name and environment are required" }], details: { error: "missing_param" } };
+                }
+                const intent: ApplicationIntent = {
+                  name,
+                  environment: environment as "development" | "staging" | "production" | "disaster-recovery",
+                  primaryRegion,
+                  availability: (params.availability as ApplicationIntent["availability"]) ?? "99.9",
+                  cost: (params.cost as ApplicationIntent["cost"]) ?? { monthlyBudgetUsd: 1000 },
+                  compliance: (params.compliance as ApplicationIntent["compliance"]) ?? ["none"],
+                  security: (params.security as ApplicationIntent["security"]) ?? {
+                    encryptionAtRest: true,
+                    encryptionInTransit: true,
+                    networkIsolation: "private-subnet",
+                  },
+                  tiers: (params.tiers as ApplicationIntent["tiers"]) ?? [],
+                  disasterRecovery: params.disaster_recovery as ApplicationIntent["disasterRecovery"],
+                };
+                const result = await idioOrchestrator.createPlanFromIntent(intent);
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `✅ **Infrastructure Plan Created**\n\n**Plan ID:** \`${data?.planId}\`\n**Resources:** ${data?.resourceCount}\n**Estimated Cost:** $${Number(data?.estimatedCostUsd ?? 0).toFixed(2)}/month\n**Requires Approval:** ${data?.requiresApproval ? "Yes" : "No"}\n\nUse \`execute_plan\` with this plan ID to deploy, or \`get_plan_details\` to review.`
+                      : `❌ Plan creation failed: ${result.message}${result.errors?.length ? "\n" + result.errors.join("\n") : ""}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "create_from_template": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return { content: [{ type: "text", text: "template_id is required" }], details: { error: "missing_param" } };
+                }
+                const templateParams = (params.template_parameters as Record<string, unknown>) ?? {};
+                if (params.name) templateParams.name = params.name;
+                if (params.environment) templateParams.environment = params.environment;
+                const result = await idioOrchestrator.createPlanFromTemplate(templateId, templateParams);
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `✅ **Plan Created from Template \`${templateId}\`**\n\n**Plan ID:** \`${data?.planId}\`\n**Resources:** ${data?.resourceCount}\n**Estimated Cost:** $${Number(data?.estimatedCostUsd ?? 0).toFixed(2)}/month\n\nUse \`execute_plan\` to deploy or \`get_plan_details\` to review.`
+                      : `❌ Template plan failed: ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "validate_intent": {
+                const intent = {
+                  name: params.name as string ?? "validation-check",
+                  environment: (params.environment as string ?? "development") as "development" | "staging" | "production" | "disaster-recovery",
+                  primaryRegion: (params.primary_region as string) || config.defaultRegion || "us-east-1",
+                  availability: (params.availability as ApplicationIntent["availability"]) ?? "99.9",
+                  cost: (params.cost as ApplicationIntent["cost"]) ?? { monthlyBudgetUsd: 1000 },
+                  compliance: (params.compliance as ApplicationIntent["compliance"]) ?? ["none"],
+                  security: (params.security as ApplicationIntent["security"]) ?? { encryptionAtRest: true, encryptionInTransit: true, networkIsolation: "private-subnet" },
+                  tiers: (params.tiers as ApplicationIntent["tiers"]) ?? [],
+                };
+                const result = await idioOrchestrator.validateIntent(intent);
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `✅ **Intent Valid** — compliant with all policies`
+                      : `⚠️ **Validation Issues**\n${result.message}${result.errors?.length ? "\n" + result.errors.join("\n") : ""}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "estimate_cost": {
+                const intent = {
+                  name: params.name as string ?? "cost-estimate",
+                  environment: (params.environment as string ?? "production") as "development" | "staging" | "production" | "disaster-recovery",
+                  primaryRegion: (params.primary_region as string) || config.defaultRegion || "us-east-1",
+                  availability: (params.availability as ApplicationIntent["availability"]) ?? "99.9",
+                  cost: (params.cost as ApplicationIntent["cost"]) ?? { monthlyBudgetUsd: 50000 },
+                  compliance: (params.compliance as ApplicationIntent["compliance"]) ?? ["none"],
+                  security: (params.security as ApplicationIntent["security"]) ?? { encryptionAtRest: true, encryptionInTransit: true, networkIsolation: "private-subnet" },
+                  tiers: (params.tiers as ApplicationIntent["tiers"]) ?? [],
+                };
+                const result = await idioOrchestrator.estimateCost(intent);
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `💰 **Cost Estimate**\n\n**Total:** $${Number(data?.totalCostUsd ?? 0).toFixed(2)}/month\n**Within Budget:** ${data?.withinBudget ? "Yes ✅" : "No ❌"}\n**Budget Utilization:** ${data?.budgetUtilization}%`
+                      : `❌ Cost estimation failed: ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              // =============================================================
+              // Execution
+              // =============================================================
+              case "execute_plan": {
+                const planId = params.plan_id as string;
+                if (!planId) {
+                  return { content: [{ type: "text", text: "plan_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = await idioOrchestrator.executePlan(planId, {
+                  dryRun: params.dry_run as boolean,
+                  autoApprove: params.skip_approval as boolean,
+                });
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? params.dry_run
+                        ? `🧪 **Dry Run Complete**\n\n**Resources:** ${data?.resourceCount}\n**Execution Order:** ${(data?.executionOrder as string[][])?.length ?? 0} phase(s)\n\nRun again without dry_run to deploy.`
+                        : `🚀 **Execution Started**\n\n**Execution ID:** \`${data?.executionId}\`\n**Status:** ${data?.status}\n\nUse \`check_status\` to monitor progress.`
+                      : `❌ Execution failed: ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "check_status": {
+                const executionId = params.execution_id as string;
+                if (!executionId) {
+                  return { content: [{ type: "text", text: "execution_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = await idioOrchestrator.checkStatus(executionId);
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `📊 **Execution Status**\n\n**ID:** \`${data?.executionId}\`\n**Status:** ${data?.status}\n**Resources Provisioned:** ${data?.provisionedResourcesCount}\n**Errors:** ${data?.errorsCount}${data?.actualCostUsd ? `\n**Cost:** $${Number(data.actualCostUsd).toFixed(2)}/month` : ""}`
+                      : `❌ ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "reconcile": {
+                const executionId = params.execution_id as string;
+                if (!executionId) {
+                  return { content: [{ type: "text", text: "execution_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = await idioOrchestrator.reconcile(executionId);
+                const data = result.data as Record<string, unknown> | undefined;
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `🔄 **Reconciliation Complete**\n\n**Drift Detected:** ${data?.driftDetected ? "Yes" : "No"}\n**Drift Count:** ${data?.driftCount}\n**Compliance Violations:** ${data?.complianceViolations}\n**Cost Anomalies:** ${data?.costAnomalies}\n**Auto-Remediated:** ${data?.autoRemediationApplied ? "Yes" : "No"}`
+                      : `❌ Reconciliation failed: ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "rollback": {
+                const executionId = params.execution_id as string;
+                if (!executionId) {
+                  return { content: [{ type: "text", text: "execution_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = await idioOrchestrator.rollback(executionId);
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `⏪ **Rollback Complete** — infrastructure changes reverted`
+                      : `❌ Rollback failed: ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              // =============================================================
+              // Templates & Details
+              // =============================================================
+              case "list_templates": {
+                const result = idioOrchestrator.listTemplates(params.category as string);
+                const data = result.data as { templates: Array<{ id: string; name: string; description: string; category: string }> } | undefined;
+                const templates = data?.templates ?? [];
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `📋 **Available Templates** (${templates.length})\n\n${templates.map(t => `• **${t.name}** (\`${t.id}\`)\n  ${t.description}`).join("\n\n")}`
+                      : `❌ ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "get_template_details": {
+                const templateId = params.template_id as string;
+                if (!templateId) {
+                  return { content: [{ type: "text", text: "template_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = idioOrchestrator.getTemplate(templateId);
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `📄 **Template Details**\n\n${result.message}\n\n${JSON.stringify(result.data, null, 2).slice(0, 2000)}`
+                      : `❌ ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              case "get_plan_details": {
+                const planId = params.plan_id as string;
+                if (!planId) {
+                  return { content: [{ type: "text", text: "plan_id is required" }], details: { error: "missing_param" } };
+                }
+                const result = idioOrchestrator.getPlan(planId);
+                return {
+                  content: [{
+                    type: "text",
+                    text: result.success
+                      ? `📄 **Plan Details**\n\n${result.message}\n\n${JSON.stringify(result.data, null, 2).slice(0, 3000)}`
+                      : `❌ ${result.message}`,
+                  }],
+                  details: result,
+                };
+              }
+
+              default:
+                return { content: [{ type: "text", text: `Unknown IDIO action: ${action}` }], details: { error: "unknown_action" } };
+            }
+          } catch (error: unknown) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            return { content: [{ type: "text", text: `IDIO error: ${errorMsg}` }], details: { error: String(error) } };
+          }
+        },
+      },
+      { name: "aws_idio" },
+    );
+
+    // =========================================================================
     // AWS CONVERSATIONAL UX AGENT TOOL
     // =========================================================================
 
@@ -20964,6 +21448,23 @@ ACTIONS:
         elastiCacheManager = new ElastiCacheManager({ region: config.defaultRegion });
         aiManager = new AWSAIManager({ region: config.defaultRegion });
 
+        // Initialize IDIO (Intent-Driven Infrastructure Orchestration)
+        idioOrchestrator = createIDIOOrchestrator({
+          compiler: {
+            defaultRegion: config.defaultRegion || 'us-east-1',
+            enableCostOptimization: true,
+            enableGuardrails: true,
+            dryRun: false,
+          },
+          executionEngine: {
+            region: config.defaultRegion || 'us-east-1',
+            enableRollback: true,
+            defaultTags: { ManagedBy: 'espada-aws' },
+          },
+        });
+        idioToolHandler = createIDIOToolHandler(idioOrchestrator);
+        log.info("[AWS] IDIO orchestrator initialized");
+
         // Optionally probe identity on start
         try {
           await contextManager.initialize();
@@ -21010,6 +21511,8 @@ ACTIONS:
         elastiCacheManager = null;
         aiManager = null;
         cliWrapper = null;
+        idioOrchestrator = null;
+        idioToolHandler = null;
         pluginLogger?.info("[AWS] AWS Core Services stopped");
       },
     });
@@ -21056,5 +21559,7 @@ export function getAWSManagers() {
     elasticache: elastiCacheManager,
     ai: aiManager,
     cli: cliWrapper,
+    idio: idioOrchestrator,
+    idioTools: idioToolHandler,
   };
 }

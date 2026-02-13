@@ -90,6 +90,26 @@
     "./backup": {
       "import": "./dist/backup/index.js",
       "types": "./dist/backup/index.d.ts"
+    },
+    "./idio": {
+      "import": "./dist/idio/index.js",
+      "types": "./dist/idio/index.d.ts"
+    },
+    "./intent": {
+      "import": "./dist/intent/index.js",
+      "types": "./dist/intent/index.d.ts"
+    },
+    "./catalog": {
+      "import": "./dist/catalog/index.js",
+      "types": "./dist/catalog/index.d.ts"
+    },
+    "./policy": {
+      "import": "./dist/policy/index.js",
+      "types": "./dist/policy/index.d.ts"
+    },
+    "./reconciliation": {
+      "import": "./dist/reconciliation/index.js",
+      "types": "./dist/reconciliation/index.d.ts"
     }
   },
   "scripts": {
@@ -159,7 +179,8 @@
     "@aws-sdk/s3-request-presigner": "^3.500.0",
     "@smithy/types": "^2.9.0",
     "ini": "^4.1.1",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "@sinclair/typebox": "^0.32.0"
   },
   "devDependencies": {
     "@types/ini": "^4.1.0",

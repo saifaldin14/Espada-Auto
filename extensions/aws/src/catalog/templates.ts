@@ -736,14 +736,25 @@ export function applyTemplate(
     throw new Error(`Missing required parameters: ${missingParams.map(p => p.name).join(', ')}`);
   }
 
-  // Build intent from template
+  // Build intent from template with defaults for required fields
   const intent: Partial<ApplicationIntent> = {
+    // Sensible defaults
+    availability: '99.9',
+    compliance: ['none'],
+    security: {
+      encryptionAtRest: true,
+      encryptionInTransit: true,
+      networkIsolation: 'private-subnet',
+    },
+    tiers: [],
+    // Apply template base
     ...template.intentTemplate,
-    name: parameters.name as string,
-    environment: parameters.environment as any,
-    primaryRegion: parameters.primaryRegion as string,
+    // Apply user overrides
+    name: (parameters.name as string) || template.id,
+    environment: (parameters.environment as any) || 'development',
+    primaryRegion: (parameters.primaryRegion as string) || 'us-east-1',
     cost: {
-      monthlyBudgetUsd: parameters.monthlyBudget as number,
+      monthlyBudgetUsd: (parameters.monthlyBudget as number) || template.costRangeUsd[1] || 1000,
       alertThreshold: 80,
     },
     tags: {

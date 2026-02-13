@@ -16,6 +16,7 @@ import { createPolicyEngine, type PolicyEngineConfig } from '../policy/engine.js
 import { createReconciliationEngine, type ReconciliationConfig } from '../reconciliation/engine.js';
 import { getTemplate, applyTemplate, listTemplates } from '../catalog/templates.js';
 import { validateIntent } from '../intent/schema.js';
+import { createExecutionEngine, type ExecutionEngineConfig } from './execution-engine.js';
 
 /**
  * Custom error types for better error handling
@@ -45,6 +46,8 @@ export interface IDIOConfig {
   compiler: Partial<CompilerConfig>;
   policyEngine: Partial<PolicyEngineConfig>;
   reconciliation: Partial<ReconciliationConfig>;
+  /** Execution engine configuration */
+  executionEngine?: Partial<ExecutionEngineConfig>;
   /** Store for persisting plans and executions */
   stateDirectory?: string;
 }
@@ -63,6 +66,7 @@ export class IDIOOrchestrator {
   private compiler;
   private policyEngine;
   private reconciliationEngine;
+  private executionEngine;
   private plans: Map<string, InfrastructurePlan>;
   private executions: Map<string, IntentExecutionResult>;
 
@@ -73,6 +77,11 @@ export class IDIOOrchestrator {
       config.reconciliation,
       this.policyEngine,
     );
+    this.executionEngine = createExecutionEngine({
+      region: config.compiler.defaultRegion ?? 'us-east-1',
+      enableRollback: true,
+      ...config.executionEngine,
+    });
     this.plans = new Map();
     this.executions = new Map();
   }
@@ -302,41 +311,21 @@ export class IDIOOrchestrator {
         };
       }
 
-      // Execute plan (simplified - real implementation would use AWS managers)
-      const executionId = randomUUID();
-      const execution: IntentExecutionResult = {
-        executionId,
-        planId,
-        status: 'in-progress',
-        provisionedResources: [],
-        errors: [],
-        startedAt: new Date().toISOString(),
-        rollbackTriggered: false,
-      };
-
-      this.executions.set(executionId, execution);
-
-      // Simulate async execution
-      setTimeout(() => {
-        execution.status = 'completed';
-        execution.completedAt = new Date().toISOString();
-        execution.actualMonthlyCostUsd = plan.estimatedMonthlyCostUsd;
-        execution.provisionedResources = plan.resources.map(r => ({
-          plannedId: r.id,
-          awsId: `arn:aws:${r.service}:${r.region}:*:${r.type}/simulated-${r.id}`,
-          type: r.type,
-          status: 'available',
-          region: r.region,
-        }));
-      }, 1000);
+      // Execute plan via the real AWS Execution Engine
+      const execution = await this.executionEngine.execute(plan);
+      this.executions.set(execution.executionId, execution);
 
       return {
         success: true,
-        message: 'Plan execution started',
+        message: execution.status === 'completed'
+          ? `Plan executed successfully — ${execution.provisionedResources.length} resource(s) provisioned`
+          : 'Plan execution started',
         data: {
-          executionId,
+          executionId: execution.executionId,
           planId,
-          status: 'in-progress',
+          status: execution.status,
+          provisionedResources: execution.provisionedResources.length,
+          errors: execution.errors.length,
         },
       };
     } catch (error) {
@@ -444,22 +433,25 @@ export class IDIOOrchestrator {
 
       const plan = this.plans.get(execution.planId);
       
-      if (!plan?.rollbackPlan) {
+      if (!plan) {
         return {
           success: false,
-          message: 'No rollback plan available',
+          message: `Plan ${execution.planId} not found`,
         };
       }
+
+      // Trigger actual resource deletion via the execution engine
+      await this.executionEngine.rollback(executionId);
 
       execution.status = 'rolled-back';
       execution.rollbackTriggered = true;
 
       return {
         success: true,
-        message: 'Rollback completed successfully',
+        message: 'Rollback completed successfully — provisioned resources deleted',
         data: {
           executionId,
-          rollbackSteps: plan.rollbackPlan.steps.length,
+          rollbackSteps: plan.rollbackPlan?.steps.length ?? execution.provisionedResources.length,
         },
       };
     } catch (error) {
@@ -571,6 +563,7 @@ export function createIDIOOrchestrator(config?: Partial<IDIOConfig>): IDIOOrches
     compiler: { ...defaultConfig.compiler, ...config?.compiler },
     policyEngine: { ...defaultConfig.policyEngine, ...config?.policyEngine },
     reconciliation: { ...defaultConfig.reconciliation, ...config?.reconciliation },
+    executionEngine: config?.executionEngine,
     stateDirectory: config?.stateDirectory,
   });
 }

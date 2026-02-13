@@ -21,6 +21,38 @@ import type { ApplicationIntent } from '../intent/types.js';
 // Mock AWS SDK clients
 // =============================================================================
 
+// Mock the execution engine directly to avoid needing all SDK mocks
+vi.mock('./execution-engine.js', () => ({
+  AWSExecutionEngine: vi.fn().mockImplementation(() => ({
+    execute: vi.fn().mockResolvedValue({
+      executionId: 'mock-exec-id',
+      planId: 'mock-plan-id',
+      status: 'completed',
+      provisionedResources: [],
+      errors: [],
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      rollbackTriggered: false,
+    }),
+    rollback: vi.fn().mockResolvedValue(undefined),
+    getProgress: vi.fn().mockReturnValue(undefined),
+  })),
+  createExecutionEngine: vi.fn().mockImplementation(() => ({
+    execute: vi.fn().mockResolvedValue({
+      executionId: 'mock-exec-id',
+      planId: 'mock-plan-id',
+      status: 'completed',
+      provisionedResources: [],
+      errors: [],
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      rollbackTriggered: false,
+    }),
+    rollback: vi.fn().mockResolvedValue(undefined),
+    getProgress: vi.fn().mockReturnValue(undefined),
+  })),
+}));
+
 vi.mock('@aws-sdk/client-ec2', () => ({
   EC2Client: vi.fn().mockImplementation(() => ({
     send: vi.fn().mockResolvedValue({}),
