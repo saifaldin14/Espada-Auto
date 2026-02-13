@@ -579,7 +579,7 @@ export class IDIOToolHandler {
     const planId = params.planId as string;
     const options = {
       dryRun: params.dryRun as boolean | undefined,
-      skipApproval: params.skipApproval as boolean | undefined,
+      autoApprove: params.skipApproval as boolean | undefined,
     };
 
     const result = await this.orchestrator.executePlan(planId, options);
@@ -594,7 +594,8 @@ export class IDIOToolHandler {
 
   private async reconcile(params: Record<string, unknown>): Promise<ToolResult> {
     const executionId = params.executionId as string;
-    const result = await this.orchestrator.reconcile(executionId);
+    const autoRemediate = params.autoRemediate as boolean | undefined;
+    const result = await this.orchestrator.reconcile(executionId, { autoRemediate });
     return this.convertResult(result);
   }
 
@@ -615,9 +616,9 @@ export class IDIOToolHandler {
     return this.convertResult(result);
   }
 
-  private getPlanDetails(params: Record<string, unknown>): ToolResult {
+  private async getPlanDetails(params: Record<string, unknown>): Promise<ToolResult> {
     const planId = params.planId as string;
-    const result = this.orchestrator.getPlan(planId);
+    const result = await this.orchestrator.getPlan(planId);
     return this.convertResult(result);
   }
 

@@ -2,7 +2,7 @@
  * Reconciliation Engine Tests
  *
  * Tests drift detection, compliance checking, cost anomaly detection,
- * remediation generation, and auto-remediation.
+ * remediation generation, and auto-remediation with mocked AWS SDK clients.
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -21,6 +21,103 @@ import type {
   InfrastructurePlan,
   IntentExecutionResult,
 } from "../intent/types.js";
+
+// =============================================================================
+// AWS SDK mocks — intercept at the `send` level for each client
+// =============================================================================
+
+const mockSend = vi.fn().mockImplementation(async (command: any) => {
+  const cmdName = command.constructor?.name ?? '';
+
+  // RDS describe — return config that matches the planned resource
+  if (cmdName === 'DescribeDBInstancesCommand') {
+    return {
+      DBInstances: [{
+        DBInstanceClass: 'db.t4g.medium',
+        Engine: 'postgres',
+        StorageEncrypted: true,
+        MultiAZ: true,
+        PubliclyAccessible: false,
+        DeletionProtection: false,
+        StorageType: 'gp3',
+        AllocatedStorage: 50,
+      }],
+    };
+  }
+
+  // Cost Explorer — return empty (no cost data in tests)
+  if (cmdName === 'GetCostAndUsageCommand') {
+    return { ResultsByTime: [] };
+  }
+
+  // SNS publish — succeed silently
+  if (cmdName === 'PublishCommand') {
+    return { MessageId: 'mock-msg-id' };
+  }
+
+  // EventBridge PutRule
+  if (cmdName === 'PutRuleCommand') {
+    return { RuleArn: 'arn:aws:events:us-east-1:123:rule/idio-reconcile-plan-1' };
+  }
+  // EventBridge PutTargets
+  if (cmdName === 'PutTargetsCommand') {
+    return { FailedEntryCount: 0 };
+  }
+
+  // Step Functions CreateStateMachine
+  if (cmdName === 'CreateStateMachineCommand') {
+    return { stateMachineArn: 'arn:aws:states:us-east-1:123:stateMachine:idio-reconcile-plan-1' };
+  }
+
+  // Default — return empty object
+  return {};
+});
+
+// Patch every AWS SDK client prototype so all instances share the mock
+vi.mock('@aws-sdk/client-ec2', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, EC2Client: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-rds', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, RDSClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-s3', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, S3Client: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-ecs', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, ECSClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-elasticache', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, ElastiCacheClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-lambda', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, LambdaClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-iam', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, IAMClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-sns', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, SNSClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-cost-explorer', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, CostExplorerClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-eventbridge', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, EventBridgeClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
+vi.mock('@aws-sdk/client-sfn', async (importOriginal) => {
+  const mod = await importOriginal<Record<string, any>>();
+  return { ...mod, SFNClient: vi.fn().mockImplementation(() => ({ send: mockSend, destroy: vi.fn() })) };
+});
 
 // =============================================================================
 // Helpers
@@ -105,6 +202,7 @@ describe("ReconciliationEngine", () => {
   let engine: ReconciliationEngine;
 
   beforeEach(() => {
+    mockSend.mockClear();
     engine = createReconciliationEngine(
       { enableAutoRemediation: false },
       createPolicyEngine(),
@@ -196,15 +294,19 @@ describe("ReconciliationEngine", () => {
   });
 
   describe("alert formatting", () => {
-    it("should not throw when alertTopicArn is configured", async () => {
-      const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    it("should publish SNS alert when alertTopicArn is configured", async () => {
       const eng = createReconciliationEngine(
         { enableAutoRemediation: false, alertTopicArn: "arn:aws:sns:us-east-1:123:alerts" },
         createPolicyEngine(),
       );
       const ctx = makeContext();
-      await expect(eng.reconcile(ctx)).resolves.toBeDefined();
-      consoleSpy.mockRestore();
+      const result = await eng.reconcile(ctx);
+      expect(result).toBeDefined();
+      // Verify SNS PublishCommand was called
+      const snsCalls = mockSend.mock.calls.filter(
+        ([cmd]: any[]) => cmd.constructor?.name === 'PublishCommand',
+      );
+      expect(snsCalls.length).toBeGreaterThanOrEqual(1);
     });
   });
 });
@@ -216,8 +318,8 @@ describe("ReconciliationEngine", () => {
 describe("createReconciliationSchedule", () => {
   it("should return ruleArn and targetArn", async () => {
     const result = await createReconciliationSchedule("plan-1", "exec-1", 15, "us-east-1");
-    expect(result.ruleArn).toContain("reconcile-plan-1");
-    expect(result.targetArn).toContain("reconcile-handler");
+    expect(result.ruleArn).toContain("idio-reconcile-plan-1");
+    expect(result.targetArn).toContain("idio-reconcile-handler");
   });
 });
 
@@ -230,8 +332,8 @@ describe("createReconciliationWorkflow", () => {
       maxRemediationAttempts: 3,
       alertTopicArn: "arn:aws:sns:us-east-1:123:alerts",
     };
-    const result = await createReconciliationWorkflow("plan-1", config, "us-east-1");
-    expect(result.stateMachineArn).toContain("reconcile-plan-1");
+    const result = await createReconciliationWorkflow("plan-1", config, "us-east-1", "arn:aws:iam::123:role/sfn-role");
+    expect(result.stateMachineArn).toContain("idio-reconcile-plan-1");
     const def = JSON.parse(result.definition);
     expect(def.StartAt).toBe("CheckDrift");
     expect(def.States).toHaveProperty("CheckDrift");

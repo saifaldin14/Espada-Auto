@@ -333,7 +333,7 @@ describe("AWSAIManager", () => {
       await manager.listFoundationModels("Anthropic");
 
       const cmd = mockBedrockSend.mock.calls[0][0];
-      expect(cmd.input.ByProvider).toBe("Anthropic");
+      expect(cmd.input.byProvider).toBe("Anthropic");
     });
   });
 

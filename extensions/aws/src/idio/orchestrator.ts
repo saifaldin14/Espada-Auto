@@ -95,10 +95,11 @@ export class IDIOOrchestrator {
       credentials: config.executionEngine?.credentials,
       ...config.stateStore,
     });
-    // Fire-and-forget init; methods that need the store await this promise
+    // Methods that need the store await this promise; failure rejects so callers
+    // get a meaningful error instead of silently operating against an absent store.
     this.stateStoreReady = this.stateStore.initialize().then(result => {
       if (!result.success) {
-        console.error('IDIO state store initialization failed:', result.error);
+        throw new Error(`IDIO state store initialization failed: ${result.error}`);
       }
     });
 
@@ -451,7 +452,7 @@ export class IDIOOrchestrator {
   /**
    * Perform reconciliation check
    */
-  async reconcile(executionId: string): Promise<IDIOResult> {
+  async reconcile(executionId: string, options?: { autoRemediate?: boolean }): Promise<IDIOResult> {
     try {
       const execution = await this.resolveExecution(executionId);
       
@@ -475,6 +476,7 @@ export class IDIOOrchestrator {
         plan,
         execution,
         region: plan.intent.primaryRegion,
+        autoRemediate: options?.autoRemediate,
       });
 
       return {
@@ -603,12 +605,11 @@ export class IDIOOrchestrator {
   }
 
   /**
-   * Get plan details
+   * Get plan details — checks in-memory cache then DynamoDB
    */
-  getPlan(planId: string): IDIOResult {
-    // Synchronous cache check for backward compat; async callers should use resolvePlan
-    const plan = this.plans.get(planId);
-    
+  async getPlan(planId: string): Promise<IDIOResult> {
+    const plan = await this.resolvePlan(planId);
+
     if (!plan) {
       return {
         success: false,
@@ -652,6 +653,7 @@ export function createIDIOOrchestrator(config?: Partial<IDIOConfig>): IDIOOrches
     policyEngine: { ...defaultConfig.policyEngine, ...config?.policyEngine },
     reconciliation: { ...defaultConfig.reconciliation, ...config?.reconciliation },
     executionEngine: config?.executionEngine,
+    stateStore: config?.stateStore,
     stateDirectory: config?.stateDirectory,
   });
 }

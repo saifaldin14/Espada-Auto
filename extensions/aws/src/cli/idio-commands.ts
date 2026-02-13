@@ -159,8 +159,8 @@ export class IDIOCLI {
   /**
    * Get details of an existing plan
    */
-  getPlanDetails(planId: string): CommandResult {
-    const result = this.orchestrator.getPlan(planId);
+  async getPlanDetails(planId: string): Promise<CommandResult> {
+    const result = await this.orchestrator.getPlan(planId);
     return this.convertResult(result);
   }
 

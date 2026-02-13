@@ -17557,9 +17557,9 @@ EXAMPLE USAGE:
                 return {
                   content: [{
                     type: "text",
-                    text: result.success
-                      ? `📄 **Plan Details**\n\n${result.message}\n\n${JSON.stringify(result.data, null, 2).slice(0, 3000)}`
-                      : `❌ ${result.message}`,
+                    text: (await result).success
+                      ? `📄 **Plan Details**\n\n${(await result).message}\n\n${JSON.stringify((await result).data, null, 2).slice(0, 3000)}`
+                      : `❌ ${(await result).message}`,
                   }],
                   details: result,
                 };
