@@ -1616,6 +1616,17 @@ export class AWSPlugin {
         costAnomalyThreshold: 20,
         maxRemediationAttempts: 3,
       },
+      executionEngine: {
+        region: this.defaultRegion,
+        credentialProvider: async () => {
+          const result = await this.credentials.getCredentials();
+          return {
+            accessKeyId: result.credentials.accessKeyId,
+            secretAccessKey: result.credentials.secretAccessKey,
+            sessionToken: result.credentials.sessionToken,
+          };
+        },
+      },
     });
   }
 

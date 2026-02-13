@@ -192,6 +192,13 @@ export interface ExecutionEngineConfig {
     secretAccessKey: string;
     sessionToken?: string;
   };
+  /** Lazy credential provider — called before each SDK client is built.
+   *  Takes priority over static `credentials` when both are set. */
+  credentialProvider?: () => Promise<{
+    accessKeyId: string;
+    secretAccessKey: string;
+    sessionToken?: string;
+  }>;
   maxRetries?: number;
   maxConcurrentOperations?: number;
   enableRollback?: boolean;
@@ -299,7 +306,9 @@ export class AWSExecutionEngine {
 
     const clientConfig = {
       region: this.config.region,
-      credentials: this.config.credentials,
+      // Prefer the lazy credential provider over static credentials;
+      // the AWS SDK v3 accepts both a static object and a () => Promise<Credentials>
+      credentials: this.config.credentialProvider ?? this.config.credentials,
       maxAttempts: this.config.maxRetries,
     };
 
