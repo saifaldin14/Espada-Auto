@@ -360,10 +360,8 @@ export class IDIOStateStore {
       TableName: tableName,
       KeySchema: definition.keySchema,
       AttributeDefinitions: definition.attributeDefinitions,
-      GlobalSecondaryIndexes: definition.globalSecondaryIndexes?.map(gsi => ({
-        ...gsi,
-        ProvisionedThroughput: { ReadCapacityUnits: 5, WriteCapacityUnits: 5 },
-      })),
+      // PAY_PER_REQUEST auto-scales; no ProvisionedThroughput on table or GSIs
+      GlobalSecondaryIndexes: definition.globalSecondaryIndexes,
       BillingMode: 'PAY_PER_REQUEST',
     }));
 

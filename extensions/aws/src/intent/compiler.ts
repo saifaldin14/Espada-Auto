@@ -16,6 +16,22 @@ import type {
   GuardrailCheckResult,
 } from './types.js';
 
+/**
+ * Optional pluggable pricing provider — implementations can query
+ * the AWS Bulk Pricing API, a local cache, or any external source.
+ * Return `null` to fall through to the built-in static price table.
+ */
+export interface CostProvider {
+  /**
+   * Look up the monthly cost (USD) for a single unit of `service`/`sku`.
+   * @param service  AWS service key, e.g. 'rds', 'ec2', 'elasticache'
+   * @param sku      Instance type or size key, e.g. 'db.t4g.medium', 't4g.large'
+   * @param region   AWS region
+   * @returns Monthly USD cost per unit, or `null` if unknown (fallback to hardcoded)
+   */
+  getPrice(service: string, sku: string, region: string): Promise<number | null>;
+}
+
 export interface CompilerConfig {
   /** Default region if not specified */
   defaultRegion: string;
@@ -25,6 +41,8 @@ export interface CompilerConfig {
   enableGuardrails: boolean;
   /** Dry run mode */
   dryRun: boolean;
+  /** Optional pricing provider — falls back to built-in static tables */
+  costProvider?: CostProvider;
 }
 
 export interface CompilerContext {
@@ -456,7 +474,7 @@ export class IntentCompiler {
         },
       },
       dependencies: [this.sgIds.db || 'sg-db'],
-      estimatedCostUsd: this.estimateRDSCost(instanceClass, storageSize, multiAz),
+      estimatedCostUsd: await this.estimateRDSCost(instanceClass, storageSize, multiAz),
       region,
       tags: { ...intent.tags, Tier: 'database' },
       rationale: `${instanceClass} provides sufficient capacity for ${tier.expectedRps || 'standard'} RPS workload`,
@@ -474,7 +492,7 @@ export class IntentCompiler {
           storageEncrypted: intent.security.encryptionAtRest,
         },
         dependencies: [dbId],
-        estimatedCostUsd: this.estimateRDSCost(instanceClass, storageSize, false) * 0.9,
+        estimatedCostUsd: await this.estimateRDSCost(instanceClass, storageSize, false) * 0.9,
         region,
         tags: { ...intent.tags, Tier: 'database', Role: 'replica' },
       });
@@ -511,7 +529,7 @@ export class IntentCompiler {
         transitEncryptionEnabled: intent.security.encryptionInTransit,
       },
       dependencies: [],
-      estimatedCostUsd: this.estimateCacheCost(nodeType, numNodes),
+      estimatedCostUsd: await this.estimateCacheCost(nodeType, numNodes),
       region,
       tags: { ...intent.tags, Tier: 'cache' },
     });
@@ -548,7 +566,7 @@ export class IntentCompiler {
         ],
       },
       dependencies: [],
-      estimatedCostUsd: this.estimateS3Cost(tier.dataSizeGb || 100),
+      estimatedCostUsd: await this.estimateS3Cost(tier.dataSizeGb || 100),
       region,
       tags: { ...intent.tags, Tier: 'storage' },
     });
@@ -617,7 +635,7 @@ export class IntentCompiler {
         ],
       },
       dependencies: [],
-      estimatedCostUsd: this.estimateS3Cost(dataSizeGb),
+      estimatedCostUsd: await this.estimateS3Cost(dataSizeGb),
       region,
       tags: { ...intent.tags, Tier: 'analytics', Role: 'data-lake' },
     });
@@ -640,7 +658,7 @@ export class IntentCompiler {
         },
       },
       dependencies: [dataLakeId],
-      estimatedCostUsd: this.estimateLambdaCost(tier.expectedRps || 10),
+      estimatedCostUsd: await this.estimateLambdaCost(tier.expectedRps || 10),
       region,
       tags: { ...intent.tags, Tier: 'analytics', Role: 'etl' },
     });
@@ -767,7 +785,7 @@ export class IntentCompiler {
           environment: tier.runtime?.environmentVariables,
         },
         dependencies: [],
-        estimatedCostUsd: this.estimateLambdaCost(tier.expectedRps || 100),
+        estimatedCostUsd: await this.estimateLambdaCost(tier.expectedRps || 100),
         region,
         tags: { ...intent.tags, Tier: tier.type },
         rationale: 'Lambda selected for burst traffic pattern and cost efficiency',
@@ -851,7 +869,7 @@ export class IntentCompiler {
           healthCheckGracePeriod: 300,
         },
         dependencies: [launchTemplateId],
-        estimatedCostUsd: this.estimateEC2Cost(instanceType, tier.scaling?.min || 2),
+        estimatedCostUsd: await this.estimateEC2Cost(instanceType, tier.scaling?.min || 2),
         region,
         tags: { ...intent.tags, Tier: tier.type },
         rationale: `Auto Scaling Group for ${tier.type} tier with ${tier.scaling?.min || 2}-${tier.scaling?.max || 10} instances`,
@@ -1005,7 +1023,7 @@ export class IntentCompiler {
 
     // --- Real multi-region failover infrastructure ---
     if (automaticFailover && intent.additionalRegions?.length) {
-      const drResources = this.compileAutomaticFailover(intent, rtoMinutes);
+      const drResources = await this.compileAutomaticFailover(intent, rtoMinutes);
       resources.push(...drResources);
     }
 
@@ -1017,10 +1035,10 @@ export class IntentCompiler {
    * cross-region VPCs, RDS read replicas, ALBs, Route 53 health checks,
    * and failover DNS records.
    */
-  private compileAutomaticFailover(
+  private async compileAutomaticFailover(
     intent: ApplicationIntent,
     rtoMinutes: number,
-  ): PlannedResource[] {
+  ): Promise<PlannedResource[]> {
     const resources: PlannedResource[] = [];
     const hasDatabaseTier = intent.tiers.some(t => t.type === 'database');
     const hasWebOrApiTier = intent.tiers.some(t => t.type === 'web' || t.type === 'api');
@@ -1128,7 +1146,7 @@ export class IntentCompiler {
             availabilityZone: `${drRegion}a`,
           },
           dependencies: [drVpcId, drSgId],
-          estimatedCostUsd: this.estimateRDSCost('db.t3.medium', 100, false),
+          estimatedCostUsd: await this.estimateRDSCost('db.t3.medium', 100, false),
           region: drRegion,
           tags: { ...intent.tags, Role: 'dr-database-replica', FailoverRegion: drRegion },
           rationale: 'Cross-region read replica for automatic failover promotion',
@@ -1494,8 +1512,8 @@ systemctl enable docker
 `;
   }
 
-  private estimateRDSCost(instanceClass: string, storageGb: number, multiAz: boolean): number {
-    const instanceCosts: Record<string, number> = {
+  private async estimateRDSCost(instanceClass: string, storageGb: number, multiAz: boolean): Promise<number> {
+    const fallbackCosts: Record<string, number> = {
       'db.t4g.small': 29,
       'db.t4g.medium': 58,
       'db.t4g.large': 116,
@@ -1503,13 +1521,17 @@ systemctl enable docker
       'db.r6g.xlarge': 310,
       'db.r6g.2xlarge': 620,
     };
+    let instanceCost: number | null = null;
+    if (this.config.costProvider) {
+      instanceCost = await this.config.costProvider.getPrice('rds', instanceClass, this.config.defaultRegion).catch(() => null);
+    }
+    instanceCost ??= fallbackCosts[instanceClass] ?? 100;
     const storageCost = storageGb * 0.115; // gp3 pricing
-    const instanceCost = instanceCosts[instanceClass] || 100;
     return (multiAz ? instanceCost * 2 : instanceCost) + storageCost;
   }
 
-  private estimateCacheCost(nodeType: string, numNodes: number): number {
-    const nodeCosts: Record<string, number> = {
+  private async estimateCacheCost(nodeType: string, numNodes: number): Promise<number> {
+    const fallbackCosts: Record<string, number> = {
       'cache.t4g.micro': 12,
       'cache.t4g.small': 24,
       'cache.t4g.medium': 49,
@@ -1517,23 +1539,38 @@ systemctl enable docker
       'cache.r6g.xlarge': 277,
       'cache.r6g.2xlarge': 554,
     };
-    return (nodeCosts[nodeType] || 50) * numNodes;
+    let price: number | null = null;
+    if (this.config.costProvider) {
+      price = await this.config.costProvider.getPrice('elasticache', nodeType, this.config.defaultRegion).catch(() => null);
+    }
+    price ??= fallbackCosts[nodeType] ?? 50;
+    return price * numNodes;
   }
 
-  private estimateS3Cost(sizeGb: number): number {
-    return sizeGb * 0.023; // Standard storage pricing
+  private async estimateS3Cost(sizeGb: number): Promise<number> {
+    let perGb: number | null = null;
+    if (this.config.costProvider) {
+      perGb = await this.config.costProvider.getPrice('s3', 'standard', this.config.defaultRegion).catch(() => null);
+    }
+    perGb ??= 0.023;
+    return sizeGb * perGb;
   }
 
-  private estimateLambdaCost(rps: number): number {
+  private async estimateLambdaCost(rps: number): Promise<number> {
     // Simplified: 1ms per request, 1GB memory
     const requestsPerMonth = rps * 60 * 60 * 24 * 30;
-    const requestCost = (requestsPerMonth / 1000000) * 0.20;
+    let requestUnit: number | null = null;
+    if (this.config.costProvider) {
+      requestUnit = await this.config.costProvider.getPrice('lambda', 'requests', this.config.defaultRegion).catch(() => null);
+    }
+    requestUnit ??= 0.20; // per million
+    const requestCost = (requestsPerMonth / 1_000_000) * requestUnit;
     const computeCost = (requestsPerMonth * 0.001 * 1024 / 1024 / 1024) * 0.0000166667;
     return requestCost + computeCost;
   }
 
-  private estimateEC2Cost(instanceType: string, count: number): number {
-    const instanceCosts: Record<string, number> = {
+  private async estimateEC2Cost(instanceType: string, count: number): Promise<number> {
+    const fallbackCosts: Record<string, number> = {
       't4g.small': 12,
       't4g.medium': 24,
       't4g.large': 49,
@@ -1541,7 +1578,12 @@ systemctl enable docker
       'c6g.xlarge': 100,
       'c6g.2xlarge': 200,
     };
-    return (instanceCosts[instanceType] || 50) * count;
+    let price: number | null = null;
+    if (this.config.costProvider) {
+      price = await this.config.costProvider.getPrice('ec2', instanceType, this.config.defaultRegion).catch(() => null);
+    }
+    price ??= fallbackCosts[instanceType] ?? 50;
+    return price * count;
   }
 
   private generateCostOptimizations(item: CostBreakdownItem, intent: ApplicationIntent): string[] {

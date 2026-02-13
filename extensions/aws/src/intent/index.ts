@@ -40,4 +40,5 @@ export {
 export type {
   CompilerConfig,
   CompilerContext,
+  CostProvider,
 } from './compiler.js';

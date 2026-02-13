@@ -35,9 +35,12 @@ import {
   TerminateInstancesCommand,
   CreateLaunchTemplateCommand,
   DeleteLaunchTemplateCommand,
+  DescribeAccountAttributesCommand,
   type Tag,
   type _InstanceType,
 } from '@aws-sdk/client-ec2';
+
+import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
 
 import {
   ECSClient,
@@ -276,6 +279,7 @@ export class AWSExecutionEngine {
   readonly lambda: LambdaClient;
   readonly elasticache: ElastiCacheClient;
   readonly backup: BackupClient;
+  readonly sts: STSClient;
 
   // Enterprise Service Managers
   readonly dynamodb: DynamoDBManager;
@@ -325,6 +329,7 @@ export class AWSExecutionEngine {
     this.lambda = new LambdaClient(clientConfig);
     this.elasticache = new ElastiCacheClient(clientConfig);
     this.backup = new BackupClient(clientConfig);
+    this.sts = new STSClient(clientConfig);
 
     // Initialize enterprise managers
     this.dynamodb = createDynamoDBManager({ region: this.config.region, credentials: this.config.credentials });
@@ -466,6 +471,151 @@ export class AWSExecutionEngine {
   // ==========================================================================
 
   /**
+   * Dry-run pre-flight: validate credentials, permissions, and per-service
+   * quotas/limits against the plan without creating real resources.
+   */
+  private async runDryRunPreflight(
+    plan: InfrastructurePlan,
+  ): Promise<IntentExecutionResult> {
+    const executionId = randomUUID();
+    const errors: ExecutionError[] = [];
+    const startTime = new Date();
+
+    // 1. Credential validation — verifies the configured credentials resolve
+    try {
+      const identity = await this.sts.send(new GetCallerIdentityCommand({}));
+      // identity.Account is the AWS account number — confirms creds work
+      if (!identity.Account) {
+        errors.push(createExecutionError('validation', 'STS GetCallerIdentity returned no account — credentials may be invalid'));
+      }
+    } catch (err: any) {
+      errors.push(createExecutionError(
+        'validation',
+        `Credential check failed: ${err.message ?? err}`,
+        undefined,
+        err.name,
+      ));
+    }
+
+    // 2. EC2 permission probe — DescribeAccountAttributes exercises ec2:Describe*
+    try {
+      await this.ec2.send(new DescribeAccountAttributesCommand({}));
+    } catch (err: any) {
+      errors.push(createExecutionError(
+        'validation',
+        `EC2 permission check failed (DescribeAccountAttributes): ${err.message ?? err}`,
+        undefined,
+        err.name,
+      ));
+    }
+
+    // 3. VPC quota check — compare existing VPCs against default limit (5)
+    if (plan.resources.some(r => r.type === 'vpc')) {
+      try {
+        const vpcs = await this.ec2.send(new DescribeVpcsCommand({}));
+        const existingCount = vpcs.Vpcs?.length ?? 0;
+        const newCount = plan.resources.filter(r => r.type === 'vpc').length;
+        // Default VPC limit is 5 per region
+        if (existingCount + newCount > 5) {
+          errors.push(createExecutionError(
+            'validation',
+            `VPC quota concern: ${existingCount} existing + ${newCount} planned = ${existingCount + newCount} (default limit 5). Request a limit increase or reduce plan.`,
+          ));
+        }
+      } catch (err: any) {
+        errors.push(createExecutionError(
+          'validation',
+          `VPC quota check failed: ${err.message ?? err}`,
+          undefined,
+          err.name,
+        ));
+      }
+    }
+
+    // 4. Per-service permission probes for services used in the plan
+    const serviceTypes = new Set(plan.resources.map(r => r.service));
+    const probePromises: Array<Promise<void>> = [];
+
+    if (serviceTypes.has('rds')) {
+      probePromises.push(
+        this.rds.send(new (await import('@aws-sdk/client-rds')).DescribeDBInstancesCommand({ MaxRecords: 20 }))
+          .then(() => {})
+          .catch((err: any) => {
+            errors.push(createExecutionError('validation', `RDS permission check failed: ${err.message ?? err}`, undefined, err.name));
+          })
+      );
+    }
+
+    if (serviceTypes.has('s3')) {
+      probePromises.push(
+        this.s3.send(new (await import('@aws-sdk/client-s3')).ListBucketsCommand({}))
+          .then(() => {})
+          .catch((err: any) => {
+            errors.push(createExecutionError('validation', `S3 permission check failed: ${err.message ?? err}`, undefined, err.name));
+          })
+      );
+    }
+
+    await Promise.allSettled(probePromises);
+
+    // Build synthetic resource list so callers see the plan shape
+    const syntheticResources: ProvisionedResource[] = plan.resources.map(r => ({
+      plannedId: r.id,
+      awsId: `dry-run:${r.type}:${r.id}`,
+      type: r.type,
+      status: 'available' as const,
+      region: r.region,
+    }));
+
+    return {
+      executionId,
+      planId: plan.id,
+      status: errors.length > 0 ? 'failed' : 'completed',
+      provisionedResources: syntheticResources,
+      errors,
+      startedAt: startTime.toISOString(),
+      completedAt: new Date().toISOString(),
+      rollbackTriggered: false,
+    };
+  }
+
+  /**
+   * Retry a per-resource handler with exponential backoff.
+   * Retries on throttle (429) and transient AWS errors only;
+   * permission/validation errors fail immediately.
+   */
+  private async withRetry<T>(
+    fn: () => Promise<T>,
+    resourceId: string,
+    maxAttempts: number = this.config.maxRetries ?? 3,
+  ): Promise<T> {
+    let lastError: Error | undefined;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const code: string = err.name ?? err.Code ?? '';
+        // Non-retryable errors — fail immediately
+        const nonRetryable = [
+          'AccessDeniedException', 'UnauthorizedAccess', 'AuthFailure',
+          'ValidationException', 'InvalidParameterValue', 'MalformedPolicyDocument',
+          'EntityAlreadyExists', 'BucketAlreadyOwnedByYou',
+        ];
+        if (nonRetryable.some(c => code.includes(c))) {
+          throw lastError;
+        }
+        // Last attempt — don't sleep, just throw
+        if (attempt === maxAttempts) break;
+        // Exponential backoff: 1s, 2s, 4s … capped at 10s
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    throw lastError!;
+  }
+
+  /**
    * Execute an infrastructure plan
    */
   async execute(plan: InfrastructurePlan): Promise<IntentExecutionResult> {
@@ -482,6 +632,12 @@ export class AWSExecutionEngine {
       dependencies: new Map(),
       resourceMetadata: new Map(),
     };
+
+    // --- Dry-run pre-flight: credential + permission checks ---
+    if (this.config.dryRun) {
+      const preflight = await this.runDryRunPreflight(plan);
+      return preflight;
+    }
 
     // Create execution steps from plan
     const steps = this.createExecutionSteps(plan);
@@ -602,7 +758,10 @@ export class AWSExecutionEngine {
               region: step.resource.region,
             };
           } else {
-            step.result = await handler(step.resource, context, this);
+            step.result = await this.withRetry(
+              () => handler(step.resource, context, this),
+              step.resource.id,
+            );
           }
 
           if (step.result) {
