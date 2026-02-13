@@ -1418,6 +1418,9 @@ export interface AWSPluginOptions {
 
   /** Enable IDIO (Intent-Driven Infrastructure Orchestration) */
   enableIDIO?: boolean;
+
+  /** DynamoDB table name prefix for IDIO state persistence (default: 'idio') */
+  idioTablePrefix?: string;
 }
 
 /**
@@ -1626,6 +1629,13 @@ export class AWSPlugin {
             sessionToken: result.credentials.sessionToken,
           };
         },
+      },
+      stateStore: {
+        region: this.defaultRegion,
+        tablePrefix: options.idioTablePrefix ?? 'idio',
+        autoCreateTables: true,
+        enableTTL: true,
+        defaultTTLDays: 90,
       },
     });
   }

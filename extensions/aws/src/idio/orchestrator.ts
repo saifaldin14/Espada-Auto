@@ -17,6 +17,7 @@ import { createReconciliationEngine, type ReconciliationConfig } from '../reconc
 import { getTemplate, applyTemplate, listTemplates } from '../catalog/templates.js';
 import { validateIntent } from '../intent/schema.js';
 import { createExecutionEngine, type ExecutionEngineConfig } from './execution-engine.js';
+import { IDIOStateStore, type StateStoreConfig } from './state-store.js';
 
 /**
  * Custom error types for better error handling
@@ -48,7 +49,9 @@ export interface IDIOConfig {
   reconciliation: Partial<ReconciliationConfig>;
   /** Execution engine configuration */
   executionEngine?: Partial<ExecutionEngineConfig>;
-  /** Store for persisting plans and executions */
+  /** DynamoDB-backed state store configuration */
+  stateStore?: Partial<StateStoreConfig>;
+  /** @deprecated Use stateStore instead */
   stateDirectory?: string;
 }
 
@@ -67,6 +70,9 @@ export class IDIOOrchestrator {
   private policyEngine;
   private reconciliationEngine;
   private executionEngine;
+  private stateStore: IDIOStateStore;
+  private stateStoreReady: Promise<void>;
+  /** In-memory cache — reads fall through to DynamoDB on miss */
   private plans: Map<string, InfrastructurePlan>;
   private executions: Map<string, IntentExecutionResult>;
 
@@ -82,8 +88,68 @@ export class IDIOOrchestrator {
       enableRollback: true,
       ...config.executionEngine,
     });
+
+    // Initialize DynamoDB-backed state store
+    this.stateStore = new IDIOStateStore({
+      region: config.compiler.defaultRegion ?? 'us-east-1',
+      credentials: config.executionEngine?.credentials,
+      ...config.stateStore,
+    });
+    // Fire-and-forget init; methods that need the store await this promise
+    this.stateStoreReady = this.stateStore.initialize().then(result => {
+      if (!result.success) {
+        console.error('IDIO state store initialization failed:', result.error);
+      }
+    });
+
     this.plans = new Map();
     this.executions = new Map();
+  }
+
+  /**
+   * Retrieve a plan — checks in-memory cache, then DynamoDB
+   */
+  private async resolvePlan(planId: string): Promise<InfrastructurePlan | undefined> {
+    const cached = this.plans.get(planId);
+    if (cached) return cached;
+
+    await this.stateStoreReady;
+    const result = await this.stateStore.getPlan(planId);
+    if (result.success && result.data) {
+      const plan = result.data.plan;
+      this.plans.set(planId, plan);
+      return plan;
+    }
+    return undefined;
+  }
+
+  /**
+   * Retrieve an execution — checks in-memory cache, then DynamoDB
+   */
+  private async resolveExecution(executionId: string): Promise<IntentExecutionResult | undefined> {
+    const cached = this.executions.get(executionId);
+    if (cached) return cached;
+
+    await this.stateStoreReady;
+    const result = await this.stateStore.getExecution(executionId);
+    if (result.success && result.data) {
+      // Reconstruct IntentExecutionResult from the stored shape
+      const stored = result.data;
+      const execution: IntentExecutionResult = {
+        executionId: stored.executionId,
+        planId: stored.planId,
+        status: stored.status,
+        startedAt: stored.startedAt,
+        completedAt: stored.completedAt,
+        provisionedResources: stored.resources,
+        errors: stored.errors.map((msg: string) => ({ message: msg, phase: 'provisioning' as const, resourceId: undefined, code: undefined, timestamp: stored.startedAt })),
+        rollbackTriggered: stored.status === 'rolled-back',
+        actualMonthlyCostUsd: stored.metrics.actualCostUsd,
+      };
+      this.executions.set(executionId, execution);
+      return execution;
+    }
+    return undefined;
   }
 
   /**
@@ -96,6 +162,10 @@ export class IDIOOrchestrator {
     try {
       const plan = await this.validateAndCompile(intent, userId);
       this.plans.set(plan.id, plan);
+
+      // Persist to DynamoDB
+      await this.stateStoreReady;
+      await this.stateStore.savePlan(intent, plan, userId);
 
       return {
         success: true,
@@ -257,7 +327,7 @@ export class IDIOOrchestrator {
     } = {},
   ): Promise<IDIOResult> {
     try {
-      const plan = this.plans.get(planId);
+      const plan = await this.resolvePlan(planId);
       
       if (!plan) {
         return {
@@ -311,9 +381,21 @@ export class IDIOOrchestrator {
         };
       }
 
+      // Mark plan as executing in DynamoDB
+      await this.stateStoreReady;
+      await this.stateStore.updatePlanStatus(planId, 'executed');
+
       // Execute plan via the real AWS Execution Engine
       const execution = await this.executionEngine.execute(plan);
       this.executions.set(execution.executionId, execution);
+
+      // Persist execution to DynamoDB
+      await this.stateStore.saveExecution(execution);
+
+      // Update plan status based on outcome
+      if (execution.status === 'failed') {
+        await this.stateStore.updatePlanStatus(planId, execution.rollbackTriggered ? 'rolled-back' : 'failed');
+      }
 
       return {
         success: true,
@@ -341,7 +423,7 @@ export class IDIOOrchestrator {
    * Check execution status
    */
   async checkStatus(executionId: string): Promise<IDIOResult> {
-    const execution = this.executions.get(executionId);
+    const execution = await this.resolveExecution(executionId);
     
     if (!execution) {
       return {
@@ -371,7 +453,7 @@ export class IDIOOrchestrator {
    */
   async reconcile(executionId: string): Promise<IDIOResult> {
     try {
-      const execution = this.executions.get(executionId);
+      const execution = await this.resolveExecution(executionId);
       
       if (!execution) {
         return {
@@ -380,7 +462,7 @@ export class IDIOOrchestrator {
         };
       }
 
-      const plan = this.plans.get(execution.planId);
+      const plan = await this.resolvePlan(execution.planId);
       
       if (!plan) {
         return {
@@ -422,7 +504,7 @@ export class IDIOOrchestrator {
    */
   async rollback(executionId: string): Promise<IDIOResult> {
     try {
-      const execution = this.executions.get(executionId);
+      const execution = await this.resolveExecution(executionId);
       
       if (!execution) {
         return {
@@ -431,7 +513,7 @@ export class IDIOOrchestrator {
         };
       }
 
-      const plan = this.plans.get(execution.planId);
+      const plan = await this.resolvePlan(execution.planId);
       
       if (!plan) {
         return {
@@ -445,6 +527,11 @@ export class IDIOOrchestrator {
 
       execution.status = 'rolled-back';
       execution.rollbackTriggered = true;
+
+      // Persist rollback status to DynamoDB
+      await this.stateStoreReady;
+      await this.stateStore.updateExecutionStatus(executionId, 'rolled-back', new Date().toISOString());
+      await this.stateStore.updatePlanStatus(execution.planId, 'rolled-back');
 
       return {
         success: true,
@@ -519,6 +606,7 @@ export class IDIOOrchestrator {
    * Get plan details
    */
   getPlan(planId: string): IDIOResult {
+    // Synchronous cache check for backward compat; async callers should use resolvePlan
     const plan = this.plans.get(planId);
     
     if (!plan) {
