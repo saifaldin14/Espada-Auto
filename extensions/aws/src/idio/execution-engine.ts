@@ -571,7 +571,10 @@ export class AWSExecutionEngine {
       // Execute ready steps in parallel (up to max concurrent)
       const batch = readySteps.slice(0, this.config.maxConcurrentOperations);
       
-      await Promise.all(batch.map(async step => {
+      // Use allSettled so we wait for every in-flight operation to finish.
+      // If any step fails, resources created by siblings are still tracked
+      // and can be rolled back — no orphaned AWS resources.
+      const settlements = await Promise.allSettled(batch.map(async step => {
         step.status = 'in-progress';
         step.startTime = new Date();
 
@@ -626,6 +629,16 @@ export class AWSExecutionEngine {
           throw error;
         }
       }));
+
+      // If any step in the batch failed, surface the first error.
+      // All sibling resources that succeeded are already tracked in
+      // context.createdResources, so rollback will clean them up.
+      const firstFailure = settlements.find(
+        (s): s is PromiseRejectedResult => s.status === 'rejected'
+      );
+      if (firstFailure) {
+        throw firstFailure.reason;
+      }
     }
   }
 
@@ -641,12 +654,14 @@ export class AWSExecutionEngine {
     const steps = this.executions.get(executionId);
     if (!steps) return;
 
-    // Get completed steps in reverse order
-    const completedSteps = steps
-      .filter(s => s.status === 'completed' && s.result)
+    // Rollback all resources that produced a result, regardless of step status.
+    // This covers both fully completed steps AND resources that were created
+    // by in-flight operations that succeeded after a sibling step failed.
+    const stepsWithResources = steps
+      .filter(s => s.result != null)
       .reverse();
 
-    for (const step of completedSteps) {
+    for (const step of stepsWithResources) {
       try {
         const handler = this.rollbackHandlers.get(step.resource.type);
         
