@@ -6,6 +6,8 @@
  */
 
 import { Type, type Static } from '@sinclair/typebox';
+import { Check } from '@sinclair/typebox/value';
+import { Errors } from '@sinclair/typebox/errors';
 
 // Compliance Frameworks
 export const ComplianceFrameworkSchema = Type.Union([
@@ -231,7 +233,10 @@ export const TemplateToolSchema = Type.Object({
 });
 
 /**
- * Validates an application intent against the schema
+ * Validates an application intent against the TypeBox schema.
+ *
+ * Uses compiled TypeBox validation so that values like
+ * `availability: "banana"` are properly rejected.
  */
 export function validateIntent(intent: unknown): { 
   valid: boolean; 
@@ -239,44 +244,22 @@ export function validateIntent(intent: unknown): {
   intent?: ApplicationIntentSchemaType;
 } {
   try {
-    // Type validation would happen here using Ajv or similar
-    // For now, basic structural check
     if (!intent || typeof intent !== 'object') {
       return { valid: false, errors: ['Intent must be an object'] };
     }
-    
-    const i = intent as Record<string, unknown>;
+
+    if (Check(ApplicationIntentSchema, intent)) {
+      return { valid: true, intent: intent as ApplicationIntentSchemaType };
+    }
+
+    // Collect detailed errors from the TypeBox schema
     const errors: string[] = [];
-    
-    if (!i.name || typeof i.name !== 'string') {
-      errors.push('Intent must have a name (string)');
+    for (const error of Errors(ApplicationIntentSchema, intent)) {
+      const path = error.path || '(root)';
+      errors.push(`${path}: ${error.message}`);
     }
-    
-    if (!Array.isArray(i.tiers) || i.tiers.length === 0) {
-      errors.push('Intent must have at least one tier');
-    }
-    
-    if (!i.environment || !['development', 'staging', 'production', 'disaster-recovery'].includes(i.environment as string)) {
-      errors.push('Intent must have a valid environment');
-    }
-    
-    if (!i.cost || typeof i.cost !== 'object') {
-      errors.push('Intent must have cost constraints');
-    }
-    
-    if (!i.security || typeof i.security !== 'object') {
-      errors.push('Intent must have security requirements');
-    }
-    
-    if (!i.primaryRegion || typeof i.primaryRegion !== 'string') {
-      errors.push('Intent must specify a primary region');
-    }
-    
-    if (errors.length > 0) {
-      return { valid: false, errors };
-    }
-    
-    return { valid: true, intent: i as ApplicationIntentSchemaType };
+
+    return { valid: false, errors: errors.length > 0 ? errors : ['Intent does not match schema'] };
   } catch (error) {
     return { 
       valid: false, 

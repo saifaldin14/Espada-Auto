@@ -195,11 +195,13 @@ Use this when the user wants to:
     name: 'idio_create_from_template',
     description: `Create infrastructure from a pre-built template.
 Templates provide production-ready patterns for common architectures:
-- three-tier-web: Classic web application with load balancer, app servers, and database
-- microservices: Container-based microservices with service mesh
+- three-tier-web-app: Classic web application with load balancer, app servers, and database
+- microservices-platform: Container-based microservices with service mesh
 - serverless-api: API Gateway + Lambda + DynamoDB
-- data-lake: S3-based data lake with analytics
-- ml-platform: SageMaker-based ML training and inference
+- data-pipeline: S3/Lambda/SQS data processing pipeline with analytics
+- machine-learning-platform: SageMaker-based ML training and inference
+- ecommerce-platform: High-availability e-commerce with PCI-DSS compliance
+- static-website: S3 + CloudFront static site with SSL
 
 Use this when the user wants to:
 - Use a standard architecture pattern
@@ -211,7 +213,7 @@ Use this when the user wants to:
         templateId: {
           type: 'string',
           description: 'ID of the template to use',
-          enum: ['three-tier-web', 'microservices', 'serverless-api', 'data-lake', 'ml-platform', 'static-website', 'event-driven'],
+          enum: ['three-tier-web-app', 'microservices-platform', 'serverless-api', 'data-pipeline', 'machine-learning-platform', 'ecommerce-platform', 'static-website'],
         },
         parameters: {
           type: 'object',

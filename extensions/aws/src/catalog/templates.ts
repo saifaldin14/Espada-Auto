@@ -763,15 +763,190 @@ export function applyTemplate(
     },
   };
 
-  // Apply optional parameters
-  template.optionalParameters.forEach(param => {
-    if (parameters[param.name] !== undefined) {
-      // Parameter application logic would go here
-      // This is simplified; real implementation would map parameters to intent fields
-    }
-  });
+  // Apply optional parameters to the intent
+  applyOptionalParameters(intent, template, parameters);
 
   return intent;
+}
+
+/**
+ * Map optional template parameters to concrete intent fields.
+ *
+ * Each well-known parameter name is mapped to the appropriate location
+ * in the ApplicationIntent structure so they actually take effect.
+ */
+function applyOptionalParameters(
+  intent: Partial<ApplicationIntent>,
+  template: IntentTemplate,
+  parameters: Record<string, unknown>,
+): void {
+  for (const param of template.optionalParameters) {
+    const value = parameters[param.name];
+    if (value === undefined) continue;
+
+    switch (param.name) {
+      // --- Traffic / scaling ---
+      case 'expectedTraffic':
+      case 'peakTraffic': {
+        const rps = value as number;
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'web' || tier.type === 'api') {
+              tier.expectedRps = rps;
+              // Scale max instances proportionally (100 RPS per instance baseline)
+              if (tier.scaling) {
+                tier.scaling.max = Math.max(tier.scaling.max ?? 10, Math.ceil(rps / 100));
+              }
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Database ---
+      case 'databaseSize': {
+        const sizeGb = value as number;
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'database') {
+              tier.dataSizeGb = sizeGb;
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Data pipeline ---
+      case 'dataVolume': {
+        const volumeGb = value as number;
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'storage' || tier.type === 'analytics') {
+              tier.dataSizeGb = volumeGb;
+            }
+          }
+        }
+        break;
+      }
+
+      case 'retentionDays': {
+        const days = value as number;
+        if (!intent.disasterRecovery) {
+          intent.disasterRecovery = {
+            rtoMinutes: 60,
+            rpoMinutes: 60,
+            crossRegionReplication: false,
+            backupRetentionDays: days,
+          };
+        } else {
+          intent.disasterRecovery.backupRetentionDays = days;
+        }
+        break;
+      }
+
+      // --- Runtime ---
+      case 'runtime': {
+        const lang = value as string;
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'api' || tier.type === 'web') {
+              tier.runtime = { ...tier.runtime, language: lang as any };
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Microservices ---
+      case 'serviceCount': {
+        const count = value as number;
+        if (intent.tiers) {
+          // Scale API tier instances to match service count
+          for (const tier of intent.tiers) {
+            if (tier.type === 'api' && tier.scaling) {
+              tier.scaling.min = Math.max(tier.scaling.min ?? 1, count);
+              tier.scaling.max = Math.max(tier.scaling.max ?? 10, count * 3);
+            }
+          }
+        }
+        break;
+      }
+
+      case 'useEKS': {
+        if (value === true && intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'api') {
+              tier.customConfig = {
+                ...tier.customConfig,
+                orchestrator: 'eks',
+              };
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Machine Learning ---
+      case 'gpuRequired': {
+        if (value === true && intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'api' || tier.type === 'analytics') {
+              tier.customConfig = {
+                ...tier.customConfig,
+                gpuEnabled: true,
+                instanceFamily: 'p3',
+              };
+            }
+          }
+        }
+        break;
+      }
+
+      case 'modelSize': {
+        const size = value as string;
+        const memoryMap: Record<string, number> = { small: 4, medium: 16, large: 64 };
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'api') {
+              tier.customConfig = {
+                ...tier.customConfig,
+                modelSize: size,
+                memoryGb: memoryMap[size] ?? 16,
+              };
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Static website ---
+      case 'trafficGBPerMonth': {
+        const gb = value as number;
+        if (intent.tiers) {
+          for (const tier of intent.tiers) {
+            if (tier.type === 'storage' || tier.type === 'web') {
+              tier.dataSizeGb = gb;
+            }
+          }
+        }
+        break;
+      }
+
+      // --- Availability ---
+      case 'availability': {
+        intent.availability = value as any;
+        break;
+      }
+
+      default:
+        // Unknown parameters are stored in the first applicable tier's customConfig
+        if (intent.tiers && intent.tiers.length > 0) {
+          const tier = intent.tiers[0];
+          tier.customConfig = { ...tier.customConfig, [param.name]: value };
+        }
+        break;
+    }
+  }
 }
 
 /**

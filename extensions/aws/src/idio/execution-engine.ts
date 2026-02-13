@@ -452,6 +452,13 @@ export class AWSExecutionEngine {
     // Backup copy actions are part of backup plans, registered as no-op for plan completeness
     this.createHandlers.set('backup-copy-action', this.createBackupCopyAction.bind(this));
     this.rollbackHandlers.set('backup-copy-action', this.deleteBackupCopyAction.bind(this));
+
+    // Route 53 – health checks and failover DNS records
+    this.createHandlers.set('route53-health-check', this.createRoute53HealthCheck.bind(this));
+    this.rollbackHandlers.set('route53-health-check', this.deleteRoute53HealthCheck.bind(this));
+
+    this.createHandlers.set('route53-failover-record', this.createRoute53FailoverRecord.bind(this));
+    this.rollbackHandlers.set('route53-failover-record', this.deleteRoute53FailoverRecord.bind(this));
   }
 
   // ==========================================================================
@@ -2279,6 +2286,105 @@ export class AWSExecutionEngine {
   ): Promise<void> {
     // Copy actions are removed when the parent backup plan is deleted.
     // No standalone deletion needed.
+  }
+
+  // ==========================================================================
+  // Route 53 Health Check & Failover Handlers
+  // ==========================================================================
+
+  private async createRoute53HealthCheck(
+    resource: PlannedResource,
+    _context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    const result = await this.route53.createHealthCheck({
+      type: (props.type as 'HTTP' | 'HTTPS' | 'TCP') ?? 'HTTPS',
+      fqdn: props.fullyQualifiedDomainName as string,
+      port: (props.port as number) ?? 443,
+      resourcePath: (props.resourcePath as string) ?? '/health',
+      requestInterval: (props.requestInterval as number) ?? 30,
+      failureThreshold: (props.failureThreshold as number) ?? 3,
+    });
+
+    if (!result.success || !result.data) {
+      throw new Error(`Failed to create Route53 health check: ${result.error}`);
+    }
+
+    return {
+      plannedId: resource.id,
+      awsId: result.data.Id!,
+      type: 'route53-health-check',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteRoute53HealthCheck(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    await this.route53.deleteHealthCheck(resource.awsId);
+  }
+
+  private async createRoute53FailoverRecord(
+    resource: PlannedResource,
+    context: ResourceExecutionContext
+  ): Promise<InternalProvisionedResource> {
+    const props = resource.properties;
+    // Resolve the health check dependency to get the real health check ID
+    const healthCheckPlannedId = props.healthCheckId as string | undefined;
+    let resolvedHealthCheckId: string | undefined;
+    if (healthCheckPlannedId) {
+      resolvedHealthCheckId = context.dependencies.get(healthCheckPlannedId);
+    }
+
+    const aliasTargetDns = props.aliasTarget as string | undefined;
+
+    await this.route53.upsertRecord({
+      hostedZoneId: (props.hostedZoneId as string) ?? 'auto',
+      name: props.name as string,
+      type: (props.type as 'A' | 'AAAA' | 'CNAME') ?? 'A',
+      ...(aliasTargetDns ? {
+        aliasTarget: {
+          hostedZoneId: 'Z2FDTNDATAQYW2', // AWS ALB hosted zone (placeholder)
+          dnsName: aliasTargetDns,
+          evaluateTargetHealth: true,
+        },
+      } : {
+        ttl: (props.ttl as number) ?? 60,
+        values: props.values as string[] | undefined,
+      }),
+      failover: props.failover as 'PRIMARY' | 'SECONDARY',
+      setIdentifier: props.setIdentifier as string,
+      healthCheckId: resolvedHealthCheckId,
+    });
+
+    const recordKey = `${props.name}:${props.failover}:${props.setIdentifier}`;
+    return {
+      plannedId: resource.id,
+      awsId: recordKey,
+      type: 'route53-failover-record',
+      status: 'available',
+      region: resource.region,
+    };
+  }
+
+  private async deleteRoute53FailoverRecord(
+    resource: ProvisionedResource,
+    _context: ResourceExecutionContext
+  ): Promise<void> {
+    // Failover records are deleted via change batch; the awsId encodes name:failover:setId
+    const parts = resource.awsId.split(':');
+    const name = parts[0];
+    const setIdentifier = parts[2];
+    if (name && setIdentifier) {
+      await this.route53.deleteRecord({
+        hostedZoneId: 'auto',
+        name,
+        type: 'A',
+        setIdentifier,
+      });
+    }
   }
 }
 
