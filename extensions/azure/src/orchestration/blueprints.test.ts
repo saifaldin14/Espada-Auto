@@ -15,6 +15,10 @@ import {
   apiBackendBlueprint,
   microservicesBackboneBlueprint,
   dataPlatformBlueprint,
+  serverlessFunctionsBlueprint,
+  aiWorkloadBlueprint,
+  eventDrivenPipelineBlueprint,
+  containerizedApiBlueprint,
   BUILTIN_BLUEPRINTS,
 } from "./blueprints.js";
 import type { Blueprint } from "./types.js";
@@ -22,13 +26,17 @@ import type { Blueprint } from "./types.js";
 describe("Blueprint Registry", () => {
   it("lists all built-in blueprints", () => {
     const list = listBlueprints();
-    expect(list.length).toBe(5);
+    expect(list.length).toBe(9);
     const ids = list.map((b) => b.id);
     expect(ids).toContain("web-app-with-sql");
     expect(ids).toContain("static-web-with-cdn");
     expect(ids).toContain("api-backend");
     expect(ids).toContain("microservices-backbone");
     expect(ids).toContain("data-platform");
+    expect(ids).toContain("serverless-functions");
+    expect(ids).toContain("ai-workload");
+    expect(ids).toContain("event-driven-pipeline");
+    expect(ids).toContain("containerized-api");
   });
 
   it("retrieves a blueprint by ID", () => {
@@ -173,5 +181,140 @@ describe("Blueprint Plan Generation", () => {
       expect(bp.category).toBeTruthy();
       expect(typeof bp.generate).toBe("function");
     }
+  });
+
+  // --- New Blueprints ---
+
+  it("serverless-functions generates a valid plan", () => {
+    const plan = serverlessFunctionsBlueprint.generate({
+      projectName: "MyFunc",
+      location: "eastus",
+    });
+
+    expect(plan.name).toContain("MyFunc");
+    expect(plan.steps.length).toBeGreaterThanOrEqual(3);
+    const types = plan.steps.map((s) => s.type);
+    expect(types).toContain("create-resource-group");
+    expect(types).toContain("create-storage-account");
+    expect(types).toContain("create-app-insights");
+    expect(types).toContain("create-functions-app");
+
+    const validation = validatePlan(plan);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("serverless-functions includes Service Bus when requested", () => {
+    const plan = serverlessFunctionsBlueprint.generate({
+      projectName: "FuncSB",
+      location: "eastus",
+      includeServiceBus: true,
+    });
+
+    expect(plan.steps.map((s) => s.type)).toContain("create-servicebus-namespace");
+  });
+
+  it("serverless-functions includes Key Vault when requested", () => {
+    const plan = serverlessFunctionsBlueprint.generate({
+      projectName: "FuncKV",
+      location: "eastus",
+      includeKeyVault: true,
+      tenantId: "00000000-0000-0000-0000-000000000000",
+    });
+
+    expect(plan.steps.map((s) => s.type)).toContain("create-keyvault");
+  });
+
+  it("ai-workload generates a valid plan", () => {
+    const plan = aiWorkloadBlueprint.generate({
+      projectName: "MyAI",
+      location: "eastus",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+    });
+
+    expect(plan.name).toContain("MyAI");
+    expect(plan.steps.length).toBeGreaterThanOrEqual(6);
+    const types = plan.steps.map((s) => s.type);
+    expect(types).toContain("create-resource-group");
+    expect(types).toContain("create-ai-services");
+    expect(types).toContain("create-cosmosdb-account");
+    expect(types).toContain("create-keyvault");
+    expect(types).toContain("create-app-insights");
+    expect(types).toContain("create-web-app");
+
+    const validation = validatePlan(plan);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("event-driven-pipeline generates a valid plan", () => {
+    const plan = eventDrivenPipelineBlueprint.generate({
+      projectName: "EventProj",
+      location: "westeurope",
+    });
+
+    expect(plan.name).toContain("EventProj");
+    expect(plan.steps.length).toBeGreaterThanOrEqual(4);
+    const types = plan.steps.map((s) => s.type);
+    expect(types).toContain("create-resource-group");
+    expect(types).toContain("create-storage-account");
+    expect(types).toContain("create-servicebus-namespace");
+    expect(types).toContain("create-functions-app");
+    expect(types).toContain("create-event-grid-topic");
+
+    const validation = validatePlan(plan);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("event-driven-pipeline omits Event Grid when disabled", () => {
+    const plan = eventDrivenPipelineBlueprint.generate({
+      projectName: "NoEG",
+      location: "eastus",
+      includeEventGrid: false,
+    });
+
+    const types = plan.steps.map((s) => s.type);
+    expect(types).not.toContain("create-event-grid-topic");
+  });
+
+  it("containerized-api generates a valid plan", () => {
+    const plan = containerizedApiBlueprint.generate({
+      projectName: "ContainerAPI",
+      location: "southeastasia",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+    });
+
+    expect(plan.name).toContain("ContainerAPI");
+    expect(plan.steps.length).toBeGreaterThanOrEqual(5);
+    const types = plan.steps.map((s) => s.type);
+    expect(types).toContain("create-resource-group");
+    expect(types).toContain("create-container-registry");
+    expect(types).toContain("create-keyvault");
+    expect(types).toContain("create-app-insights");
+    expect(types).toContain("create-container-app-environment");
+    expect(types).toContain("create-container-app");
+
+    const validation = validatePlan(plan);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("containerized-api includes PostgreSQL when requested", () => {
+    const plan = containerizedApiBlueprint.generate({
+      projectName: "CaPG",
+      location: "eastus",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+      includePostgres: true,
+    });
+
+    expect(plan.steps.map((s) => s.type)).toContain("create-postgresql-server");
+  });
+
+  it("containerized-api includes Redis when requested", () => {
+    const plan = containerizedApiBlueprint.generate({
+      projectName: "CaRedis",
+      location: "eastus",
+      tenantId: "00000000-0000-0000-0000-000000000000",
+      includeRedis: true,
+    });
+
+    expect(plan.steps.map((s) => s.type)).toContain("create-redis-cache");
   });
 });

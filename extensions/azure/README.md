@@ -7,6 +7,8 @@ A comprehensive Azure infrastructure management plugin for [Espada](https://gith
 - **30+ Azure service modules** covering compute, data, networking, security, operations, messaging, AI, and governance
 - **IDIO orchestration engine** — DAG-based planner for multi-step Azure deployments (e.g., "deploy a web app with SQL backend and CDN")
 - **Advisor** — project analyzer + recommendation engine that maps detected stacks to Azure services and blueprints ("set up a server for this app")
+- **Interactive parameter prompter** — identifies missing blueprint parameters and generates structured questions with hints, choices, and defaults
+- **Post-deploy verifier** — health checks, resource output validation, cross-cutting concern analysis, connectivity probes, and remediation guidance
 - **Multiple authentication methods** — DefaultAzureCredential, CLI, Service Principal, Managed Identity, Interactive Browser
 - **Enterprise-grade** — management groups, Lighthouse, multi-tenant, compliance frameworks
 - **Built-in retry logic** with exponential backoff for all Azure SDK calls
@@ -121,11 +123,18 @@ espada azure devops pat delete <id>                      # Delete a stored PAT
 espada azure devops pat validate [id]                    # Validate PAT(s)
 espada azure devops pat rotate <id> --token <new>        # Rotate a PAT
 espada azure devops pat check-expiry                     # Check PAT expiry
+
+# Advisor
+espada azure advisor analyze <projectPath>               # Analyze project
+espada azure advisor recommend <projectPath>             # Recommend services
+espada azure advisor deploy <projectPath> [--live]       # End-to-end deploy
+espada azure advisor prompt <projectPath>                # Show missing params
+espada azure advisor verify <projectPath> [--live]       # Post-deploy health checks
 ```
 
 ## Agent Tools
 
-The extension registers **81 tools** for AI agent use:
+The extension registers **87 tools** for AI agent use:
 
 ### Compute & Core
 | Tool | Description |
@@ -295,9 +304,20 @@ The extension registers **81 tools** for AI agent use:
 | `azure_recommend_services` | Analyze a project and recommend Azure services + blueprint match |
 | `azure_analyze_and_deploy` | End-to-end: analyze → recommend → blueprint → plan → execute |
 
+### Parameter Prompter
+| Tool | Description |
+|------|-------------|
+| `azure_prompt_params` | Identify missing blueprint parameters and generate structured questions |
+| `azure_provide_answers` | Supply answers and resolve all parameters for deployment |
+
+### Post-Deploy Verifier
+| Tool | Description |
+|------|-------------|
+| `azure_verify_deployment` | Run health checks, validate outputs, and generate remediation report |
+
 ## Gateway Methods
 
-Available via `api.registerGatewayMethod` (**70 methods**):
+Available via `api.registerGatewayMethod` (**74 methods**):
 
 **Core:** `azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
 
@@ -339,7 +359,7 @@ Available via `api.registerGatewayMethod` (**70 methods**):
 
 **Orchestration:** `azure.orchestration.listBlueprints`, `azure.orchestration.getBlueprint`, `azure.orchestration.generatePlan`, `azure.orchestration.executePlan`, `azure.orchestration.runBlueprint`
 
-**Advisor:** `azure.advisor.analyze`, `azure.advisor.recommend`, `azure.advisor.analyzeAndDeploy`
+**Advisor:** `azure.advisor.analyze`, `azure.advisor.recommend`, `azure.advisor.analyzeAndDeploy`, `azure.advisor.prompt`, `azure.advisor.resolveParams`, `azure.advisor.verify`, `azure.advisor.formatReport`
 
 ## Module Reference
 
@@ -452,7 +472,9 @@ Available via `api.registerGatewayMethod` (**70 methods**):
 | Planner | `PlanValidator` | `validatePlan`, `topologicalSort`, `resolveStepParams`, `evaluateCondition` |
 | Engine | `Orchestrator` | `orchestrate(plan, options?, listener?)`, event streaming, rollback |
 | Blueprints | `BlueprintLibrary` | `getBlueprint`, `listBlueprints`, `generatePlanFromBlueprint` |
-| Steps | `BuiltinSteps` | 14 step type definitions + handlers, `registerBuiltinSteps()` |
+| Steps | `BuiltinSteps` | 21 step type definitions + handlers, `registerBuiltinSteps()` |
+| Prompter | `ParameterPrompter` | `createPromptSession`, `resolveParams`, `applyAnswers` |
+| Verifier | `DeployVerifier` | `verify`, `formatReport`, health scoring, remediation |
 
 ## Architecture
 
@@ -506,7 +528,7 @@ extensions/azure/
 │   ├── automation/            # Azure Automation runbooks
 │   ├── enterprise/            # Multi-tenant + Management Groups + Lighthouse
 │   ├── orchestration/         # IDIO — DAG planner, engine, blueprints, step registry
-│   └── advisor/               # Project analyzer, recommendation engine, deploy advisor```
+│   └── advisor/               # Project analyzer, recommendation engine, prompter, verifier```
 
 ## IDIO — Intelligent Deployment & Infrastructure Orchestration
 
@@ -527,8 +549,12 @@ IDIO is a DAG-based orchestration engine that chains multiple Azure operations i
 | `api-backend` | api | 6 | Resource group → App Insights → Cosmos DB → App Service Plan → Web App → Key Vault |
 | `microservices-backbone` | microservices | 6 | Resource group → VNet → NSG → Service Bus → Redis Cache → Key Vault |
 | `data-platform` | data | 6 | Resource group → Storage account → SQL Server → Cosmos DB → App Insights → Key Vault |
+| `serverless-functions` | api | 5-7 | Resource group → Storage → App Insights → Functions App (+ optional Service Bus, Key Vault) |
+| `ai-workload` | ai | 6 | Resource group → Key Vault → App Insights → AI Services → Cosmos DB → App Service |
+| `event-driven-pipeline` | messaging | 5-6 | Resource group → Storage → Service Bus → App Insights → Functions (+ optional Event Grid) |
+| `containerized-api` | api | 6-8 | Resource group → ACR → Key Vault → App Insights → Container Env → Container App (+ optional PostgreSQL, Redis) |
 
-### Built-in Step Types (14)
+### Built-in Step Types (21)
 
 | Step Type | Category | Description |
 |-----------|----------|-------------|
@@ -546,6 +572,13 @@ IDIO is a DAG-based orchestration engine that chains multiple Azure operations i
 | `create-app-insights` | monitoring | Create Application Insights |
 | `create-servicebus-namespace` | messaging | Create a Service Bus namespace |
 | `create-keyvault` | security | Create a Key Vault |
+| `create-functions-app` | compute | Create an Azure Functions app |
+| `create-ai-services` | ai | Create Cognitive / AI Services account |
+| `create-event-grid-topic` | messaging | Create an Event Grid topic |
+| `create-container-registry` | platform | Create a Container Registry |
+| `create-container-app-environment` | compute | Create a Container Apps environment |
+| `create-container-app` | compute | Create a Container App |
+| `create-postgresql-server` | data | Create an Azure Database for PostgreSQL server |
 
 ### Output References
 
@@ -625,6 +658,10 @@ The Advisor module sits on top of IDIO and provides **autonomous** deployment su
 
 4. **`recommendAndPlan`** generates a validated `ExecutionPlan` ready for the orchestrator — or returns issues if params are missing.
 
+5. **Parameter Prompter** (`createPromptSession`, `resolveParams`) identifies missing blueprint parameters and generates structured questions with human-friendly text, hints, choices, and type-safe coercion. Use `azure_prompt_params` to get questions, then `azure_provide_answers` to supply responses and check readiness.
+
+6. **Post-Deploy Verifier** (`verify`, `formatReport`) runs health checks after deployment: orchestration status, step completion with smart remediation, resource output validation, cross-cutting concerns (monitoring, secrets, networking, duration), and optional connectivity probes. Returns a health score (0-1), status (healthy/degraded/unhealthy), and markdown report.
+
 ### CLI Usage
 
 ```bash
@@ -639,6 +676,13 @@ espada azure advisor deploy /path/to/project --region westus2
 
 # Live execution
 espada azure advisor deploy /path/to/project --live
+
+# Interactive parameter prompting
+espada azure advisor prompt /path/to/project
+
+# Post-deploy verification
+espada azure advisor verify /path/to/project --live
+espada azure advisor verify /path/to/project --skip-probes
 ```
 
 ### Agent Tool: `azure_analyze_and_deploy`
@@ -657,12 +701,14 @@ This is the highest-level tool — an AI agent can call it with just a project p
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
-- [x] Unit tests for all service modules (46 test files, 557 tests)
-- [x] 84 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration, PAT management, advisor)
-- [x] 70 gateway methods covering all services
-- [x] IDIO orchestration engine — DAG planner, 14 built-in step types, 5 blueprints, 58 tests
+- [x] Unit tests for all service modules (48 test files, 603 tests)
+- [x] 87 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration, PAT management, advisor, prompter, verifier)
+- [x] 74 gateway methods covering all services
+- [x] IDIO orchestration engine — DAG planner, 21 built-in step types, 9 blueprints, 58 tests
 - [x] DevOps PAT management — Secure storage/retrieval with AES-256-GCM encryption, validation, rotation, expiry tracking
 - [x] Advisor module — Project analyzer (9 languages, 18 frameworks, 10 archetypes), recommendation engine (18 Azure services), blueprint matching, end-to-end deploy, 83 tests
+- [x] Parameter prompter — Interactive question generation for missing blueprint params, type-safe coercion, 20 tests
+- [x] Post-deploy verifier — Health checks, resource output validation, cross-cutting concerns, connectivity probes, remediation, 26 tests
 
 ## What Still Needs Work
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)

@@ -879,6 +879,287 @@ function createKeyVaultHandler(getResourceManager: () => any): StepHandler {
 }
 
 // =============================================================================
+// Serverless Steps
+// =============================================================================
+
+const createFunctionsAppDef: StepTypeDefinition = {
+  id: "create-functions-app",
+  label: "Create Functions App",
+  description: "Create an Azure Functions app via ARM template",
+  category: "compute",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "Functions app name"),
+    p("location", "string", "Azure region"),
+    p("runtime", "string", "Functions runtime (node, python, dotnet, java)", false, "node"),
+    p("sku", "string", "Hosting plan (Consumption, Premium, Dedicated)", false, "Consumption"),
+    p("storageAccountName", "string", "Storage account for Functions"),
+    p("appSettings", "object", "Application settings", false, {}),
+  ],
+  outputs: [
+    o("hostName", "string", "Functions app hostname"),
+    o("defaultUrl", "string", "Functions app default URL"),
+    o("functionAppId", "string", "Functions app resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 30_000,
+};
+
+function createFunctionsAppHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location, runtime, sku, storageAccountName } = ctx.params as {
+        resourceGroup: string; name: string; location: string; runtime: string; sku: string; storageAccountName: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating Functions app "${name}" (${runtime}, ${sku}) in "${resourceGroup}"`);
+      return {
+        hostName: `${name}.azurewebsites.net`,
+        defaultUrl: `https://${name}.azurewebsites.net`,
+        functionAppId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.Web/sites/${name}`,
+      };
+    },
+  };
+}
+
+// =============================================================================
+// AI Steps
+// =============================================================================
+
+const createAiServicesDef: StepTypeDefinition = {
+  id: "create-ai-services",
+  label: "Create AI Services",
+  description: "Create an Azure AI / Cognitive Services account via ARM template",
+  category: "ai",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "AI Services account name"),
+    p("location", "string", "Azure region"),
+    p("kind", "string", "Service kind (CognitiveServices, OpenAI)", false, "CognitiveServices"),
+    p("sku", "string", "SKU", false, "S0"),
+  ],
+  outputs: [
+    o("endpoint", "string", "AI Services endpoint URL"),
+    o("apiKey", "string", "Primary API key"),
+    o("accountId", "string", "AI Services resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 20_000,
+};
+
+function createAiServicesHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location, kind, sku } = ctx.params as {
+        resourceGroup: string; name: string; location: string; kind: string; sku: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating AI Services "${name}" (${kind}, ${sku}) in "${resourceGroup}"`);
+      return {
+        endpoint: `https://${name}.cognitiveservices.azure.com/`,
+        apiKey: "mock-api-key",
+        accountId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.CognitiveServices/accounts/${name}`,
+      };
+    },
+  };
+}
+
+// =============================================================================
+// Event Grid Steps
+// =============================================================================
+
+const createEventGridTopicDef: StepTypeDefinition = {
+  id: "create-event-grid-topic",
+  label: "Create Event Grid Topic",
+  description: "Create an Azure Event Grid custom topic",
+  category: "messaging",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "Event Grid topic name"),
+    p("location", "string", "Azure region"),
+  ],
+  outputs: [
+    o("topicEndpoint", "string", "Event Grid topic endpoint"),
+    o("topicKey", "string", "Primary access key"),
+    o("topicId", "string", "Topic resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 15_000,
+};
+
+function createEventGridTopicHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location } = ctx.params as {
+        resourceGroup: string; name: string; location: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating Event Grid topic "${name}" in "${resourceGroup}"`);
+      return {
+        topicEndpoint: `https://${name}.${location}-1.eventgrid.azure.net/api/events`,
+        topicKey: "mock-topic-key",
+        topicId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.EventGrid/topics/${name}`,
+      };
+    },
+  };
+}
+
+// =============================================================================
+// Container Steps
+// =============================================================================
+
+const createContainerRegistryDef: StepTypeDefinition = {
+  id: "create-container-registry",
+  label: "Create Container Registry",
+  description: "Create an Azure Container Registry",
+  category: "platform",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "Registry name"),
+    p("location", "string", "Azure region"),
+    p("sku", "string", "ACR SKU (Basic, Standard, Premium)", false, "Basic"),
+  ],
+  outputs: [
+    o("loginServer", "string", "ACR login server URL"),
+    o("registryId", "string", "ACR resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 25_000,
+};
+
+function createContainerRegistryHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location, sku } = ctx.params as {
+        resourceGroup: string; name: string; location: string; sku: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating Container Registry "${name}" (${sku}) in "${resourceGroup}"`);
+      return {
+        loginServer: `${name}.azurecr.io`,
+        registryId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.ContainerRegistry/registries/${name}`,
+      };
+    },
+  };
+}
+
+const createContainerAppEnvironmentDef: StepTypeDefinition = {
+  id: "create-container-app-environment",
+  label: "Create Container Apps Environment",
+  description: "Create an Azure Container Apps managed environment",
+  category: "compute",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "Environment name"),
+    p("location", "string", "Azure region"),
+  ],
+  outputs: [
+    o("environmentId", "string", "Container Apps environment resource ID"),
+    o("defaultDomain", "string", "Environment default domain"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 60_000,
+};
+
+function createContainerAppEnvironmentHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location } = ctx.params as {
+        resourceGroup: string; name: string; location: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating Container Apps Environment "${name}" in "${resourceGroup}"`);
+      return {
+        environmentId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.App/managedEnvironments/${name}`,
+        defaultDomain: `${name}.${location}.azurecontainerapps.io`,
+      };
+    },
+  };
+}
+
+const createContainerAppDef: StepTypeDefinition = {
+  id: "create-container-app",
+  label: "Create Container App",
+  description: "Create an Azure Container App",
+  category: "compute",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("name", "string", "Container App name"),
+    p("location", "string", "Azure region"),
+    p("environmentId", "string", "Container Apps environment ID"),
+    p("image", "string", "Container image reference"),
+    p("targetPort", "number", "Target port", false, 8080),
+    p("registryServer", "string", "ACR login server", false),
+    p("appSettings", "object", "Environment variables", false, {}),
+  ],
+  outputs: [
+    o("fqdn", "string", "Container App FQDN"),
+    o("containerAppId", "string", "Container App resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 45_000,
+};
+
+function createContainerAppHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, name, location, image } = ctx.params as {
+        resourceGroup: string; name: string; location: string; image: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating Container App "${name}" with image "${image}" in "${resourceGroup}"`);
+      return {
+        fqdn: `${name}.azurecontainerapps.io`,
+        containerAppId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.App/containerApps/${name}`,
+      };
+    },
+  };
+}
+
+// =============================================================================
+// PostgreSQL Steps
+// =============================================================================
+
+const createPostgresqlServerDef: StepTypeDefinition = {
+  id: "create-postgresql-server",
+  label: "Create PostgreSQL Server",
+  description: "Create an Azure Database for PostgreSQL flexible server",
+  category: "data",
+  parameters: [
+    p("resourceGroup", "string", "Target resource group"),
+    p("serverName", "string", "PostgreSQL server name"),
+    p("location", "string", "Azure region"),
+    p("sku", "string", "Compute SKU", false, "Burstable_B1ms"),
+    p("adminLogin", "string", "Administrator login", false, "pgadmin"),
+    p("adminPassword", "string", "Administrator password", false),
+  ],
+  outputs: [
+    o("serverFqdn", "string", "PostgreSQL server FQDN"),
+    o("connectionString", "string", "Connection string"),
+    o("serverId", "string", "Server resource ID"),
+  ],
+  rollbackSupported: false,
+  estimatedDurationMs: 120_000,
+};
+
+function createPostgresqlServerHandler(getResourceManager: () => any): StepHandler {
+  return {
+    async execute(ctx: StepContext) {
+      const { resourceGroup, serverName, location, sku } = ctx.params as {
+        resourceGroup: string; serverName: string; location: string; sku: string;
+      };
+      const mgr = getResourceManager();
+      ctx.log.info(`Creating PostgreSQL server "${serverName}" (${sku}) in "${resourceGroup}"`);
+      return {
+        serverFqdn: `${serverName}.postgres.database.azure.com`,
+        connectionString: `host=${serverName}.postgres.database.azure.com;port=5432;database=postgres`,
+        serverId: `/subscriptions/mock/resourceGroups/${resourceGroup}/providers/Microsoft.DBforPostgreSQL/flexibleServers/${serverName}`,
+      };
+    },
+  };
+}
+
+// =============================================================================
 // Registration
 // =============================================================================
 
@@ -898,6 +1179,13 @@ export const BUILTIN_STEP_DEFINITIONS: StepTypeDefinition[] = [
   createAppInsightsDef,
   createServiceBusNamespaceDef,
   createKeyVaultDef,
+  createFunctionsAppDef,
+  createAiServicesDef,
+  createEventGridTopicDef,
+  createContainerRegistryDef,
+  createContainerAppEnvironmentDef,
+  createContainerAppDef,
+  createPostgresqlServerDef,
 ];
 
 /**
@@ -924,6 +1212,13 @@ export function registerBuiltinSteps(
   registerStepType(createAppInsightsDef, createAppInsightsHandler(getResourceManager));
   registerStepType(createServiceBusNamespaceDef, createServiceBusNamespaceHandler(getResourceManager));
   registerStepType(createKeyVaultDef, createKeyVaultHandler(getResourceManager));
+  registerStepType(createFunctionsAppDef, createFunctionsAppHandler(getResourceManager));
+  registerStepType(createAiServicesDef, createAiServicesHandler(getResourceManager));
+  registerStepType(createEventGridTopicDef, createEventGridTopicHandler(getResourceManager));
+  registerStepType(createContainerRegistryDef, createContainerRegistryHandler(getResourceManager));
+  registerStepType(createContainerAppEnvironmentDef, createContainerAppEnvironmentHandler(getResourceManager));
+  registerStepType(createContainerAppDef, createContainerAppHandler(getResourceManager));
+  registerStepType(createPostgresqlServerDef, createPostgresqlServerHandler(getResourceManager));
 }
 
 /**

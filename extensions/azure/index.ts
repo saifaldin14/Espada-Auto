@@ -49,8 +49,9 @@ import { AzureAutomationManager } from "./src/automation/index.js";
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry, listBlueprints, getBlueprint, validatePlan } from "./src/orchestration/index.js";
 import type { OrchestrationOptions } from "./src/orchestration/index.js";
 
-// Advisor (project analysis + recommendation engine)
-import { analyzeProject, recommend, recommendAndPlan } from "./src/advisor/index.js";
+// Advisor (project analysis + recommendation engine + prompter + verifier)
+import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, applyAnswers, verify, formatReport } from "./src/advisor/index.js";
+import type { PromptSession, PromptAnswers } from "./src/advisor/index.js";
 
 import type { AzurePluginConfig } from "./src/types.js";
 
@@ -1467,6 +1468,86 @@ const plugin = {
             console.error(theme.error(`Deploy failed: ${formatErrorMessage(error)}`));
           }
         });
+
+      advisorCmd
+        .command("prompt <projectPath>")
+        .description("Analyze a project and interactively prompt for missing blueprint parameters")
+        .option("--region <region>", "Preferred Azure region", "eastus")
+        .option("--project-name <name>", "Override project name")
+        .option("--prefer-containers", "Prefer container-based deployment")
+        .option("--tenant-id <id>", "Azure AD tenant ID")
+        .action((projectPath: string, ...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { region?: string; projectName?: string; preferContainers?: boolean; tenantId?: string };
+          try {
+            const analysis = analyzeProject(projectPath);
+            const rec = recommend(analysis, {
+              defaultRegion: options.region,
+              projectName: options.projectName,
+              preferContainers: options.preferContainers,
+              tenantId: options.tenantId,
+            });
+            const session = createPromptSession(rec);
+            if (!session) {
+              console.log(theme.warn("No blueprint matched — cannot determine parameters to prompt."));
+              return;
+            }
+            if (session.ready) {
+              console.log(theme.success("All parameters are already inferred — no prompting needed."));
+              console.log(`  Blueprint: ${session.blueprintName}`);
+              console.log(`  Params: ${JSON.stringify(session.inferredParams, null, 2)}`);
+              return;
+            }
+            console.log(`\n${theme.info(`Blueprint: ${session.blueprintName}`)}\n`);
+            console.log(`${session.message}\n`);
+            for (const q of session.questions) {
+              const tag = q.required ? theme.warn("[REQUIRED]") : theme.muted("[optional]");
+              console.log(`  ${tag} ${q.param}: ${q.question}`);
+              if (q.hint) console.log(`         ${theme.muted(q.hint)}`);
+              if (q.choices) console.log(`         ${theme.muted(`Choices: ${q.choices.join(", ")}`)}`);
+              if (q.default !== undefined) console.log(`         ${theme.muted(`Default: ${String(q.default)}`)}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Prompt failed: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      advisorCmd
+        .command("verify <projectPath>")
+        .description("Run post-deploy health checks against a previous deployment result")
+        .option("--region <region>", "Preferred Azure region", "eastus")
+        .option("--project-name <name>", "Override project name")
+        .option("--prefer-containers", "Prefer container-based deployment")
+        .option("--tenant-id <id>", "Azure AD tenant ID")
+        .option("--live", "Execute for real before verifying (default is dry-run)")
+        .option("--skip-probes", "Skip connectivity probes")
+        .action(async (projectPath: string, ...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as {
+            region?: string; projectName?: string; preferContainers?: boolean;
+            tenantId?: string; live?: boolean; skipProbes?: boolean;
+          };
+          if (!orchestrator) { console.error(theme.error("Orchestrator not initialized")); return; }
+          try {
+            const analysis = analyzeProject(projectPath);
+            const { recommendation, plan, validationIssues } = recommendAndPlan(analysis, {
+              defaultRegion: options.region,
+              projectName: options.projectName,
+              preferContainers: options.preferContainers,
+              tenantId: options.tenantId,
+            });
+            if (!plan) {
+              console.log(theme.warn("Could not generate an execution plan."));
+              if (validationIssues.length > 0) for (const i of validationIssues) console.log(`  - ${i}`);
+              return;
+            }
+            const dryRun = !options.live;
+            const runner = new Orchestrator({ ...orchestrator["options"], dryRun });
+            const result = await runner.execute(plan);
+            const report = verify(result, { skipProbes: options.skipProbes });
+            console.log(formatReport(report));
+          } catch (error) {
+            console.error(theme.error(`Verify failed: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 
     // =========================================================================
@@ -2126,6 +2207,52 @@ const plugin = {
         const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
         const result = await runner.execute(plan);
         opts.respond(true, { data: { recommendation, plan, result, validationIssues, executed: true } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.prompt", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown> };
+        if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
+        const analysis = analyzeProject(params.projectPath);
+        const rec = recommend(analysis, params.options as any);
+        const session = createPromptSession(rec);
+        opts.respond(true, { data: session });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.resolveParams", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { session: PromptSession; answers: PromptAnswers };
+        if (!params.session) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "session is required" }); return; }
+        const resolved = resolveParams(params.session, params.answers ?? {});
+        opts.respond(true, { data: resolved });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.verify", async (opts) => {
+      if (!orchestrator) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Orchestrator not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown>; dryRun?: boolean; skipProbes?: boolean };
+        if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
+        const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as any);
+        if (!plan) {
+          opts.respond(true, { data: { recommendation, plan: null, validationIssues, verified: false } });
+          return;
+        }
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
+        const result = await runner.execute(plan);
+        const report = verify(result, { skipProbes: params.skipProbes });
+        opts.respond(true, { data: { recommendation, plan, result, report, verified: true } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.formatReport", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { report: any };
+        if (!params.report) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "report is required" }); return; }
+        const markdown = formatReport(params.report);
+        opts.respond(true, { data: { markdown } });
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
@@ -3537,6 +3664,143 @@ const plugin = {
         return {
           content: [{ type: "text" as const, text: lines.join("\n") }],
           details: { recommendation, plan, result, dryRun },
+        };
+      },
+    });
+
+    // =========================================================================
+    // Prompter Tools (interactive parameter prompting)
+    // =========================================================================
+
+    api.registerTool({
+      name: "azure_prompt_params",
+      label: "Azure Prompt Parameters",
+      description: "Analyze a project, match a blueprint, and identify missing parameters that the user needs to supply. Returns structured questions with hints, choices, and defaults. Call this when a deploy attempt fails due to missing params, or before deploy to ensure all inputs are ready.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string", description: "Absolute path to the project directory" },
+          region: { type: "string", description: "Preferred Azure region (default: eastus)" },
+          projectName: { type: "string", description: "Override project name" },
+          preferContainers: { type: "boolean", description: "Prefer container-based deployment" },
+          tenantId: { type: "string", description: "Azure AD tenant ID" },
+        },
+        required: ["projectPath"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const analysis = analyzeProject(params.projectPath as string);
+        const rec = recommend(analysis, {
+          defaultRegion: params.region as string | undefined,
+          projectName: params.projectName as string | undefined,
+          preferContainers: params.preferContainers as boolean | undefined,
+          tenantId: params.tenantId as string | undefined,
+        });
+        const session = createPromptSession(rec);
+        if (!session) {
+          return { content: [{ type: "text" as const, text: "No blueprint matched the project — cannot determine required parameters." }], details: { session: null } };
+        }
+        if (session.ready) {
+          return {
+            content: [{ type: "text" as const, text: `All parameters inferred for blueprint "${session.blueprintName}". Ready to deploy.\n\nInferred: ${JSON.stringify(session.inferredParams, null, 2)}` }],
+            details: { session, ready: true },
+          };
+        }
+        const lines: string[] = [
+          `Blueprint: ${session.blueprintName}`,
+          session.message,
+          "",
+          "--- Questions ---",
+        ];
+        for (const q of session.questions) {
+          lines.push(`[${q.required ? "REQUIRED" : "optional"}] ${q.param} (${q.type}): ${q.question}`);
+          if (q.hint) lines.push(`  Hint: ${q.hint}`);
+          if (q.choices) lines.push(`  Choices: ${q.choices.join(", ")}`);
+          if (q.default !== undefined) lines.push(`  Default: ${String(q.default)}`);
+        }
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { session, ready: false } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_provide_answers",
+      label: "Azure Provide Answers",
+      description: "Supply answers to the parameter questions generated by azure_prompt_params. Pass the session object (from the previous call's details) along with user-provided answers to resolve all parameters and prepare for deployment.",
+      parameters: {
+        type: "object",
+        properties: {
+          session: { type: "object", description: "The PromptSession object from azure_prompt_params details" },
+          answers: { type: "object", description: "Key-value map of parameter answers (e.g. {tenantId: '...', sqlAdminPassword: '...'})" },
+        },
+        required: ["session", "answers"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const session = params.session as PromptSession;
+        const answers = (params.answers ?? {}) as PromptAnswers;
+        const resolved = resolveParams(session, answers);
+        if (resolved.valid) {
+          return {
+            content: [{ type: "text" as const, text: `All parameters resolved for blueprint "${session.blueprintName}". Ready to deploy.\n\nResolved: ${JSON.stringify(resolved.params, null, 2)}` }],
+            details: { resolved, ready: true },
+          };
+        }
+        const lines = [
+          `Still missing ${resolved.stillMissing.length} parameter(s): ${resolved.stillMissing.join(", ")}`,
+          "",
+          "Resolved so far:",
+          JSON.stringify(resolved.params, null, 2),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { resolved, ready: false } };
+      },
+    });
+
+    // =========================================================================
+    // Verifier Tools (post-deploy health checks)
+    // =========================================================================
+
+    api.registerTool({
+      name: "azure_verify_deployment",
+      label: "Azure Verify Deployment",
+      description: "Run post-deploy health checks against a deployment result. Checks orchestration status, step completion, resource outputs, cross-cutting concerns (monitoring, secrets, networking), and optionally connectivity probes. Returns a health score and remediation guidance.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string", description: "Absolute path to the project directory" },
+          region: { type: "string", description: "Preferred Azure region (default: eastus)" },
+          projectName: { type: "string", description: "Override project name" },
+          preferContainers: { type: "boolean", description: "Prefer container-based deployment" },
+          tenantId: { type: "string", description: "Azure AD tenant ID" },
+          dryRun: { type: "boolean", description: "Simulate without creating resources (default: true)" },
+          skipProbes: { type: "boolean", description: "Skip connectivity probes" },
+        },
+        required: ["projectPath"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!orchestrator) throw new Error("Orchestrator not initialized");
+        const analysis = analyzeProject(params.projectPath as string);
+        const options = {
+          defaultRegion: params.region as string | undefined,
+          projectName: params.projectName as string | undefined,
+          preferContainers: params.preferContainers as boolean | undefined,
+          tenantId: params.tenantId as string | undefined,
+        };
+        const { recommendation, plan, validationIssues } = recommendAndPlan(analysis, options);
+
+        if (!plan) {
+          return {
+            content: [{ type: "text" as const, text: "Could not generate an execution plan — verification requires a deployed plan." }],
+            details: { recommendation, plan: null, validationIssues, verified: false },
+          };
+        }
+
+        const dryRun = params.dryRun !== false;
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun });
+        const result = await runner.execute(plan);
+        const report = verify(result, { skipProbes: params.skipProbes as boolean | undefined });
+        const markdown = formatReport(report);
+
+        return {
+          content: [{ type: "text" as const, text: markdown }],
+          details: { recommendation, plan, result, report, dryRun, verified: true },
         };
       },
     });

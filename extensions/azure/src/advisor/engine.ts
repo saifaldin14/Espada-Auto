@@ -388,6 +388,10 @@ function scoreBlueprint(
     "static-web-with-cdn": { "static-site": 0.95, fullstack: 0.2, "web-app": 0.1, api: 0, worker: 0, microservices: 0, function: 0, monolith: 0, "data-pipeline": 0, unknown: 0.15 },
     "microservices-backbone": { microservices: 0.9, "data-pipeline": 0.3, api: 0.2, "web-app": 0.1, fullstack: 0.15, "static-site": 0, worker: 0.3, function: 0.1, monolith: 0.1, unknown: 0.2 },
     "data-platform": { "data-pipeline": 0.9, microservices: 0.2, api: 0.15, "web-app": 0.1, fullstack: 0.1, "static-site": 0, worker: 0.2, function: 0.1, monolith: 0.1, unknown: 0.2 },
+    "serverless-functions": { function: 0.95, worker: 0.7, api: 0.4, "data-pipeline": 0.3, microservices: 0.2, "web-app": 0.1, fullstack: 0.1, "static-site": 0, monolith: 0, unknown: 0.2 },
+    "ai-workload": { "data-pipeline": 0.5, api: 0.5, "web-app": 0.4, fullstack: 0.4, function: 0.2, worker: 0.3, microservices: 0.1, "static-site": 0, monolith: 0.2, unknown: 0.25 },
+    "event-driven-pipeline": { worker: 0.8, function: 0.7, "data-pipeline": 0.6, microservices: 0.4, api: 0.2, "web-app": 0, fullstack: 0.1, "static-site": 0, monolith: 0, unknown: 0.15 },
+    "containerized-api": { api: 0.7, microservices: 0.8, "web-app": 0.4, fullstack: 0.4, worker: 0.3, "data-pipeline": 0.2, function: 0.05, "static-site": 0, monolith: 0.3, unknown: 0.25 },
   };
 
   const archetypeMap = archetypeScores[bp.id];
@@ -441,6 +445,10 @@ function getBlueprintServices(blueprintId: string): AzureServiceName[] {
     "static-web-with-cdn": ["Azure Blob Storage", "Azure CDN"],
     "microservices-backbone": ["Azure Virtual Network", "Azure Service Bus", "Azure Cache for Redis", "Azure Key Vault", "Application Insights"],
     "data-platform": ["Cosmos DB", "Azure Blob Storage", "Azure Cache for Redis", "Application Insights"],
+    "serverless-functions": ["Azure Functions", "Azure Blob Storage", "Application Insights", "Azure Service Bus"],
+    "ai-workload": ["App Service", "Azure AI Services", "Cosmos DB", "Azure Key Vault", "Application Insights"],
+    "event-driven-pipeline": ["Azure Functions", "Azure Service Bus", "Azure Blob Storage", "Azure Event Grid", "Application Insights"],
+    "containerized-api": ["Container Apps", "Azure Container Registry", "Azure Key Vault", "Application Insights"],
   };
   return map[blueprintId] ?? [];
 }

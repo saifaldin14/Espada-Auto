@@ -428,6 +428,387 @@ export const dataPlatformBlueprint: Blueprint = {
 };
 
 // =============================================================================
+// Serverless Functions
+// =============================================================================
+
+export const serverlessFunctionsBlueprint: Blueprint = {
+  id: "serverless-functions",
+  name: "Serverless Functions",
+  description: "Deploys Azure Functions with Storage, Application Insights, and optional Service Bus triggers",
+  category: "api",
+  parameters: [
+    bp("projectName", "string", "Project name"),
+    bp("location", "string", "Azure region"),
+    bp("runtime", "string", "Functions runtime", false, "node"),
+    bp("functionsSku", "string", "Functions hosting plan", false, "Consumption"),
+    bp("includeServiceBus", "boolean", "Include Service Bus for queue triggers", false, false),
+    bp("includeKeyVault", "boolean", "Include Key Vault for secrets", false, false),
+    bp("tenantId", "string", "Azure AD tenant ID (for Key Vault)", false),
+  ],
+
+  generate(params: Record<string, unknown>): ExecutionPlan {
+    const p = params as {
+      projectName: string; location: string; runtime?: string; functionsSku?: string;
+      includeServiceBus?: boolean; includeKeyVault?: boolean; tenantId?: string;
+    };
+    const prefix = p.projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const rgName = `rg-${prefix}-func`;
+    const steps: PlanStep[] = [];
+
+    steps.push(step("rg", "create-resource-group", { name: rgName, location: p.location }, [], "Create Resource Group"));
+
+    // Storage (required for Functions)
+    steps.push(step("storage", "create-storage-account", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `st${prefix}func`.slice(0, 24),
+      location: p.location,
+      sku: "Standard_LRS",
+      kind: "StorageV2",
+    }, ["rg"], "Create Storage Account"));
+
+    // App Insights
+    steps.push(step("insights", "create-app-insights", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `ai-${prefix}`,
+      location: p.location,
+    }, ["rg"], "Create Application Insights"));
+
+    // Functions App
+    const appSettings: Record<string, string> = {
+      APPLICATIONINSIGHTS_CONNECTION_STRING: "insights.outputs.connectionString",
+      AzureWebJobsStorage: "storage.outputs.connectionString",
+    };
+
+    steps.push(step("functions", "create-functions-app", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `func-${prefix}`,
+      location: p.location,
+      runtime: p.runtime ?? "node",
+      sku: p.functionsSku ?? "Consumption",
+      storageAccountName: "storage.outputs.storageAccountName",
+      appSettings,
+    }, ["storage", "insights"], "Create Functions App"));
+
+    // Optional Service Bus
+    if (p.includeServiceBus) {
+      steps.push(step("servicebus", "create-servicebus-namespace", {
+        resourceGroup: "rg.outputs.resourceGroupName",
+        name: `sb-${prefix}`,
+        location: p.location,
+        sku: "Standard",
+      }, ["rg"], "Create Service Bus Namespace"));
+    }
+
+    // Optional Key Vault
+    if (p.includeKeyVault && p.tenantId) {
+      steps.push(step("keyvault", "create-keyvault", {
+        resourceGroup: "rg.outputs.resourceGroupName",
+        name: `kv-${prefix}`,
+        location: p.location,
+        tenantId: p.tenantId,
+      }, ["rg"], "Create Key Vault"));
+    }
+
+    return {
+      id: nextPlanId("serverless"),
+      name: `Serverless Functions — ${p.projectName}`,
+      description: `Deploy serverless functions with monitoring in ${p.location}`,
+      steps,
+      globalParams: { projectName: p.projectName, location: p.location },
+      createdAt: new Date().toISOString(),
+    };
+  },
+};
+
+// =============================================================================
+// AI Workload
+// =============================================================================
+
+export const aiWorkloadBlueprint: Blueprint = {
+  id: "ai-workload",
+  name: "AI Workload",
+  description: "Deploys Azure AI Services with Cosmos DB for data, Key Vault for secrets, App Service for hosting, and Application Insights",
+  category: "ai",
+  parameters: [
+    bp("projectName", "string", "Project name"),
+    bp("location", "string", "Azure region"),
+    bp("tenantId", "string", "Azure AD tenant ID"),
+    bp("runtime", "string", "App runtime stack", false, "PYTHON|3.11"),
+    bp("aiServiceKind", "string", "AI Service kind (CognitiveServices, OpenAI)", false, "CognitiveServices"),
+    bp("cosmosApiKind", "string", "Cosmos DB API kind", false, "GlobalDocumentDB"),
+  ],
+
+  generate(params: Record<string, unknown>): ExecutionPlan {
+    const p = params as {
+      projectName: string; location: string; tenantId: string;
+      runtime?: string; aiServiceKind?: string; cosmosApiKind?: string;
+    };
+    const prefix = p.projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const rgName = `rg-${prefix}-ai`;
+
+    return {
+      id: nextPlanId("ai-workload"),
+      name: `AI Workload — ${p.projectName}`,
+      description: `Deploy AI workload platform in ${p.location}`,
+      steps: [
+        step("rg", "create-resource-group", { name: rgName, location: p.location }, [], "Create Resource Group"),
+
+        // AI Services
+        step("ai", "create-ai-services", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          name: `ai-${prefix}`,
+          location: p.location,
+          kind: p.aiServiceKind ?? "CognitiveServices",
+          sku: "S0",
+        }, ["rg"], "Create AI Services"),
+
+        // Data layer — Cosmos DB
+        step("cosmos", "create-cosmosdb-account", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          accountName: `cosmos-${prefix}`,
+          location: p.location,
+          apiKind: p.cosmosApiKind ?? "GlobalDocumentDB",
+        }, ["rg"], "Create Cosmos DB"),
+
+        // Secrets
+        step("keyvault", "create-keyvault", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          name: `kv-${prefix}`,
+          location: p.location,
+          tenantId: p.tenantId,
+        }, ["rg"], "Create Key Vault"),
+
+        // Monitoring
+        step("insights", "create-app-insights", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          name: `ai-insights-${prefix}`,
+          location: p.location,
+        }, ["rg"], "Create Application Insights"),
+
+        // Compute (App Service)
+        step("plan", "create-app-service-plan", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          name: `plan-${prefix}`,
+          location: p.location,
+          sku: "B1",
+          os: "Linux",
+        }, ["rg"], "Create App Service Plan"),
+
+        step("webapp", "create-web-app", {
+          resourceGroup: "rg.outputs.resourceGroupName",
+          name: `app-${prefix}`,
+          location: p.location,
+          planId: "plan.outputs.planId",
+          runtime: p.runtime ?? "PYTHON|3.11",
+          appSettings: {
+            APPLICATIONINSIGHTS_CONNECTION_STRING: "insights.outputs.connectionString",
+            AI_ENDPOINT: "ai.outputs.endpoint",
+            AI_API_KEY: "ai.outputs.apiKey",
+            COSMOS_CONNECTION_STRING: "cosmos.outputs.connectionString",
+            KEY_VAULT_URI: "keyvault.outputs.keyVaultUri",
+          },
+        }, ["plan", "ai", "cosmos", "keyvault", "insights"], "Create Web App"),
+      ],
+      globalParams: { projectName: p.projectName, location: p.location },
+      createdAt: new Date().toISOString(),
+    };
+  },
+};
+
+// =============================================================================
+// Event-Driven Pipeline
+// =============================================================================
+
+export const eventDrivenPipelineBlueprint: Blueprint = {
+  id: "event-driven-pipeline",
+  name: "Event-Driven Pipeline",
+  description: "Deploys an event-driven architecture with Service Bus, Functions, Storage queues, and monitoring",
+  category: "messaging",
+  parameters: [
+    bp("projectName", "string", "Project name"),
+    bp("location", "string", "Azure region"),
+    bp("runtime", "string", "Functions runtime", false, "node"),
+    bp("serviceBusSku", "string", "Service Bus SKU", false, "Standard"),
+    bp("includeEventGrid", "boolean", "Include Event Grid for pub/sub", false, true),
+  ],
+
+  generate(params: Record<string, unknown>): ExecutionPlan {
+    const p = params as {
+      projectName: string; location: string; runtime?: string;
+      serviceBusSku?: string; includeEventGrid?: boolean;
+    };
+    const prefix = p.projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const rgName = `rg-${prefix}-events`;
+    const steps: PlanStep[] = [];
+
+    steps.push(step("rg", "create-resource-group", { name: rgName, location: p.location }, [], "Create Resource Group"));
+
+    // Storage (Functions requires it + queue storage)
+    steps.push(step("storage", "create-storage-account", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `st${prefix}evt`.slice(0, 24),
+      location: p.location,
+      sku: "Standard_LRS",
+      kind: "StorageV2",
+    }, ["rg"], "Create Storage Account"));
+
+    // Service Bus
+    steps.push(step("servicebus", "create-servicebus-namespace", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `sb-${prefix}`,
+      location: p.location,
+      sku: p.serviceBusSku ?? "Standard",
+    }, ["rg"], "Create Service Bus Namespace"));
+
+    // Monitoring
+    steps.push(step("insights", "create-app-insights", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `ai-${prefix}`,
+      location: p.location,
+    }, ["rg"], "Create Application Insights"));
+
+    // Functions — event processors
+    steps.push(step("functions", "create-functions-app", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `func-${prefix}`,
+      location: p.location,
+      runtime: p.runtime ?? "node",
+      sku: "Consumption",
+      storageAccountName: "storage.outputs.storageAccountName",
+      appSettings: {
+        APPLICATIONINSIGHTS_CONNECTION_STRING: "insights.outputs.connectionString",
+        SERVICE_BUS_CONNECTION_STRING: "servicebus.outputs.namespaceEndpoint",
+      },
+    }, ["storage", "servicebus", "insights"], "Create Functions App"));
+
+    // Optional Event Grid
+    if (p.includeEventGrid !== false) {
+      steps.push(step("eventgrid", "create-event-grid-topic", {
+        resourceGroup: "rg.outputs.resourceGroupName",
+        name: `eg-${prefix}`,
+        location: p.location,
+      }, ["rg"], "Create Event Grid Topic"));
+    }
+
+    return {
+      id: nextPlanId("event-driven"),
+      name: `Event-Driven Pipeline — ${p.projectName}`,
+      description: `Deploy event-driven architecture in ${p.location}`,
+      steps,
+      globalParams: { projectName: p.projectName, location: p.location },
+      createdAt: new Date().toISOString(),
+    };
+  },
+};
+
+// =============================================================================
+// Containerized API
+// =============================================================================
+
+export const containerizedApiBlueprint: Blueprint = {
+  id: "containerized-api",
+  name: "Containerized API",
+  description: "Deploys a containerized API on Container Apps with ACR, Key Vault, Application Insights, and optional database",
+  category: "api",
+  parameters: [
+    bp("projectName", "string", "Project name"),
+    bp("location", "string", "Azure region"),
+    bp("tenantId", "string", "Azure AD tenant ID"),
+    bp("acrSku", "string", "Container Registry SKU", false, "Basic"),
+    bp("includePostgres", "boolean", "Include PostgreSQL database", false, false),
+    bp("includeRedis", "boolean", "Include Redis cache", false, false),
+  ],
+
+  generate(params: Record<string, unknown>): ExecutionPlan {
+    const p = params as {
+      projectName: string; location: string; tenantId: string;
+      acrSku?: string; includePostgres?: boolean; includeRedis?: boolean;
+    };
+    const prefix = p.projectName.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const rgName = `rg-${prefix}-containers`;
+    const steps: PlanStep[] = [];
+
+    steps.push(step("rg", "create-resource-group", { name: rgName, location: p.location }, [], "Create Resource Group"));
+
+    // ACR
+    steps.push(step("acr", "create-container-registry", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `acr${prefix}`.slice(0, 50),
+      location: p.location,
+      sku: p.acrSku ?? "Basic",
+    }, ["rg"], "Create Container Registry"));
+
+    // Key Vault
+    steps.push(step("keyvault", "create-keyvault", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `kv-${prefix}`,
+      location: p.location,
+      tenantId: p.tenantId,
+    }, ["rg"], "Create Key Vault"));
+
+    // App Insights
+    steps.push(step("insights", "create-app-insights", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `ai-${prefix}`,
+      location: p.location,
+    }, ["rg"], "Create Application Insights"));
+
+    // Container Apps Environment + App
+    steps.push(step("container-env", "create-container-app-environment", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `cae-${prefix}`,
+      location: p.location,
+    }, ["rg"], "Create Container Apps Environment"));
+
+    const appSettings: Record<string, string> = {
+      APPLICATIONINSIGHTS_CONNECTION_STRING: "insights.outputs.connectionString",
+      KEY_VAULT_URI: "keyvault.outputs.keyVaultUri",
+    };
+
+    steps.push(step("container-app", "create-container-app", {
+      resourceGroup: "rg.outputs.resourceGroupName",
+      name: `ca-${prefix}`,
+      location: p.location,
+      environmentId: "container-env.outputs.environmentId",
+      registryServer: "acr.outputs.loginServer",
+      image: `acr${prefix}.azurecr.io/${prefix}:latest`,
+      targetPort: 8080,
+      appSettings,
+    }, ["container-env", "acr", "keyvault", "insights"], "Create Container App"));
+
+    // Optional PostgreSQL
+    if (p.includePostgres) {
+      steps.push(step("postgres", "create-postgresql-server", {
+        resourceGroup: "rg.outputs.resourceGroupName",
+        serverName: `pg-${prefix}`,
+        location: p.location,
+        sku: "Burstable_B1ms",
+      }, ["rg"], "Create PostgreSQL Server"));
+    }
+
+    // Optional Redis
+    if (p.includeRedis) {
+      steps.push(step("redis", "create-redis-cache", {
+        resourceGroup: "rg.outputs.resourceGroupName",
+        name: `redis-${prefix}`,
+        location: p.location,
+        sku: "Basic",
+        capacity: 0,
+      }, ["rg"], "Create Redis Cache"));
+    }
+
+    return {
+      id: nextPlanId("containerized-api"),
+      name: `Containerized API — ${p.projectName}`,
+      description: `Deploy containerized API on Container Apps in ${p.location}`,
+      steps,
+      globalParams: { projectName: p.projectName, location: p.location },
+      createdAt: new Date().toISOString(),
+    };
+  },
+};
+
+// =============================================================================
 // Blueprint Registry
 // =============================================================================
 
@@ -438,6 +819,10 @@ export const BUILTIN_BLUEPRINTS: Blueprint[] = [
   apiBackendBlueprint,
   microservicesBackboneBlueprint,
   dataPlatformBlueprint,
+  serverlessFunctionsBlueprint,
+  aiWorkloadBlueprint,
+  eventDrivenPipelineBlueprint,
+  containerizedApiBlueprint,
 ];
 
 const blueprintMap = new Map<string, Blueprint>(

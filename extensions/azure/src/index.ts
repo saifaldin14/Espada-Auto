@@ -130,6 +130,8 @@ export type {
 
 // Advisor (project analysis + recommendation engine)
 export { analyzeProject, recommend, recommendAndPlan } from "./advisor/index.js";
+export { createPromptSession, createPromptSessionForBlueprint, resolveParams, applyAnswers } from "./advisor/index.js";
+export { verify, formatReport } from "./advisor/index.js";
 export type {
   DetectedLanguage,
   DetectedFramework,
@@ -143,4 +145,12 @@ export type {
   DeployRecommendation,
   AdvisorOptions,
   RecommendationConfidence,
+  ParameterQuestion,
+  PromptAnswers,
+  PromptSession,
+  ResolvedParams,
+  HealthCheck,
+  HealthCheckStatus,
+  VerificationReport,
+  VerifyOptions,
 } from "./advisor/index.js";
