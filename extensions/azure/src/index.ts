@@ -77,3 +77,6 @@ export { AzureDevOpsManager } from "./devops/index.js";
 // Governance
 export { AzureGuardrailsManager } from "./guardrails/index.js";
 export { AzureComplianceManager } from "./compliance/index.js";
+
+// Enterprise
+export { AzureEnterpriseManager } from "./enterprise/index.js";
