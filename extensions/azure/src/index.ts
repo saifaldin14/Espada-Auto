@@ -72,7 +72,19 @@ export { AzureResourceManager } from "./resources/index.js";
 export { AzureSubscriptionManager } from "./subscriptions/index.js";
 export { AzureLogicAppsManager } from "./logic/index.js";
 export { AzureAPIManagementManager } from "./apimanagement/index.js";
-export { AzureDevOpsManager } from "./devops/index.js";
+export { AzureDevOpsManager, DevOpsPATManager, createPATManager } from "./devops/index.js";
+export type {
+  DevOpsPATScope,
+  PATStorageBackend,
+  StoredPAT,
+  DecryptedPAT,
+  PATSummary,
+  PATStatus,
+  PATValidationResult,
+  PATManagerOptions,
+  PATEvent,
+  PATEventListener,
+} from "./devops/index.js";
 
 // Governance
 export { AzureGuardrailsManager } from "./guardrails/index.js";

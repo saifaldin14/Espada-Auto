@@ -114,11 +114,17 @@ espada azure apim apis <rg> <service>                    # List APIs
 espada azure devops projects                             # List DevOps projects
 espada azure devops pipelines <project>                  # List pipelines
 espada azure devops repos <project>                      # List repositories
+espada azure devops pat list [--org <org>]               # List stored PATs
+espada azure devops pat store --token <t> --label <l>    # Store a PAT securely
+espada azure devops pat delete <id>                      # Delete a stored PAT
+espada azure devops pat validate [id]                    # Validate PAT(s)
+espada azure devops pat rotate <id> --token <new>        # Rotate a PAT
+espada azure devops pat check-expiry                     # Check PAT expiry
 ```
 
 ## Agent Tools
 
-The extension registers **74 tools** for AI agent use:
+The extension registers **81 tools** for AI agent use:
 
 ### Compute & Core
 | Tool | Description |
@@ -239,6 +245,17 @@ The extension registers **74 tools** for AI agent use:
 | `azure_trigger_devops_pipeline` | Trigger a pipeline run |
 | `azure_list_devops_repos` | List repositories |
 
+### DevOps PAT Management
+| Tool | Description |
+|------|-------------|
+| `azure_list_pats` | List stored PATs (metadata only, no secrets) |
+| `azure_store_pat` | Securely store a PAT with AES-256-GCM encryption |
+| `azure_delete_pat` | Delete a stored PAT by ID |
+| `azure_validate_pat` | Validate a PAT against the DevOps API |
+| `azure_rotate_pat` | Rotate a stored PAT with a new token value |
+| `azure_get_pat_token` | Retrieve the best available PAT for an organization |
+| `azure_check_pat_expiry` | Check for expired or expiring-soon PATs |
+
 ### Security (Additional)
 | Tool | Description |
 |------|-------------|
@@ -272,7 +289,7 @@ The extension registers **74 tools** for AI agent use:
 
 ## Gateway Methods
 
-Available via `api.registerGatewayMethod` (**61 methods**):
+Available via `api.registerGatewayMethod` (**67 methods**):
 
 **Core:** `azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
 
@@ -303,6 +320,8 @@ Available via `api.registerGatewayMethod` (**61 methods**):
 **API Management:** `azure.apim.list`, `azure.apim.apis`
 
 **DevOps:** `azure.devops.projects`, `azure.devops.pipelines`, `azure.devops.repos`
+
+**DevOps PAT:** `azure.devops.pat.list`, `azure.devops.pat.store`, `azure.devops.pat.delete`, `azure.devops.pat.validate`, `azure.devops.pat.token`, `azure.devops.pat.checkExpiry`
 
 **AI:** `azure.ai.accounts`, `azure.ai.deployments`, `azure.ai.models`
 
@@ -400,6 +419,7 @@ Available via `api.registerGatewayMethod` (**61 methods**):
 | Logic Apps | `AzureLogicAppsManager` | `listWorkflows`, `getWorkflow`, `listRuns`, `listTriggers`, `enableWorkflow`, `disableWorkflow` |
 | API Management | `AzureAPIManagementManager` | `listServices`, `listAPIs`, `listProducts`, `listSubscriptions` |
 | DevOps | `AzureDevOpsManager` | `listProjects`, `listPipelines`, `listRuns`, `triggerPipeline`, `listRepositories` |
+| DevOps PAT | `DevOpsPATManager` | `storePAT`, `listPATs`, `getPAT`, `decryptPAT`, `deletePAT`, `rotatePAT`, `validatePAT`, `validateAll`, `checkExpiry`, `purgeExpired`, `getTokenForOrganization`, `findByLabel`, `clearAll` |
 
 ### Governance
 
@@ -466,7 +486,7 @@ extensions/azure/
 │   ├── policy/                # Azure Policy
 │   ├── backup/                # Azure Backup + Recovery Services
 │   ├── ai/                    # Azure OpenAI / Cognitive Services
-│   ├── devops/                # Azure DevOps (REST API)
+│   ├── devops/                # Azure DevOps (REST API + PAT management)
 │   ├── apimanagement/         # API Management
 │   ├── logic/                 # Logic Apps
 │   ├── resources/             # Resource Groups + ARM Deployments
@@ -589,14 +609,14 @@ registerStepType({
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
-- [x] Unit tests for all service modules (43 test files, 427 tests)
-- [x] 74 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration)
-- [x] 61 gateway methods covering all services
+- [x] Unit tests for all service modules (44 test files, 474 tests)
+- [x] 81 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration, PAT management)
+- [x] 67 gateway methods covering all services
 - [x] IDIO orchestration engine — DAG planner, 14 built-in step types, 5 blueprints, 58 tests
+- [x] DevOps PAT management — Secure storage/retrieval with AES-256-GCM encryption, validation, rotation, expiry tracking
 
 ## What Still Needs Work
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)
-- [ ] **DevOps PAT management** — Secure storage/retrieval of Azure DevOps personal access tokens
 - [ ] **Docs page** — `docs/plugins/azure.md` for Mintlify docs site
 - [ ] **GitHub labeler** — Update `.github/labeler.yml` for the `azure` extension path
 - [ ] **Changelog entry** — Add entry to `CHANGELOG.md` when merging

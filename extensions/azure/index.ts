@@ -36,7 +36,7 @@ import { AzureSecurityManager } from "./src/security/index.js";
 import { AzurePolicyManager } from "./src/policy/index.js";
 import { AzureBackupManager } from "./src/backup/index.js";
 import { AzureAIManager } from "./src/ai/index.js";
-import { AzureDevOpsManager } from "./src/devops/index.js";
+import { AzureDevOpsManager, DevOpsPATManager, createPATManager } from "./src/devops/index.js";
 import { AzureAPIManagementManager } from "./src/apimanagement/index.js";
 import { AzureLogicAppsManager } from "./src/logic/index.js";
 import { AzureResourceManager } from "./src/resources/index.js";
@@ -91,6 +91,7 @@ let policyManager: AzurePolicyManager | null = null;
 let backupManager: AzureBackupManager | null = null;
 let aiManager: AzureAIManager | null = null;
 let devOpsManager: AzureDevOpsManager | null = null;
+let patManager: DevOpsPATManager | null = null;
 let apimManager: AzureAPIManagementManager | null = null;
 let logicManager: AzureLogicAppsManager | null = null;
 let resourceManager: AzureResourceManager | null = null;
@@ -1218,6 +1219,128 @@ const plugin = {
             console.error(theme.error(`Failed to list repositories: ${formatErrorMessage(error)}`));
           }
         });
+
+      // --- PAT management commands ---
+      const patCmd = devopsCmd.command("pat").description("Manage DevOps Personal Access Tokens");
+
+      patCmd
+        .command("list")
+        .description("List stored PATs")
+        .option("--org <org>", "Filter by organization")
+        .action(async (opts: { org?: string }) => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            const pats = patManager.listPATs(opts.org);
+            if (pats.length === 0) { console.log("No PATs stored"); return; }
+            console.log("\nStored PATs:\n");
+            for (const p of pats) {
+              const expiry = p.expiresAt ? ` expires: ${new Date(p.expiresAt).toLocaleDateString()}` : "";
+              const status = p.status === "active" ? theme.success(p.status) : p.status === "expired" ? theme.error(p.status) : p.status === "expiring-soon" ? theme.warn(p.status) : theme.muted(p.status);
+              console.log(`  ${p.label}  ${status}  ${theme.muted(p.organization)}${expiry}  ${theme.muted(p.id.slice(0, 8))}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list PATs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      patCmd
+        .command("store")
+        .description("Store a new PAT securely")
+        .requiredOption("--token <token>", "The PAT value")
+        .requiredOption("--label <label>", "A label for this PAT")
+        .option("--org <org>", "DevOps organization")
+        .option("--scopes <scopes>", "Comma-separated scopes")
+        .option("--expires <date>", "Expiry date (ISO 8601)")
+        .option("--validate", "Validate against DevOps API")
+        .action(async (opts: { token: string; label: string; org?: string; scopes?: string; expires?: string; validate?: boolean }) => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            const summary = await patManager.storePAT({
+              token: opts.token,
+              label: opts.label,
+              organization: opts.org,
+              scopes: opts.scopes?.split(",").map(s => s.trim()) as any,
+              expiresAt: opts.expires,
+              validate: opts.validate,
+            });
+            console.log(theme.success(`PAT stored: ${summary.label} (${summary.id.slice(0, 8)})`));
+          } catch (error) {
+            console.error(theme.error(`Failed to store PAT: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      patCmd
+        .command("delete <id>")
+        .description("Delete a stored PAT")
+        .action(async (id: string) => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            const deleted = await patManager.deletePAT(id);
+            if (deleted) { console.log(theme.success("PAT deleted")); }
+            else { console.error(theme.error("PAT not found")); }
+          } catch (error) {
+            console.error(theme.error(`Failed to delete PAT: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      patCmd
+        .command("validate [id]")
+        .description("Validate a PAT against DevOps API (or all PATs if no ID)")
+        .action(async (id?: string) => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            if (id) {
+              const result = await patManager.validatePAT(id);
+              if (result.valid) {
+                console.log(theme.success(`PAT valid — ${result.displayName} (${result.emailAddress})`));
+              } else {
+                console.error(theme.error(`PAT invalid: ${result.error}`));
+              }
+            } else {
+              const results = await patManager.validateAll();
+              for (const r of results) {
+                const v = r.validation;
+                const status = v.valid ? theme.success("valid") : theme.error("invalid");
+                console.log(`  ${r.label}  ${status}  ${v.valid ? v.displayName : v.error}`);
+              }
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to validate PAT: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      patCmd
+        .command("rotate <id>")
+        .description("Rotate a stored PAT with a new token")
+        .requiredOption("--token <token>", "New PAT value")
+        .option("--expires <date>", "New expiry date (ISO 8601)")
+        .action(async (id: string, opts: { token: string; expires?: string }) => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            const summary = await patManager.rotatePAT(id, opts.token, opts.expires);
+            console.log(theme.success(`PAT rotated: ${summary.label}`));
+          } catch (error) {
+            console.error(theme.error(`Failed to rotate PAT: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      patCmd
+        .command("check-expiry")
+        .description("Check for expired or expiring-soon PATs")
+        .action(() => {
+          if (!patManager) { console.error(theme.error("PAT manager not initialized")); return; }
+          try {
+            const problems = patManager.checkExpiry();
+            if (problems.length === 0) { console.log(theme.success("All PATs are within expiry limits")); return; }
+            console.log(theme.warn(`\n${problems.length} PAT(s) need attention:\n`));
+            for (const p of problems) {
+              const status = p.status === "expired" ? theme.error(p.status) : theme.warn(p.status);
+              console.log(`  ${p.label}  ${status}  ${theme.muted(p.organization)}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to check expiry: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 
     // =========================================================================
@@ -1680,6 +1803,61 @@ const plugin = {
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
+    // --- PAT management gateway methods ---
+    api.registerGatewayMethod("azure.devops.pat.list", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { organization?: string };
+        const pats = patManager.listPATs(params.organization);
+        opts.respond(true, { data: pats });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pat.store", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { token: string; label: string; organization?: string; scopes?: string[]; expiresAt?: string; validate?: boolean };
+        const summary = await patManager.storePAT(params);
+        opts.respond(true, { data: summary });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pat.delete", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { id: string };
+        const deleted = await patManager.deletePAT(params.id);
+        opts.respond(true, { data: { deleted } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pat.validate", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { id: string };
+        const result = await patManager.validatePAT(params.id);
+        opts.respond(true, { data: result });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pat.token", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { organization: string };
+        const token = await patManager.getTokenForOrganization(params.organization);
+        if (!token) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `No valid PAT for organization: ${params.organization}` }); return; }
+        opts.respond(true, { data: { token } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pat.checkExpiry", async (opts) => {
+      if (!patManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "PAT manager not initialized" }); return; }
+      try {
+        const problems = patManager.checkExpiry();
+        opts.respond(true, { data: problems });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
     // --- AI ---
     api.registerGatewayMethod("azure.ai.accounts", async (opts) => {
       if (!aiManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "AI manager not initialized" }); return; }
@@ -1746,7 +1924,7 @@ const plugin = {
         const params = (opts.params ?? {}) as { id: string };
         const bp = getBlueprint(params.id);
         if (!bp) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Blueprint "${params.id}" not found` }); return; }
-        opts.respond(true, { data: { id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters } });
+        opts.respond(true, { data: { id: bp.id, name: bp.name, description: bp.description, category: bp.category, parameters: bp.parameters } });
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
@@ -1765,7 +1943,8 @@ const plugin = {
       if (!orchestrator) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Orchestrator not initialized" }); return; }
       try {
         const params = (opts.params ?? {}) as { plan: any; dryRun?: boolean };
-        const result = await orchestrator.execute({ ...params.plan, options: { dryRun: params.dryRun } });
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
+        const result = await runner.execute(params.plan);
         opts.respond(true, { data: result });
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
@@ -1778,8 +1957,9 @@ const plugin = {
         if (!bp) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Blueprint "${params.blueprintId}" not found` }); return; }
         const plan = bp.generate(params.params);
         const validation = validatePlan(plan);
-        if (!validation.isValid) { opts.respond(false, undefined, { code: "VALIDATION_FAILED", message: validation.issues.map((i) => i.message).join("; ") }); return; }
-        const result = await orchestrator.execute({ ...plan, options: { dryRun: params.dryRun } });
+        if (!validation.valid) { opts.respond(false, undefined, { code: "VALIDATION_FAILED", message: validation.issues.map((i) => i.message).join("; ") }); return; }
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
+        const result = await runner.execute(plan);
         opts.respond(true, { data: result });
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
@@ -2646,6 +2826,134 @@ const plugin = {
       },
     });
 
+    // --- PAT management tools ---
+    api.registerTool({
+      name: "azure_list_pats",
+      label: "Azure List PATs",
+      description: "List stored Azure DevOps Personal Access Tokens (metadata only, no secrets)",
+      parameters: {
+        type: "object",
+        properties: { organization: { type: "string", description: "Filter by DevOps organization" } },
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const pats = patManager.listPATs(params.organization as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(pats, null, 2) }], details: { count: pats.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_store_pat",
+      label: "Azure Store PAT",
+      description: "Securely store an Azure DevOps Personal Access Token with AES-256-GCM encryption",
+      parameters: {
+        type: "object",
+        properties: {
+          token: { type: "string", description: "The PAT value" },
+          label: { type: "string", description: "A human-readable label" },
+          organization: { type: "string", description: "DevOps organization name" },
+          scopes: { type: "array", items: { type: "string" }, description: "PAT scopes" },
+          expiresAt: { type: "string", description: "Expiry date (ISO 8601)" },
+          validate: { type: "boolean", description: "Validate against DevOps API" },
+        },
+        required: ["token", "label"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const summary = await patManager.storePAT({
+          token: params.token as string,
+          label: params.label as string,
+          organization: params.organization as string | undefined,
+          scopes: params.scopes as any,
+          expiresAt: params.expiresAt as string | undefined,
+          validate: params.validate as boolean | undefined,
+        });
+        return { content: [{ type: "text" as const, text: `PAT stored: ${summary.label} (${summary.id.slice(0, 8)})` }], details: summary };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_delete_pat",
+      label: "Azure Delete PAT",
+      description: "Delete a stored Azure DevOps PAT by ID",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string", description: "PAT ID to delete" } },
+        required: ["id"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const deleted = await patManager.deletePAT(params.id as string);
+        return { content: [{ type: "text" as const, text: deleted ? "PAT deleted" : "PAT not found" }], details: { deleted } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_validate_pat",
+      label: "Azure Validate PAT",
+      description: "Validate a stored PAT against the Azure DevOps API",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string", description: "PAT ID to validate" } },
+        required: ["id"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const result = await patManager.validatePAT(params.id as string);
+        return { content: [{ type: "text" as const, text: result.valid ? `Valid — ${result.displayName} (${result.emailAddress})` : `Invalid: ${result.error}` }], details: result };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_rotate_pat",
+      label: "Azure Rotate PAT",
+      description: "Rotate a stored PAT with a new token value",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "PAT ID to rotate" },
+          newToken: { type: "string", description: "New PAT value" },
+          newExpiresAt: { type: "string", description: "New expiry date (ISO 8601)" },
+        },
+        required: ["id", "newToken"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const summary = await patManager.rotatePAT(params.id as string, params.newToken as string, params.newExpiresAt as string | undefined);
+        return { content: [{ type: "text" as const, text: `PAT rotated: ${summary.label}` }], details: summary };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_get_pat_token",
+      label: "Azure Get PAT Token",
+      description: "Retrieve the best available PAT token for a DevOps organization (decrypts and returns it)",
+      parameters: {
+        type: "object",
+        properties: { organization: { type: "string", description: "DevOps organization name" } },
+        required: ["organization"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const token = await patManager.getTokenForOrganization(params.organization as string);
+        if (!token) throw new Error(`No valid PAT found for organization: ${params.organization}`);
+        return { content: [{ type: "text" as const, text: "PAT token retrieved (contains sensitive data)" }], details: { tokenLength: token.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_check_pat_expiry",
+      label: "Azure Check PAT Expiry",
+      description: "Check for expired or expiring-soon PATs",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!patManager) throw new Error("PAT manager not initialized");
+        const problems = patManager.checkExpiry();
+        if (problems.length === 0) return { content: [{ type: "text" as const, text: "All PATs are within expiry limits" }], details: { count: 0 } };
+        return { content: [{ type: "text" as const, text: JSON.stringify(problems, null, 2) }], details: { count: problems.length } };
+      },
+    });
+
     // --- Security tools (additional) ---
     api.registerTool({
       name: "azure_list_security_recommendations",
@@ -2812,8 +3120,8 @@ const plugin = {
         const bp = getBlueprint(params.id as string);
         if (!bp) throw new Error(`Blueprint "${params.id}" not found`);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters }, null, 2) }],
-          details: { id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters },
+          content: [{ type: "text" as const, text: JSON.stringify({ id: bp.id, name: bp.name, description: bp.description, category: bp.category, parameters: bp.parameters }, null, 2) }],
+          details: { id: bp.id, name: bp.name, description: bp.description, category: bp.category, parameters: bp.parameters },
         };
       },
     });
@@ -2836,7 +3144,7 @@ const plugin = {
         const plan = bp.generate(params.params as Record<string, unknown>);
         const validation = validatePlan(plan);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ plan: { id: plan.id, name: plan.name, stepCount: plan.steps.length, steps: plan.steps.map((s) => ({ id: s.id, type: s.type, label: s.label, dependsOn: s.dependsOn })) }, validation }, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify({ plan: { id: plan.id, name: plan.name, stepCount: plan.steps.length, steps: plan.steps.map((s) => ({ id: s.id, type: s.type, name: s.name, dependsOn: s.dependsOn })) }, validation }, null, 2) }],
           details: { plan, validation },
         };
       },
@@ -2878,9 +3186,10 @@ const plugin = {
         const opts: Partial<OrchestrationOptions> = {};
         if (params.dryRun !== undefined) opts.dryRun = Boolean(params.dryRun);
         if (params.maxConcurrency !== undefined) opts.maxConcurrency = Number(params.maxConcurrency);
-        const result = await orchestrator.execute({ ...(params.plan as any), options: opts });
+        const runner = new Orchestrator({ ...orchestrator["options"], ...opts });
+        const result = await runner.execute(params.plan as any);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, durationMs: result.durationMs, stepCount: result.steps.length, steps: result.steps.map((s) => ({ stepId: s.stepId, status: s.status, durationMs: s.durationMs, error: s.error?.message })), errors: result.errors.map((e) => ({ stepId: e.stepId, message: e.error.message })) }, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, totalDurationMs: result.totalDurationMs, stepCount: result.steps.length, steps: result.steps.map((s) => ({ stepId: s.stepId, status: s.status, durationMs: s.durationMs, error: s.error })), errors: result.errors }, null, 2) }],
           details: result,
         };
       },
@@ -2905,7 +3214,7 @@ const plugin = {
         if (!bp) throw new Error(`Blueprint "${params.blueprintId}" not found`);
         const plan = bp.generate(params.params as Record<string, unknown>);
         const validation = validatePlan(plan);
-        if (!validation.isValid) {
+        if (!validation.valid) {
           return {
             content: [{ type: "text" as const, text: `Plan validation failed:\n${validation.issues.map((i) => `- [${i.severity}] ${i.message}`).join("\n")}` }],
             details: { status: "validation-failed", validation },
@@ -2913,9 +3222,10 @@ const plugin = {
         }
         const opts: Partial<OrchestrationOptions> = {};
         if (params.dryRun !== undefined) opts.dryRun = Boolean(params.dryRun);
-        const result = await orchestrator.execute({ ...plan, options: opts });
+        const runner = new Orchestrator({ ...orchestrator["options"], ...opts });
+        const result = await runner.execute(plan);
         return {
-          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, planName: plan.name, durationMs: result.durationMs, steps: result.steps.map((s) => ({ stepId: s.stepId, type: s.stepType, status: s.status, durationMs: s.durationMs, error: s.error?.message })), errors: result.errors.map((e) => ({ stepId: e.stepId, message: e.error.message })) }, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, planName: plan.name, totalDurationMs: result.totalDurationMs, steps: result.steps.map((s) => ({ stepId: s.stepId, type: s.stepType, status: s.status, durationMs: s.durationMs, error: s.error })), errors: result.errors }, null, 2) }],
           details: result,
         };
       },
@@ -2995,6 +3305,10 @@ const plugin = {
           devOpsManager = new AzureDevOpsManager(credentialsManager, config.devOpsOrganization, retryOpts);
         }
 
+        // PAT Manager (always available — stores encrypted PATs locally)
+        patManager = createPATManager({ defaultOrganization: config.devOpsOrganization });
+        await patManager.initialize();
+
         // Governance
         guardrailsManager = createGuardrailsManager();
         complianceManager = new AzureComplianceManager(credentialsManager, subscriptionId, retryOpts);
@@ -3052,6 +3366,7 @@ const plugin = {
         backupManager = null;
         aiManager = null;
         devOpsManager = null;
+        patManager = null;
         apimManager = null;
         logicManager = null;
         resourceManager = null;
@@ -3103,6 +3418,7 @@ export function getAzureManagers() {
     backup: backupManager,
     ai: aiManager,
     devOps: devOpsManager,
+    pat: patManager,
     apim: apimManager,
     logic: logicManager,
     resources: resourceManager,
