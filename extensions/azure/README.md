@@ -117,8 +117,9 @@ espada azure devops repos <project>                      # List repositories
 
 ## Agent Tools
 
-The extension registers the following tools for AI agent use:
+The extension registers **68 tools** for AI agent use:
 
+### Compute & Core
 | Tool | Description |
 |------|-------------|
 | `azure_list_vms` | List virtual machines |
@@ -139,11 +140,164 @@ The extension registers the following tools for AI agent use:
 | `azure_deploy_arm_template` | Deploy ARM template |
 | `azure_list_ai_deployments` | List AI/OpenAI deployments |
 
+### Networking
+| Tool | Description |
+|------|-------------|
+| `azure_list_vnets` | List virtual networks |
+| `azure_list_nsgs` | List network security groups |
+| `azure_list_load_balancers` | List load balancers |
+| `azure_list_public_ips` | List public IP addresses |
+| `azure_list_subnets` | List subnets in a VNet |
+| `azure_list_nsg_rules` | List rules in an NSG |
+
+### DNS
+| Tool | Description |
+|------|-------------|
+| `azure_list_dns_zones` | List DNS zones |
+| `azure_list_dns_records` | List DNS record sets in a zone |
+
+### Redis
+| Tool | Description |
+|------|-------------|
+| `azure_list_redis_caches` | List Redis caches |
+| `azure_get_redis_cache` | Get Redis cache details |
+
+### CDN
+| Tool | Description |
+|------|-------------|
+| `azure_list_cdn_profiles` | List CDN profiles |
+| `azure_list_cdn_endpoints` | List CDN endpoints |
+| `azure_purge_cdn` | Purge CDN endpoint content |
+
+### Backup
+| Tool | Description |
+|------|-------------|
+| `azure_list_backup_vaults` | List Recovery Services vaults |
+| `azure_list_backup_items` | List backup items |
+| `azure_list_backup_jobs` | List backup jobs |
+
+### Automation
+| Tool | Description |
+|------|-------------|
+| `azure_list_automation_accounts` | List Automation accounts |
+| `azure_list_runbooks` | List runbooks |
+| `azure_start_runbook` | Start a runbook |
+
+### Service Bus
+| Tool | Description |
+|------|-------------|
+| `azure_list_servicebus_namespaces` | List SB namespaces |
+| `azure_list_servicebus_queues` | List SB queues |
+| `azure_list_servicebus_topics` | List SB topics |
+
+### Event Grid
+| Tool | Description |
+|------|-------------|
+| `azure_list_eventgrid_topics` | List EG topics |
+| `azure_list_eventgrid_domains` | List EG domains |
+| `azure_list_event_subscriptions` | List event subscriptions |
+
+### CosmosDB
+| Tool | Description |
+|------|-------------|
+| `azure_list_cosmosdb_accounts` | List Cosmos DB accounts |
+| `azure_list_cosmosdb_databases` | List databases in an account |
+
+### IAM
+| Tool | Description |
+|------|-------------|
+| `azure_list_role_definitions` | List RBAC role definitions |
+| `azure_list_role_assignments` | List RBAC role assignments |
+
+### Policy
+| Tool | Description |
+|------|-------------|
+| `azure_list_policy_definitions` | List policy definitions |
+| `azure_list_policy_assignments` | List policy assignments |
+| `azure_policy_compliance` | Get policy compliance state |
+
+### Logic Apps
+| Tool | Description |
+|------|-------------|
+| `azure_list_logic_apps` | List Logic App workflows |
+| `azure_list_logic_runs` | List workflow runs |
+| `azure_enable_logic_app` | Enable a workflow |
+| `azure_disable_logic_app` | Disable a workflow |
+
+### API Management
+| Tool | Description |
+|------|-------------|
+| `azure_list_apim_services` | List APIM services |
+| `azure_list_apim_apis` | List APIs in an APIM instance |
+
+### DevOps
+| Tool | Description |
+|------|-------------|
+| `azure_list_devops_projects` | List DevOps projects |
+| `azure_list_devops_pipelines` | List pipelines |
+| `azure_trigger_devops_pipeline` | Trigger a pipeline run |
+| `azure_list_devops_repos` | List repositories |
+
+### Security (Additional)
+| Tool | Description |
+|------|-------------|
+| `azure_list_security_recommendations` | List Defender recommendations |
+| `azure_get_secure_scores` | Get Defender secure scores |
+
+### Activity Log & AI
+| Tool | Description |
+|------|-------------|
+| `azure_get_activity_log` | Get activity log events |
+| `azure_list_ai_accounts` | List Cognitive / OpenAI accounts |
+| `azure_list_ai_models` | List available AI models |
+
+### Enterprise & Tagging
+| Tool | Description |
+|------|-------------|
+| `azure_list_management_groups` | List management groups |
+| `azure_get_resource_tags` | Get resource tags |
+| `azure_update_resource_tags` | Update resource tags |
+| `azure_validate_tags` | Validate tags against policy |
+
 ## Gateway Methods
 
-Available via `api.registerGatewayMethod`:
+Available via `api.registerGatewayMethod` (**56 methods**):
 
-`azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
+**Core:** `azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
+
+**Networking:** `azure.network.vnets`, `azure.network.nsgs`, `azure.network.lbs`, `azure.network.pips`
+
+**DNS:** `azure.dns.zones`, `azure.dns.records`
+
+**Redis:** `azure.redis.list`, `azure.redis.get`
+
+**CDN:** `azure.cdn.profiles`, `azure.cdn.endpoints`
+
+**CosmosDB:** `azure.cosmosdb.list`, `azure.cosmosdb.databases`
+
+**Service Bus:** `azure.servicebus.list`, `azure.servicebus.queues`, `azure.servicebus.topics`
+
+**Event Grid:** `azure.eventgrid.topics`, `azure.eventgrid.domains`
+
+**IAM:** `azure.iam.roles`, `azure.iam.assignments`
+
+**Policy:** `azure.policy.definitions`, `azure.policy.assignments`, `azure.policy.compliance`
+
+**Backup:** `azure.backup.vaults`, `azure.backup.items`, `azure.backup.jobs`
+
+**Automation:** `azure.automation.accounts`, `azure.automation.runbooks`, `azure.automation.jobs`
+
+**Logic Apps:** `azure.logic.list`, `azure.logic.runs`
+
+**API Management:** `azure.apim.list`, `azure.apim.apis`
+
+**DevOps:** `azure.devops.projects`, `azure.devops.pipelines`, `azure.devops.repos`
+
+**AI:** `azure.ai.accounts`, `azure.ai.deployments`, `azure.ai.models`
+
+**Activity Log:** `azure.activitylog.events`
+
+**Security:** `azure.security.alerts`, `azure.security.recommendations`
 
 ## Module Reference
 
@@ -312,12 +466,12 @@ extensions/azure/
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
-- [x] Unit tests for all service modules (31 test files, 243 tests — VMs, Storage, Network, KeyVault, SQL, DNS, Redis, Containers, Cost, IAM, CosmosDB, ServiceBus, EventGrid, Security, Policy, Backup, CDN, Functions, API Management, Automation, Logic Apps, DevOps, Subscriptions, Resources, Monitor, Activity Log, Tagging)
+- [x] Unit tests for all service modules (39 test files, 369 tests)
+- [x] 68 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise)
+- [x] 56 gateway methods covering all services
 
 ## What Still Needs Work
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)
-- [ ] **Additional agent tools** — More tools for networking, DNS, Redis, CDN, backup, automation, etc.
-- [ ] **Additional gateway methods** — More methods for services not yet exposed via gateway
 - [ ] **DevOps PAT management** — Secure storage/retrieval of Azure DevOps personal access tokens
 - [ ] **IDIO orchestration** — Intelligent orchestrator for multi-step Azure operations (e.g., "deploy a web app with SQL backend and CDN")
 - [ ] **Docs page** — `docs/plugins/azure.md` for Mintlify docs site

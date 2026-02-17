@@ -168,17 +168,26 @@ describe("AzureComplianceManager", () => {
   // -------------------------------------------------------------------------
   describe("generateReport", () => {
     it("generates a full compliance report", async () => {
-      mockPolicyStates.listQueryResultsForSubscription.mockReturnValue(asyncIter([
-        { complianceState: "Compliant" },
-        { complianceState: "NonCompliant", policyAssignmentId: "p1", resourceId: "r1", resourceType: "VM", resourceGroup: "rg-1", policyDefinitionName: "rule1", timestamp: new Date() },
-      ]));
+      // Stub the instance methods directly to avoid shared-iterator issues
+      // with concurrent Promise.all calls through dynamic imports
+      const statusResult = [
+        { framework: "CIS Azure 1.4", totalControls: 10, compliantControls: 8, nonCompliantControls: 2, percentage: 80, lastEvaluated: new Date().toISOString() },
+      ];
+      const violationResult = [
+        { id: "p1", resourceId: "r1", resourceType: "VM", resourceGroup: "rg-1", framework: "Azure Policy", control: "rule1", severity: "medium" as const, message: "Non-compliant", timestamp: new Date().toISOString() },
+      ];
+      vi.spyOn(mgr, "getComplianceStatus").mockResolvedValue(statusResult);
+      vi.spyOn(mgr, "listViolations").mockResolvedValue(violationResult);
 
       const report = await mgr.generateReport();
       expect(report.id).toMatch(/^report-/);
       expect(report.subscription).toBe("sub-1");
-      expect(report.frameworks.length).toBeGreaterThanOrEqual(6);
-      expect(report.summary.total).toBeGreaterThan(0);
-      expect(report.summary.percentage).toBeGreaterThan(0);
+      expect(report.frameworks).toEqual(statusResult);
+      expect(report.violations).toEqual(violationResult);
+      expect(report.summary.total).toBe(10);
+      expect(report.summary.compliant).toBe(8);
+      expect(report.summary.nonCompliant).toBe(2);
+      expect(report.summary.percentage).toBe(80);
       expect(report.generatedAt).toBeTruthy();
     });
   });

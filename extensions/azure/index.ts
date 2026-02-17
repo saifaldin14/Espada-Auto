@@ -1348,6 +1348,387 @@ const plugin = {
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
+    // --- Networking ---
+    api.registerGatewayMethod("azure.network.vnets", async (opts) => {
+      if (!networkManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Network manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const vnets = await networkManager.listVNets(params.resourceGroup);
+        opts.respond(true, { data: vnets });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.network.nsgs", async (opts) => {
+      if (!networkManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Network manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const nsgs = await networkManager.listNSGs(params.resourceGroup);
+        opts.respond(true, { data: nsgs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.network.lbs", async (opts) => {
+      if (!networkManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Network manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const lbs = await networkManager.listLoadBalancers(params.resourceGroup);
+        opts.respond(true, { data: lbs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.network.pips", async (opts) => {
+      if (!networkManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Network manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const pips = await networkManager.listPublicIPs(params.resourceGroup);
+        opts.respond(true, { data: pips });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- DNS ---
+    api.registerGatewayMethod("azure.dns.zones", async (opts) => {
+      if (!dnsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DNS manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const zones = await dnsManager.listZones(params.resourceGroup);
+        opts.respond(true, { data: zones });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.dns.records", async (opts) => {
+      if (!dnsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DNS manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; zoneName: string };
+        const records = await dnsManager.listRecordSets(params.resourceGroup, params.zoneName);
+        opts.respond(true, { data: records });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Redis ---
+    api.registerGatewayMethod("azure.redis.list", async (opts) => {
+      if (!redisManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Redis manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const caches = await redisManager.listCaches(params.resourceGroup);
+        opts.respond(true, { data: caches });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.redis.get", async (opts) => {
+      if (!redisManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Redis manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; cacheName: string };
+        const cache = await redisManager.getCache(params.resourceGroup, params.cacheName);
+        opts.respond(true, { data: cache });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- CDN ---
+    api.registerGatewayMethod("azure.cdn.profiles", async (opts) => {
+      if (!cdnManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "CDN manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const profiles = await cdnManager.listProfiles(params.resourceGroup);
+        opts.respond(true, { data: profiles });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.cdn.endpoints", async (opts) => {
+      if (!cdnManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "CDN manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; profileName: string };
+        const endpoints = await cdnManager.listEndpoints(params.resourceGroup, params.profileName);
+        opts.respond(true, { data: endpoints });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- CosmosDB ---
+    api.registerGatewayMethod("azure.cosmosdb.list", async (opts) => {
+      if (!cosmosDBManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "CosmosDB manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const accounts = await cosmosDBManager.listAccounts(params.resourceGroup);
+        opts.respond(true, { data: accounts });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.cosmosdb.databases", async (opts) => {
+      if (!cosmosDBManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "CosmosDB manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+        const dbs = await cosmosDBManager.listDatabases(params.resourceGroup, params.accountName);
+        opts.respond(true, { data: dbs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Service Bus ---
+    api.registerGatewayMethod("azure.servicebus.list", async (opts) => {
+      if (!serviceBusManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "ServiceBus manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const namespaces = await serviceBusManager.listNamespaces(params.resourceGroup);
+        opts.respond(true, { data: namespaces });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.servicebus.queues", async (opts) => {
+      if (!serviceBusManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "ServiceBus manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string };
+        const queues = await serviceBusManager.listQueues(params.resourceGroup, params.namespaceName);
+        opts.respond(true, { data: queues });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.servicebus.topics", async (opts) => {
+      if (!serviceBusManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "ServiceBus manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string };
+        const topics = await serviceBusManager.listTopics(params.resourceGroup, params.namespaceName);
+        opts.respond(true, { data: topics });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Event Grid ---
+    api.registerGatewayMethod("azure.eventgrid.topics", async (opts) => {
+      if (!eventGridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EventGrid manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const topics = await eventGridManager.listTopics(params.resourceGroup);
+        opts.respond(true, { data: topics });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.eventgrid.domains", async (opts) => {
+      if (!eventGridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "EventGrid manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const domains = await eventGridManager.listDomains(params.resourceGroup);
+        opts.respond(true, { data: domains });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- IAM ---
+    api.registerGatewayMethod("azure.iam.roles", async (opts) => {
+      if (!iamManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IAM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { scope?: string };
+        const roles = await iamManager.listRoleDefinitions(params.scope);
+        opts.respond(true, { data: roles });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.iam.assignments", async (opts) => {
+      if (!iamManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IAM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { scope?: string };
+        const assignments = await iamManager.listRoleAssignments(params.scope);
+        opts.respond(true, { data: assignments });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Policy ---
+    api.registerGatewayMethod("azure.policy.definitions", async (opts) => {
+      if (!policyManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Policy manager not initialized" }); return; }
+      try {
+        const defs = await policyManager.listDefinitions();
+        opts.respond(true, { data: defs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.policy.assignments", async (opts) => {
+      if (!policyManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Policy manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { scope?: string };
+        const assignments = await policyManager.listAssignments(params.scope);
+        opts.respond(true, { data: assignments });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.policy.compliance", async (opts) => {
+      if (!policyManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Policy manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { scope?: string };
+        const state = await policyManager.getComplianceState(params.scope);
+        opts.respond(true, { data: state });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Backup ---
+    api.registerGatewayMethod("azure.backup.vaults", async (opts) => {
+      if (!backupManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Backup manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const vaults = await backupManager.listVaults(params.resourceGroup);
+        opts.respond(true, { data: vaults });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.backup.items", async (opts) => {
+      if (!backupManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Backup manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; vaultName: string };
+        const items = await backupManager.listBackupItems(params.resourceGroup, params.vaultName);
+        opts.respond(true, { data: items });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.backup.jobs", async (opts) => {
+      if (!backupManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Backup manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; vaultName: string };
+        const jobs = await backupManager.listBackupJobs(params.resourceGroup, params.vaultName);
+        opts.respond(true, { data: jobs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Automation ---
+    api.registerGatewayMethod("azure.automation.accounts", async (opts) => {
+      if (!automationManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Automation manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const accounts = await automationManager.listAccounts(params.resourceGroup);
+        opts.respond(true, { data: accounts });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.automation.runbooks", async (opts) => {
+      if (!automationManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Automation manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+        const runbooks = await automationManager.listRunbooks(params.resourceGroup, params.accountName);
+        opts.respond(true, { data: runbooks });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.automation.jobs", async (opts) => {
+      if (!automationManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Automation manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+        const jobs = await automationManager.listJobs(params.resourceGroup, params.accountName);
+        opts.respond(true, { data: jobs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Logic Apps ---
+    api.registerGatewayMethod("azure.logic.list", async (opts) => {
+      if (!logicManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Logic Apps manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const workflows = await logicManager.listWorkflows(params.resourceGroup);
+        opts.respond(true, { data: workflows });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.logic.runs", async (opts) => {
+      if (!logicManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Logic Apps manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; workflowName: string };
+        const runs = await logicManager.listRuns(params.resourceGroup, params.workflowName);
+        opts.respond(true, { data: runs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- API Management ---
+    api.registerGatewayMethod("azure.apim.list", async (opts) => {
+      if (!apimManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "APIM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const services = await apimManager.listServices(params.resourceGroup);
+        opts.respond(true, { data: services });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.apim.apis", async (opts) => {
+      if (!apimManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "APIM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; serviceName: string };
+        const apis = await apimManager.listAPIs(params.resourceGroup, params.serviceName);
+        opts.respond(true, { data: apis });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- DevOps ---
+    api.registerGatewayMethod("azure.devops.projects", async (opts) => {
+      if (!devOpsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DevOps manager not initialized (set devOpsOrganization in config)" }); return; }
+      try {
+        const projects = await devOpsManager.listProjects();
+        opts.respond(true, { data: projects });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.pipelines", async (opts) => {
+      if (!devOpsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DevOps manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { projectName: string };
+        const pipelines = await devOpsManager.listPipelines(params.projectName);
+        opts.respond(true, { data: pipelines });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.devops.repos", async (opts) => {
+      if (!devOpsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DevOps manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { projectName: string };
+        const repos = await devOpsManager.listRepositories(params.projectName);
+        opts.respond(true, { data: repos });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- AI ---
+    api.registerGatewayMethod("azure.ai.accounts", async (opts) => {
+      if (!aiManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "AI manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const accounts = await aiManager.listAccounts(params.resourceGroup);
+        opts.respond(true, { data: accounts });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.ai.deployments", async (opts) => {
+      if (!aiManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "AI manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+        const deployments = await aiManager.listDeployments(params.resourceGroup, params.accountName);
+        opts.respond(true, { data: deployments });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.ai.models", async (opts) => {
+      if (!aiManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "AI manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { location: string };
+        const models = await aiManager.listModels(params.location);
+        opts.respond(true, { data: models });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Activity Log ---
+    api.registerGatewayMethod("azure.activitylog.events", async (opts) => {
+      if (!activityLogManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Activity Log manager not initialized" }); return; }
+      try {
+        const events = await activityLogManager.getEvents();
+        opts.respond(true, { data: events });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // --- Security (additional) ---
+    api.registerGatewayMethod("azure.security.alerts", async (opts) => {
+      if (!securityManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Security manager not initialized" }); return; }
+      try {
+        const alerts = await securityManager.listAlerts();
+        opts.respond(true, { data: alerts });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.security.recommendations", async (opts) => {
+      if (!securityManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Security manager not initialized" }); return; }
+      try {
+        const recs = await securityManager.listRecommendations();
+        opts.respond(true, { data: recs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
     // =========================================================================
     // Agent Tools
     // =========================================================================
@@ -1586,6 +1967,762 @@ const plugin = {
         if (!aiManager) throw new Error("AI manager not initialized");
         const deployments = await aiManager.listDeployments(params.resourceGroup as string, params.accountName as string);
         return { content: [{ type: "text" as const, text: JSON.stringify(deployments, null, 2) }], details: { count: deployments.length } };
+      },
+    });
+
+    // --- Networking tools ---
+    api.registerTool({
+      name: "azure_list_vnets",
+      label: "Azure List VNets",
+      description: "List Azure Virtual Networks, optionally filtered by resource group",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const vnets = await networkManager.listVNets(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(vnets, null, 2) }], details: { count: vnets.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_nsgs",
+      label: "Azure List NSGs",
+      description: "List Azure Network Security Groups",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const nsgs = await networkManager.listNSGs(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(nsgs, null, 2) }], details: { count: nsgs.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_load_balancers",
+      label: "Azure List LBs",
+      description: "List Azure Load Balancers",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const lbs = await networkManager.listLoadBalancers(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(lbs, null, 2) }], details: { count: lbs.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_public_ips",
+      label: "Azure List PIPs",
+      description: "List Azure Public IP addresses",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const pips = await networkManager.listPublicIPs(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(pips, null, 2) }], details: { count: pips.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_subnets",
+      label: "Azure List Subnets",
+      description: "List subnets in a Virtual Network",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, vnetName: { type: "string" } },
+        required: ["resourceGroup", "vnetName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const subnets = await networkManager.listSubnets(params.resourceGroup as string, params.vnetName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(subnets, null, 2) }], details: { count: subnets.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_nsg_rules",
+      label: "Azure NSG Rules",
+      description: "List security rules in a Network Security Group",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, nsgName: { type: "string" } },
+        required: ["resourceGroup", "nsgName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!networkManager) throw new Error("Network manager not initialized");
+        const rules = await networkManager.listNSGRules(params.resourceGroup as string, params.nsgName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(rules, null, 2) }], details: { count: rules.length } };
+      },
+    });
+
+    // --- DNS tools ---
+    api.registerTool({
+      name: "azure_list_dns_zones",
+      label: "Azure DNS Zones",
+      description: "List Azure DNS zones",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!dnsManager) throw new Error("DNS manager not initialized");
+        const zones = await dnsManager.listZones(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(zones, null, 2) }], details: { count: zones.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_dns_records",
+      label: "Azure DNS Records",
+      description: "List DNS record sets in a zone",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, zoneName: { type: "string" } },
+        required: ["resourceGroup", "zoneName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!dnsManager) throw new Error("DNS manager not initialized");
+        const records = await dnsManager.listRecordSets(params.resourceGroup as string, params.zoneName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(records, null, 2) }], details: { count: records.length } };
+      },
+    });
+
+    // --- Redis tools ---
+    api.registerTool({
+      name: "azure_list_redis_caches",
+      label: "Azure List Redis",
+      description: "List Azure Cache for Redis instances",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!redisManager) throw new Error("Redis manager not initialized");
+        const caches = await redisManager.listCaches(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(caches, null, 2) }], details: { count: caches.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_get_redis_cache",
+      label: "Azure Redis Details",
+      description: "Get details of a Redis cache",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, cacheName: { type: "string" } },
+        required: ["resourceGroup", "cacheName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!redisManager) throw new Error("Redis manager not initialized");
+        const cache = await redisManager.getCache(params.resourceGroup as string, params.cacheName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(cache, null, 2) }], details: cache };
+      },
+    });
+
+    // --- CDN tools ---
+    api.registerTool({
+      name: "azure_list_cdn_profiles",
+      label: "Azure CDN Profiles",
+      description: "List Azure CDN profiles",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!cdnManager) throw new Error("CDN manager not initialized");
+        const profiles = await cdnManager.listProfiles(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(profiles, null, 2) }], details: { count: profiles.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_cdn_endpoints",
+      label: "Azure CDN Endpoints",
+      description: "List endpoints for a CDN profile",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, profileName: { type: "string" } },
+        required: ["resourceGroup", "profileName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!cdnManager) throw new Error("CDN manager not initialized");
+        const endpoints = await cdnManager.listEndpoints(params.resourceGroup as string, params.profileName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(endpoints, null, 2) }], details: { count: endpoints.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_purge_cdn",
+      label: "Azure Purge CDN",
+      description: "Purge content from a CDN endpoint",
+      parameters: {
+        type: "object",
+        properties: {
+          resourceGroup: { type: "string" },
+          profileName: { type: "string" },
+          endpointName: { type: "string" },
+          contentPaths: { type: "array", description: "Paths to purge, e.g. [\"/images/*\"]" },
+        },
+        required: ["resourceGroup", "profileName", "endpointName", "contentPaths"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!cdnManager) throw new Error("CDN manager not initialized");
+        await cdnManager.purgeContent(params.resourceGroup as string, params.profileName as string, params.endpointName as string, params.contentPaths as string[]);
+        return { content: [{ type: "text" as const, text: `Purge initiated for CDN endpoint ${params.endpointName}` }], details: { endpoint: params.endpointName } };
+      },
+    });
+
+    // --- Backup tools ---
+    api.registerTool({
+      name: "azure_list_backup_vaults",
+      label: "Azure Backup Vaults",
+      description: "List Azure Recovery Services vaults",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!backupManager) throw new Error("Backup manager not initialized");
+        const vaults = await backupManager.listVaults(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(vaults, null, 2) }], details: { count: vaults.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_backup_items",
+      label: "Azure Backup Items",
+      description: "List backup items in a Recovery Services vault",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, vaultName: { type: "string" } },
+        required: ["resourceGroup", "vaultName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!backupManager) throw new Error("Backup manager not initialized");
+        const items = await backupManager.listBackupItems(params.resourceGroup as string, params.vaultName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(items, null, 2) }], details: { count: items.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_backup_jobs",
+      label: "Azure Backup Jobs",
+      description: "List backup jobs in a Recovery Services vault",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, vaultName: { type: "string" } },
+        required: ["resourceGroup", "vaultName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!backupManager) throw new Error("Backup manager not initialized");
+        const jobs = await backupManager.listBackupJobs(params.resourceGroup as string, params.vaultName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(jobs, null, 2) }], details: { count: jobs.length } };
+      },
+    });
+
+    // --- Automation tools ---
+    api.registerTool({
+      name: "azure_list_automation_accounts",
+      label: "Azure Automation Accounts",
+      description: "List Azure Automation accounts",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!automationManager) throw new Error("Automation manager not initialized");
+        const accounts = await automationManager.listAccounts(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }], details: { count: accounts.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_runbooks",
+      label: "Azure List Runbooks",
+      description: "List runbooks in an Automation account",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, accountName: { type: "string" } },
+        required: ["resourceGroup", "accountName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!automationManager) throw new Error("Automation manager not initialized");
+        const runbooks = await automationManager.listRunbooks(params.resourceGroup as string, params.accountName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(runbooks, null, 2) }], details: { count: runbooks.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_start_runbook",
+      label: "Azure Start Runbook",
+      description: "Start an Azure Automation runbook",
+      parameters: {
+        type: "object",
+        properties: {
+          resourceGroup: { type: "string" },
+          accountName: { type: "string" },
+          runbookName: { type: "string" },
+          parameters: { type: "object", description: "Runbook parameters (key-value pairs)" },
+        },
+        required: ["resourceGroup", "accountName", "runbookName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!automationManager) throw new Error("Automation manager not initialized");
+        const job = await automationManager.startRunbook(
+          params.resourceGroup as string,
+          params.accountName as string,
+          params.runbookName as string,
+          params.parameters as Record<string, string> | undefined,
+        );
+        return { content: [{ type: "text" as const, text: `Started runbook ${params.runbookName}, job: ${job.jobId ?? "pending"}` }], details: job };
+      },
+    });
+
+    // --- Service Bus tools ---
+    api.registerTool({
+      name: "azure_list_servicebus_namespaces",
+      label: "Azure SB Namespaces",
+      description: "List Azure Service Bus namespaces",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!serviceBusManager) throw new Error("ServiceBus manager not initialized");
+        const namespaces = await serviceBusManager.listNamespaces(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(namespaces, null, 2) }], details: { count: namespaces.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_servicebus_queues",
+      label: "Azure SB Queues",
+      description: "List queues in a Service Bus namespace",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, namespaceName: { type: "string" } },
+        required: ["resourceGroup", "namespaceName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!serviceBusManager) throw new Error("ServiceBus manager not initialized");
+        const queues = await serviceBusManager.listQueues(params.resourceGroup as string, params.namespaceName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(queues, null, 2) }], details: { count: queues.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_servicebus_topics",
+      label: "Azure SB Topics",
+      description: "List topics in a Service Bus namespace",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, namespaceName: { type: "string" } },
+        required: ["resourceGroup", "namespaceName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!serviceBusManager) throw new Error("ServiceBus manager not initialized");
+        const topics = await serviceBusManager.listTopics(params.resourceGroup as string, params.namespaceName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(topics, null, 2) }], details: { count: topics.length } };
+      },
+    });
+
+    // --- Event Grid tools ---
+    api.registerTool({
+      name: "azure_list_eventgrid_topics",
+      label: "Azure EG Topics",
+      description: "List Azure Event Grid topics",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!eventGridManager) throw new Error("EventGrid manager not initialized");
+        const topics = await eventGridManager.listTopics(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(topics, null, 2) }], details: { count: topics.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_eventgrid_domains",
+      label: "Azure EG Domains",
+      description: "List Azure Event Grid domains",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!eventGridManager) throw new Error("EventGrid manager not initialized");
+        const domains = await eventGridManager.listDomains(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(domains, null, 2) }], details: { count: domains.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_event_subscriptions",
+      label: "Azure EG Subscriptions",
+      description: "List Event Grid event subscriptions",
+      parameters: { type: "object", properties: { scope: { type: "string", description: "Scope for event subscriptions" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!eventGridManager) throw new Error("EventGrid manager not initialized");
+        const subs = await eventGridManager.listEventSubscriptions(params.scope as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(subs, null, 2) }], details: { count: subs.length } };
+      },
+    });
+
+    // --- CosmosDB tools ---
+    api.registerTool({
+      name: "azure_list_cosmosdb_accounts",
+      label: "Azure CosmosDB Accounts",
+      description: "List Azure Cosmos DB accounts",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!cosmosDBManager) throw new Error("CosmosDB manager not initialized");
+        const accounts = await cosmosDBManager.listAccounts(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }], details: { count: accounts.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_cosmosdb_databases",
+      label: "Azure CosmosDB Databases",
+      description: "List databases in a Cosmos DB account",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, accountName: { type: "string" } },
+        required: ["resourceGroup", "accountName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!cosmosDBManager) throw new Error("CosmosDB manager not initialized");
+        const dbs = await cosmosDBManager.listDatabases(params.resourceGroup as string, params.accountName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(dbs, null, 2) }], details: { count: dbs.length } };
+      },
+    });
+
+    // --- IAM tools ---
+    api.registerTool({
+      name: "azure_list_role_definitions",
+      label: "Azure IAM Roles",
+      description: "List Azure role definitions (RBAC)",
+      parameters: { type: "object", properties: { scope: { type: "string", description: "Scope for role definitions" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!iamManager) throw new Error("IAM manager not initialized");
+        const roles = await iamManager.listRoleDefinitions(params.scope as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(roles, null, 2) }], details: { count: roles.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_role_assignments",
+      label: "Azure IAM Assignments",
+      description: "List Azure role assignments (RBAC)",
+      parameters: { type: "object", properties: { scope: { type: "string", description: "Scope for role assignments" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!iamManager) throw new Error("IAM manager not initialized");
+        const assignments = await iamManager.listRoleAssignments(params.scope as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(assignments, null, 2) }], details: { count: assignments.length } };
+      },
+    });
+
+    // --- Policy tools ---
+    api.registerTool({
+      name: "azure_list_policy_definitions",
+      label: "Azure Policy Defs",
+      description: "List Azure Policy definitions",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!policyManager) throw new Error("Policy manager not initialized");
+        const defs = await policyManager.listDefinitions();
+        return { content: [{ type: "text" as const, text: JSON.stringify(defs, null, 2) }], details: { count: defs.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_policy_assignments",
+      label: "Azure Policy Assigns",
+      description: "List Azure Policy assignments",
+      parameters: { type: "object", properties: { scope: { type: "string", description: "Scope for policy assignments" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!policyManager) throw new Error("Policy manager not initialized");
+        const assignments = await policyManager.listAssignments(params.scope as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(assignments, null, 2) }], details: { count: assignments.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_policy_compliance",
+      label: "Azure Policy Compliance",
+      description: "Get Azure Policy compliance state",
+      parameters: { type: "object", properties: { scope: { type: "string", description: "Scope for compliance" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!policyManager) throw new Error("Policy manager not initialized");
+        const state = await policyManager.getComplianceState(params.scope as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(state, null, 2) }], details: { count: state.length } };
+      },
+    });
+
+    // --- Logic Apps tools ---
+    api.registerTool({
+      name: "azure_list_logic_apps",
+      label: "Azure Logic Apps",
+      description: "List Azure Logic App workflows",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!logicManager) throw new Error("Logic Apps manager not initialized");
+        const workflows = await logicManager.listWorkflows(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(workflows, null, 2) }], details: { count: workflows.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_logic_runs",
+      label: "Azure Logic Runs",
+      description: "List runs for a Logic App workflow",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, workflowName: { type: "string" } },
+        required: ["resourceGroup", "workflowName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!logicManager) throw new Error("Logic Apps manager not initialized");
+        const runs = await logicManager.listRuns(params.resourceGroup as string, params.workflowName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(runs, null, 2) }], details: { count: runs.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_enable_logic_app",
+      label: "Azure Enable Logic App",
+      description: "Enable a Logic App workflow",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, workflowName: { type: "string" } },
+        required: ["resourceGroup", "workflowName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!logicManager) throw new Error("Logic Apps manager not initialized");
+        await logicManager.enableWorkflow(params.resourceGroup as string, params.workflowName as string);
+        return { content: [{ type: "text" as const, text: `Enabled Logic App: ${params.workflowName}` }], details: { workflow: params.workflowName } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_disable_logic_app",
+      label: "Azure Disable Logic App",
+      description: "Disable a Logic App workflow",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, workflowName: { type: "string" } },
+        required: ["resourceGroup", "workflowName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!logicManager) throw new Error("Logic Apps manager not initialized");
+        await logicManager.disableWorkflow(params.resourceGroup as string, params.workflowName as string);
+        return { content: [{ type: "text" as const, text: `Disabled Logic App: ${params.workflowName}` }], details: { workflow: params.workflowName } };
+      },
+    });
+
+    // --- API Management tools ---
+    api.registerTool({
+      name: "azure_list_apim_services",
+      label: "Azure APIM Services",
+      description: "List Azure API Management services",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!apimManager) throw new Error("APIM manager not initialized");
+        const services = await apimManager.listServices(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(services, null, 2) }], details: { count: services.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_apim_apis",
+      label: "Azure APIM APIs",
+      description: "List APIs in an API Management service",
+      parameters: {
+        type: "object",
+        properties: { resourceGroup: { type: "string" }, serviceName: { type: "string" } },
+        required: ["resourceGroup", "serviceName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!apimManager) throw new Error("APIM manager not initialized");
+        const apis = await apimManager.listAPIs(params.resourceGroup as string, params.serviceName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(apis, null, 2) }], details: { count: apis.length } };
+      },
+    });
+
+    // --- DevOps tools ---
+    api.registerTool({
+      name: "azure_list_devops_projects",
+      label: "Azure DevOps Projects",
+      description: "List Azure DevOps projects",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!devOpsManager) throw new Error("DevOps manager not initialized (set devOpsOrganization in config)");
+        const projects = await devOpsManager.listProjects();
+        return { content: [{ type: "text" as const, text: JSON.stringify(projects, null, 2) }], details: { count: projects.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_devops_pipelines",
+      label: "Azure DevOps Pipelines",
+      description: "List pipelines in an Azure DevOps project",
+      parameters: {
+        type: "object",
+        properties: { projectName: { type: "string" } },
+        required: ["projectName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!devOpsManager) throw new Error("DevOps manager not initialized");
+        const pipelines = await devOpsManager.listPipelines(params.projectName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(pipelines, null, 2) }], details: { count: pipelines.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_trigger_devops_pipeline",
+      label: "Azure Run Pipeline",
+      description: "Trigger an Azure DevOps pipeline run",
+      parameters: {
+        type: "object",
+        properties: {
+          projectName: { type: "string" },
+          pipelineId: { type: "number" },
+          branch: { type: "string", description: "Branch to run against" },
+        },
+        required: ["projectName", "pipelineId"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!devOpsManager) throw new Error("DevOps manager not initialized");
+        const run = await devOpsManager.triggerPipeline(
+          params.projectName as string,
+          params.pipelineId as number,
+          params.branch ? { branch: params.branch as string } : undefined,
+        );
+        return { content: [{ type: "text" as const, text: `Pipeline triggered, run ID: ${run.id}` }], details: run };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_devops_repos",
+      label: "Azure DevOps Repos",
+      description: "List repositories in an Azure DevOps project",
+      parameters: {
+        type: "object",
+        properties: { projectName: { type: "string" } },
+        required: ["projectName"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!devOpsManager) throw new Error("DevOps manager not initialized");
+        const repos = await devOpsManager.listRepositories(params.projectName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(repos, null, 2) }], details: { count: repos.length } };
+      },
+    });
+
+    // --- Security tools (additional) ---
+    api.registerTool({
+      name: "azure_list_security_recommendations",
+      label: "Azure Security Recs",
+      description: "List Microsoft Defender for Cloud security recommendations",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!securityManager) throw new Error("Security manager not initialized");
+        const recs = await securityManager.listRecommendations();
+        return { content: [{ type: "text" as const, text: JSON.stringify(recs, null, 2) }], details: { count: recs.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_get_secure_scores",
+      label: "Azure Secure Scores",
+      description: "Get Microsoft Defender for Cloud secure scores",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!securityManager) throw new Error("Security manager not initialized");
+        const scores = await securityManager.getSecureScores();
+        return { content: [{ type: "text" as const, text: JSON.stringify(scores, null, 2) }], details: { count: scores.length } };
+      },
+    });
+
+    // --- Activity Log tools ---
+    api.registerTool({
+      name: "azure_get_activity_log",
+      label: "Azure Activity Log",
+      description: "Get Azure activity log events",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        if (!activityLogManager) throw new Error("Activity Log manager not initialized");
+        const events = await activityLogManager.getEvents();
+        return { content: [{ type: "text" as const, text: JSON.stringify(events, null, 2) }], details: { count: events.length } };
+      },
+    });
+
+    // --- AI tools (additional) ---
+    api.registerTool({
+      name: "azure_list_ai_accounts",
+      label: "Azure AI Accounts",
+      description: "List Azure Cognitive Services / OpenAI accounts",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!aiManager) throw new Error("AI manager not initialized");
+        const accounts = await aiManager.listAccounts(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }], details: { count: accounts.length } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_list_ai_models",
+      label: "Azure AI Models",
+      description: "List available AI models for a location",
+      parameters: {
+        type: "object",
+        properties: { location: { type: "string", description: "Azure region (e.g. eastus)" } },
+        required: ["location"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!aiManager) throw new Error("AI manager not initialized");
+        const models = await aiManager.listModels(params.location as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(models, null, 2) }], details: { count: models.length } };
+      },
+    });
+
+    // --- Enterprise/Management Group tools ---
+    api.registerTool({
+      name: "azure_list_management_groups",
+      label: "Azure Mgmt Groups",
+      description: "List Azure Management Groups in the tenant hierarchy",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        // Enterprise manager is not a standalone module variable — use inline construction
+        if (!credentialsManager) throw new Error("Azure not initialized");
+        const { AzureEnterpriseManager } = await import("./src/enterprise/index.js");
+        const enterprise = new AzureEnterpriseManager(credentialsManager, config.defaultSubscription ?? "", config.retryConfig ? { maxAttempts: config.retryConfig.maxAttempts ?? 3, minDelayMs: config.retryConfig.minDelayMs ?? 100, maxDelayMs: config.retryConfig.maxDelayMs ?? 30000 } : undefined);
+        const groups = await enterprise.listManagementGroups();
+        return { content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }], details: { count: groups.length } };
+      },
+    });
+
+    // --- Tagging tools ---
+    api.registerTool({
+      name: "azure_get_resource_tags",
+      label: "Azure Get Tags",
+      description: "Get tags on an Azure resource",
+      parameters: {
+        type: "object",
+        properties: { resourceId: { type: "string", description: "Full Azure resource ID" } },
+        required: ["resourceId"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!taggingManager) throw new Error("Tagging manager not initialized");
+        const tags = await taggingManager.getResourceTags(params.resourceId as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(tags, null, 2) }], details: tags };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_update_resource_tags",
+      label: "Azure Update Tags",
+      description: "Update tags on an Azure resource",
+      parameters: {
+        type: "object",
+        properties: {
+          resourceId: { type: "string", description: "Full Azure resource ID" },
+          tags: { type: "object", description: "Tags to set (key-value pairs)" },
+        },
+        required: ["resourceId", "tags"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!taggingManager) throw new Error("Tagging manager not initialized");
+        await taggingManager.updateResourceTags({ resourceId: params.resourceId as string, action: "merge", tags: params.tags as Record<string, string> });
+        return { content: [{ type: "text" as const, text: `Updated tags on ${params.resourceId}` }], details: { resourceId: params.resourceId } };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_validate_tags",
+      label: "Azure Validate Tags",
+      description: "Validate tags against a tag policy",
+      parameters: {
+        type: "object",
+        properties: { tags: { type: "object", description: "Tags to validate (key-value pairs)" } },
+        required: ["tags"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!taggingManager) throw new Error("Tagging manager not initialized");
+        const result = await taggingManager.validateTags(params.tags as Record<string, string>);
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: result };
       },
     });
 
