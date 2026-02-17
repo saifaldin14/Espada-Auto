@@ -10,9 +10,9 @@ export type {
   AzureResourceType,
   AzureRetryOptions,
   AzureOperationResult,
-  AzureResourceInfo,
+  AzureResource,
+  AzureResourceFilter,
   AzureTagSet,
-  AzureQueryOptions,
   AzurePagedResult,
   AzurePluginConfig,
 } from "./types.js";

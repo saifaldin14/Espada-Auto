@@ -31,7 +31,7 @@ export class AzureMonitorManager {
 
   private async getMonitorClient() {
     const { MonitorClient } = await import("@azure/arm-monitor");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new MonitorClient(credential, this.subscriptionId);
   }
 
@@ -93,7 +93,7 @@ export class AzureMonitorManager {
       const { OperationalInsightsManagementClient } = await import(
         "@azure/arm-operationalinsights"
       );
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new OperationalInsightsManagementClient(credential, this.subscriptionId);
       const results: LogAnalyticsWorkspace[] = [];
       const iter = resourceGroup

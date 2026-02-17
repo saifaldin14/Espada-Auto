@@ -1,7 +1,7 @@
 /**
  * Azure Cache for Redis Manager
  *
- * Manages Redis caches via @azure/arm-redis.
+ * Manages Redis caches via @azure/arm-rediscache.
  */
 
 import type { AzureCredentialsManager } from "../credentials/manager.js";
@@ -25,8 +25,8 @@ export class AzureRedisManager {
   }
 
   private async getClient() {
-    const { RedisManagementClient } = await import("@azure/arm-redis");
-    const credential = this.credentialsManager.getCredential();
+    const { RedisManagementClient } = await import("@azure/arm-rediscache");
+    const { credential } = await this.credentialsManager.getCredential();
     return new RedisManagementClient(credential, this.subscriptionId);
   }
 

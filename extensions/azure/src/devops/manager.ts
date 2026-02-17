@@ -25,7 +25,7 @@ export class AzureDevOpsManager {
   }
 
   private async fetchDevOps<T>(path: string): Promise<T> {
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     const token = await credential.getToken("499b84ac-1321-427f-aa17-267ca6975798/.default");
     const url = `https://dev.azure.com/${this.organization}/${path}`;
     const response = await fetch(url, {
@@ -95,7 +95,7 @@ export class AzureDevOpsManager {
     pipelineId: number,
     options?: { branch?: string; parameters?: Record<string, string> }
   ): Promise<PipelineRun> {
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     const token = await credential.getToken("499b84ac-1321-427f-aa17-267ca6975798/.default");
     const url = `https://dev.azure.com/${this.organization}/${projectName}/_apis/pipelines/${pipelineId}/runs?api-version=7.1`;
     const body = {

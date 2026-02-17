@@ -20,7 +20,7 @@ export class AzureSubscriptionManager {
 
   private async getClient() {
     const { SubscriptionClient } = await import("@azure/arm-subscriptions");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new SubscriptionClient(credential);
   }
 
@@ -92,15 +92,16 @@ export class AzureSubscriptionManager {
       const client = await this.getClient();
       const results: AzureLocation[] = [];
       for await (const loc of client.subscriptions.listLocations(subscriptionId)) {
+        const meta = (loc as any).metadata ?? {};
         results.push({
           name: loc.name ?? "",
           displayName: loc.displayName ?? "",
-          regionalDisplayName: loc.regionalDisplayName,
-          type: loc.type,
-          latitude: loc.metadata?.latitude,
-          longitude: loc.metadata?.longitude,
-          physicalLocation: loc.metadata?.physicalLocation,
-          pairedRegion: loc.metadata?.pairedRegion?.map((r) => r.name ?? ""),
+          regionalDisplayName: (loc as any).regionalDisplayName,
+          type: (loc as any).type,
+          latitude: meta.latitude,
+          longitude: meta.longitude,
+          physicalLocation: meta.physicalLocation,
+          pairedRegion: meta.pairedRegion?.map((r: any) => r.name ?? ""),
         });
       }
       return results;

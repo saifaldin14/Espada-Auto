@@ -26,7 +26,7 @@ export class AzureEventGridManager {
 
   private async getClient() {
     const { EventGridManagementClient } = await import("@azure/arm-eventgrid");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new EventGridManagementClient(credential, this.subscriptionId);
   }
 

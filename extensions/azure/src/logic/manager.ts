@@ -26,7 +26,7 @@ export class AzureLogicAppsManager {
 
   private async getClient() {
     const { LogicManagementClient } = await import("@azure/arm-logic");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new LogicManagementClient(credential, this.subscriptionId);
   }
 

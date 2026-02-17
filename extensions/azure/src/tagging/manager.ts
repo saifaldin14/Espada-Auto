@@ -83,15 +83,15 @@ export class AzureTaggingManager {
 
     await withAzureRetry(async () => {
       if (operation.action === "merge") {
-        await client.tags.createOrUpdateAtScope(operation.resourceId, {
+        await (client as any).tagsOperations.createOrUpdateAtScope(operation.resourceId, {
           properties: { tags: operation.tags },
         });
       } else if (operation.action === "replace") {
-        await client.tags.createOrUpdateAtScope(operation.resourceId, {
+        await (client as any).tagsOperations.createOrUpdateAtScope(operation.resourceId, {
           properties: { tags: operation.tags },
         });
       } else if (operation.action === "delete") {
-        await client.tags.deleteAtScope(operation.resourceId);
+        await (client as any).tagsOperations.deleteAtScope(operation.resourceId);
       }
     });
   }
@@ -106,7 +106,7 @@ export class AzureTaggingManager {
     const client = new ResourceManagementClient(credential, this.subscriptionId);
 
     return withAzureRetry(async () => {
-      const result = await client.tags.getAtScope(resourceId);
+      const result = await (client as any).tagsOperations.getAtScope(resourceId);
       return (result.properties?.tags ?? {}) as AzureTagSet;
     });
   }

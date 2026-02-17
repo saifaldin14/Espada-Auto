@@ -172,8 +172,8 @@ export class AzureKeyVaultManager {
       for await (const k of client.keys.list(resourceGroup, vaultName)) {
         keys.push({
           id: k.id ?? "", name: k.name ?? "",
-          keyType: k.properties?.kty,
-          keyOps: k.properties?.keyOps,
+          keyType: (k as any).properties?.kty,
+          keyOps: (k as any).properties?.keyOps,
           tags: k.tags as Record<string, string>,
         });
       }

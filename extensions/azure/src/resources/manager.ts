@@ -26,7 +26,7 @@ export class AzureResourceManager {
 
   private async getClient() {
     const { ResourceManagementClient } = await import("@azure/arm-resources");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new ResourceManagementClient(credential, this.subscriptionId);
   }
 

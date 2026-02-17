@@ -181,7 +181,7 @@ const plugin = {
           const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
           if (!vmManager) { console.error(theme.error("VM manager not initialized")); return; }
           try {
-            const vms = await vmManager.listInstances(options.resourceGroup);
+            const vms = await vmManager.listVMs(options.resourceGroup ? { resourceGroup: options.resourceGroup } : undefined);
             if (vms.length === 0) { console.log("No VMs found"); return; }
             console.log("\nVirtual Machines:\n");
             for (const vm of vms) {
@@ -203,7 +203,7 @@ const plugin = {
         .action(async (resourceGroup: string, vmName: string) => {
           if (!vmManager) { console.error(theme.error("VM manager not initialized")); return; }
           try {
-            await vmManager.startInstance(resourceGroup, vmName);
+            await vmManager.startVM(resourceGroup, vmName);
             console.log(theme.success(`Started VM: ${vmName}`));
           } catch (error) {
             console.error(theme.error(`Failed to start VM: ${formatErrorMessage(error)}`));
@@ -216,7 +216,7 @@ const plugin = {
         .action(async (resourceGroup: string, vmName: string) => {
           if (!vmManager) { console.error(theme.error("VM manager not initialized")); return; }
           try {
-            await vmManager.stopInstance(resourceGroup, vmName);
+            await vmManager.stopVM(resourceGroup, vmName);
             console.log(theme.success(`Stopped VM: ${vmName}`));
           } catch (error) {
             console.error(theme.error(`Failed to stop VM: ${formatErrorMessage(error)}`));
@@ -229,7 +229,7 @@ const plugin = {
         .action(async (resourceGroup: string, vmName: string) => {
           if (!vmManager) { console.error(theme.error("VM manager not initialized")); return; }
           try {
-            await vmManager.restartInstance(resourceGroup, vmName);
+            await vmManager.restartVM(resourceGroup, vmName);
             console.log(theme.success(`Restarted VM: ${vmName}`));
           } catch (error) {
             console.error(theme.error(`Failed to restart VM: ${formatErrorMessage(error)}`));
@@ -253,7 +253,7 @@ const plugin = {
             for (const sa of accounts) {
               console.log(`  ${sa.name}`);
               console.log(`    Kind: ${sa.kind}`);
-              console.log(`    SKU: ${sa.skuName}`);
+              console.log(`    SKU: ${sa.sku}`);
               console.log(`    Location: ${sa.location}`);
               console.log();
             }
@@ -263,16 +263,16 @@ const plugin = {
         });
 
       storageCmd
-        .command("blobs <resourceGroup> <accountName> <containerName>")
-        .description("List blobs in a container")
-        .action(async (resourceGroup: string, accountName: string, containerName: string) => {
+        .command("containers <resourceGroup> <accountName>")
+        .description("List containers in a storage account")
+        .action(async (resourceGroup: string, accountName: string) => {
           if (!storageManager) { console.error(theme.error("Storage manager not initialized")); return; }
           try {
-            const blobs = await storageManager.listBlobs(resourceGroup, accountName, containerName);
-            if (blobs.length === 0) { console.log("No blobs found"); return; }
-            console.log(`\nBlobs in ${containerName}:\n`);
-            for (const blob of blobs) {
-              console.log(`  ${blob.name}  ${theme.muted(blob.contentType ?? "")}  ${blob.contentLength ?? 0} bytes`);
+            const containers = await storageManager.listContainers(resourceGroup, accountName);
+            if (containers.length === 0) { console.log("No containers found"); return; }
+            console.log(`\nContainers in ${accountName}:\n`);
+            for (const c of containers) {
+              console.log(`  ${c.name}  ${theme.muted(c.publicAccess ?? "none")}`);
             }
           } catch (error) {
             console.error(theme.error(`Failed to list blobs: ${formatErrorMessage(error)}`));
@@ -332,7 +332,7 @@ const plugin = {
           const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
           if (!containerManager) { console.error(theme.error("Container manager not initialized")); return; }
           try {
-            const clusters = await containerManager.listClusters(options.resourceGroup);
+            const clusters = await containerManager.listAKSClusters(options.resourceGroup);
             if (clusters.length === 0) { console.log("No AKS clusters found"); return; }
             console.log("\nAKS Clusters:\n");
             for (const c of clusters) {
@@ -441,12 +441,12 @@ const plugin = {
         .action(async () => {
           if (!credentialsManager) { console.error(theme.error("Not initialized")); return; }
           try {
-            const status = credentialsManager.getAuthStatus();
+            const result = await credentialsManager.getCredential();
             console.log("\nAzure Status:\n");
-            console.log(`  Authenticated: ${status.isAuthenticated ? theme.success("yes") : theme.error("no")}`);
-            console.log(`  Subscription: ${status.subscriptionId ?? theme.muted("not set")}`);
-            console.log(`  Tenant: ${status.tenantId ?? theme.muted("not set")}`);
-            console.log(`  Method: ${status.credentialMethod ?? theme.muted("default")}`);
+            console.log(`  Authenticated: ${theme.success("yes")}`);
+            console.log(`  Subscription: ${result.subscriptionId ?? config.defaultSubscription ?? theme.muted("not set")}`);
+            console.log(`  Tenant: ${result.tenantId ?? config.defaultTenantId ?? theme.muted("not set")}`);
+            console.log(`  Method: ${result.method ?? theme.muted("default")}`);
           } catch (error) {
             console.error(theme.error(`Failed to get status: ${formatErrorMessage(error)}`));
           }
@@ -456,81 +456,134 @@ const plugin = {
     // =========================================================================
     // Gateway Methods
     // =========================================================================
-    api.registerGatewayMethod("azure.status", async () => {
-      if (!credentialsManager) return { error: "Azure not initialized" };
-      return credentialsManager.getAuthStatus();
+    api.registerGatewayMethod("azure.status", async (opts) => {
+      if (!credentialsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Azure not initialized" }); return; }
+      try {
+        const result = await credentialsManager.getCredential();
+        opts.respond(true, { data: { method: result.method, subscriptionId: result.subscriptionId, tenantId: result.tenantId } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.vm.list", async (params: { resourceGroup?: string }) => {
-      if (!vmManager) return { error: "VM manager not initialized" };
-      return vmManager.listInstances(params.resourceGroup);
+    api.registerGatewayMethod("azure.vm.list", async (opts) => {
+      if (!vmManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "VM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const vms = await vmManager.listVMs(params.resourceGroup ? { resourceGroup: params.resourceGroup } : undefined);
+        opts.respond(true, { data: vms });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.vm.start", async (params: { resourceGroup: string; vmName: string }) => {
-      if (!vmManager) return { error: "VM manager not initialized" };
-      await vmManager.startInstance(params.resourceGroup, params.vmName);
-      return { success: true };
+    api.registerGatewayMethod("azure.vm.start", async (opts) => {
+      if (!vmManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "VM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; vmName: string };
+        await vmManager.startVM(params.resourceGroup, params.vmName);
+        opts.respond(true, { data: { success: true } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.vm.stop", async (params: { resourceGroup: string; vmName: string }) => {
-      if (!vmManager) return { error: "VM manager not initialized" };
-      await vmManager.stopInstance(params.resourceGroup, params.vmName);
-      return { success: true };
+    api.registerGatewayMethod("azure.vm.stop", async (opts) => {
+      if (!vmManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "VM manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup: string; vmName: string };
+        await vmManager.stopVM(params.resourceGroup, params.vmName);
+        opts.respond(true, { data: { success: true } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.storage.list", async (params: { resourceGroup?: string }) => {
-      if (!storageManager) return { error: "Storage manager not initialized" };
-      return storageManager.listStorageAccounts(params.resourceGroup);
+    api.registerGatewayMethod("azure.storage.list", async (opts) => {
+      if (!storageManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Storage manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const accounts = await storageManager.listStorageAccounts(params.resourceGroup);
+        opts.respond(true, { data: accounts });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.rg.list", async () => {
-      if (!resourceManager) return { error: "Resource manager not initialized" };
-      return resourceManager.listResourceGroups();
+    api.registerGatewayMethod("azure.rg.list", async (opts) => {
+      if (!resourceManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Resource manager not initialized" }); return; }
+      try {
+        const groups = await resourceManager.listResourceGroups();
+        opts.respond(true, { data: groups });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.functions.list", async (params: { resourceGroup?: string }) => {
-      if (!functionsManager) return { error: "Functions manager not initialized" };
-      return functionsManager.listFunctionApps(params.resourceGroup);
+    api.registerGatewayMethod("azure.functions.list", async (opts) => {
+      if (!functionsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Functions manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const apps = await functionsManager.listFunctionApps(params.resourceGroup);
+        opts.respond(true, { data: apps });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.aks.list", async (params: { resourceGroup?: string }) => {
-      if (!containerManager) return { error: "Container manager not initialized" };
-      return containerManager.listClusters(params.resourceGroup);
+    api.registerGatewayMethod("azure.aks.list", async (opts) => {
+      if (!containerManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Container manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const clusters = await containerManager.listAKSClusters(params.resourceGroup);
+        opts.respond(true, { data: clusters });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.sql.list", async (params: { resourceGroup?: string }) => {
-      if (!sqlManager) return { error: "SQL manager not initialized" };
-      return sqlManager.listServers(params.resourceGroup);
+    api.registerGatewayMethod("azure.sql.list", async (opts) => {
+      if (!sqlManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "SQL manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const servers = await sqlManager.listServers(params.resourceGroup);
+        opts.respond(true, { data: servers });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.keyvault.list", async (params: { resourceGroup?: string }) => {
-      if (!keyVaultManager) return { error: "KeyVault manager not initialized" };
-      return keyVaultManager.listVaults(params.resourceGroup);
+    api.registerGatewayMethod("azure.keyvault.list", async (opts) => {
+      if (!keyVaultManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "KeyVault manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceGroup?: string };
+        const vaults = await keyVaultManager.listVaults(params.resourceGroup);
+        opts.respond(true, { data: vaults });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.cost.query", async (params: { timeframe?: string }) => {
-      if (!costManager) return { error: "Cost manager not initialized" };
-      return costManager.queryCosts({ timeframe: params.timeframe });
+    api.registerGatewayMethod("azure.cost.query", async (opts) => {
+      if (!costManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Cost manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { timeframe?: string };
+        const result = await costManager.queryCosts({ timeframe: params.timeframe });
+        opts.respond(true, { data: result });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.subscriptions.list", async () => {
-      if (!subscriptionManager) return { error: "Subscription manager not initialized" };
-      return subscriptionManager.listSubscriptions();
+    api.registerGatewayMethod("azure.subscriptions.list", async (opts) => {
+      if (!subscriptionManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Subscription manager not initialized" }); return; }
+      try {
+        const subs = await subscriptionManager.listSubscriptions();
+        opts.respond(true, { data: subs });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.monitor.metrics", async (params: { resourceUri: string; metrics: string[] }) => {
-      if (!monitorManager) return { error: "Monitor manager not initialized" };
-      return monitorManager.listMetrics(params.resourceUri, params.metrics);
+    api.registerGatewayMethod("azure.monitor.metrics", async (opts) => {
+      if (!monitorManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Monitor manager not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { resourceUri: string; metrics: string[] };
+        const metrics = await monitorManager.listMetrics(params.resourceUri, params.metrics);
+        opts.respond(true, { data: metrics });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.security.scores", async () => {
-      if (!securityManager) return { error: "Security manager not initialized" };
-      return securityManager.getSecureScores();
+    api.registerGatewayMethod("azure.security.scores", async (opts) => {
+      if (!securityManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Security manager not initialized" }); return; }
+      try {
+        const scores = await securityManager.getSecureScores();
+        opts.respond(true, { data: scores });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
-    api.registerGatewayMethod("azure.compliance.report", async () => {
-      if (!complianceManager) return { error: "Compliance manager not initialized" };
-      return complianceManager.generateReport();
+    api.registerGatewayMethod("azure.compliance.report", async (opts) => {
+      if (!complianceManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Compliance manager not initialized" }); return; }
+      try {
+        const report = await complianceManager.generateReport();
+        opts.respond(true, { data: report });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
     // =========================================================================
@@ -538,128 +591,152 @@ const plugin = {
     // =========================================================================
     api.registerTool({
       name: "azure_list_vms",
+      label: "Azure List VMs",
       description: "List Azure virtual machines, optionally filtered by resource group",
       parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!vmManager) throw new Error("VM manager not initialized");
-        return vmManager.listInstances(params.resourceGroup);
+        const rg = params.resourceGroup as string | undefined;
+        const vms = await vmManager.listVMs(rg ? { resourceGroup: rg } : undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(vms, null, 2) }], details: { count: vms.length } };
       },
     });
 
     api.registerTool({
       name: "azure_start_vm",
+      label: "Azure Start VM",
       description: "Start an Azure virtual machine",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" }, vmName: { type: "string" } }, required: ["resourceGroup", "vmName"] },
-      handler: async (params: { resourceGroup: string; vmName: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!vmManager) throw new Error("VM manager not initialized");
-        await vmManager.startInstance(params.resourceGroup, params.vmName);
-        return { success: true, vmName: params.vmName };
+        const result = await vmManager.startVM(params.resourceGroup as string, params.vmName as string);
+        return { content: [{ type: "text" as const, text: `Started VM: ${params.vmName}` }], details: result };
       },
     });
 
     api.registerTool({
       name: "azure_stop_vm",
+      label: "Azure Stop VM",
       description: "Stop an Azure virtual machine",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" }, vmName: { type: "string" } }, required: ["resourceGroup", "vmName"] },
-      handler: async (params: { resourceGroup: string; vmName: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!vmManager) throw new Error("VM manager not initialized");
-        await vmManager.stopInstance(params.resourceGroup, params.vmName);
-        return { success: true, vmName: params.vmName };
+        const result = await vmManager.stopVM(params.resourceGroup as string, params.vmName as string);
+        return { content: [{ type: "text" as const, text: `Stopped VM: ${params.vmName}` }], details: result };
       },
     });
 
     api.registerTool({
       name: "azure_list_storage_accounts",
+      label: "Azure List Storage",
       description: "List Azure Storage accounts",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!storageManager) throw new Error("Storage manager not initialized");
-        return storageManager.listStorageAccounts(params.resourceGroup);
+        const accounts = await storageManager.listStorageAccounts(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }], details: { count: accounts.length } };
       },
     });
 
     api.registerTool({
-      name: "azure_list_blobs",
-      description: "List blobs in a storage container",
-      parameters: { type: "object", properties: { resourceGroup: { type: "string" }, accountName: { type: "string" }, containerName: { type: "string" } }, required: ["resourceGroup", "accountName", "containerName"] },
-      handler: async (params: { resourceGroup: string; accountName: string; containerName: string }) => {
+      name: "azure_list_containers",
+      label: "Azure List Containers",
+      description: "List containers in a storage account",
+      parameters: { type: "object", properties: { resourceGroup: { type: "string" }, accountName: { type: "string" } }, required: ["resourceGroup", "accountName"] },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!storageManager) throw new Error("Storage manager not initialized");
-        return storageManager.listBlobs(params.resourceGroup, params.accountName, params.containerName);
+        const containers = await storageManager.listContainers(params.resourceGroup as string, params.accountName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(containers, null, 2) }], details: { count: containers.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_resource_groups",
+      label: "Azure List Resource Groups",
       description: "List Azure resource groups",
       parameters: { type: "object", properties: {} },
-      handler: async () => {
+      async execute() {
         if (!resourceManager) throw new Error("Resource manager not initialized");
-        return resourceManager.listResourceGroups();
+        const groups = await resourceManager.listResourceGroups();
+        return { content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }], details: { count: groups.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_functions",
+      label: "Azure List Functions",
       description: "List Azure Function Apps",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!functionsManager) throw new Error("Functions manager not initialized");
-        return functionsManager.listFunctionApps(params.resourceGroup);
+        const apps = await functionsManager.listFunctionApps(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(apps, null, 2) }], details: { count: apps.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_aks_clusters",
+      label: "Azure List AKS",
       description: "List AKS clusters",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!containerManager) throw new Error("Container manager not initialized");
-        return containerManager.listClusters(params.resourceGroup);
+        const clusters = await containerManager.listAKSClusters(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(clusters, null, 2) }], details: { count: clusters.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_sql_servers",
+      label: "Azure List SQL",
       description: "List Azure SQL servers",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!sqlManager) throw new Error("SQL manager not initialized");
-        return sqlManager.listServers(params.resourceGroup);
+        const servers = await sqlManager.listServers(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(servers, null, 2) }], details: { count: servers.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_keyvaults",
+      label: "Azure List KeyVaults",
       description: "List Azure Key Vaults",
       parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
-      handler: async (params: { resourceGroup?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!keyVaultManager) throw new Error("KeyVault manager not initialized");
-        return keyVaultManager.listVaults(params.resourceGroup);
+        const vaults = await keyVaultManager.listVaults(params.resourceGroup as string | undefined);
+        return { content: [{ type: "text" as const, text: JSON.stringify(vaults, null, 2) }], details: { count: vaults.length } };
       },
     });
 
     api.registerTool({
       name: "azure_query_costs",
+      label: "Azure Query Costs",
       description: "Query Azure cost data",
       parameters: { type: "object", properties: { timeframe: { type: "string", description: "MonthToDate, BillingMonthToDate, etc." } } },
-      handler: async (params: { timeframe?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!costManager) throw new Error("Cost manager not initialized");
-        return costManager.queryCosts({ timeframe: params.timeframe });
+        const result = await costManager.queryCosts({ timeframe: params.timeframe as string | undefined });
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { rows: result.rows.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_subscriptions",
+      label: "Azure List Subscriptions",
       description: "List Azure subscriptions",
       parameters: { type: "object", properties: {} },
-      handler: async () => {
+      async execute() {
         if (!subscriptionManager) throw new Error("Subscription manager not initialized");
-        return subscriptionManager.listSubscriptions();
+        const subs = await subscriptionManager.listSubscriptions();
+        return { content: [{ type: "text" as const, text: JSON.stringify(subs, null, 2) }], details: { count: subs.length } };
       },
     });
 
     api.registerTool({
       name: "azure_get_metrics",
+      label: "Azure Get Metrics",
       description: "Get Azure Monitor metrics for a resource",
       parameters: {
         type: "object",
@@ -671,37 +748,43 @@ const plugin = {
         },
         required: ["resourceUri", "metrics"],
       },
-      handler: async (params: { resourceUri: string; metrics: string[]; timespan?: string; interval?: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!monitorManager) throw new Error("Monitor manager not initialized");
-        return monitorManager.listMetrics(params.resourceUri, params.metrics, {
-          timespan: params.timespan,
-          interval: params.interval,
+        const metrics = await monitorManager.listMetrics(params.resourceUri as string, params.metrics as string[], {
+          timespan: params.timespan as string | undefined,
+          interval: params.interval as string | undefined,
         });
+        return { content: [{ type: "text" as const, text: JSON.stringify(metrics, null, 2) }], details: { count: metrics.length } };
       },
     });
 
     api.registerTool({
       name: "azure_list_security_alerts",
+      label: "Azure Security Alerts",
       description: "List Microsoft Defender for Cloud security alerts",
       parameters: { type: "object", properties: {} },
-      handler: async () => {
+      async execute() {
         if (!securityManager) throw new Error("Security manager not initialized");
-        return securityManager.listAlerts();
+        const alerts = await securityManager.listAlerts();
+        return { content: [{ type: "text" as const, text: JSON.stringify(alerts, null, 2) }], details: { count: alerts.length } };
       },
     });
 
     api.registerTool({
       name: "azure_compliance_report",
+      label: "Azure Compliance Report",
       description: "Generate Azure compliance report",
       parameters: { type: "object", properties: {} },
-      handler: async () => {
+      async execute() {
         if (!complianceManager) throw new Error("Compliance manager not initialized");
-        return complianceManager.generateReport();
+        const report = await complianceManager.generateReport();
+        return { content: [{ type: "text" as const, text: JSON.stringify(report, null, 2) }], details: report };
       },
     });
 
     api.registerTool({
       name: "azure_deploy_arm_template",
+      label: "Azure Deploy ARM",
       description: "Deploy an ARM template to a resource group",
       parameters: {
         type: "object",
@@ -713,19 +796,21 @@ const plugin = {
         },
         required: ["resourceGroup", "deploymentName", "template"],
       },
-      handler: async (params: { resourceGroup: string; deploymentName: string; template: Record<string, unknown>; parameters?: Record<string, unknown> }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!resourceManager) throw new Error("Resource manager not initialized");
-        return resourceManager.createDeployment(
-          params.resourceGroup,
-          params.deploymentName,
-          params.template,
-          params.parameters,
+        const deployment = await resourceManager.createDeployment(
+          params.resourceGroup as string,
+          params.deploymentName as string,
+          params.template as Record<string, unknown>,
+          params.parameters as Record<string, unknown> | undefined,
         );
+        return { content: [{ type: "text" as const, text: `Deployment ${deployment.name} created successfully` }], details: deployment };
       },
     });
 
     api.registerTool({
       name: "azure_list_ai_deployments",
+      label: "Azure AI Deployments",
       description: "List Azure OpenAI / Cognitive Services deployments",
       parameters: {
         type: "object",
@@ -735,9 +820,10 @@ const plugin = {
         },
         required: ["resourceGroup", "accountName"],
       },
-      handler: async (params: { resourceGroup: string; accountName: string }) => {
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
         if (!aiManager) throw new Error("AI manager not initialized");
-        return aiManager.listDeployments(params.resourceGroup, params.accountName);
+        const deployments = await aiManager.listDeployments(params.resourceGroup as string, params.accountName as string);
+        return { content: [{ type: "text" as const, text: JSON.stringify(deployments, null, 2) }], details: { count: deployments.length } };
       },
     });
 
@@ -757,20 +843,20 @@ const plugin = {
 
         // Initialize credentials
         credentialsManager = createCredentialsManager({
-          subscriptionId,
-          tenantId: config.defaultTenantId,
+          defaultSubscription: subscriptionId,
+          defaultTenantId: config.defaultTenantId,
           credentialMethod: (config.credentialMethod as any) ?? "default",
         });
         await credentialsManager.initialize();
 
         cliWrapper = createCLIWrapper();
-        contextManager = new AzureContextManager(credentialsManager, subscriptionId);
+        contextManager = new AzureContextManager(credentialsManager, config.defaultRegion);
         serviceDiscovery = new AzureServiceDiscovery(credentialsManager, subscriptionId);
         taggingManager = new AzureTaggingManager(credentialsManager, subscriptionId);
         activityLogManager = new AzureActivityLogManager(credentialsManager, subscriptionId);
 
         // Compute
-        vmManager = new AzureVMManager(credentialsManager, subscriptionId, retryOpts);
+        vmManager = new AzureVMManager(credentialsManager, subscriptionId, config.defaultRegion, retryOpts);
         functionsManager = new AzureFunctionsManager(credentialsManager, subscriptionId, retryOpts);
         containerManager = new AzureContainerManager(credentialsManager, subscriptionId, retryOpts);
 

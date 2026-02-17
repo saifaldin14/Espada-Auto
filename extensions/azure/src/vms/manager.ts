@@ -215,7 +215,7 @@ export class AzureVMManager {
   // Private Helpers
   // ===========================================================================
 
-  private mapToVMInstance(vm: Record<string, unknown>): VMInstance {
+  private mapToVMInstance(vm: unknown): VMInstance {
     const v = vm as Record<string, any>;
     const hardwareProfile = v.hardwareProfile ?? {};
     const storageProfile = v.storageProfile ?? {};

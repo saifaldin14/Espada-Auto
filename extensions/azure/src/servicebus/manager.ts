@@ -31,7 +31,7 @@ export class AzureServiceBusManager {
 
   private async getClient() {
     const { ServiceBusManagementClient } = await import("@azure/arm-servicebus");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new ServiceBusManagementClient(credential, this.subscriptionId);
   }
 

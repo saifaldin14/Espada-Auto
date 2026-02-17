@@ -26,8 +26,9 @@ export class AzureAutomationManager {
 
   private async getClient() {
     const { AutomationClient } = await import("@azure/arm-automation");
-    const credential = this.credentialsManager.getCredential();
-    return new AutomationClient(credential, this.subscriptionId);
+    const { credential } = await this.credentialsManager.getCredential();
+    // @azure/arm-automation v10 constructor signature varies; cast to avoid type mismatch
+    return new (AutomationClient as any)(credential, this.subscriptionId) as InstanceType<typeof AutomationClient>;
   }
 
   async listAccounts(resourceGroup?: string): Promise<AutomationAccount[]> {
@@ -35,8 +36,8 @@ export class AzureAutomationManager {
       const client = await this.getClient();
       const results: AutomationAccount[] = [];
       const iter = resourceGroup
-        ? client.automationAccountOperations.listByResourceGroup(resourceGroup)
-        : client.automationAccountOperations.list();
+        ? client.automationAccount.listByResourceGroup(resourceGroup)
+        : (client.automationAccount as any).list();
       for await (const a of iter) {
         results.push({
           id: a.id ?? "",
@@ -57,10 +58,8 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: Runbook[] = [];
-      for await (const rb of client.runbookOperations.listByAutomationAccount(
-        resourceGroup,
-        accountName
-      )) {
+      const iter = (client.runbook as any).listByAutomationAccount(resourceGroup, accountName);
+      for await (const rb of iter) {
         results.push({
           id: rb.id ?? "",
           name: rb.name ?? "",
@@ -85,7 +84,7 @@ export class AzureAutomationManager {
   ): Promise<Runbook> {
     return withAzureRetry(async () => {
       const client = await this.getClient();
-      const rb = await client.runbookOperations.get(resourceGroup, accountName, runbookName);
+      const rb = await client.runbook.get(resourceGroup, accountName, runbookName);
       return {
         id: rb.id ?? "",
         name: rb.name ?? "",
@@ -108,7 +107,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const jobName = `${runbookName}-${Date.now()}`;
-      const result = await client.jobOperations.create(resourceGroup, accountName, jobName, {
+      const result = await client.job.create(resourceGroup, accountName, jobName, {
         runbook: { name: runbookName },
         parameters,
       });
@@ -128,7 +127,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: RunbookJob[] = [];
-      for await (const job of client.jobOperations.listByAutomationAccount(
+      for await (const job of (client.job as any).listByAutomationAccount(
         resourceGroup,
         accountName
       )) {
@@ -152,7 +151,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: Schedule[] = [];
-      for await (const s of client.scheduleOperations.listByAutomationAccount(
+      for await (const s of (client.schedule as any).listByAutomationAccount(
         resourceGroup,
         accountName
       )) {

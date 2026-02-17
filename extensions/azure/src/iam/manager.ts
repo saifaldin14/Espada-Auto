@@ -26,7 +26,7 @@ export class AzureIAMManager {
 
   private async getAuthClient() {
     const { AuthorizationManagementClient } = await import("@azure/arm-authorization");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new AuthorizationManagementClient(credential, this.subscriptionId);
   }
 

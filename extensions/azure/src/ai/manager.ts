@@ -26,7 +26,8 @@ export class AzureAIManager {
 
   private async getClient() {
     const { CognitiveServicesManagementClient } = await import("@azure/arm-cognitiveservices");
-    const credential = this.credentialsManager.getCredential();
+    const credentialResult = await this.credentialsManager.getCredential();
+    const credential = credentialResult.credential || credentialResult;
     return new CognitiveServicesManagementClient(credential, this.subscriptionId);
   }
 

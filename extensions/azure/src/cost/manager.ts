@@ -26,7 +26,7 @@ export class AzureCostManager {
 
   private async getCostClient() {
     const { CostManagementClient } = await import("@azure/arm-costmanagement");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new CostManagementClient(credential);
   }
 
@@ -84,7 +84,7 @@ export class AzureCostManager {
   async listBudgets(resourceGroup?: string): Promise<Budget[]> {
     return withAzureRetry(async () => {
       const { ConsumptionManagementClient } = await import("@azure/arm-consumption");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new ConsumptionManagementClient(credential, this.subscriptionId);
       const scope = resourceGroup
         ? `/subscriptions/${this.subscriptionId}/resourceGroups/${resourceGroup}`

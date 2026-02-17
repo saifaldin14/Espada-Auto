@@ -27,7 +27,7 @@ export class AzureBackupManager {
   async listVaults(resourceGroup?: string): Promise<RecoveryServicesVault[]> {
     return withAzureRetry(async () => {
       const { RecoveryServicesClient } = await import("@azure/arm-recoveryservices");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new RecoveryServicesClient(credential, this.subscriptionId);
       const results: RecoveryServicesVault[] = [];
       const iter = resourceGroup
@@ -50,7 +50,7 @@ export class AzureBackupManager {
   async getVault(resourceGroup: string, vaultName: string): Promise<RecoveryServicesVault> {
     return withAzureRetry(async () => {
       const { RecoveryServicesClient } = await import("@azure/arm-recoveryservices");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new RecoveryServicesClient(credential, this.subscriptionId);
       const v = await client.vaults.get(resourceGroup, vaultName);
       return {
@@ -70,7 +70,7 @@ export class AzureBackupManager {
   ): Promise<BackupPolicy[]> {
     return withAzureRetry(async () => {
       const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
       const results: BackupPolicy[] = [];
       for await (const p of client.backupPolicies.list(vaultName, resourceGroup)) {
@@ -91,7 +91,7 @@ export class AzureBackupManager {
   ): Promise<BackupItem[]> {
     return withAzureRetry(async () => {
       const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
       const results: BackupItem[] = [];
       for await (const item of client.backupProtectedItems.list(vaultName, resourceGroup)) {
@@ -118,7 +118,7 @@ export class AzureBackupManager {
   ): Promise<BackupJob[]> {
     return withAzureRetry(async () => {
       const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
       const results: BackupJob[] = [];
       for await (const job of client.backupJobs.list(vaultName, resourceGroup)) {

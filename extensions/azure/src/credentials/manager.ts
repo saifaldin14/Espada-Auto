@@ -181,7 +181,9 @@ export class AzureCredentialsManager {
 
       case "managed-identity": {
         const clientId = process.env.AZURE_CLIENT_ID;
-        return new identity.ManagedIdentityCredential(clientId);
+        return clientId
+          ? new identity.ManagedIdentityCredential({ clientId })
+          : new identity.ManagedIdentityCredential();
       }
 
       case "browser":

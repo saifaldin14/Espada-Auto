@@ -31,7 +31,7 @@ export class AzurePolicyManager {
 
   private async getClient() {
     const { PolicyClient } = await import("@azure/arm-policy");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new PolicyClient(credential, this.subscriptionId);
   }
 
@@ -125,7 +125,7 @@ export class AzurePolicyManager {
   async getComplianceState(scope?: string): Promise<PolicyComplianceState[]> {
     return withAzureRetry(async () => {
       const { PolicyInsightsClient } = await import("@azure/arm-policyinsights");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new PolicyInsightsClient(credential, this.subscriptionId);
       const effectiveScope = scope ?? `/subscriptions/${this.subscriptionId}`;
       const results: PolicyComplianceState[] = [];

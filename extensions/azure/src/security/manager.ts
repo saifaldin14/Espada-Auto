@@ -26,7 +26,7 @@ export class AzureSecurityManager {
 
   private async getClient() {
     const { SecurityCenter } = await import("@azure/arm-security");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new SecurityCenter(credential, this.subscriptionId);
   }
 
@@ -35,13 +35,14 @@ export class AzureSecurityManager {
       const client = await this.getClient();
       const results: SecureScore[] = [];
       for await (const s of client.secureScores.list()) {
+        const score = (s as any).score ?? (s as any).scoreDetails ?? {};
         results.push({
           id: s.id ?? "",
           displayName: s.displayName ?? "",
-          currentScore: s.score?.current ?? 0,
-          maxScore: s.score?.max ?? 0,
-          percentage: s.score?.percentage ?? 0,
-          weight: s.weight ?? 0,
+          currentScore: score.current ?? (s as any).current ?? 0,
+          maxScore: score.max ?? (s as any).max ?? 0,
+          percentage: score.percentage ?? 0,
+          weight: (s as any).weight ?? 0,
         });
       }
       return results;

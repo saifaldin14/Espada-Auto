@@ -26,7 +26,7 @@ export class AzureAPIManagementManager {
 
   private async getClient() {
     const { ApiManagementClient } = await import("@azure/arm-apimanagement");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new ApiManagementClient(credential, this.subscriptionId);
   }
 

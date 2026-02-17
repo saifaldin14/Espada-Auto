@@ -26,7 +26,7 @@ export class AzureCDNManager {
 
   private async getClient() {
     const { CdnManagementClient } = await import("@azure/arm-cdn");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new CdnManagementClient(credential, this.subscriptionId);
   }
 

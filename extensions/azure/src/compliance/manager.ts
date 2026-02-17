@@ -46,7 +46,7 @@ export class AzureComplianceManager {
   async getComplianceStatus(frameworkId?: string): Promise<ComplianceStatus[]> {
     return withAzureRetry(async () => {
       const { PolicyInsightsClient } = await import("@azure/arm-policyinsights");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new PolicyInsightsClient(credential, this.subscriptionId);
 
       // Aggregate compliance from policy states
@@ -79,7 +79,7 @@ export class AzureComplianceManager {
   async listViolations(resourceGroup?: string): Promise<ComplianceViolation[]> {
     return withAzureRetry(async () => {
       const { PolicyInsightsClient } = await import("@azure/arm-policyinsights");
-      const credential = this.credentialsManager.getCredential();
+      const { credential } = await this.credentialsManager.getCredential();
       const client = new PolicyInsightsClient(credential, this.subscriptionId);
 
       const violations: ComplianceViolation[] = [];

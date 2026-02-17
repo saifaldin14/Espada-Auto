@@ -26,7 +26,7 @@ export class AzureDNSManager {
 
   private async getClient() {
     const { DnsManagementClient } = await import("@azure/arm-dns");
-    const credential = this.credentialsManager.getCredential();
+    const { credential } = await this.credentialsManager.getCredential();
     return new DnsManagementClient(credential, this.subscriptionId);
   }
 

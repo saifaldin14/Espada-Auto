@@ -29,7 +29,8 @@ export class AzureEnterpriseManager {
   async listManagementGroups(): Promise<AzureManagementGroup[]> {
     return withAzureRetry(async () => {
       const { ManagementGroupsAPI } = await import("@azure/arm-managementgroups");
-      const client = new ManagementGroupsAPI(this.credentials.getCredential());
+      const { credential } = await this.credentials.getCredential();
+      const client = new ManagementGroupsAPI(credential);
       const groups: AzureManagementGroup[] = [];
       for await (const group of client.managementGroups.list()) {
         groups.push({
@@ -49,7 +50,8 @@ export class AzureEnterpriseManager {
   async getManagementGroup(groupId: string): Promise<AzureManagementGroup | null> {
     return withAzureRetry(async () => {
       const { ManagementGroupsAPI } = await import("@azure/arm-managementgroups");
-      const client = new ManagementGroupsAPI(this.credentials.getCredential());
+      const { credential } = await this.credentials.getCredential();
+      const client = new ManagementGroupsAPI(credential);
       const group = await client.managementGroups.get(groupId, { expand: "children" });
       if (!group) return null;
       return {
@@ -73,7 +75,8 @@ export class AzureEnterpriseManager {
   async listTenants(): Promise<AzureTenantInfo[]> {
     return withAzureRetry(async () => {
       const { SubscriptionClient } = await import("@azure/arm-subscriptions");
-      const client = new SubscriptionClient(this.credentials.getCredential());
+      const { credential } = await this.credentials.getCredential();
+      const client = new SubscriptionClient(credential);
       const tenants: AzureTenantInfo[] = [];
       for await (const t of client.tenants.list()) {
         tenants.push({
@@ -94,7 +97,8 @@ export class AzureEnterpriseManager {
   async listSubscriptionsForTenant(tenantId: string): Promise<AzureTenantSubscription[]> {
     return withAzureRetry(async () => {
       const { SubscriptionClient } = await import("@azure/arm-subscriptions");
-      const client = new SubscriptionClient(this.credentials.getCredential());
+      const { credential } = await this.credentials.getCredential();
+      const client = new SubscriptionClient(credential);
       const subs: AzureTenantSubscription[] = [];
       for await (const s of client.subscriptions.list()) {
         if (!tenantId || s.tenantId === tenantId) {
@@ -115,18 +119,22 @@ export class AzureEnterpriseManager {
    */
   async listLighthouseDelegations(): Promise<AzureLighthouseDelegation[]> {
     return withAzureRetry(async () => {
-      const { ManagedServicesClient } = await import("@azure/arm-managedservices");
-      const client = new ManagedServicesClient(this.credentials.getCredential());
-      const scope = `/subscriptions/${this.subscriptionId}`;
+      // Lighthouse delegations are queried via ARM REST API since @azure/arm-managedservices is not published
+      const { ResourceManagementClient } = await import("@azure/arm-resources");
+      const { credential } = await this.credentials.getCredential();
+      const client = new ResourceManagementClient(credential, this.subscriptionId);
       const delegations: AzureLighthouseDelegation[] = [];
-      for await (const d of client.registrationAssignments.list(scope)) {
+      // List registration assignments via generic resource listing
+      for await (const resource of client.resources.list({
+        filter: "resourceType eq 'Microsoft.ManagedServices/registrationAssignments'",
+      })) {
         delegations.push({
-          delegationId: d.id ?? "",
-          managedTenantId: (d.properties as any)?.registrationDefinition?.properties?.managedByTenantId ?? "",
+          delegationId: resource.id ?? "",
+          managedTenantId: "",
           managedSubscriptionId: this.subscriptionId,
           principalId: "",
           roleDefinitionId: "",
-          status: (d.properties as any)?.provisioningState ?? "Unknown",
+          status: (resource as any).provisioningState ?? "Unknown",
         });
       }
       return delegations;
@@ -139,7 +147,8 @@ export class AzureEnterpriseManager {
   async getEnrollmentInfo(): Promise<AzureEnterpriseEnrollment | null> {
     return withAzureRetry(async () => {
       const { BillingManagementClient } = await import("@azure/arm-billing");
-      const client = new BillingManagementClient(this.credentials.getCredential());
+      const { credential } = await this.credentials.getCredential();
+      const client = new BillingManagementClient(credential);
       const accounts: AzureEnterpriseEnrollment[] = [];
       for await (const acct of client.billingAccounts.list()) {
         const enrollment: AzureEnterpriseEnrollment = {
