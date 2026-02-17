@@ -82,7 +82,7 @@ describe("waitWithProgress", () => {
     const checkFn = vi.fn().mockResolvedValue(false);
     const result = await waitWithProgress("test", checkFn, {
       intervalMs: 10,
-      timeoutMs: 50,
+      timeoutMs: 100,
       silent: true,
     });
     expect(result).toBe(false);

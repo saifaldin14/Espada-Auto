@@ -80,3 +80,38 @@ export { AzureComplianceManager } from "./compliance/index.js";
 
 // Enterprise
 export { AzureEnterpriseManager } from "./enterprise/index.js";
+
+// Orchestration (IDIO)
+export {
+  Orchestrator,
+  orchestrate,
+  validatePlan,
+  topologicalSort,
+  flattenLayers,
+  registerBuiltinSteps,
+  registerBuiltinStepsDryRun,
+  BUILTIN_STEP_DEFINITIONS,
+  BUILTIN_BLUEPRINTS,
+  getBlueprint,
+  listBlueprints,
+  registerBlueprint,
+  registerStepType,
+  clearStepRegistry,
+  isOutputRef,
+  parseOutputRef,
+  resolveStepParams,
+  evaluateCondition,
+} from "./orchestration/index.js";
+export type {
+  ExecutionPlan,
+  PlanStep,
+  StepTypeDefinition,
+  StepHandler,
+  OrchestrationOptions,
+  OrchestrationResult,
+  OrchestrationEvent,
+  Blueprint,
+  StepContext,
+  StepInstanceId,
+  StepTypeId,
+} from "./orchestration/index.js";

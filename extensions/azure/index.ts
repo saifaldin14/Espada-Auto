@@ -45,6 +45,10 @@ import { AzureGuardrailsManager, createGuardrailsManager } from "./src/guardrail
 import { AzureComplianceManager } from "./src/compliance/index.js";
 import { AzureAutomationManager } from "./src/automation/index.js";
 
+// Orchestration (IDIO)
+import { Orchestrator, registerBuiltinSteps, clearStepRegistry, listBlueprints, getBlueprint, validatePlan } from "./src/orchestration/index.js";
+import type { OrchestrationOptions } from "./src/orchestration/index.js";
+
 import type { AzurePluginConfig } from "./src/types.js";
 
 // Theme helper for CLI output
@@ -94,6 +98,7 @@ let subscriptionManager: AzureSubscriptionManager | null = null;
 let guardrailsManager: AzureGuardrailsManager | null = null;
 let complianceManager: AzureComplianceManager | null = null;
 let automationManager: AzureAutomationManager | null = null;
+let orchestrator: Orchestrator | null = null;
 
 // Config schema using TypeBox
 import { Type, type Static } from "@sinclair/typebox";
@@ -1729,6 +1734,56 @@ const plugin = {
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
+    // --- Orchestration (IDIO) ---
+    api.registerGatewayMethod("azure.orchestration.listBlueprints", async (opts) => {
+      try {
+        opts.respond(true, { data: listBlueprints() });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.orchestration.getBlueprint", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { id: string };
+        const bp = getBlueprint(params.id);
+        if (!bp) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Blueprint "${params.id}" not found` }); return; }
+        opts.respond(true, { data: { id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.orchestration.generatePlan", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { blueprintId: string; params: Record<string, unknown> };
+        const bp = getBlueprint(params.blueprintId);
+        if (!bp) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Blueprint "${params.blueprintId}" not found` }); return; }
+        const plan = bp.generate(params.params);
+        const validation = validatePlan(plan);
+        opts.respond(true, { data: { plan, validation } });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.orchestration.executePlan", async (opts) => {
+      if (!orchestrator) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Orchestrator not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { plan: any; dryRun?: boolean };
+        const result = await orchestrator.execute({ ...params.plan, options: { dryRun: params.dryRun } });
+        opts.respond(true, { data: result });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.orchestration.runBlueprint", async (opts) => {
+      if (!orchestrator) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Orchestrator not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { blueprintId: string; params: Record<string, unknown>; dryRun?: boolean };
+        const bp = getBlueprint(params.blueprintId);
+        if (!bp) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Blueprint "${params.blueprintId}" not found` }); return; }
+        const plan = bp.generate(params.params);
+        const validation = validatePlan(plan);
+        if (!validation.isValid) { opts.respond(false, undefined, { code: "VALIDATION_FAILED", message: validation.issues.map((i) => i.message).join("; ") }); return; }
+        const result = await orchestrator.execute({ ...plan, options: { dryRun: params.dryRun } });
+        opts.respond(true, { data: result });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
     // =========================================================================
     // Agent Tools
     // =========================================================================
@@ -2727,6 +2782,146 @@ const plugin = {
     });
 
     // =========================================================================
+    // IDIO Orchestration Tools
+    // =========================================================================
+
+    api.registerTool({
+      name: "azure_list_blueprints",
+      label: "Azure List Blueprints",
+      description: "List available IDIO orchestration blueprints for multi-resource Azure deployments",
+      parameters: { type: "object", properties: {}, required: [] },
+      async execute() {
+        const blueprints = listBlueprints();
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(blueprints, null, 2) }],
+          details: { blueprints },
+        };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_get_blueprint",
+      label: "Azure Get Blueprint",
+      description: "Get full details of an IDIO blueprint including its parameters",
+      parameters: {
+        type: "object",
+        properties: { id: { type: "string", description: "Blueprint ID (e.g. web-app-with-sql)" } },
+        required: ["id"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const bp = getBlueprint(params.id as string);
+        if (!bp) throw new Error(`Blueprint "${params.id}" not found`);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters }, null, 2) }],
+          details: { id: bp.id, label: bp.label, description: bp.description, category: bp.category, parameters: bp.parameters },
+        };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_generate_plan",
+      label: "Azure Generate Plan",
+      description: "Generate an execution plan from a blueprint with the given parameters",
+      parameters: {
+        type: "object",
+        properties: {
+          blueprintId: { type: "string", description: "Blueprint ID" },
+          params: { type: "object", description: "Blueprint parameters (projectName, location, etc.)" },
+        },
+        required: ["blueprintId", "params"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const bp = getBlueprint(params.blueprintId as string);
+        if (!bp) throw new Error(`Blueprint "${params.blueprintId}" not found`);
+        const plan = bp.generate(params.params as Record<string, unknown>);
+        const validation = validatePlan(plan);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ plan: { id: plan.id, name: plan.name, stepCount: plan.steps.length, steps: plan.steps.map((s) => ({ id: s.id, type: s.type, label: s.label, dependsOn: s.dependsOn })) }, validation }, null, 2) }],
+          details: { plan, validation },
+        };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_validate_plan",
+      label: "Azure Validate Plan",
+      description: "Validate an IDIO execution plan for correctness (dependency cycles, missing params, etc.)",
+      parameters: {
+        type: "object",
+        properties: { plan: { type: "object", description: "Execution plan object with id, name, steps" } },
+        required: ["plan"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const validation = validatePlan(params.plan as any);
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(validation, null, 2) }],
+          details: validation,
+        };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_execute_plan",
+      label: "Azure Execute Plan",
+      description: "Execute an IDIO orchestration plan (optionally in dry-run mode)",
+      parameters: {
+        type: "object",
+        properties: {
+          plan: { type: "object", description: "Execution plan (from azure_generate_plan)" },
+          dryRun: { type: "boolean", description: "If true, simulate without creating real resources" },
+          maxConcurrency: { type: "number", description: "Max parallel steps (default 4)" },
+        },
+        required: ["plan"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!orchestrator) throw new Error("Orchestrator not initialized");
+        const opts: Partial<OrchestrationOptions> = {};
+        if (params.dryRun !== undefined) opts.dryRun = Boolean(params.dryRun);
+        if (params.maxConcurrency !== undefined) opts.maxConcurrency = Number(params.maxConcurrency);
+        const result = await orchestrator.execute({ ...(params.plan as any), options: opts });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, durationMs: result.durationMs, stepCount: result.steps.length, steps: result.steps.map((s) => ({ stepId: s.stepId, status: s.status, durationMs: s.durationMs, error: s.error?.message })), errors: result.errors.map((e) => ({ stepId: e.stepId, message: e.error.message })) }, null, 2) }],
+          details: result,
+        };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_run_blueprint",
+      label: "Azure Run Blueprint",
+      description: "Generate and execute a blueprint in one step — the primary orchestration command",
+      parameters: {
+        type: "object",
+        properties: {
+          blueprintId: { type: "string", description: "Blueprint ID (e.g. web-app-with-sql, api-backend, static-web-with-cdn, microservices-backbone, data-platform)" },
+          params: { type: "object", description: "Blueprint parameters" },
+          dryRun: { type: "boolean", description: "Simulate without creating resources" },
+        },
+        required: ["blueprintId", "params"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!orchestrator) throw new Error("Orchestrator not initialized");
+        const bp = getBlueprint(params.blueprintId as string);
+        if (!bp) throw new Error(`Blueprint "${params.blueprintId}" not found`);
+        const plan = bp.generate(params.params as Record<string, unknown>);
+        const validation = validatePlan(plan);
+        if (!validation.isValid) {
+          return {
+            content: [{ type: "text" as const, text: `Plan validation failed:\n${validation.issues.map((i) => `- [${i.severity}] ${i.message}`).join("\n")}` }],
+            details: { status: "validation-failed", validation },
+          };
+        }
+        const opts: Partial<OrchestrationOptions> = {};
+        if (params.dryRun !== undefined) opts.dryRun = Boolean(params.dryRun);
+        const result = await orchestrator.execute({ ...plan, options: opts });
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, planName: plan.name, durationMs: result.durationMs, steps: result.steps.map((s) => ({ stepId: s.stepId, type: s.stepType, status: s.status, durationMs: s.durationMs, error: s.error?.message })), errors: result.errors.map((e) => ({ stepId: e.stepId, message: e.error.message })) }, null, 2) }],
+          details: result,
+        };
+      },
+    });
+
+    // =========================================================================
     // Service Lifecycle
     // =========================================================================
     api.registerService({
@@ -2804,6 +2999,18 @@ const plugin = {
         guardrailsManager = createGuardrailsManager();
         complianceManager = new AzureComplianceManager(credentialsManager, subscriptionId, retryOpts);
 
+        // Orchestration (IDIO)
+        clearStepRegistry();
+        registerBuiltinSteps(
+          () => resourceManager!,
+          () => storageManager!,
+        );
+        orchestrator = new Orchestrator({
+          globalTags: Object.fromEntries(
+            (config.defaultTags ?? []).map((t: { key: string; value: string }) => [t.key, t.value]),
+          ),
+        });
+
         // Optionally probe identity
         try {
           await contextManager.initialize();
@@ -2852,6 +3059,8 @@ const plugin = {
         guardrailsManager = null;
         complianceManager = null;
         automationManager = null;
+        orchestrator = null;
+        clearStepRegistry();
         pluginLogger?.info("[Azure] Azure Core Services stopped");
       },
     });
@@ -2901,5 +3110,6 @@ export function getAzureManagers() {
     guardrails: guardrailsManager,
     compliance: complianceManager,
     automation: automationManager,
+    orchestrator,
   };
 }

@@ -5,6 +5,7 @@ A comprehensive Azure infrastructure management plugin for [Espada](https://gith
 ## Features
 
 - **30+ Azure service modules** covering compute, data, networking, security, operations, messaging, AI, and governance
+- **IDIO orchestration engine** — DAG-based planner for multi-step Azure deployments (e.g., "deploy a web app with SQL backend and CDN")
 - **Multiple authentication methods** — DefaultAzureCredential, CLI, Service Principal, Managed Identity, Interactive Browser
 - **Enterprise-grade** — management groups, Lighthouse, multi-tenant, compliance frameworks
 - **Built-in retry logic** with exponential backoff for all Azure SDK calls
@@ -117,7 +118,7 @@ espada azure devops repos <project>                      # List repositories
 
 ## Agent Tools
 
-The extension registers **68 tools** for AI agent use:
+The extension registers **74 tools** for AI agent use:
 
 ### Compute & Core
 | Tool | Description |
@@ -259,9 +260,19 @@ The extension registers **68 tools** for AI agent use:
 | `azure_update_resource_tags` | Update resource tags |
 | `azure_validate_tags` | Validate tags against policy |
 
+### IDIO Orchestration
+| Tool | Description |
+|------|-------------|
+| `azure_list_blueprints` | List available deployment blueprints |
+| `azure_get_blueprint` | Get blueprint details and generated plan |
+| `azure_generate_plan` | Generate an execution plan from a blueprint |
+| `azure_validate_plan` | Validate a plan's DAG structure and parameters |
+| `azure_execute_plan` | Execute a validated plan (with dry-run support) |
+| `azure_run_blueprint` | One-shot: generate, validate, and execute a blueprint |
+
 ## Gateway Methods
 
-Available via `api.registerGatewayMethod` (**56 methods**):
+Available via `api.registerGatewayMethod` (**61 methods**):
 
 **Core:** `azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
 
@@ -298,6 +309,8 @@ Available via `api.registerGatewayMethod` (**56 methods**):
 **Activity Log:** `azure.activitylog.events`
 
 **Security:** `azure.security.alerts`, `azure.security.recommendations`
+
+**Orchestration:** `azure.orchestration.listBlueprints`, `azure.orchestration.getBlueprint`, `azure.orchestration.generatePlan`, `azure.orchestration.executePlan`, `azure.orchestration.runBlueprint`
 
 ## Module Reference
 
@@ -401,6 +414,16 @@ Available via `api.registerGatewayMethod` (**56 methods**):
 |--------|---------|-------------|
 | Enterprise | `AzureEnterpriseManager` | `listManagementGroups`, `getManagementGroup`, `listTenants`, `listSubscriptionsForTenant`, `listLighthouseDelegations`, `getEnrollmentInfo` |
 
+### Orchestration
+
+| Module | Class / Export | Key Exports |
+|--------|---------------|-------------|
+| Registry | `StepRegistry` | `registerStepType`, `getStepDefinition`, `getStepHandler`, `listStepTypes` |
+| Planner | `PlanValidator` | `validatePlan`, `topologicalSort`, `resolveStepParams`, `evaluateCondition` |
+| Engine | `Orchestrator` | `orchestrate(plan, options?, listener?)`, event streaming, rollback |
+| Blueprints | `BlueprintLibrary` | `getBlueprint`, `listBlueprints`, `generatePlanFromBlueprint` |
+| Steps | `BuiltinSteps` | 14 step type definitions + handlers, `registerBuiltinSteps()` |
+
 ## Architecture
 
 ```
@@ -451,7 +474,107 @@ extensions/azure/
 │   ├── guardrails/            # Operation guardrails (in-memory rules)
 │   ├── compliance/            # Compliance frameworks (6 built-in)
 │   ├── automation/            # Azure Automation runbooks
-│   └── enterprise/            # Multi-tenant + Management Groups + Lighthouse
+│   ├── enterprise/            # Multi-tenant + Management Groups + Lighthouse
+│   └── orchestration/         # IDIO — DAG planner, engine, blueprints, step registry```
+
+## IDIO — Intelligent Deployment & Infrastructure Orchestration
+
+IDIO is a DAG-based orchestration engine that chains multiple Azure operations into multi-step deployment plans. Instead of running individual commands one at a time, IDIO lets you describe an entire deployment (e.g., "web app with SQL backend and CDN") and executes it as a dependency-resolved pipeline with rollback support.
+
+### How It Works
+
+1. **Blueprints** define reusable deployment templates (e.g., `web-app-with-sql`)
+2. **Planner** validates the DAG, resolves output references between steps, and topologically sorts execution order
+3. **Engine** executes steps in dependency order with concurrency, event streaming, and automatic rollback on failure
+
+### Built-in Blueprints
+
+| Blueprint | Category | Steps | Description |
+|-----------|----------|-------|-------------|
+| `web-app-with-sql` | web-app | 7 | Resource group → App Insights → SQL Server → App Service Plan → Web App → CDN → Key Vault |
+| `static-web-with-cdn` | web-app | 4 | Resource group → Storage account → CDN profile → CDN endpoint |
+| `api-backend` | api | 6 | Resource group → App Insights → Cosmos DB → App Service Plan → Web App → Key Vault |
+| `microservices-backbone` | microservices | 6 | Resource group → VNet → NSG → Service Bus → Redis Cache → Key Vault |
+| `data-platform` | data | 6 | Resource group → Storage account → SQL Server → Cosmos DB → App Insights → Key Vault |
+
+### Built-in Step Types (14)
+
+| Step Type | Category | Description |
+|-----------|----------|-------------|
+| `create-resource-group` | foundation | Create a resource group |
+| `deploy-arm-template` | foundation | Deploy an ARM/Bicep template |
+| `create-vnet` | networking | Create a virtual network with subnets |
+| `create-nsg` | networking | Create a network security group |
+| `create-storage-account` | storage | Create a storage account |
+| `create-sql-server` | database | Create a SQL server + database |
+| `create-cosmosdb-account` | database | Create a Cosmos DB account |
+| `create-redis-cache` | cache | Create a Redis cache instance |
+| `create-cdn-profile` | cdn | Create a CDN profile + endpoint |
+| `create-app-service-plan` | compute | Create an App Service plan |
+| `create-web-app` | compute | Create a web app on a plan |
+| `create-app-insights` | monitoring | Create Application Insights |
+| `create-servicebus-namespace` | messaging | Create a Service Bus namespace |
+| `create-keyvault` | security | Create a Key Vault |
+
+### Output References
+
+Steps can reference outputs from upstream dependencies using the `$step.<stepId>.<outputName>` syntax:
+
+```jsonc
+{
+  "id": "web-app",
+  "type": "create-web-app",
+  "params": {
+    "appServicePlanId": "$step.plan.planId",   // references "plan" step's planId output
+    "appInsightsKey": "$step.insights.instrumentationKey"
+  },
+  "dependsOn": ["plan", "insights"]
+}
+```
+
+### Conditional Execution
+
+Steps can include conditions that gate execution based on upstream step status:
+
+```jsonc
+{
+  "id": "cdn",
+  "type": "create-cdn-profile",
+  "condition": {
+    "stepId": "web-app",
+    "check": "succeeded"    // only run if web-app succeeded
+  }
+}
+```
+
+### Dry-Run Mode
+
+Pass `dryRun: true` to `azure_execute_plan` or `azure_run_blueprint` to validate and simulate execution without creating real Azure resources. Useful for plan verification and CI pipelines.
+
+### Extending with Custom Steps
+
+Register custom step types programmatically:
+
+```typescript
+import { registerStepType } from '@espada/azure/orchestration';
+
+registerStepType({
+  type: 'deploy-my-service',
+  category: 'compute',
+  description: 'Deploy my custom service',
+  requiredParams: ['resourceGroup', 'name', 'image'],
+  optionalParams: ['replicas'],
+  outputs: ['serviceUrl', 'serviceId'],
+  handler: {
+    execute: async (ctx) => {
+      // deploy logic using ctx.params
+      return { serviceUrl: '...', serviceId: '...' };
+    },
+    rollback: async (ctx, outputs) => {
+      // cleanup logic
+    },
+  },
+});
 ```
 
 ## What's Complete
@@ -466,14 +589,14 @@ extensions/azure/
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
-- [x] Unit tests for all service modules (39 test files, 369 tests)
-- [x] 68 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise)
-- [x] 56 gateway methods covering all services
+- [x] Unit tests for all service modules (43 test files, 427 tests)
+- [x] 74 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration)
+- [x] 61 gateway methods covering all services
+- [x] IDIO orchestration engine — DAG planner, 14 built-in step types, 5 blueprints, 58 tests
 
 ## What Still Needs Work
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)
 - [ ] **DevOps PAT management** — Secure storage/retrieval of Azure DevOps personal access tokens
-- [ ] **IDIO orchestration** — Intelligent orchestrator for multi-step Azure operations (e.g., "deploy a web app with SQL backend and CDN")
 - [ ] **Docs page** — `docs/plugins/azure.md` for Mintlify docs site
 - [ ] **GitHub labeler** — Update `.github/labeler.yml` for the `azure` extension path
 - [ ] **Changelog entry** — Add entry to `CHANGELOG.md` when merging
