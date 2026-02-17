@@ -44,20 +44,75 @@ Set via `espada config set` or the plugin config object:
 All commands are under `espada azure` (or `az`):
 
 ```
-espada azure status                          # Show connection status
-espada azure vm list [--resource-group <rg>]  # List VMs
-espada azure vm start <rg> <name>             # Start a VM
-espada azure vm stop <rg> <name>              # Stop a VM
-espada azure vm restart <rg> <name>           # Restart a VM
-espada azure storage list [--resource-group]  # List storage accounts
-espada azure storage blobs <rg> <acct> <cont> # List blobs
-espada azure rg list                          # List resource groups
-espada azure functions list [--resource-group] # List function apps
-espada azure aks list [--resource-group]       # List AKS clusters
-espada azure keyvault list [--resource-group]  # List key vaults
-espada azure sql list [--resource-group]       # List SQL servers
-espada azure cost query [--timeframe ...]      # Query costs
-espada azure subscription list                 # List subscriptions
+# Core
+espada azure status                                    # Show connection status
+espada azure subscription list                         # List subscriptions
+espada azure rg list                                   # List resource groups
+
+# Compute
+espada azure vm list [--resource-group <rg>]            # List VMs
+espada azure vm start <rg> <name>                       # Start a VM
+espada azure vm stop <rg> <name>                        # Stop a VM
+espada azure vm restart <rg> <name>                     # Restart a VM
+espada azure functions list [--resource-group]          # List function apps
+espada azure aks list [--resource-group]                 # List AKS clusters
+
+# Data
+espada azure storage list [--resource-group]            # List storage accounts
+espada azure storage containers <rg> <acct>             # List containers
+espada azure sql list [--resource-group]                 # List SQL servers
+espada azure cosmosdb list [--resource-group]            # List Cosmos DB accounts
+espada azure cosmosdb databases <rg> <acct>              # List databases in account
+espada azure redis list [--resource-group]               # List Redis caches
+espada azure redis info <rg> <cacheName>                 # Get Redis cache details
+
+# Networking
+espada azure network vnet list [--resource-group]        # List VNets
+espada azure network nsg list [--resource-group]         # List NSGs
+espada azure network lb list [--resource-group]          # List load balancers
+espada azure network pip list [--resource-group]         # List public IPs
+espada azure dns zones [--resource-group]                # List DNS zones
+espada azure dns records <rg> <zone>                     # List DNS records
+espada azure cdn profiles [--resource-group]             # List CDN profiles
+espada azure cdn endpoints <rg> <profile>                # List CDN endpoints
+
+# Security & Identity
+espada azure keyvault list [--resource-group]            # List key vaults
+espada azure security scores                             # Show secure scores
+espada azure security alerts [--resource-group]          # List security alerts
+espada azure security recommendations                    # List recommendations
+espada azure iam roles [--scope <scope>]                 # List role definitions
+espada azure iam assignments [--scope <scope>]           # List role assignments
+espada azure policy definitions                          # List policy definitions
+espada azure policy assignments [--scope <scope>]        # List policy assignments
+espada azure policy compliance [--scope <scope>]         # Show compliance state
+
+# Operations
+espada azure cost query [--timeframe ...]                # Query costs
+espada azure backup vaults [--resource-group]            # List Recovery vaults
+espada azure backup items <rg> <vault>                   # List backup items
+espada azure backup jobs <rg> <vault>                    # List backup jobs
+espada azure automation accounts [--resource-group]      # List Automation accounts
+espada azure automation runbooks <rg> <acct>             # List runbooks
+espada azure automation jobs <rg> <acct>                 # List automation jobs
+
+# Messaging
+espada azure servicebus list [--resource-group]          # List SB namespaces
+espada azure servicebus queues <rg> <ns>                 # List queues
+espada azure servicebus topics <rg> <ns>                 # List topics
+espada azure eventgrid topics [--resource-group]         # List EG topics
+espada azure eventgrid domains [--resource-group]        # List EG domains
+
+# Platform
+espada azure logic list [--resource-group]               # List Logic App workflows
+espada azure logic runs <rg> <workflow>                  # List workflow runs
+espada azure logic enable <rg> <workflow>                # Enable workflow
+espada azure logic disable <rg> <workflow>               # Disable workflow
+espada azure apim list [--resource-group]                # List APIM services
+espada azure apim apis <rg> <service>                    # List APIs
+espada azure devops projects                             # List DevOps projects
+espada azure devops pipelines <project>                  # List pipelines
+espada azure devops repos <project>                      # List repositories
 ```
 
 ## Agent Tools
@@ -256,12 +311,12 @@ extensions/azure/
 - [x] Unit tests for core utilities (retry, diagnostics, progress, credentials)
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
+- [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
 
 ## What Still Needs Work
 
 - [ ] **Unit tests for service modules** — Each manager needs `*.test.ts` with mocked Azure SDK clients
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)
-- [ ] **Additional CLI commands** — Only major services have CLI wiring; remaining services (DNS, Redis, CDN, Policy, Backup, etc.) need CLI subcommands
 - [ ] **Additional agent tools** — More tools for networking, DNS, Redis, CDN, backup, automation, etc.
 - [ ] **Additional gateway methods** — More methods for services not yet exposed via gateway
 - [ ] **DevOps PAT management** — Secure storage/retrieval of Azure DevOps personal access tokens

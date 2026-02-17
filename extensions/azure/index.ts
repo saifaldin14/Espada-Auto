@@ -451,6 +451,768 @@ const plugin = {
             console.error(theme.error(`Failed to get status: ${formatErrorMessage(error)}`));
           }
         });
+
+      // --- DNS commands ---
+      const dnsCmd = az.command("dns").description("Azure DNS management");
+
+      dnsCmd
+        .command("zones")
+        .description("List DNS zones")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!dnsManager) { console.error(theme.error("DNS manager not initialized")); return; }
+          try {
+            const zones = await dnsManager.listZones(options.resourceGroup);
+            if (zones.length === 0) { console.log("No DNS zones found"); return; }
+            console.log("\nDNS Zones:\n");
+            for (const z of zones) {
+              console.log(`  ${z.name}  ${theme.muted(z.zoneType ?? "")}  records: ${z.numberOfRecordSets ?? 0}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list DNS zones: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      dnsCmd
+        .command("records <resourceGroup> <zoneName>")
+        .description("List record sets in a DNS zone")
+        .action(async (resourceGroup: string, zoneName: string) => {
+          if (!dnsManager) { console.error(theme.error("DNS manager not initialized")); return; }
+          try {
+            const records = await dnsManager.listRecordSets(resourceGroup, zoneName);
+            if (records.length === 0) { console.log("No records found"); return; }
+            console.log(`\nRecords in ${zoneName}:\n`);
+            for (const r of records) {
+              console.log(`  ${r.name}  ${theme.info(r.type)}  TTL: ${r.ttl ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list DNS records: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Redis commands ---
+      const redisCmd = az.command("redis").description("Azure Cache for Redis management");
+
+      redisCmd
+        .command("list")
+        .description("List Redis caches")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!redisManager) { console.error(theme.error("Redis manager not initialized")); return; }
+          try {
+            const caches = await redisManager.listCaches(options.resourceGroup);
+            if (caches.length === 0) { console.log("No Redis caches found"); return; }
+            console.log("\nRedis Caches:\n");
+            for (const c of caches) {
+              console.log(`  ${c.name}  ${theme.muted(c.sku?.name ?? "")}  ${c.hostName ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Redis caches: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      redisCmd
+        .command("info <resourceGroup> <cacheName>")
+        .description("Get details of a Redis cache")
+        .action(async (resourceGroup: string, cacheName: string) => {
+          if (!redisManager) { console.error(theme.error("Redis manager not initialized")); return; }
+          try {
+            const cache = await redisManager.getCache(resourceGroup, cacheName);
+            console.log(`\nRedis Cache: ${cache.name}\n`);
+            console.log(`  Host: ${cache.hostName ?? ""}`);
+            console.log(`  Port: ${cache.sslPort ?? cache.port ?? ""}`);
+            console.log(`  SKU: ${cache.sku ?? ""}`);
+            console.log(`  Version: ${cache.redisVersion ?? ""}`);
+            console.log(`  Location: ${cache.location ?? ""}`);
+          } catch (error) {
+            console.error(theme.error(`Failed to get Redis cache: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- CDN commands ---
+      const cdnCmd = az.command("cdn").description("Azure CDN management");
+
+      cdnCmd
+        .command("profiles")
+        .description("List CDN profiles")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!cdnManager) { console.error(theme.error("CDN manager not initialized")); return; }
+          try {
+            const profiles = await cdnManager.listProfiles(options.resourceGroup);
+            if (profiles.length === 0) { console.log("No CDN profiles found"); return; }
+            console.log("\nCDN Profiles:\n");
+            for (const p of profiles) {
+              console.log(`  ${p.name}  ${theme.muted(p.sku ?? "")}  ${p.resourceState ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list CDN profiles: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      cdnCmd
+        .command("endpoints <resourceGroup> <profileName>")
+        .description("List endpoints in a CDN profile")
+        .action(async (resourceGroup: string, profileName: string) => {
+          if (!cdnManager) { console.error(theme.error("CDN manager not initialized")); return; }
+          try {
+            const endpoints = await cdnManager.listEndpoints(resourceGroup, profileName);
+            if (endpoints.length === 0) { console.log("No endpoints found"); return; }
+            console.log(`\nEndpoints in ${profileName}:\n`);
+            for (const e of endpoints) {
+              console.log(`  ${e.name}  ${theme.info(e.hostName ?? "")}  ${e.resourceState ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list CDN endpoints: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Network commands ---
+      const netCmd = az.command("network").description("Azure networking management");
+
+      netCmd
+        .command("vnet list")
+        .description("List virtual networks")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!networkManager) { console.error(theme.error("Network manager not initialized")); return; }
+          try {
+            const vnets = await networkManager.listVNets(options.resourceGroup);
+            if (vnets.length === 0) { console.log("No virtual networks found"); return; }
+            console.log("\nVirtual Networks:\n");
+            for (const v of vnets) {
+              console.log(`  ${v.name}  ${theme.muted(v.location ?? "")}  ${v.addressSpace?.join(", ") ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list VNets: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      netCmd
+        .command("nsg list")
+        .description("List network security groups")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!networkManager) { console.error(theme.error("Network manager not initialized")); return; }
+          try {
+            const nsgs = await networkManager.listNSGs(options.resourceGroup);
+            if (nsgs.length === 0) { console.log("No NSGs found"); return; }
+            console.log("\nNetwork Security Groups:\n");
+            for (const n of nsgs) {
+              console.log(`  ${n.name}  ${theme.muted(n.location ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list NSGs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      netCmd
+        .command("lb list")
+        .description("List load balancers")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!networkManager) { console.error(theme.error("Network manager not initialized")); return; }
+          try {
+            const lbs = await networkManager.listLoadBalancers(options.resourceGroup);
+            if (lbs.length === 0) { console.log("No load balancers found"); return; }
+            console.log("\nLoad Balancers:\n");
+            for (const lb of lbs) {
+              console.log(`  ${lb.name}  ${theme.muted(lb.sku ?? "")}  ${lb.location ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list load balancers: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      netCmd
+        .command("pip list")
+        .description("List public IP addresses")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!networkManager) { console.error(theme.error("Network manager not initialized")); return; }
+          try {
+            const pips = await networkManager.listPublicIPs(options.resourceGroup);
+            if (pips.length === 0) { console.log("No public IPs found"); return; }
+            console.log("\nPublic IP Addresses:\n");
+            for (const p of pips) {
+              console.log(`  ${p.name}  ${theme.info(p.ipAddress ?? "unassigned")}  ${p.allocationMethod ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list public IPs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- CosmosDB commands ---
+      const cosmosCmd = az.command("cosmosdb").description("Azure Cosmos DB management");
+
+      cosmosCmd
+        .command("list")
+        .description("List Cosmos DB accounts")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!cosmosDBManager) { console.error(theme.error("Cosmos DB manager not initialized")); return; }
+          try {
+            const accounts = await cosmosDBManager.listAccounts(options.resourceGroup);
+            if (accounts.length === 0) { console.log("No Cosmos DB accounts found"); return; }
+            console.log("\nCosmos DB Accounts:\n");
+            for (const a of accounts) {
+              console.log(`  ${a.name}  ${theme.muted(a.kind ?? "")}  ${a.documentEndpoint ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Cosmos DB accounts: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      cosmosCmd
+        .command("databases <resourceGroup> <accountName>")
+        .description("List databases in a Cosmos DB account")
+        .action(async (resourceGroup: string, accountName: string) => {
+          if (!cosmosDBManager) { console.error(theme.error("Cosmos DB manager not initialized")); return; }
+          try {
+            const dbs = await cosmosDBManager.listDatabases(resourceGroup, accountName);
+            if (dbs.length === 0) { console.log("No databases found"); return; }
+            console.log(`\nDatabases in ${accountName}:\n`);
+            for (const db of dbs) {
+              console.log(`  ${db.name}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Cosmos databases: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Service Bus commands ---
+      const sbCmd = az.command("servicebus").description("Azure Service Bus management");
+
+      sbCmd
+        .command("list")
+        .description("List Service Bus namespaces")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!serviceBusManager) { console.error(theme.error("Service Bus manager not initialized")); return; }
+          try {
+            const ns = await serviceBusManager.listNamespaces(options.resourceGroup);
+            if (ns.length === 0) { console.log("No Service Bus namespaces found"); return; }
+            console.log("\nService Bus Namespaces:\n");
+            for (const n of ns) {
+              console.log(`  ${n.name}  ${theme.muted(n.sku ?? "")}  ${n.endpoint ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Service Bus namespaces: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      sbCmd
+        .command("queues <resourceGroup> <namespace>")
+        .description("List queues in a Service Bus namespace")
+        .action(async (resourceGroup: string, namespace: string) => {
+          if (!serviceBusManager) { console.error(theme.error("Service Bus manager not initialized")); return; }
+          try {
+            const queues = await serviceBusManager.listQueues(resourceGroup, namespace);
+            if (queues.length === 0) { console.log("No queues found"); return; }
+            console.log(`\nQueues in ${namespace}:\n`);
+            for (const q of queues) {
+              console.log(`  ${q.name}  ${theme.muted(`msgs: ${q.messageCount ?? 0}`)}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Service Bus queues: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      sbCmd
+        .command("topics <resourceGroup> <namespace>")
+        .description("List topics in a Service Bus namespace")
+        .action(async (resourceGroup: string, namespace: string) => {
+          if (!serviceBusManager) { console.error(theme.error("Service Bus manager not initialized")); return; }
+          try {
+            const topics = await serviceBusManager.listTopics(resourceGroup, namespace);
+            if (topics.length === 0) { console.log("No topics found"); return; }
+            console.log(`\nTopics in ${namespace}:\n`);
+            for (const t of topics) {
+              console.log(`  ${t.name}  subscriptions: ${t.subscriptionCount ?? 0}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Service Bus topics: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Event Grid commands ---
+      const egCmd = az.command("eventgrid").description("Azure Event Grid management");
+
+      egCmd
+        .command("topics")
+        .description("List Event Grid topics")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!eventGridManager) { console.error(theme.error("Event Grid manager not initialized")); return; }
+          try {
+            const topics = await eventGridManager.listTopics(options.resourceGroup);
+            if (topics.length === 0) { console.log("No Event Grid topics found"); return; }
+            console.log("\nEvent Grid Topics:\n");
+            for (const t of topics) {
+              console.log(`  ${t.name}  ${theme.muted(t.provisioningState ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Event Grid topics: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      egCmd
+        .command("domains")
+        .description("List Event Grid domains")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!eventGridManager) { console.error(theme.error("Event Grid manager not initialized")); return; }
+          try {
+            const domains = await eventGridManager.listDomains(options.resourceGroup);
+            if (domains.length === 0) { console.log("No Event Grid domains found"); return; }
+            console.log("\nEvent Grid Domains:\n");
+            for (const d of domains) {
+              console.log(`  ${d.name}  ${theme.muted(d.provisioningState ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Event Grid domains: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Security commands ---
+      const secCmd = az.command("security").description("Microsoft Defender for Cloud");
+
+      secCmd
+        .command("scores")
+        .description("Show secure scores")
+        .action(async () => {
+          if (!securityManager) { console.error(theme.error("Security manager not initialized")); return; }
+          try {
+            const scores = await securityManager.getSecureScores();
+            if (scores.length === 0) { console.log("No secure scores available"); return; }
+            console.log("\nSecure Scores:\n");
+            for (const s of scores) {
+              console.log(`  ${s.displayName}  score: ${theme.info(String(s.currentScore ?? ""))} / ${s.maxScore ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to get secure scores: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      secCmd
+        .command("alerts")
+        .description("List security alerts")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!securityManager) { console.error(theme.error("Security manager not initialized")); return; }
+          try {
+            const alerts = await securityManager.listAlerts(options.resourceGroup);
+            if (alerts.length === 0) { console.log("No security alerts"); return; }
+            console.log("\nSecurity Alerts:\n");
+            for (const a of alerts) {
+              const sev = a.severity === "High" ? theme.error(a.severity) : a.severity === "Medium" ? theme.warn(a.severity) : theme.muted(a.severity ?? "");
+              console.log(`  ${sev}  ${a.alertDisplayName ?? a.name}  ${theme.muted(a.status ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list security alerts: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      secCmd
+        .command("recommendations")
+        .description("List security recommendations")
+        .action(async () => {
+          if (!securityManager) { console.error(theme.error("Security manager not initialized")); return; }
+          try {
+            const recs = await securityManager.listRecommendations();
+            if (recs.length === 0) { console.log("No recommendations"); return; }
+            console.log("\nSecurity Recommendations:\n");
+            for (const r of recs) {
+              console.log(`  ${r.displayName ?? r.name}  ${theme.muted(r.status ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list recommendations: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- IAM commands ---
+      const iamCmd = az.command("iam").description("Identity & Access Management (RBAC)");
+
+      iamCmd
+        .command("roles")
+        .description("List role definitions")
+        .option("--scope <scope>", "Scope for role definitions")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { scope?: string };
+          if (!iamManager) { console.error(theme.error("IAM manager not initialized")); return; }
+          try {
+            const roles = await iamManager.listRoleDefinitions(options.scope);
+            if (roles.length === 0) { console.log("No role definitions found"); return; }
+            console.log("\nRole Definitions:\n");
+            for (const r of roles) {
+              console.log(`  ${r.roleName ?? r.name}  ${theme.muted(r.roleType ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list role definitions: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      iamCmd
+        .command("assignments")
+        .description("List role assignments")
+        .option("--scope <scope>", "Scope for role assignments")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { scope?: string };
+          if (!iamManager) { console.error(theme.error("IAM manager not initialized")); return; }
+          try {
+            const assignments = await iamManager.listRoleAssignments(options.scope);
+            if (assignments.length === 0) { console.log("No role assignments found"); return; }
+            console.log("\nRole Assignments:\n");
+            for (const a of assignments) {
+              console.log(`  ${a.principalId}  → ${theme.info(a.roleDefinitionId ?? "")}  ${theme.muted(a.scope ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list role assignments: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Policy commands ---
+      const polCmd = az.command("policy").description("Azure Policy management");
+
+      polCmd
+        .command("definitions")
+        .description("List policy definitions")
+        .action(async () => {
+          if (!policyManager) { console.error(theme.error("Policy manager not initialized")); return; }
+          try {
+            const defs = await policyManager.listDefinitions();
+            if (defs.length === 0) { console.log("No policy definitions found"); return; }
+            console.log("\nPolicy Definitions:\n");
+            for (const d of defs.slice(0, 25)) {
+              console.log(`  ${d.displayName ?? d.name}  ${theme.muted(d.policyType ?? "")}`);
+            }
+            if (defs.length > 25) console.log(theme.muted(`  ... and ${defs.length - 25} more`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list policy definitions: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      polCmd
+        .command("assignments")
+        .description("List policy assignments")
+        .option("--scope <scope>", "Scope for assignments")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { scope?: string };
+          if (!policyManager) { console.error(theme.error("Policy manager not initialized")); return; }
+          try {
+            const assignments = await policyManager.listAssignments(options.scope);
+            if (assignments.length === 0) { console.log("No policy assignments found"); return; }
+            console.log("\nPolicy Assignments:\n");
+            for (const a of assignments) {
+              console.log(`  ${a.displayName ?? a.name}  ${theme.muted(a.enforcementMode ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list policy assignments: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      polCmd
+        .command("compliance")
+        .description("Show policy compliance state")
+        .option("--scope <scope>", "Scope for compliance")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { scope?: string };
+          if (!policyManager) { console.error(theme.error("Policy manager not initialized")); return; }
+          try {
+            const states = await policyManager.getComplianceState(options.scope);
+            if (states.length === 0) { console.log("No compliance data"); return; }
+            console.log("\nPolicy Compliance:\n");
+            for (const s of states) {
+              const color = s.complianceState === "Compliant" ? theme.success : s.complianceState === "NonCompliant" ? theme.error : theme.muted;
+              console.log(`  ${color(s.complianceState ?? "unknown")}  ${s.policyAssignmentId ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to get compliance state: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Backup commands ---
+      const bkpCmd = az.command("backup").description("Azure Backup & Recovery Services");
+
+      bkpCmd
+        .command("vaults")
+        .description("List Recovery Services vaults")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!backupManager) { console.error(theme.error("Backup manager not initialized")); return; }
+          try {
+            const vaults = await backupManager.listVaults(options.resourceGroup);
+            if (vaults.length === 0) { console.log("No Recovery Services vaults found"); return; }
+            console.log("\nRecovery Services Vaults:\n");
+            for (const v of vaults) {
+              console.log(`  ${v.name}  ${theme.muted(v.location ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list backup vaults: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      bkpCmd
+        .command("items <resourceGroup> <vaultName>")
+        .description("List backup items in a vault")
+        .action(async (resourceGroup: string, vaultName: string) => {
+          if (!backupManager) { console.error(theme.error("Backup manager not initialized")); return; }
+          try {
+            const items = await backupManager.listBackupItems(resourceGroup, vaultName);
+            if (items.length === 0) { console.log("No backup items found"); return; }
+            console.log(`\nBackup Items in ${vaultName}:\n`);
+            for (const i of items) {
+              console.log(`  ${i.name}  ${theme.muted(i.protectionStatus ?? "")}  ${i.lastBackupTime ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list backup items: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      bkpCmd
+        .command("jobs <resourceGroup> <vaultName>")
+        .description("List backup jobs in a vault")
+        .action(async (resourceGroup: string, vaultName: string) => {
+          if (!backupManager) { console.error(theme.error("Backup manager not initialized")); return; }
+          try {
+            const jobs = await backupManager.listBackupJobs(resourceGroup, vaultName);
+            if (jobs.length === 0) { console.log("No backup jobs found"); return; }
+            console.log(`\nBackup Jobs in ${vaultName}:\n`);
+            for (const j of jobs) {
+              console.log(`  ${j.operation ?? ""}  ${j.status ?? ""}  ${theme.muted(j.startTime ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list backup jobs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Automation commands ---
+      const autoCmd = az.command("automation").description("Azure Automation management");
+
+      autoCmd
+        .command("accounts")
+        .description("List Automation accounts")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!automationManager) { console.error(theme.error("Automation manager not initialized")); return; }
+          try {
+            const accounts = await automationManager.listAccounts(options.resourceGroup);
+            if (accounts.length === 0) { console.log("No Automation accounts found"); return; }
+            console.log("\nAutomation Accounts:\n");
+            for (const a of accounts) {
+              console.log(`  ${a.name}  ${theme.muted(a.state ?? "")}  ${a.location ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Automation accounts: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      autoCmd
+        .command("runbooks <resourceGroup> <accountName>")
+        .description("List runbooks in an Automation account")
+        .action(async (resourceGroup: string, accountName: string) => {
+          if (!automationManager) { console.error(theme.error("Automation manager not initialized")); return; }
+          try {
+            const runbooks = await automationManager.listRunbooks(resourceGroup, accountName);
+            if (runbooks.length === 0) { console.log("No runbooks found"); return; }
+            console.log(`\nRunbooks in ${accountName}:\n`);
+            for (const r of runbooks) {
+              console.log(`  ${r.name}  ${theme.muted(r.runbookType ?? "")}  ${r.state ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list runbooks: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      autoCmd
+        .command("jobs <resourceGroup> <accountName>")
+        .description("List jobs in an Automation account")
+        .action(async (resourceGroup: string, accountName: string) => {
+          if (!automationManager) { console.error(theme.error("Automation manager not initialized")); return; }
+          try {
+            const jobs = await automationManager.listJobs(resourceGroup, accountName);
+            if (jobs.length === 0) { console.log("No jobs found"); return; }
+            console.log(`\nJobs in ${accountName}:\n`);
+            for (const j of jobs) {
+              console.log(`  ${j.runbookName ?? ""}  ${j.status ?? ""}  ${theme.muted(j.startTime ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list automation jobs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Logic Apps commands ---
+      const logicCmd = az.command("logic").description("Azure Logic Apps management");
+
+      logicCmd
+        .command("list")
+        .description("List Logic App workflows")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!logicManager) { console.error(theme.error("Logic Apps manager not initialized")); return; }
+          try {
+            const workflows = await logicManager.listWorkflows(options.resourceGroup);
+            if (workflows.length === 0) { console.log("No Logic App workflows found"); return; }
+            console.log("\nLogic App Workflows:\n");
+            for (const w of workflows) {
+              console.log(`  ${w.name}  ${theme.muted(w.state ?? "")}  ${w.location ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Logic App workflows: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      logicCmd
+        .command("runs <resourceGroup> <workflowName>")
+        .description("List runs for a Logic App workflow")
+        .action(async (resourceGroup: string, workflowName: string) => {
+          if (!logicManager) { console.error(theme.error("Logic Apps manager not initialized")); return; }
+          try {
+            const runs = await logicManager.listRuns(resourceGroup, workflowName);
+            if (runs.length === 0) { console.log("No runs found"); return; }
+            console.log(`\nRuns for ${workflowName}:\n`);
+            for (const r of runs) {
+              const color = r.status === "Succeeded" ? theme.success : r.status === "Failed" ? theme.error : theme.muted;
+              console.log(`  ${r.name}  ${color(r.status ?? "")}  ${theme.muted(r.startTime ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Logic App runs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      logicCmd
+        .command("enable <resourceGroup> <workflowName>")
+        .description("Enable a Logic App workflow")
+        .action(async (resourceGroup: string, workflowName: string) => {
+          if (!logicManager) { console.error(theme.error("Logic Apps manager not initialized")); return; }
+          try {
+            await logicManager.enableWorkflow(resourceGroup, workflowName);
+            console.log(theme.success(`Enabled Logic App: ${workflowName}`));
+          } catch (error) {
+            console.error(theme.error(`Failed to enable Logic App: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      logicCmd
+        .command("disable <resourceGroup> <workflowName>")
+        .description("Disable a Logic App workflow")
+        .action(async (resourceGroup: string, workflowName: string) => {
+          if (!logicManager) { console.error(theme.error("Logic Apps manager not initialized")); return; }
+          try {
+            await logicManager.disableWorkflow(resourceGroup, workflowName);
+            console.log(theme.success(`Disabled Logic App: ${workflowName}`));
+          } catch (error) {
+            console.error(theme.error(`Failed to disable Logic App: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- API Management commands ---
+      const apimCmd = az.command("apim").description("Azure API Management");
+
+      apimCmd
+        .command("list")
+        .description("List API Management services")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!apimManager) { console.error(theme.error("API Management manager not initialized")); return; }
+          try {
+            const services = await apimManager.listServices(options.resourceGroup);
+            if (services.length === 0) { console.log("No API Management services found"); return; }
+            console.log("\nAPI Management Services:\n");
+            for (const s of services) {
+              console.log(`  ${s.name}  ${theme.muted(s.sku?.name ?? "")}  ${s.gatewayUrl ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list APIM services: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      apimCmd
+        .command("apis <resourceGroup> <serviceName>")
+        .description("List APIs in an API Management service")
+        .action(async (resourceGroup: string, serviceName: string) => {
+          if (!apimManager) { console.error(theme.error("API Management manager not initialized")); return; }
+          try {
+            const apis = await apimManager.listAPIs(resourceGroup, serviceName);
+            if (apis.length === 0) { console.log("No APIs found"); return; }
+            console.log(`\nAPIs in ${serviceName}:\n`);
+            for (const a of apis) {
+              console.log(`  ${a.displayName ?? a.name}  ${theme.muted(a.path ?? "")}  ${a.protocols?.join(", ") ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list APIs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- DevOps commands ---
+      const devopsCmd = az.command("devops").description("Azure DevOps management");
+
+      devopsCmd
+        .command("projects")
+        .description("List DevOps projects")
+        .action(async () => {
+          if (!devOpsManager) { console.error(theme.error("DevOps manager not initialized")); return; }
+          try {
+            const projects = await devOpsManager.listProjects();
+            if (projects.length === 0) { console.log("No DevOps projects found"); return; }
+            console.log("\nDevOps Projects:\n");
+            for (const p of projects) {
+              console.log(`  ${p.name}  ${theme.muted(p.state ?? "")}  ${p.visibility ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list DevOps projects: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      devopsCmd
+        .command("pipelines <projectName>")
+        .description("List pipelines in a DevOps project")
+        .action(async (projectName: string) => {
+          if (!devOpsManager) { console.error(theme.error("DevOps manager not initialized")); return; }
+          try {
+            const pipelines = await devOpsManager.listPipelines(projectName);
+            if (pipelines.length === 0) { console.log("No pipelines found"); return; }
+            console.log(`\nPipelines in ${projectName}:\n`);
+            for (const p of pipelines) {
+              console.log(`  ${p.name}  ${theme.muted(`id: ${p.id}`)}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list pipelines: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      devopsCmd
+        .command("repos <projectName>")
+        .description("List repositories in a DevOps project")
+        .action(async (projectName: string) => {
+          if (!devOpsManager) { console.error(theme.error("DevOps manager not initialized")); return; }
+          try {
+            const repos = await devOpsManager.listRepositories(projectName);
+            if (repos.length === 0) { console.log("No repositories found"); return; }
+            console.log(`\nRepositories in ${projectName}:\n`);
+            for (const r of repos) {
+              console.log(`  ${r.name}  ${theme.muted(r.defaultBranch ?? "")}  ${r.remoteUrl ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list repositories: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 
     // =========================================================================
