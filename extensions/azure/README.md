@@ -312,10 +312,9 @@ extensions/azure/
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
+- [x] Unit tests for all service modules (31 test files, 243 tests — VMs, Storage, Network, KeyVault, SQL, DNS, Redis, Containers, Cost, IAM, CosmosDB, ServiceBus, EventGrid, Security, Policy, Backup, CDN, Functions, API Management, Automation, Logic Apps, DevOps, Subscriptions, Resources, Monitor, Activity Log, Tagging)
 
 ## What Still Needs Work
-
-- [ ] **Unit tests for service modules** — Each manager needs `*.test.ts` with mocked Azure SDK clients
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)
 - [ ] **Additional agent tools** — More tools for networking, DNS, Redis, CDN, backup, automation, etc.
 - [ ] **Additional gateway methods** — More methods for services not yet exposed via gateway
