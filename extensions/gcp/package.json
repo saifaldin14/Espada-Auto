@@ -1,0 +1,167 @@
+{
+  "name": "@espada/gcp",
+  "version": "2026.2.17-beta.1",
+  "description": "Google Cloud Platform plugin for Espada infrastructure management",
+  "type": "module",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./credentials": {
+      "import": "./dist/credentials/index.js",
+      "types": "./dist/credentials/index.d.ts"
+    },
+    "./compute": {
+      "import": "./dist/compute/index.js",
+      "types": "./dist/compute/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./gke": {
+      "import": "./dist/gke/index.js",
+      "types": "./dist/gke/index.d.ts"
+    },
+    "./functions": {
+      "import": "./dist/functions/index.js",
+      "types": "./dist/functions/index.d.ts"
+    },
+    "./sql": {
+      "import": "./dist/sql/index.js",
+      "types": "./dist/sql/index.d.ts"
+    },
+    "./firestore": {
+      "import": "./dist/firestore/index.js",
+      "types": "./dist/firestore/index.d.ts"
+    },
+    "./bigquery": {
+      "import": "./dist/bigquery/index.js",
+      "types": "./dist/bigquery/index.d.ts"
+    },
+    "./network": {
+      "import": "./dist/network/index.js",
+      "types": "./dist/network/index.d.ts"
+    },
+    "./dns": {
+      "import": "./dist/dns/index.js",
+      "types": "./dist/dns/index.d.ts"
+    },
+    "./iam": {
+      "import": "./dist/iam/index.js",
+      "types": "./dist/iam/index.d.ts"
+    },
+    "./kms": {
+      "import": "./dist/kms/index.js",
+      "types": "./dist/kms/index.d.ts"
+    },
+    "./secretmanager": {
+      "import": "./dist/secretmanager/index.js",
+      "types": "./dist/secretmanager/index.d.ts"
+    },
+    "./monitoring": {
+      "import": "./dist/monitoring/index.js",
+      "types": "./dist/monitoring/index.d.ts"
+    },
+    "./logging": {
+      "import": "./dist/logging/index.js",
+      "types": "./dist/logging/index.d.ts"
+    },
+    "./billing": {
+      "import": "./dist/billing/index.js",
+      "types": "./dist/billing/index.d.ts"
+    },
+    "./pubsub": {
+      "import": "./dist/pubsub/index.js",
+      "types": "./dist/pubsub/index.d.ts"
+    },
+    "./run": {
+      "import": "./dist/run/index.js",
+      "types": "./dist/run/index.d.ts"
+    },
+    "./appengine": {
+      "import": "./dist/appengine/index.js",
+      "types": "./dist/appengine/index.d.ts"
+    },
+    "./ai": {
+      "import": "./dist/ai/index.js",
+      "types": "./dist/ai/index.d.ts"
+    },
+    "./redis": {
+      "import": "./dist/redis/index.js",
+      "types": "./dist/redis/index.d.ts"
+    },
+    "./cdn": {
+      "import": "./dist/cdn/index.js",
+      "types": "./dist/cdn/index.d.ts"
+    },
+    "./scheduler": {
+      "import": "./dist/scheduler/index.js",
+      "types": "./dist/scheduler/index.d.ts"
+    },
+    "./tasks": {
+      "import": "./dist/tasks/index.js",
+      "types": "./dist/tasks/index.d.ts"
+    },
+    "./projects": {
+      "import": "./dist/projects/index.js",
+      "types": "./dist/projects/index.d.ts"
+    },
+    "./guardrails": {
+      "import": "./dist/guardrails/index.js",
+      "types": "./dist/guardrails/index.d.ts"
+    },
+    "./compliance": {
+      "import": "./dist/compliance/index.js",
+      "types": "./dist/compliance/index.d.ts"
+    },
+    "./orchestration": {
+      "import": "./dist/orchestration/index.js",
+      "types": "./dist/orchestration/index.d.ts"
+    },
+    "./advisor": {
+      "import": "./dist/advisor/index.js",
+      "types": "./dist/advisor/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "espada": "workspace:*",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "espada": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "espada",
+    "gcp",
+    "google-cloud",
+    "infrastructure",
+    "cloud",
+    "plugin"
+  ],
+  "license": "MIT"
+}

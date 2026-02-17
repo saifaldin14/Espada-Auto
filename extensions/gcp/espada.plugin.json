@@ -1,0 +1,130 @@
+{
+  "id": "gcp",
+  "name": "Google Cloud Platform Services",
+  "description": "Comprehensive GCP infrastructure management with Compute Engine, Cloud Storage, GKE, Cloud SQL, Firestore, BigQuery, Cloud Functions, Cloud Run, Pub/Sub, IAM, KMS, Secret Manager, Cloud Monitoring, Cloud Logging, and more",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "infrastructure",
+  "capabilities": [
+    "compute-engine",
+    "instance-management",
+    "instance-groups",
+    "machine-images",
+    "cloud-storage",
+    "storage-buckets",
+    "storage-objects",
+    "storage-lifecycle",
+    "gke-clusters",
+    "gke-node-pools",
+    "gke-workloads",
+    "cloud-functions",
+    "function-deployment",
+    "function-triggers",
+    "cloud-run",
+    "cloud-run-services",
+    "cloud-run-jobs",
+    "app-engine",
+    "app-engine-services",
+    "cloud-sql",
+    "sql-instances",
+    "sql-databases",
+    "firestore-management",
+    "firestore-collections",
+    "bigquery-datasets",
+    "bigquery-tables",
+    "bigquery-queries",
+    "vpc-networks",
+    "subnet-management",
+    "firewall-rules",
+    "load-balancers",
+    "cloud-nat",
+    "cloud-dns",
+    "dns-zones",
+    "dns-records",
+    "cloud-cdn",
+    "iam-roles",
+    "iam-policies",
+    "service-accounts",
+    "kms-keyrings",
+    "kms-cryptokeys",
+    "secret-manager",
+    "secret-versions",
+    "cloud-monitoring",
+    "alerting-policies",
+    "uptime-checks",
+    "cloud-logging",
+    "log-sinks",
+    "log-metrics",
+    "billing-accounts",
+    "billing-budgets",
+    "cost-analysis",
+    "pubsub-topics",
+    "pubsub-subscriptions",
+    "cloud-scheduler",
+    "cloud-tasks",
+    "vertex-ai",
+    "ai-models",
+    "memorystore-redis",
+    "project-management",
+    "resource-labels",
+    "guardrails-enforcement",
+    "compliance-management",
+    "orchestration"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "defaultProject": {
+        "type": "string",
+        "description": "Default GCP project ID"
+      },
+      "defaultRegion": {
+        "type": "string",
+        "description": "Default GCP region",
+        "default": "us-central1"
+      },
+      "defaultZone": {
+        "type": "string",
+        "description": "Default GCP zone",
+        "default": "us-central1-a"
+      },
+      "credentialMethod": {
+        "type": "string",
+        "description": "Preferred credential method",
+        "enum": ["default", "service-account", "gcloud-cli", "workload-identity"],
+        "default": "default"
+      },
+      "serviceAccountKeyFile": {
+        "type": "string",
+        "description": "Path to service account JSON key file"
+      },
+      "labelConfig": {
+        "type": "object",
+        "description": "Standard label configuration",
+        "properties": {
+          "requiredLabels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Labels that must be present on all resources"
+          },
+          "optionalLabels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Labels that are optional but recommended"
+          }
+        }
+      },
+      "defaultLabels": {
+        "type": "array",
+        "description": "Default labels to apply to all resources",
+        "items": {
+          "type": "object",
+          "properties": {
+            "key": { "type": "string" },
+            "value": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}
