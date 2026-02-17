@@ -1,0 +1,240 @@
+{
+  "name": "@espada/azure",
+  "version": "2026.2.16-beta.1",
+  "description": "Azure Core Services plugin for Espada infrastructure management",
+  "type": "module",
+  "espada": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./credentials": {
+      "import": "./dist/credentials/index.js",
+      "types": "./dist/credentials/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli/index.js",
+      "types": "./dist/cli/index.d.ts"
+    },
+    "./client-pool": {
+      "import": "./dist/client-pool/index.js",
+      "types": "./dist/client-pool/index.d.ts"
+    },
+    "./context": {
+      "import": "./dist/context/index.js",
+      "types": "./dist/context/index.d.ts"
+    },
+    "./discovery": {
+      "import": "./dist/discovery/index.js",
+      "types": "./dist/discovery/index.d.ts"
+    },
+    "./tagging": {
+      "import": "./dist/tagging/index.js",
+      "types": "./dist/tagging/index.d.ts"
+    },
+    "./activitylog": {
+      "import": "./dist/activitylog/index.js",
+      "types": "./dist/activitylog/index.d.ts"
+    },
+    "./vms": {
+      "import": "./dist/vms/index.js",
+      "types": "./dist/vms/index.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./functions": {
+      "import": "./dist/functions/index.js",
+      "types": "./dist/functions/index.d.ts"
+    },
+    "./sql": {
+      "import": "./dist/sql/index.js",
+      "types": "./dist/sql/index.d.ts"
+    },
+    "./cosmosdb": {
+      "import": "./dist/cosmosdb/index.js",
+      "types": "./dist/cosmosdb/index.d.ts"
+    },
+    "./network": {
+      "import": "./dist/network/index.js",
+      "types": "./dist/network/index.d.ts"
+    },
+    "./keyvault": {
+      "import": "./dist/keyvault/index.js",
+      "types": "./dist/keyvault/index.d.ts"
+    },
+    "./containers": {
+      "import": "./dist/containers/index.js",
+      "types": "./dist/containers/index.d.ts"
+    },
+    "./monitor": {
+      "import": "./dist/monitor/index.js",
+      "types": "./dist/monitor/index.d.ts"
+    },
+    "./iam": {
+      "import": "./dist/iam/index.js",
+      "types": "./dist/iam/index.d.ts"
+    },
+    "./cost": {
+      "import": "./dist/cost/index.js",
+      "types": "./dist/cost/index.d.ts"
+    },
+    "./servicebus": {
+      "import": "./dist/servicebus/index.js",
+      "types": "./dist/servicebus/index.d.ts"
+    },
+    "./eventgrid": {
+      "import": "./dist/eventgrid/index.js",
+      "types": "./dist/eventgrid/index.d.ts"
+    },
+    "./dns": {
+      "import": "./dist/dns/index.js",
+      "types": "./dist/dns/index.d.ts"
+    },
+    "./redis": {
+      "import": "./dist/redis/index.js",
+      "types": "./dist/redis/index.d.ts"
+    },
+    "./cdn": {
+      "import": "./dist/cdn/index.js",
+      "types": "./dist/cdn/index.d.ts"
+    },
+    "./security": {
+      "import": "./dist/security/index.js",
+      "types": "./dist/security/index.d.ts"
+    },
+    "./policy": {
+      "import": "./dist/policy/index.js",
+      "types": "./dist/policy/index.d.ts"
+    },
+    "./backup": {
+      "import": "./dist/backup/index.js",
+      "types": "./dist/backup/index.d.ts"
+    },
+    "./ai": {
+      "import": "./dist/ai/index.js",
+      "types": "./dist/ai/index.d.ts"
+    },
+    "./devops": {
+      "import": "./dist/devops/index.js",
+      "types": "./dist/devops/index.d.ts"
+    },
+    "./apimanagement": {
+      "import": "./dist/apimanagement/index.js",
+      "types": "./dist/apimanagement/index.d.ts"
+    },
+    "./logic": {
+      "import": "./dist/logic/index.js",
+      "types": "./dist/logic/index.d.ts"
+    },
+    "./resources": {
+      "import": "./dist/resources/index.js",
+      "types": "./dist/resources/index.d.ts"
+    },
+    "./subscriptions": {
+      "import": "./dist/subscriptions/index.js",
+      "types": "./dist/subscriptions/index.d.ts"
+    },
+    "./guardrails": {
+      "import": "./dist/guardrails/index.js",
+      "types": "./dist/guardrails/index.d.ts"
+    },
+    "./compliance": {
+      "import": "./dist/compliance/index.js",
+      "types": "./dist/compliance/index.d.ts"
+    },
+    "./automation": {
+      "import": "./dist/automation/index.js",
+      "types": "./dist/automation/index.d.ts"
+    },
+    "./conversational": {
+      "import": "./dist/conversational/index.js",
+      "types": "./dist/conversational/index.d.ts"
+    },
+    "./idio": {
+      "import": "./dist/idio/index.js",
+      "types": "./dist/idio/index.d.ts"
+    },
+    "./intent": {
+      "import": "./dist/intent/index.js",
+      "types": "./dist/intent/index.d.ts"
+    },
+    "./catalog": {
+      "import": "./dist/catalog/index.js",
+      "types": "./dist/catalog/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.6.0",
+    "@azure/arm-compute": "^22.1.0",
+    "@azure/arm-storage": "^18.3.0",
+    "@azure/storage-blob": "^12.26.0",
+    "@azure/arm-resources": "^5.2.0",
+    "@azure/arm-network": "^33.4.0",
+    "@azure/arm-sql": "^11.0.0",
+    "@azure/arm-cosmosdb": "^16.2.0",
+    "@azure/arm-appservice": "^15.0.0",
+    "@azure/arm-containerinstance": "^9.1.0",
+    "@azure/arm-containerservice": "^21.3.0",
+    "@azure/arm-containerregistry": "^11.0.0",
+    "@azure/arm-monitor": "^8.0.0",
+    "@azure/arm-operationalinsights": "^9.0.0",
+    "@azure/arm-keyvault": "^3.1.0",
+    "@azure/keyvault-secrets": "^4.9.0",
+    "@azure/keyvault-keys": "^4.9.0",
+    "@azure/arm-authorization": "^9.0.0",
+    "@azure/arm-subscriptions": "^5.1.0",
+    "@azure/arm-costmanagement": "^1.1.0",
+    "@azure/arm-consumption": "^9.0.0",
+    "@azure/arm-servicebus": "^7.1.0",
+    "@azure/arm-eventgrid": "^14.2.0",
+    "@azure/arm-cdn": "^9.2.0",
+    "@azure/arm-dns": "^5.1.0",
+    "@azure/arm-redis": "^8.1.0",
+    "@azure/arm-cognitiveservices": "^7.5.0",
+    "@azure/arm-policy": "^5.1.0",
+    "@azure/arm-security": "^6.0.0",
+    "@azure/arm-recoveryservices": "^6.1.0",
+    "@azure/arm-recoveryservices-backup": "^13.1.0",
+    "@azure/arm-logic": "^8.2.0",
+    "@azure/arm-apimanagement": "^9.2.0",
+    "@azure/arm-automation": "^11.1.0",
+    "@sinclair/typebox": "^0.32.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "espada": "workspace:*",
+    "typescript": "^5.3.0",
+    "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "espada": "workspace:*"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "espada",
+    "azure",
+    "infrastructure",
+    "cloud",
+    "plugin"
+  ],
+  "license": "MIT"
+}
