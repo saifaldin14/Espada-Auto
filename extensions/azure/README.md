@@ -6,6 +6,7 @@ A comprehensive Azure infrastructure management plugin for [Espada](https://gith
 
 - **30+ Azure service modules** covering compute, data, networking, security, operations, messaging, AI, and governance
 - **IDIO orchestration engine** — DAG-based planner for multi-step Azure deployments (e.g., "deploy a web app with SQL backend and CDN")
+- **Advisor** — project analyzer + recommendation engine that maps detected stacks to Azure services and blueprints ("set up a server for this app")
 - **Multiple authentication methods** — DefaultAzureCredential, CLI, Service Principal, Managed Identity, Interactive Browser
 - **Enterprise-grade** — management groups, Lighthouse, multi-tenant, compliance frameworks
 - **Built-in retry logic** with exponential backoff for all Azure SDK calls
@@ -287,9 +288,16 @@ The extension registers **81 tools** for AI agent use:
 | `azure_execute_plan` | Execute a validated plan (with dry-run support) |
 | `azure_run_blueprint` | One-shot: generate, validate, and execute a blueprint |
 
+### Advisor
+| Tool | Description |
+|------|-------------|
+| `azure_analyze_project` | Scan a project directory to detect language, framework, dependencies, and signals |
+| `azure_recommend_services` | Analyze a project and recommend Azure services + blueprint match |
+| `azure_analyze_and_deploy` | End-to-end: analyze → recommend → blueprint → plan → execute |
+
 ## Gateway Methods
 
-Available via `api.registerGatewayMethod` (**67 methods**):
+Available via `api.registerGatewayMethod` (**70 methods**):
 
 **Core:** `azure.status`, `azure.vm.list`, `azure.vm.start`, `azure.vm.stop`, `azure.storage.list`, `azure.rg.list`, `azure.functions.list`, `azure.aks.list`, `azure.sql.list`, `azure.keyvault.list`, `azure.cost.query`, `azure.subscriptions.list`, `azure.monitor.metrics`, `azure.security.scores`, `azure.compliance.report`
 
@@ -330,6 +338,8 @@ Available via `api.registerGatewayMethod` (**67 methods**):
 **Security:** `azure.security.alerts`, `azure.security.recommendations`
 
 **Orchestration:** `azure.orchestration.listBlueprints`, `azure.orchestration.getBlueprint`, `azure.orchestration.generatePlan`, `azure.orchestration.executePlan`, `azure.orchestration.runBlueprint`
+
+**Advisor:** `azure.advisor.analyze`, `azure.advisor.recommend`, `azure.advisor.analyzeAndDeploy`
 
 ## Module Reference
 
@@ -495,7 +505,8 @@ extensions/azure/
 │   ├── compliance/            # Compliance frameworks (6 built-in)
 │   ├── automation/            # Azure Automation runbooks
 │   ├── enterprise/            # Multi-tenant + Management Groups + Lighthouse
-│   └── orchestration/         # IDIO — DAG planner, engine, blueprints, step registry```
+│   ├── orchestration/         # IDIO — DAG planner, engine, blueprints, step registry
+│   └── advisor/               # Project analyzer, recommendation engine, deploy advisor```
 
 ## IDIO — Intelligent Deployment & Infrastructure Orchestration
 
@@ -597,6 +608,43 @@ registerStepType({
 });
 ```
 
+## Advisor — Project Analysis & Recommendation Engine
+
+The Advisor module sits on top of IDIO and provides **autonomous** deployment support. Instead of manually selecting blueprints and parameters, point it at a project directory and it figures out what to deploy.
+
+### How It Works
+
+1. **Analyzer** (`analyzeProject`) scans the project for `package.json`, `requirements.txt`, `.csproj`, `Dockerfile`, `.env`, etc. — detecting language (9), framework (18), archetype (10), dependencies with infrastructure signals, port, entry point, and package manager.
+
+2. **Recommendation Engine** (`recommend`) maps the analysis to Azure services:
+   - Dependency signals → service recommendations (e.g., `pg` → PostgreSQL, `ioredis` → Azure Cache for Redis, `bullmq` → Service Bus)
+   - Archetype → compute recommendation (static-site → Static Web Apps, microservices → Container Apps, API → App Service)
+   - Cross-cutting concerns (monitoring, Key Vault, CDN, Container Registry)
+
+3. **Blueprint Matching** scores all IDIO blueprints against the analysis, auto-populates parameters (projectName, location, runtime), and identifies missing required params.
+
+4. **`recommendAndPlan`** generates a validated `ExecutionPlan` ready for the orchestrator — or returns issues if params are missing.
+
+### CLI Usage
+
+```bash
+# Analyze a project
+espada azure advisor analyze /path/to/project
+
+# Get recommendations
+espada azure advisor recommend /path/to/project --region westus2
+
+# End-to-end deploy (dry-run by default)
+espada azure advisor deploy /path/to/project --region westus2
+
+# Live execution
+espada azure advisor deploy /path/to/project --live
+```
+
+### Agent Tool: `azure_analyze_and_deploy`
+
+This is the highest-level tool — an AI agent can call it with just a project path and get a full deployment. It defaults to dry-run for safety.
+
 ## What's Complete
 
 - [x] Plugin entry point with CLI commands, gateway methods, agent tools, and service lifecycle
@@ -609,11 +657,12 @@ registerStepType({
 - [x] Config schema with TypeBox
 - [x] Enterprise module (management groups, Lighthouse, multi-tenant)
 - [x] Full CLI coverage for all services (DNS, Redis, CDN, Network, CosmosDB, Service Bus, Event Grid, Security, IAM, Policy, Backup, Automation, Logic Apps, APIM, DevOps)
-- [x] Unit tests for all service modules (44 test files, 474 tests)
-- [x] 81 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration, PAT management)
-- [x] 67 gateway methods covering all services
+- [x] Unit tests for all service modules (46 test files, 557 tests)
+- [x] 84 agent tools covering all services (networking, DNS, Redis, CDN, backup, automation, CosmosDB, Service Bus, Event Grid, IAM, Policy, Logic Apps, APIM, DevOps, AI, security, tagging, enterprise, orchestration, PAT management, advisor)
+- [x] 70 gateway methods covering all services
 - [x] IDIO orchestration engine — DAG planner, 14 built-in step types, 5 blueprints, 58 tests
 - [x] DevOps PAT management — Secure storage/retrieval with AES-256-GCM encryption, validation, rotation, expiry tracking
+- [x] Advisor module — Project analyzer (9 languages, 18 frameworks, 10 archetypes), recommendation engine (18 Azure services), blueprint matching, end-to-end deploy, 83 tests
 
 ## What Still Needs Work
 - [ ] **Integration / E2E tests** — Tests against real Azure subscriptions (`LIVE=1`)

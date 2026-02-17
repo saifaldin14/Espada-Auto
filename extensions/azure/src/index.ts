@@ -127,3 +127,20 @@ export type {
   StepInstanceId,
   StepTypeId,
 } from "./orchestration/index.js";
+
+// Advisor (project analysis + recommendation engine)
+export { analyzeProject, recommend, recommendAndPlan } from "./advisor/index.js";
+export type {
+  DetectedLanguage,
+  DetectedFramework,
+  AppArchetype,
+  DetectedDependency,
+  DependencySignal,
+  ProjectAnalysis,
+  ServiceRecommendation,
+  AzureServiceName,
+  BlueprintMatch,
+  DeployRecommendation,
+  AdvisorOptions,
+  RecommendationConfidence,
+} from "./advisor/index.js";

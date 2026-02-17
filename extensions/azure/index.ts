@@ -49,6 +49,9 @@ import { AzureAutomationManager } from "./src/automation/index.js";
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry, listBlueprints, getBlueprint, validatePlan } from "./src/orchestration/index.js";
 import type { OrchestrationOptions } from "./src/orchestration/index.js";
 
+// Advisor (project analysis + recommendation engine)
+import { analyzeProject, recommend, recommendAndPlan } from "./src/advisor/index.js";
+
 import type { AzurePluginConfig } from "./src/types.js";
 
 // Theme helper for CLI output
@@ -1341,6 +1344,129 @@ const plugin = {
             console.error(theme.error(`Failed to check expiry: ${formatErrorMessage(error)}`));
           }
         });
+
+      // --- Advisor commands ---
+      const advisorCmd = az.command("advisor").description("Project analysis and Azure service recommendation");
+
+      advisorCmd
+        .command("analyze <projectPath>")
+        .description("Analyze a project directory — detect language, framework, dependencies, and signals")
+        .action((projectPath: string) => {
+          try {
+            const analysis = analyzeProject(projectPath);
+            console.log(`\n${theme.info("Project Analysis")}\n`);
+            console.log(`  Language:        ${analysis.language}`);
+            console.log(`  Framework:       ${analysis.framework}`);
+            console.log(`  Archetype:       ${analysis.archetype}`);
+            console.log(`  Entry point:     ${analysis.entryPoint ?? "not detected"}`);
+            console.log(`  Port:            ${analysis.port ?? "not detected"}`);
+            console.log(`  Package manager: ${analysis.packageManager ?? "none"}`);
+            console.log(`  Dockerfile:      ${analysis.hasDockerfile ? "yes" : "no"}`);
+            console.log(`  Docker Compose:  ${analysis.hasDockerCompose ? "yes" : "no"}`);
+            console.log(`  Tests:           ${analysis.hasTests ? "yes" : "no"}`);
+            console.log(`  Dependencies:    ${analysis.dependencies.length} (with infrastructure signals)`);
+            console.log(`  Env vars:        ${analysis.envVars.length}`);
+            console.log(`  Confidence:      ${Math.round(analysis.confidence * 100)}%`);
+            if (analysis.notes.length > 0) {
+              console.log(`\n  Notes:`);
+              for (const n of analysis.notes) console.log(`    - ${n}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Analysis failed: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      advisorCmd
+        .command("recommend <projectPath>")
+        .description("Analyze a project and recommend Azure services + blueprints")
+        .option("--region <region>", "Preferred Azure region", "eastus")
+        .option("--project-name <name>", "Override project name")
+        .option("--prefer-containers", "Prefer container-based deployment")
+        .option("--tenant-id <id>", "Azure AD tenant ID")
+        .action((projectPath: string, ...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { region?: string; projectName?: string; preferContainers?: boolean; tenantId?: string };
+          try {
+            const analysis = analyzeProject(projectPath);
+            const rec = recommend(analysis, {
+              defaultRegion: options.region,
+              projectName: options.projectName,
+              preferContainers: options.preferContainers,
+              tenantId: options.tenantId,
+            });
+            console.log(`\n${rec.summary}\n`);
+            console.log(theme.info("Services:"));
+            for (const s of rec.services) {
+              const tag = s.required ? theme.warn("[REQUIRED]") : theme.muted("[optional]");
+              console.log(`  ${tag} ${s.service}${s.suggestedSku ? ` (${s.suggestedSku})` : ""}`);
+              console.log(`         ${theme.muted(s.reason)}`);
+            }
+            if (rec.blueprint) {
+              console.log(`\n${theme.info("Best Blueprint Match:")}`);
+              console.log(`  ${rec.blueprint.name} (${Math.round(rec.blueprint.matchScore * 100)}% match)`);
+              if (rec.blueprint.missingParams.length > 0) {
+                console.log(`  ${theme.warn("Missing params:")} ${rec.blueprint.missingParams.join(", ")}`);
+              }
+            }
+            if (rec.alternativeBlueprints.length > 0) {
+              console.log(`\n${theme.muted("Alternatives:")}`);
+              for (const alt of rec.alternativeBlueprints) {
+                console.log(`  ${alt.name} (${Math.round(alt.matchScore * 100)}%)`);
+              }
+            }
+            console.log(`\n${theme.info("Action Items:")}`);
+            for (const a of rec.actionItems) console.log(`  • ${a}`);
+            console.log(`\nOverall confidence: ${rec.confidence}\n`);
+          } catch (error) {
+            console.error(theme.error(`Recommendation failed: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      advisorCmd
+        .command("deploy <projectPath>")
+        .description("End-to-end: analyze → recommend → select blueprint → generate plan → execute")
+        .option("--region <region>", "Preferred Azure region", "eastus")
+        .option("--project-name <name>", "Override project name")
+        .option("--prefer-containers", "Prefer container-based deployment")
+        .option("--tenant-id <id>", "Azure AD tenant ID")
+        .option("--live", "Execute for real (default is dry-run)")
+        .action(async (projectPath: string, ...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { region?: string; projectName?: string; preferContainers?: boolean; tenantId?: string; live?: boolean };
+          if (!orchestrator) { console.error(theme.error("Orchestrator not initialized")); return; }
+          try {
+            const analysis = analyzeProject(projectPath);
+            const { recommendation, plan, validationIssues } = recommendAndPlan(analysis, {
+              defaultRegion: options.region,
+              projectName: options.projectName,
+              preferContainers: options.preferContainers,
+              tenantId: options.tenantId,
+            });
+            console.log(`\n${recommendation.summary}\n`);
+            if (!plan) {
+              console.log(theme.warn("Could not generate an execution plan."));
+              if (validationIssues.length > 0) {
+                for (const i of validationIssues) console.log(`  - ${i}`);
+              }
+              console.log(`\n${theme.info("Action Items:")}`);
+              for (const a of recommendation.actionItems) console.log(`  • ${a}`);
+              return;
+            }
+            const dryRun = !options.live;
+            console.log(`${theme.info(dryRun ? "DRY RUN" : "LIVE EXECUTION")} — ${plan.name} (${plan.steps.length} steps)\n`);
+            const runner = new Orchestrator({ ...orchestrator["options"], dryRun });
+            const result = await runner.execute(plan);
+            for (const s of result.steps) {
+              const icon = (s.status as string) === "completed" ? theme.success("✓") : (s.status as string) === "failed" ? theme.error("✗") : theme.muted("○");
+              console.log(`  ${icon} ${s.stepName} [${s.stepType}] — ${s.durationMs}ms${s.error ? ` ${theme.error(s.error)}` : ""}`);
+            }
+            console.log(`\nStatus: ${(result.status as string) === "completed" ? theme.success(result.status) : theme.error(result.status)} (${result.totalDurationMs}ms)`);
+            if (result.errors.length > 0) {
+              console.log(theme.error("\nErrors:"));
+              for (const e of result.errors) console.log(`  - ${e}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Deploy failed: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 
     // =========================================================================
@@ -1961,6 +2087,45 @@ const plugin = {
         const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
         const result = await runner.execute(plan);
         opts.respond(true, { data: result });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    // -------------------------------------------------------------------------
+    // Advisor gateway methods
+    // -------------------------------------------------------------------------
+
+    api.registerGatewayMethod("azure.advisor.analyze", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { projectPath: string };
+        if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
+        const analysis = analyzeProject(params.projectPath);
+        opts.respond(true, { data: analysis });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.recommend", async (opts) => {
+      try {
+        const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown> };
+        if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
+        const analysis = analyzeProject(params.projectPath);
+        const recommendation = recommend(analysis, params.options as any);
+        opts.respond(true, { data: recommendation });
+      } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+    });
+
+    api.registerGatewayMethod("azure.advisor.analyzeAndDeploy", async (opts) => {
+      if (!orchestrator) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Orchestrator not initialized" }); return; }
+      try {
+        const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown>; dryRun?: boolean };
+        if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
+        const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as any);
+        if (!plan) {
+          opts.respond(true, { data: { recommendation, plan: null, validationIssues, executed: false } });
+          return;
+        }
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun: params.dryRun });
+        const result = await runner.execute(plan);
+        opts.respond(true, { data: { recommendation, plan, result, validationIssues, executed: true } });
       } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
     });
 
@@ -3227,6 +3392,151 @@ const plugin = {
         return {
           content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, planName: plan.name, totalDurationMs: result.totalDurationMs, steps: result.steps.map((s) => ({ stepId: s.stepId, type: s.stepType, status: s.status, durationMs: s.durationMs, error: s.error })), errors: result.errors }, null, 2) }],
           details: result,
+        };
+      },
+    });
+
+    // =========================================================================
+    // Advisor Tools (project analysis + recommendation + deploy)
+    // =========================================================================
+
+    api.registerTool({
+      name: "azure_analyze_project",
+      label: "Azure Analyze Project",
+      description: "Scan a project directory to detect language, framework, dependencies, and infrastructure signals. Use this as the first step before recommending Azure services.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string", description: "Absolute path to the project directory to analyze" },
+        },
+        required: ["projectPath"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const analysis = analyzeProject(params.projectPath as string);
+        const lines = [
+          `Language: ${analysis.language}`,
+          `Framework: ${analysis.framework}`,
+          `Archetype: ${analysis.archetype}`,
+          `Entry point: ${analysis.entryPoint ?? "not detected"}`,
+          `Port: ${analysis.port ?? "not detected"}`,
+          `Package manager: ${analysis.packageManager ?? "none"}`,
+          `Dockerfile: ${analysis.hasDockerfile ? "yes" : "no"}`,
+          `Docker Compose: ${analysis.hasDockerCompose ? "yes" : "no"}`,
+          `Dependencies with signals: ${analysis.dependencies.length}`,
+          `Env vars: ${analysis.envVars.length}`,
+          `Tests: ${analysis.hasTests ? "yes" : "no"}`,
+          `Confidence: ${Math.round(analysis.confidence * 100)}%`,
+          ...analysis.notes.map((n) => `Note: ${n}`),
+        ];
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: analysis };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_recommend_services",
+      label: "Azure Recommend Services",
+      description: "Analyze a project and recommend Azure services, matching against IDIO blueprints. Returns service recommendations, best blueprint match, and action items.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string", description: "Absolute path to the project directory" },
+          region: { type: "string", description: "Preferred Azure region (default: eastus)" },
+          projectName: { type: "string", description: "Override project name" },
+          preferContainers: { type: "boolean", description: "Prefer container-based deployment over App Service" },
+          tenantId: { type: "string", description: "Azure AD tenant ID for Key Vault configuration" },
+        },
+        required: ["projectPath"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        const analysis = analyzeProject(params.projectPath as string);
+        const rec = recommend(analysis, {
+          defaultRegion: params.region as string | undefined,
+          projectName: params.projectName as string | undefined,
+          preferContainers: params.preferContainers as boolean | undefined,
+          tenantId: params.tenantId as string | undefined,
+        });
+        const lines: string[] = [rec.summary, "", "--- Services ---"];
+        for (const s of rec.services) {
+          lines.push(`${s.required ? "[REQUIRED]" : "[optional]"} ${s.service}${s.suggestedSku ? ` (${s.suggestedSku})` : ""} — ${s.reason}`);
+        }
+        if (rec.blueprint) {
+          lines.push("", "--- Blueprint Match ---");
+          lines.push(`${rec.blueprint.name} (${Math.round(rec.blueprint.matchScore * 100)}% match)`);
+          if (rec.blueprint.missingParams.length > 0) {
+            lines.push(`Missing params: ${rec.blueprint.missingParams.join(", ")}`);
+          }
+        }
+        if (rec.alternativeBlueprints.length > 0) {
+          lines.push("", "--- Alternatives ---");
+          for (const alt of rec.alternativeBlueprints) {
+            lines.push(`${alt.name} (${Math.round(alt.matchScore * 100)}% match)`);
+          }
+        }
+        lines.push("", "--- Action Items ---", ...rec.actionItems.map((a) => `• ${a}`));
+        return { content: [{ type: "text" as const, text: lines.join("\n") }], details: rec };
+      },
+    });
+
+    api.registerTool({
+      name: "azure_analyze_and_deploy",
+      label: "Azure Analyze And Deploy",
+      description: "End-to-end: analyze a project → recommend Azure services → select blueprint → generate plan → execute. The highest-level deployment command — just point it at a project directory.",
+      parameters: {
+        type: "object",
+        properties: {
+          projectPath: { type: "string", description: "Absolute path to the project directory" },
+          region: { type: "string", description: "Preferred Azure region (default: eastus)" },
+          projectName: { type: "string", description: "Override project name" },
+          preferContainers: { type: "boolean", description: "Prefer container-based deployment" },
+          tenantId: { type: "string", description: "Azure AD tenant ID" },
+          dryRun: { type: "boolean", description: "Simulate without creating resources (default: true)" },
+        },
+        required: ["projectPath"],
+      },
+      async execute(_toolCallId: string, params: Record<string, unknown>) {
+        if (!orchestrator) throw new Error("Orchestrator not initialized");
+        const analysis = analyzeProject(params.projectPath as string);
+        const options = {
+          defaultRegion: params.region as string | undefined,
+          projectName: params.projectName as string | undefined,
+          preferContainers: params.preferContainers as boolean | undefined,
+          tenantId: params.tenantId as string | undefined,
+        };
+        const { recommendation, plan, validationIssues } = recommendAndPlan(analysis, options);
+
+        const lines: string[] = [recommendation.summary, ""];
+
+        if (!plan) {
+          lines.push("Could not generate an execution plan.");
+          if (validationIssues.length > 0) {
+            lines.push("Issues:", ...validationIssues.map((i) => `  - ${i}`));
+          }
+          if (recommendation.blueprint?.missingParams.length) {
+            lines.push(`\nProvide these parameters to proceed: ${recommendation.blueprint.missingParams.join(", ")}`);
+          }
+          lines.push("", "--- Action Items ---", ...recommendation.actionItems.map((a) => `• ${a}`));
+          return { content: [{ type: "text" as const, text: lines.join("\n") }], details: { recommendation, plan: null, validationIssues } };
+        }
+
+        // Execute (or dry-run)
+        const dryRun = params.dryRun !== false; // Default to dry-run for safety
+        const runner = new Orchestrator({ ...orchestrator["options"], dryRun });
+        const result = await runner.execute(plan);
+
+        lines.push(`Execution (${dryRun ? "DRY RUN" : "LIVE"}): ${result.status}`);
+        lines.push(`Duration: ${result.totalDurationMs}ms`);
+        lines.push(`Steps: ${result.steps.length}`);
+        for (const s of result.steps) {
+          const icon = (s.status as string) === "completed" ? "✓" : (s.status as string) === "failed" ? "✗" : "○";
+          lines.push(`  ${icon} ${s.stepName} [${s.stepType}] — ${s.durationMs}ms${s.error ? ` ERROR: ${s.error}` : ""}`);
+        }
+        if (result.errors.length > 0) {
+          lines.push("", "Errors:", ...result.errors.map((e) => `  - ${e}`));
+        }
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: { recommendation, plan, result, dryRun },
         };
       },
     });
