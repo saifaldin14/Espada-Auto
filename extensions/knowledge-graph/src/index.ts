@@ -52,3 +52,11 @@ export {
   findClusters,
 } from "./queries.js";
 export type { PathResult, CriticalNode, ClusterResult } from "./queries.js";
+
+// Export
+export { exportTopology } from "./export.js";
+export type { ExportFormat, ExportResult, ExportOptions } from "./export.js";
+
+// Tools & CLI (for direct use / testing)
+export { registerGraphTools } from "./tools.js";
+export { registerGraphCli } from "./cli.js";

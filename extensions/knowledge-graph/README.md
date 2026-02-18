@@ -11,28 +11,38 @@ A graph-based infrastructure topology engine for Espada. Discovers cloud resourc
 | **InMemory storage** | Production | BFS traversal, full interface parity, ideal for tests |
 | **GraphEngine** | Production | Sync, blast radius, dependency chains, drift, cost, topology |
 | **Graph queries** | Production | Shortest path, orphans, SPOFs (Tarjan's), clusters, critical nodes |
+| **Graph export** | Production | JSON, DOT (Graphviz), Mermaid formats with filtering |
+| **Plugin wiring** | Production | Entry point with storage factory, engine init, service registration |
+| **CLI commands** | Production | 12 subcommands under `espada graph` (status, sync, blast, deps, etc.) |
+| **Agent tools** | Production | 9 tools (blast radius, deps, cost, drift, SPOF, path, orphans, status, export) |
+| **Background sync** | Production | Light sync (15min) + full sync (6hr) with drift detection |
+| **Gateway methods** | Production | RPC endpoints for stats, blast-radius, topology |
 | **AWS adapter** | Skeleton | 31 relationship rules, 17 service mappings, utility functions production-ready |
 | **Azure/GCP adapters** | Not started | Provider-agnostic core is ready |
-| **Plugin wiring** | Not started | Needs `index.ts` entry point registration |
-| **CLI commands** | Not started | See Phase 4 below |
-| **Agent tools** | Not started | See Phase 4 below |
 | **Semantic search** | Not started | See Phase 5 below |
 | **Scheduled sync** | Not started | See Phase 6 below |
 
 ## Architecture
 
 ```
-┌────────────────────────────────────────────────────┐
-│                    GraphEngine                      │
-│  sync() · blastRadius() · drift() · cost() · ...   │
-├──────────────┬─────────────────────┬────────────────┤
-│   Adapters   │      Storage        │    Queries      │
-│  AWS (skel)  │  SQLite (prod)      │  shortestPath   │
-│  Azure (-)   │  InMemory (prod)    │  findOrphans    │
-│  GCP (-)     │                     │  findSPOFs      │
-│  K8s (-)     │                     │  findClusters   │
-│              │                     │  criticalNodes  │
-└──────────────┴─────────────────────┴────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      Plugin Entry Point                       │
+│  register() · storage factory · service · gateway methods     │
+├──────────┬────────────────────────┬──────────┬────────────────┤
+│   CLI    │      Agent Tools       │  Export  │    Gateway     │
+│ 12 cmds  │  9 tools (blast, deps  │ JSON/DOT │  stats/blast/  │
+│ graph *  │  cost, drift, SPOF...) │ Mermaid  │  topology RPC  │
+├──────────┴────────────────────────┴──────────┴────────────────┤
+│                       GraphEngine                             │
+│  sync() · blastRadius() · drift() · cost() · timeline() · …  │
+├──────────────┬─────────────────────┬──────────────────────────┤
+│   Adapters   │      Storage        │    Queries               │
+│  AWS (skel)  │  SQLite (prod)      │  shortestPath            │
+│  Azure (-)   │  InMemory (prod)    │  findOrphans             │
+│  GCP (-)     │                     │  findSPOFs               │
+│  K8s (-)     │                     │  findClusters            │
+│              │                     │  criticalNodes           │
+└──────────────┴─────────────────────┴──────────────────────────┘
 ```
 
 ## Quick Start (Development)
@@ -152,108 +162,81 @@ Examples:
 
 The following phases are designed and documented but not yet implemented. Each section describes exactly what to build and how it integrates with the production-ready core.
 
-### Phase 4: Integration Wiring
+### Phase 4: Integration Wiring ✅ COMPLETE
 
-**Goal**: Connect the graph engine to Espada's existing infrastructure framework.
+**Goal**: Connect the graph engine to Espada's plugin system.
 
-#### 4a. Extension Entry Point (`index.ts` + `index.ts` root)
+All Phase 4 components are implemented and tested (94 tests passing):
 
-Create the plugin registration that initializes storage and engine:
+#### 4a. Extension Entry Point (`index.ts`) ✅
 
-```typescript
-// index.ts (root)
-import { definePlugin } from "espada/plugin-sdk";
-import { GraphEngine } from "./src/engine.js";
-import { SQLiteGraphStorage } from "./src/storage/sqlite-store.js";
+- Plugin registration with `register(api)` lifecycle
+- Storage factory (SQLite/InMemory based on config)
+- GraphEngine initialization with configurable `maxTraversalDepth` and drift detection
+- Configurable sync intervals and adapter selection
 
-export default definePlugin({
-  name: "knowledge-graph",
-  async setup(ctx) {
-    const config = ctx.config.get("knowledge-graph");
-    const storagePath = config?.storagePath ?? "~/.espada/knowledge-graph.db";
-    
-    const storage = new SQLiteGraphStorage(storagePath);
-    const engine = new GraphEngine({ storage });
-    
-    // Register adapters based on config
-    // Register CLI commands
-    // Register agent tools
-    
-    ctx.provide("knowledge-graph", engine);
-  },
-});
-```
+#### 4b. Confirmation Workflow Integration — Deferred
 
-#### 4b. Confirmation Workflow Integration
+Not yet implemented. Wire blast radius into `@espada/infrastructure` confirmation system when that extension matures.
 
-Wire blast radius into the existing `@espada/infrastructure` confirmation system:
+#### 4c. CLI Commands (`src/cli.ts`) ✅
 
-```typescript
-// In extensions/infrastructure/src/confirmation/
-// Modify enrichConfirmation() to call:
-const blastRadius = await knowledgeGraph.getBlastRadius(resourceId, 3);
-confirmation.blastRadius = {
-  affectedResources: blastRadius.nodes.size,
-  hopDistribution: Object.fromEntries(blastRadius.hops),
-  costAtRisk: blastRadius.totalCostMonthly,
-};
-```
-
-The infrastructure extension already has:
-- Risk scoring (`src/risk/risk-scorer.ts`) — add blast radius as a risk factor
-- Approval chains (`src/approval/`) — escalate when blast radius exceeds threshold
-- Audit logging (`src/audit/`) — log graph queries for compliance
-
-#### 4c. CLI Commands
-
-Add to the Espada CLI:
+12 subcommands under `espada graph`:
 
 | Command | Description |
 |---------|-------------|
-| `espada graph sync` | Run full discovery sync |
 | `espada graph status` | Show graph statistics |
+| `espada graph sync` | Run full discovery sync |
 | `espada graph blast <resource>` | Show blast radius |
 | `espada graph deps <resource>` | Show dependency chain |
 | `espada graph orphans` | List unconnected resources |
 | `espada graph spofs` | List single points of failure |
-| `espada graph cost [--group <id>]` | Cost attribution |
+| `espada graph cost` | Cost attribution breakdown |
 | `espada graph drift` | Detect configuration drift |
 | `espada graph path <from> <to>` | Shortest path between resources |
+| `espada graph clusters` | Find connected resource clusters |
+| `espada graph critical` | Find critical nodes (high fan-in/out) |
 | `espada graph export` | Export topology as JSON/DOT/Mermaid |
+| `espada graph timeline <resource>` | Show change timeline |
 
-Follow existing CLI patterns in `src/commands/`. Use `src/cli/progress.ts` for progress bars and `src/terminal/table.ts` for output tables.
+#### 4d. Agent Tools (`src/tools.ts`) ✅
 
-#### 4d. Agent Tools
+9 tools registered via `registerGraphTools()`:
 
-Register as Espada agent tools so the AI agent can query the graph:
+| Tool | Description |
+|------|-------------|
+| `kg_blast_radius` | Blast radius analysis with hop distances and cost-at-risk |
+| `kg_dependencies` | Upstream/downstream dependency chains |
+| `kg_cost` | Cost attribution by resource, group, or provider |
+| `kg_drift` | Drift detection (drifted, disappeared, new resources) |
+| `kg_spof_analysis` | Single points of failure via Tarjan's algorithm |
+| `kg_path` | Shortest path between two resources |
+| `kg_orphans` | Unconnected resource detection |
+| `kg_status` | Graph statistics and health |
+| `kg_export` | Export topology in JSON/DOT/Mermaid format |
 
-```typescript
-const tools = [
-  {
-    name: "infrastructure_blast_radius",
-    description: "Analyze the blast radius of changing a cloud resource",
-    parameters: { resourceId: "string", depth: "number?" },
-    handler: async ({ resourceId, depth }) => engine.getBlastRadius(resourceId, depth),
-  },
-  {
-    name: "infrastructure_dependencies",
-    description: "Find upstream or downstream dependencies of a resource",
-    parameters: { resourceId: "string", direction: "upstream|downstream" },
-    handler: async ({ resourceId, direction }) => engine.getDependencyChain(resourceId, direction),
-  },
-  {
-    name: "infrastructure_spof_analysis",
-    description: "Find single points of failure in the infrastructure",
-    handler: async () => findSinglePointsOfFailure(storage),
-  },
-  {
-    name: "infrastructure_cost",
-    description: "Get cost attribution for a resource or group",
-    parameters: { resourceId: "string?", groupId: "string?", includeDownstream: "boolean?" },
-    handler: async (params) => { ... },
-  },
-];
-```
+#### 4e. Graph Export (`src/export.ts`) ✅
+
+Export infrastructure topology in three formats:
+- **JSON**: Full graph data for programmatic analysis
+- **DOT**: Graphviz format for visualization
+- **Mermaid**: Markdown-embeddable diagrams for docs
+
+Supports filtering by `NodeFilter`, cost inclusion, and `maxNodes` safety limit.
+
+#### 4f. Background Sync Service ✅
+
+Registered via `api.registerService()`:
+- Light sync every 15 min (critical resource types only)
+- Full sync every 6 hours with automatic drift detection
+- Configurable intervals via plugin config
+
+#### 4g. Gateway RPC Methods ✅
+
+Three RPC endpoints via `api.registerGatewayMethod()`:
+- `knowledge-graph/stats` — graph statistics
+- `knowledge-graph/blast-radius` — blast radius query
+- `knowledge-graph/topology` — topology summary
 
 ### Phase 5: Semantic Search Layer
 
