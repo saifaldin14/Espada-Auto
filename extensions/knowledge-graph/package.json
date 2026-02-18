@@ -1,0 +1,70 @@
+{
+  "name": "@espada/knowledge-graph",
+  "version": "1.0.0",
+  "description": "Infrastructure Knowledge Graph — persistent, queryable topology of resources, relationships, costs, and changes across all connected cloud providers",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "types": "./dist/types.d.ts"
+    },
+    "./storage": {
+      "import": "./dist/storage/index.js",
+      "types": "./dist/storage/index.d.ts"
+    },
+    "./engine": {
+      "import": "./dist/engine.js",
+      "types": "./dist/engine.d.ts"
+    },
+    "./adapters": {
+      "import": "./dist/adapters/index.js",
+      "types": "./dist/adapters/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "espada",
+    "infrastructure",
+    "knowledge-graph",
+    "topology",
+    "blast-radius",
+    "drift-detection",
+    "cloud",
+    "devops"
+  ],
+  "espada": {
+    "extensions": [
+      "index.ts"
+    ]
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "espada": "workspace:*",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "license": "MIT"
+}

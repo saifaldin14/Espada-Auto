@@ -1,0 +1,69 @@
+{
+  "id": "knowledge-graph",
+  "name": "Infrastructure Knowledge Graph",
+  "description": "Persistent, queryable topology of resources, relationships, costs, and changes across all connected cloud providers",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "infrastructure",
+  "capabilities": [
+    "topology-discovery",
+    "blast-radius-analysis",
+    "drift-detection",
+    "cost-attribution",
+    "change-tracking",
+    "dependency-analysis"
+  ],
+  "dependencies": [
+    "@espada/infrastructure"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "storage": {
+        "type": "object",
+        "description": "Graph storage configuration",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sqlite", "memory"],
+            "default": "sqlite",
+            "description": "Storage backend type"
+          },
+          "path": {
+            "type": "string",
+            "description": "Path to SQLite database file (relative to ~/.espada/)"
+          }
+        }
+      },
+      "sync": {
+        "type": "object",
+        "description": "Sync schedule configuration",
+        "properties": {
+          "intervalMinutes": {
+            "type": "number",
+            "default": 15,
+            "description": "Lightweight sync interval in minutes"
+          },
+          "fullSyncIntervalHours": {
+            "type": "number",
+            "default": 6,
+            "description": "Full discovery sync interval in hours"
+          },
+          "enableDriftDetection": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable automatic drift detection on sync"
+          }
+        }
+      },
+      "adapters": {
+        "type": "array",
+        "description": "Enabled provider adapters",
+        "items": {
+          "type": "string"
+        },
+        "default": ["aws", "azure", "gcp"]
+      }
+    }
+  }
+}
