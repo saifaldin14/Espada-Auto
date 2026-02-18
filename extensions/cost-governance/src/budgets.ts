@@ -1,11 +1,55 @@
 /**
  * Budget manager — CRUD for cost budgets with threshold alerts.
+ * Supports in-memory (tests) and JSON file persistence (~/.espada/budgets.json).
  */
 
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { Budget, BudgetInput, BudgetScope, BudgetStatus } from "./types.js";
 
 export class BudgetManager {
   private budgets: Map<string, Budget> = new Map();
+  private filePath: string | null;
+
+  /**
+   * @param filePath — JSON file path for persistence. Pass `null` for in-memory only (tests).
+   *                    Defaults to `~/.espada/budgets.json`.
+   */
+  constructor(filePath?: string | null) {
+    if (filePath === null) {
+      this.filePath = null;
+    } else {
+      this.filePath = filePath ?? join(homedir(), ".espada", "budgets.json");
+    }
+    this.load();
+  }
+
+  /** Load budgets from disk (no-op for in-memory mode). */
+  private load(): void {
+    if (!this.filePath) return;
+    try {
+      if (existsSync(this.filePath)) {
+        const raw = readFileSync(this.filePath, "utf-8");
+        const arr: Budget[] = JSON.parse(raw);
+        for (const b of arr) this.budgets.set(b.id, b);
+      }
+    } catch {
+      // Corrupted file — start fresh
+    }
+  }
+
+  /** Flush budgets to disk (no-op for in-memory mode). */
+  private save(): void {
+    if (!this.filePath) return;
+    try {
+      const dir = this.filePath.replace(/[/\\][^/\\]+$/, "");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(this.filePath, JSON.stringify([...this.budgets.values()], null, 2));
+    } catch {
+      // Best-effort persist
+    }
+  }
 
   /** Create or update a budget. */
   setBudget(input: BudgetInput): Budget {
@@ -27,6 +71,7 @@ export class BudgetManager {
     };
 
     this.budgets.set(id, budget);
+    this.save();
     return budget;
   }
 
@@ -50,7 +95,9 @@ export class BudgetManager {
 
   /** Delete a budget by ID. */
   deleteBudget(id: string): boolean {
-    return this.budgets.delete(id);
+    const ok = this.budgets.delete(id);
+    if (ok) this.save();
+    return ok;
   }
 
   /** Update current spend for a budget. */
@@ -59,6 +106,7 @@ export class BudgetManager {
     if (!budget) return null;
     budget.currentSpend = currentSpend;
     budget.updatedAt = new Date().toISOString();
+    this.save();
     return budget;
   }
 

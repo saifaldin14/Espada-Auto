@@ -1,8 +1,20 @@
 /**
- * DR Analysis agent tools.
+ * DR Analysis agent tools — wired to the real analyzer engine.
  */
 
 import { Type } from "@sinclair/typebox";
+import type { DRNode, DREdge, FailureScenario } from "./types.js";
+import { analyzePosture, generateRecoveryPlan, findUnprotectedCritical } from "./analyzer.js";
+
+/** Node/edge store — populated by KG sync or `setGraphData()`. */
+let cachedNodes: DRNode[] = [];
+let cachedEdges: DREdge[] = [];
+
+/** Inject graph data (used by gateway, KG bridge, or tests). */
+export function setGraphData(nodes: DRNode[], edges: DREdge[]): void {
+  cachedNodes = nodes;
+  cachedEdges = edges;
+}
 
 export const drTools = [
   {
@@ -14,12 +26,53 @@ export const drTools = [
       region: Type.Optional(Type.String({ description: "Filter by region" })),
     }),
     execute: async (input: { provider?: string; region?: string }) => {
-      // In real usage, pulls nodes/edges from Knowledge Graph
-      const lines: string[] = ["## DR Posture Analysis\n"];
-      lines.push(`Filter: provider=${input.provider ?? "all"}, region=${input.region ?? "all"}`);
-      lines.push("\nConnect Knowledge Graph to populate DR analysis.");
-      lines.push("Use `espada graph dr posture` for live analysis.");
-      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      let nodes = cachedNodes;
+      const edges = cachedEdges;
+
+      // Apply optional filters
+      if (input.provider) {
+        nodes = nodes.filter((n) => n.provider === input.provider);
+      }
+      if (input.region) {
+        nodes = nodes.filter((n) => n.region === input.region);
+      }
+
+      if (nodes.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                status: "no_data",
+                message:
+                  "No infrastructure nodes loaded. Populate via Knowledge Graph sync or `setGraphData()`.",
+                hint: "Use `espada graph dr posture` after importing infrastructure.",
+              }),
+            },
+          ],
+        };
+      }
+
+      const analysis = analyzePosture(nodes, edges);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                grade: analysis.grade,
+                score: analysis.overallScore,
+                singleRegionRisks: analysis.singleRegionRisks,
+                unprotectedCount: analysis.unprotectedCriticalResources.length,
+                recommendations: analysis.recommendations,
+                recoveryTimeEstimates: analysis.recoveryTimeEstimates,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
     },
   },
 
@@ -34,10 +87,60 @@ export const drTools = [
       region: Type.Optional(Type.String({ description: "Target region for region/AZ failures" })),
     }),
     execute: async (input: { scenario: string; region?: string }) => {
-      const lines: string[] = [`## Recovery Plan: ${input.scenario}\n`];
-      if (input.region) lines.push(`Target region: ${input.region}`);
-      lines.push("\nConnect Knowledge Graph to generate recovery plans.");
-      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      const nodes = cachedNodes;
+      const edges = cachedEdges;
+
+      if (nodes.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                status: "no_data",
+                message: "No infrastructure nodes loaded. Import data first.",
+              }),
+            },
+          ],
+        };
+      }
+
+      const validScenarios: FailureScenario[] = [
+        "region-failure",
+        "az-failure",
+        "service-outage",
+        "data-corruption",
+      ];
+      const scenario = validScenarios.includes(input.scenario as FailureScenario)
+        ? (input.scenario as FailureScenario)
+        : "region-failure";
+
+      const plan = generateRecoveryPlan(scenario, nodes, edges, input.region);
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                scenario: plan.scenario,
+                affectedResources: plan.affectedResources.length,
+                estimatedRTO: `${plan.estimatedRTO} min`,
+                estimatedRPO: `${plan.estimatedRPO} min`,
+                steps: plan.recoverySteps.map((s) => ({
+                  order: s.order,
+                  action: s.action,
+                  resource: s.resourceName,
+                  duration: `${s.estimatedDuration} min`,
+                  dependsOn: s.dependsOn,
+                  manual: s.manual,
+                })),
+                dependencyGroups: plan.dependencies,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
     },
   },
 
@@ -49,10 +152,49 @@ export const drTools = [
       resourceType: Type.Optional(Type.String({ description: "Filter by resource type" })),
     }),
     execute: async (input: { resourceType?: string }) => {
-      const lines: string[] = ["## DR Protection Gaps\n"];
-      if (input.resourceType) lines.push(`Filter: ${input.resourceType}`);
-      lines.push("\nConnect Knowledge Graph to identify unprotected resources.");
-      return { content: [{ type: "text" as const, text: lines.join("\n") }] };
+      const nodes = cachedNodes;
+      const edges = cachedEdges;
+
+      if (nodes.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify({
+                status: "no_data",
+                message: "No infrastructure nodes loaded. Import data first.",
+              }),
+            },
+          ],
+        };
+      }
+
+      let unprotected = findUnprotectedCritical(nodes, edges);
+      if (input.resourceType) {
+        unprotected = unprotected.filter((n) => n.resourceType === input.resourceType);
+      }
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: JSON.stringify(
+              {
+                totalGaps: unprotected.length,
+                resources: unprotected.map((n) => ({
+                  id: n.id,
+                  name: n.name,
+                  type: n.resourceType,
+                  provider: n.provider,
+                  region: n.region,
+                })),
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
     },
   },
 ];

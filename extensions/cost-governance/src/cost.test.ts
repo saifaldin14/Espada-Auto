@@ -199,7 +199,7 @@ describe("BudgetManager", () => {
   });
 
   it("creates a budget with defaults", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput());
     expect(b.name).toBe("Test Budget");
     expect(b.monthlyLimit).toBe(1000);
@@ -210,13 +210,13 @@ describe("BudgetManager", () => {
   });
 
   it("retrieves budget by ID", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput());
     expect(mgr.getBudget(b.id)).toEqual(b);
   });
 
   it("finds budget by scope", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     mgr.setBudget(makeBudgetInput());
     const found = mgr.findBudget("project", "proj-1");
     expect(found).not.toBeNull();
@@ -224,13 +224,13 @@ describe("BudgetManager", () => {
   });
 
   it("returns null for missing budget", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     expect(mgr.getBudget("nonexistent")).toBeNull();
     expect(mgr.findBudget("team", "no-team")).toBeNull();
   });
 
   it("updates existing budget on same scope", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b1 = mgr.setBudget(makeBudgetInput());
     const b2 = mgr.setBudget(makeBudgetInput({ monthlyLimit: 2000 }));
     expect(b2.id).toBe(b1.id);
@@ -239,14 +239,14 @@ describe("BudgetManager", () => {
   });
 
   it("lists all budgets", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     mgr.setBudget(makeBudgetInput());
     mgr.setBudget(makeBudgetInput({ scope: "team", scopeId: "team-a" }));
     expect(mgr.listBudgets()).toHaveLength(2);
   });
 
   it("deletes a budget", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput());
     expect(mgr.deleteBudget(b.id)).toBe(true);
     expect(mgr.getBudget(b.id)).toBeNull();
@@ -254,7 +254,7 @@ describe("BudgetManager", () => {
   });
 
   it("updates spend", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput());
     const updated = mgr.updateSpend(b.id, 500);
     expect(updated!.currentSpend).toBe(500);
@@ -262,21 +262,21 @@ describe("BudgetManager", () => {
   });
 
   it("returns ok status when under warning", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput({ monthlyLimit: 1000 }));
     mgr.updateSpend(b.id, 500);
     expect(mgr.getStatus(mgr.getBudget(b.id)!)).toBe("ok");
   });
 
   it("returns warning status", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput({ monthlyLimit: 1000, warningThreshold: 80 }));
     mgr.updateSpend(b.id, 850);
     expect(mgr.getStatus(mgr.getBudget(b.id)!)).toBe("warning");
   });
 
   it("returns critical status", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(
       makeBudgetInput({ monthlyLimit: 1000, warningThreshold: 80, criticalThreshold: 95 }),
     );
@@ -285,14 +285,14 @@ describe("BudgetManager", () => {
   });
 
   it("returns exceeded status", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput({ monthlyLimit: 1000 }));
     mgr.updateSpend(b.id, 1100);
     expect(mgr.getStatus(mgr.getBudget(b.id)!)).toBe("exceeded");
   });
 
   it("getAllStatuses includes utilization", () => {
-    const mgr = new BudgetManager();
+    const mgr = new BudgetManager(null);
     const b = mgr.setBudget(makeBudgetInput({ monthlyLimit: 200 }));
     mgr.updateSpend(b.id, 100);
     const statuses = mgr.getAllStatuses();

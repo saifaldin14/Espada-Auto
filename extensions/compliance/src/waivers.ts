@@ -5,6 +5,9 @@
  * Provides time-limited waivers with approval tracking.
  */
 
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { homedir } from "node:os";
 import type { ComplianceWaiver } from "./types.js";
 import type { WaiverLookup } from "./evaluator.js";
 
@@ -55,6 +58,68 @@ export class InMemoryWaiverStore implements WaiverStore {
     return this.waivers.some(
       (w) => w.controlId === controlId && w.resourceId === resourceId && w.expiresAt > now,
     );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// File-backed WaiverStore — persists to ~/.espada/compliance-waivers.json
+// ---------------------------------------------------------------------------
+export class FileWaiverStore implements WaiverStore {
+  private inner = new InMemoryWaiverStore();
+  private filePath: string;
+
+  constructor(filePath?: string) {
+    this.filePath = filePath ?? join(homedir(), ".espada", "compliance-waivers.json");
+    this.load();
+  }
+
+  private load(): void {
+    try {
+      if (existsSync(this.filePath)) {
+        const raw = readFileSync(this.filePath, "utf-8");
+        const arr: ComplianceWaiver[] = JSON.parse(raw);
+        for (const w of arr) this.inner.add(w);
+      }
+    } catch {
+      // Corrupted file — start fresh
+    }
+  }
+
+  private save(): void {
+    try {
+      const dir = this.filePath.replace(/[/\\][^/\\]+$/, "");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(this.filePath, JSON.stringify(this.inner.list(), null, 2));
+    } catch {
+      // Best-effort persist
+    }
+  }
+
+  add(waiver: ComplianceWaiver): void {
+    this.inner.add(waiver);
+    this.save();
+  }
+
+  remove(waiverId: string): boolean {
+    const ok = this.inner.remove(waiverId);
+    if (ok) this.save();
+    return ok;
+  }
+
+  get(waiverId: string): ComplianceWaiver | undefined {
+    return this.inner.get(waiverId);
+  }
+
+  list(): ComplianceWaiver[] {
+    return this.inner.list();
+  }
+
+  listActive(): ComplianceWaiver[] {
+    return this.inner.listActive();
+  }
+
+  isWaived(controlId: string, resourceId: string): boolean {
+    return this.inner.isWaived(controlId, resourceId);
   }
 }
 
