@@ -1,0 +1,8 @@
+{
+  "name": "cost-governance",
+  "displayName": "Cost Governance",
+  "description": "Cost estimation, budget management, Infracost integration, FinOps governance",
+  "version": "0.0.1",
+  "entryPoint": "index.ts",
+  "dependencies": ["@espada/audit-trail", "@espada/policy-engine"]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "audit-trail",
+  "name": "Persistent Audit Trail",
+  "description": "Enterprise-grade audit logging with persistent SQLite storage, buffered writes, sensitive field redaction, and queryable event history",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "security",
+  "capabilities": [
+    "audit-logging",
+    "event-tracking",
+    "compliance-audit",
+    "activity-monitoring",
+    "sensitive-field-redaction"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "storage": {
+        "type": "object",
+        "properties": {
+          "type": { "enum": ["sqlite", "memory"] },
+          "path": { "type": "string" }
+        }
+      },
+      "retentionDays": { "type": "number", "default": 90 },
+      "flushIntervalMs": { "type": "number", "default": 1000 },
+      "maxBufferSize": { "type": "number", "default": 100 }
+    }
+  }
+}

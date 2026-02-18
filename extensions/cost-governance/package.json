@@ -1,0 +1,16 @@
+{
+  "name": "@espada/cost-governance",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Cost estimation, budget management, Infracost integration, FinOps governance",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}

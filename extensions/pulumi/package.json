@@ -1,0 +1,16 @@
+{
+  "name": "@espada/pulumi",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Pulumi integration — state parsing, preview/up wrapping, drift detection",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}

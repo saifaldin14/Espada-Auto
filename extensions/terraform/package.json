@@ -1,0 +1,19 @@
+{
+  "name": "@espada/terraform",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Terraform state management — parse, drift detection, plan evaluation, state locking",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "espada": "workspace:*",
+    "@types/better-sqlite3": "^7.6.11",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}

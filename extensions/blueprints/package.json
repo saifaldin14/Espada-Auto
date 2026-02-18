@@ -1,0 +1,16 @@
+{
+  "name": "@espada/blueprints",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "devDependencies": {
+    "espada": "workspace:*"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.14"
+  }
+}

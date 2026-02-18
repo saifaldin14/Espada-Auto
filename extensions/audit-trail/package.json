@@ -1,0 +1,32 @@
+{
+  "name": "@espada/audit-trail",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
+    "./types": { "import": "./dist/src/types.js", "types": "./dist/src/types.d.ts" }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "espada": { "extensions": ["index.ts"] },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "espada": "workspace:*",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}

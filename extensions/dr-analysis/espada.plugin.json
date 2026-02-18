@@ -1,0 +1,8 @@
+{
+  "name": "dr-analysis",
+  "displayName": "Disaster Recovery Analysis",
+  "description": "DR posture scoring, recovery plan generation, and gap analysis using Knowledge Graph topology",
+  "version": "0.1.0",
+  "entryPoint": "index.ts",
+  "dependencies": ["knowledge-graph"]
+}

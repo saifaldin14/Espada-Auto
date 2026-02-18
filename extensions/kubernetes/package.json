@@ -1,0 +1,16 @@
+{
+  "name": "@espada/kubernetes",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Kubernetes integration — manifest parsing, kubectl wrapping, resource graph bridging",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}

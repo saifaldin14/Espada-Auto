@@ -1,0 +1,14 @@
+{
+  "name": "espada-compliance",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "devDependencies": {
+    "espada": "workspace:*"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "dependencies": {}
+}

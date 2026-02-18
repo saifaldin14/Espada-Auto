@@ -1,0 +1,7 @@
+{
+  "name": "@espada/enterprise-auth",
+  "displayName": "Enterprise Auth",
+  "description": "OIDC SSO, RBAC roles/permissions, JWT sessions, MFA support",
+  "version": "0.0.1",
+  "dependencies": ["@espada/audit-trail"]
+}

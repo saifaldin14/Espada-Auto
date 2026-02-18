@@ -1,0 +1,10 @@
+{
+  "id": "policy-engine",
+  "name": "Policy-as-Code Engine",
+  "description": "OPA-style policy evaluation with native TypeScript rule engine, topology-aware policies via Knowledge Graph, and built-in policy library",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "security",
+  "capabilities": ["policy-evaluation", "compliance-check", "cost-governance", "access-control", "drift-response"],
+  "dependencies": ["@espada/audit-trail"]
+}

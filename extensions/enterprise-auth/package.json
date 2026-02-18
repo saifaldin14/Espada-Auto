@@ -1,0 +1,19 @@
+{
+  "name": "@espada/enterprise-auth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Enterprise SSO/RBAC — OIDC, JWT sessions, RBAC roles and permissions",
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "espada": "workspace:*",
+    "@types/better-sqlite3": "^7.6.11",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  }
+}
