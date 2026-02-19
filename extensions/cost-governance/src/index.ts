@@ -7,6 +7,15 @@ export {
   parseBreakdownJson,
   parseDiffJson,
 } from "./infracost.js";
+export {
+  createCostDeltaPolicy,
+  createHighCostApprovalPolicy,
+  createCostPercentageWarnPolicy,
+  createDestructiveHighCostPolicy,
+  createNewResourceNotifyPolicy,
+  createBudgetUtilizationPolicy,
+  getDefaultCostPolicies,
+} from "./cost-policy.js";
 export type {
   ResourceCost,
   SubResourceCost,

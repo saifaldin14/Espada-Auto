@@ -9,6 +9,10 @@ import type { ConnectParams, ErrorShape, RequestFrame } from "../protocol/index.
 import type { ChannelRuntimeSnapshot } from "../server-channels.js";
 import type { DedupeEntry } from "../server-shared.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import type { SessionManager } from "../sso/session-store.js";
+import type { GatewayRBACManager } from "../rbac/manager.js";
+import type { OIDCProvider } from "../sso/oidc-provider.js";
+import type { SSOConfig } from "../sso/types.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -84,6 +88,14 @@ export type GatewayRequestContext = {
     prompter: import("../../wizard/prompts.js").WizardPrompter,
   ) => Promise<void>;
   broadcastVoiceWakeChanged: (triggers: string[]) => void;
+  /** SSO session manager (null when SSO not configured). */
+  sessionManager?: SessionManager | null;
+  /** RBAC manager (always available). */
+  rbacManager?: GatewayRBACManager | null;
+  /** OIDC provider (null when SSO not configured). */
+  oidcProvider?: OIDCProvider | null;
+  /** SSO config (null when SSO not configured). */
+  ssoConfig?: SSOConfig | null;
 };
 
 export type GatewayRequestOptions = {

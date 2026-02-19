@@ -257,6 +257,7 @@ export async function startGatewayServer(
     tailscaleConfig,
     tailscaleMode,
   } = runtimeConfig;
+  const { oidcProvider, sessionManager, rbacManager, ssoConfig } = runtimeConfig;
   let hooksConfig = runtimeConfig.hooksConfig;
   const canvasHostEnabled = runtimeConfig.canvasHostEnabled;
 
@@ -302,6 +303,10 @@ export async function startGatewayServer(
     canvasRuntime,
     canvasHostEnabled,
     allowCanvasHostInTests: opts.allowCanvasHostInTests,
+    oidcProvider,
+    sessionManager,
+    rbacManager,
+    ssoConfig,
     logCanvas,
     log,
     logHooks,
@@ -436,6 +441,8 @@ export async function startGatewayServer(
       ...execApprovalHandlers,
     },
     broadcast,
+    sessionManager,
+    rbacManager,
     context: {
       deps,
       cron,
@@ -472,6 +479,10 @@ export async function startGatewayServer(
       markChannelLoggedOut,
       wizardRunner,
       broadcastVoiceWakeChanged,
+      sessionManager,
+      rbacManager,
+      oidcProvider,
+      ssoConfig,
     },
   });
   logGatewayStartup({

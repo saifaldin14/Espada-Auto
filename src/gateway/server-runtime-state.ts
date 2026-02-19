@@ -20,6 +20,11 @@ import { attachGatewayUpgradeHandler, createGatewayHttpServer } from "./server-h
 import type { DedupeEntry } from "./server-shared.js";
 import type { PluginRegistry } from "../plugins/registry.js";
 import type { GatewayTlsRuntime } from "./server/tls.js";
+import type { OIDCProvider } from "./sso/oidc-provider.js";
+import type { SessionManager } from "./sso/session-store.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { SSOConfig } from "./sso/types.js";
+import { createSSOHttpHandler } from "./sso/http-handler.js";
 
 export async function createGatewayRuntimeState(params: {
   cfg: import("../config/config.js").EspadaConfig;
@@ -38,6 +43,10 @@ export async function createGatewayRuntimeState(params: {
   canvasRuntime: RuntimeEnv;
   canvasHostEnabled: boolean;
   allowCanvasHostInTests?: boolean;
+  oidcProvider?: OIDCProvider | null;
+  sessionManager?: SessionManager | null;
+  rbacManager?: GatewayRBACManager;
+  ssoConfig?: SSOConfig | null;
   logCanvas: { info: (msg: string) => void; warn: (msg: string) => void };
   log: { info: (msg: string) => void; warn: (msg: string) => void };
   logHooks: ReturnType<typeof createSubsystemLogger>;
@@ -104,6 +113,23 @@ export async function createGatewayRuntimeState(params: {
     log: params.logPlugins,
   });
 
+  // SSO HTTP handler (OIDC init/callback/status/logout)
+  let handleSSORequest:
+    | ((
+        req: import("node:http").IncomingMessage,
+        res: import("node:http").ServerResponse,
+      ) => Promise<boolean>)
+    | undefined;
+  if (params.oidcProvider && params.sessionManager && params.rbacManager && params.ssoConfig) {
+    handleSSORequest = createSSOHttpHandler({
+      oidcProvider: params.oidcProvider,
+      sessionManager: params.sessionManager,
+      rbacManager: params.rbacManager,
+      ssoConfig: params.ssoConfig,
+      gatewayBaseUrl: `http://${params.bindHost}:${params.port}`,
+    });
+  }
+
   const bindHosts = await resolveGatewayListenHosts(params.bindHost);
   const httpServers: HttpServer[] = [];
   const httpBindHosts: string[] = [];
@@ -117,6 +143,7 @@ export async function createGatewayRuntimeState(params: {
       openResponsesConfig: params.openResponsesConfig,
       handleHooksRequest,
       handlePluginRequest,
+      handleSSORequest,
       resolvedAuth: params.resolvedAuth,
       tlsOptions: params.gatewayTls?.enabled ? params.gatewayTls.tlsOptions : undefined,
     });

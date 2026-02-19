@@ -25,3 +25,4 @@ export type {
   OIDCIdTokenClaims,
 } from "./types.js";
 export { DEFAULT_SSO_CONFIG } from "./types.js";
+export { createSSOHttpHandler } from "./http-handler.js";

@@ -3,6 +3,9 @@ export { InMemoryTerraformStorage, SQLiteTerraformStorage, createWorkspaceFromIn
 export { createTerraformTools } from "./tools.js";
 export { createCodifyTools } from "./codify-tools.js";
 export { createTerraformCli } from "./cli.js";
+export { stateToGraphNodes, dependenciesToGraphEdges, syncStateToGraph, diffGraphVsState, tfResourceTypeToGraphType } from "./graph-bridge.js";
+export { generateBackendHCL, createS3Backend, createAzureRMBackend, createGCSBackend, validateBackendConfig } from "./backend-configs.js";
+export type { BackendConfig, S3BackendConfig, AzureRMBackendConfig, GCSBackendConfig } from "./backend-configs.js";
 export * from "./types.js";
 export * from "./hcl-generator.js";
 export * from "./codify.js";

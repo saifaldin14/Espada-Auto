@@ -15,6 +15,8 @@ import { logWs } from "../ws-log.js";
 import { getHealthVersion, getPresenceVersion, incrementPresenceVersion } from "./health-state.js";
 import { attachGatewayWsMessageHandler } from "./ws-connection/message-handler.js";
 import type { GatewayWsClient } from "./ws-types.js";
+import type { SessionManager } from "../sso/session-store.js";
+import type { GatewayRBACManager } from "../rbac/manager.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -41,6 +43,8 @@ export function attachGatewayWsConnectionHandler(params: {
     },
   ) => void;
   buildRequestContext: () => GatewayRequestContext;
+  sessionManager?: import("../sso/session-store.js").SessionManager | null;
+  rbacManager?: import("../rbac/manager.js").GatewayRBACManager | null;
 }) {
   const {
     wss,
@@ -240,6 +244,8 @@ export function attachGatewayWsConnectionHandler(params: {
       events,
       extraHandlers,
       buildRequestContext,
+      sessionManager: params.sessionManager ?? null,
+      rbacManager: params.rbacManager ?? null,
       send,
       close,
       isClosed: () => closed,

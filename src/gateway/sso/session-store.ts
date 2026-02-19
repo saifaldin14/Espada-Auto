@@ -279,6 +279,25 @@ export class SessionManager {
   constructor(private store: SessionStore) {}
 
   /**
+   * Get a session by ID (raw lookup, no token parsing).
+   * Returns null if session not found or expired.
+   */
+  async getSession(sessionId: string): Promise<SSOSession | null> {
+    return this.store.get(sessionId);
+  }
+
+  /**
+   * Update last activity timestamp for a session.
+   */
+  async touchSession(sessionId: string): Promise<void> {
+    const session = await this.store.get(sessionId);
+    if (session) {
+      session.lastActivityAt = new Date().toISOString();
+      await this.store.save(session);
+    }
+  }
+
+  /**
    * Validate a session token and return the active session.
    * Returns null if token is invalid, expired, or session not found.
    */

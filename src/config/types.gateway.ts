@@ -70,7 +70,7 @@ export type GatewayControlUiConfig = {
   dangerouslyDisableDeviceAuth?: boolean;
 };
 
-export type GatewayAuthMode = "token" | "password";
+export type GatewayAuthMode = "token" | "password" | "oidc";
 
 export type GatewayAuthConfig = {
   /** Authentication mode for Gateway connections. Defaults to token when set. */
@@ -81,6 +81,28 @@ export type GatewayAuthConfig = {
   password?: string;
   /** Allow Tailscale identity headers when serve mode is enabled. */
   allowTailscale?: boolean;
+  /** SSO/OIDC configuration for enterprise authentication. */
+  sso?: GatewaySSOConfig;
+};
+
+/** SSO/OIDC configuration for enterprise authentication. */
+export type GatewaySSOConfig = {
+  /** SSO provider type (currently only OIDC supported). */
+  provider?: "oidc" | "saml";
+  /** OIDC issuer URL (e.g. https://login.microsoftonline.com/{tenant}/v2.0). */
+  issuerUrl?: string;
+  /** OAuth2 client ID. */
+  clientId?: string;
+  /** OAuth2 client secret. */
+  clientSecret?: string;
+  /** OAuth2 callback URL for authorization code flow. */
+  callbackUrl?: string;
+  /** OAuth2 scopes to request. */
+  scopes?: string[];
+  /** Map IdP groups → Espada roles. */
+  roleMapping?: Record<string, string>;
+  /** Allow fallback to token/password auth when SSO is configured. */
+  allowFallback?: boolean;
 };
 
 export type GatewayTailscaleMode = "off" | "serve" | "funnel";

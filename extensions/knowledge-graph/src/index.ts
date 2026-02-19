@@ -59,4 +59,5 @@ export type { ExportFormat, ExportResult, ExportOptions } from "./export.js";
 
 // Tools & CLI (for direct use / testing)
 export { registerGraphTools } from "./tools.js";
+export { registerPolicyScanTool } from "./policy-scan-tool.js";
 export { registerGraphCli } from "./cli.js";

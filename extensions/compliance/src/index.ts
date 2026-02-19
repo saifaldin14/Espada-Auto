@@ -5,5 +5,7 @@ export type { EvaluationResult, WaiverLookup } from "./evaluator.js";
 export { generateReport, exportMarkdown, compareReports, filterViolations, scoreToGrade, severityIcon } from "./reporter.js";
 export { InMemoryWaiverStore, createWaiver, generateWaiverId } from "./waivers.js";
 export type { WaiverStore } from "./waivers.js";
+export { FileReportStore, InMemoryReportStore } from "./storage.js";
+export type { ReportStore, StoredReport } from "./storage.js";
 export { createComplianceTools } from "./tools.js";
 export { createComplianceCli } from "./cli.js";

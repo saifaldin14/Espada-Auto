@@ -8,12 +8,14 @@ import { evaluate } from "./evaluator.js";
 import { generateReport, exportMarkdown, filterViolations } from "./reporter.js";
 import type { WaiverStore } from "./waivers.js";
 import { createWaiver } from "./waivers.js";
+import type { ReportStore } from "./storage.js";
 
 const VALID_FRAMEWORKS = ["soc2", "cis", "hipaa", "pci-dss", "gdpr", "nist-800-53"];
 
 export function createComplianceCli(
   getNodes: () => ControlEvalNode[],
   waiverStore: WaiverStore,
+  reportStore?: ReportStore,
 ) {
   return (program: Command) => {
     const comp = program.command("compliance").description("Compliance scanning and reporting");
@@ -38,6 +40,12 @@ export function createComplianceCli(
 
         const result = evaluate(opts.framework as FrameworkId, nodes, waiverStore);
         const report = generateReport(result);
+
+        // Auto-save report for trend tracking
+        if (reportStore) {
+          const reportId = reportStore.save(report);
+          if (!opts.json) console.log(`  Report saved: ${reportId}`);
+        }
 
         if (opts.json) {
           console.log(JSON.stringify(report, null, 2));
@@ -167,11 +175,81 @@ export function createComplianceCli(
     // ── trend ────────────────────────────────────────────────────
     comp
       .command("trend")
-      .description("Show compliance score trend (requires stored reports)")
-      .action(async () => {
-        // Trend requires historical reports stored externally
-        console.log("Trend analysis requires stored report history. Run scans periodically to build trend data.");
-        console.log("Use `compliance report --framework <id> --format json` to capture snapshots.");
+      .description("Show compliance score trend over time")
+      .requiredOption("--framework <id>", `Framework: ${VALID_FRAMEWORKS.join(", ")}`)
+      .option("--limit <n>", "Number of data points", "20")
+      .option("--json", "Output as JSON")
+      .action(async (opts: { framework: string; limit: string; json?: boolean }) => {
+        if (!VALID_FRAMEWORKS.includes(opts.framework)) {
+          console.error(`Unknown framework: ${opts.framework}`);
+          return;
+        }
+
+        if (!reportStore) {
+          console.log("Trend analysis requires a report store. Reports are stored automatically when running scans.");
+          return;
+        }
+
+        const limit = parseInt(opts.limit) || 20;
+        const trends = reportStore.getTrend(opts.framework as FrameworkId, limit);
+
+        if (trends.length === 0) {
+          console.log(`No stored reports for ${opts.framework}. Run \`compliance scan --framework ${opts.framework}\` to build trend data.`);
+          return;
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify(trends, null, 2));
+          return;
+        }
+
+        console.log(`\n📈 ${opts.framework.toUpperCase()} Compliance Trend (${trends.length} data points)\n`);
+
+        // ASCII trend display
+        const maxScore = 100;
+        const barWidth = 30;
+        for (const point of trends) {
+          const filled = Math.round((point.score / maxScore) * barWidth);
+          const bar = "█".repeat(filled) + "░".repeat(barWidth - filled);
+          const date = point.date.split("T")[0];
+          const icon = point.score >= 90 ? "✅" : point.score >= 70 ? "⚠️" : "❌";
+          console.log(`  ${date}  ${bar}  ${icon} ${point.score}%  (${point.violations} violations)`);
+        }
+
+        // Summary
+        const first = trends[0];
+        const last = trends[trends.length - 1];
+        const delta = last.score - first.score;
+        const direction = delta > 0 ? "📈 improving" : delta < 0 ? "📉 declining" : "➡️ stable";
+        console.log(`\n  Trend: ${direction} (${delta > 0 ? "+" : ""}${delta}% over ${trends.length} scans)`);
+      });
+
+    // ── history ───────────────────────────────────────────────────
+    comp
+      .command("history")
+      .description("List stored compliance reports")
+      .option("--framework <id>", "Filter by framework")
+      .option("--limit <n>", "Max reports to show", "10")
+      .action(async (opts: { framework?: string; limit: string }) => {
+        if (!reportStore) {
+          console.log("Report storage not configured.");
+          return;
+        }
+
+        const limit = parseInt(opts.limit) || 10;
+        const reports = reportStore.list(opts.framework as FrameworkId | undefined, limit);
+
+        if (reports.length === 0) {
+          console.log("No stored reports.");
+          return;
+        }
+
+        console.log(`\n  Stored compliance reports (${reports.length}/${reportStore.count()} total):\n`);
+        for (const r of reports) {
+          const icon = r.report.score >= 90 ? "✅" : r.report.score >= 70 ? "⚠️" : "❌";
+          const open = r.report.violations.filter((v) => v.status === "open").length;
+          console.log(`  ${icon} ${r.id}  ${r.report.framework.toUpperCase().padEnd(12)}  Score: ${r.report.score}%  Violations: ${open}  ${r.report.generatedAt}`);
+        }
       });
   };
 }

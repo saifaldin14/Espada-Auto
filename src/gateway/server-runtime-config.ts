@@ -11,7 +11,14 @@ import {
 } from "./auth.js";
 import { normalizeControlUiBasePath } from "./control-ui-shared.js";
 import { resolveHooksConfig } from "./hooks.js";
+import { join } from "node:path";
 import { isLoopbackHost, resolveGatewayBindHost } from "./net.js";
+import { OIDCProvider } from "./sso/oidc-provider.js";
+import { SessionManager, FileSessionStore } from "./sso/session-store.js";
+import type { SSOConfig } from "./sso/types.js";
+import { DEFAULT_SSO_CONFIG } from "./sso/types.js";
+import { GatewayRBACManager, FileRBACStorage } from "./rbac/manager.js";
+import { resolveStateDir } from "../config/paths.js";
 
 export type GatewayRuntimeConfig = {
   bindHost: string;
@@ -26,6 +33,14 @@ export type GatewayRuntimeConfig = {
   tailscaleMode: "off" | "serve" | "funnel";
   hooksConfig: ReturnType<typeof resolveHooksConfig>;
   canvasHostEnabled: boolean;
+  /** SSO OIDC provider (null when SSO not configured). */
+  oidcProvider: OIDCProvider | null;
+  /** SSO session manager (null when SSO not configured). */
+  sessionManager: SessionManager | null;
+  /** RBAC manager (always initialized with built-in roles). */
+  rbacManager: GatewayRBACManager;
+  /** Resolved SSO config (null when SSO not configured). */
+  ssoConfig: SSOConfig | null;
 };
 
 export async function resolveGatewayRuntimeConfig(params: {
@@ -88,11 +103,44 @@ export async function resolveGatewayRuntimeConfig(params: {
   if (tailscaleMode !== "off" && !isLoopbackHost(bindHost)) {
     throw new Error("tailscale serve/funnel requires gateway bind=loopback (127.0.0.1)");
   }
-  if (!isLoopbackHost(bindHost) && !hasSharedSecret) {
+  if (!isLoopbackHost(bindHost) && !hasSharedSecret && !resolvedAuth.ssoEnabled) {
     throw new Error(
       `refusing to bind gateway to ${bindHost}:${params.port} without auth (set gateway.auth.token/password, or set ESPADA_GATEWAY_TOKEN/ESPADA_GATEWAY_PASSWORD)`,
     );
   }
+
+  // ── SSO/RBAC initialization ───────────────────────────────────────────
+  const stateDir = resolveStateDir();
+  const ssoConfigRaw = authConfig.sso;
+  let oidcProvider: OIDCProvider | null = null;
+  let sessionManager: SessionManager | null = null;
+  let ssoConfig: SSOConfig | null = null;
+
+  if (
+    resolvedAuth.ssoEnabled &&
+    ssoConfigRaw?.issuerUrl &&
+    ssoConfigRaw.clientId &&
+    ssoConfigRaw.clientSecret
+  ) {
+    ssoConfig = {
+      provider: ssoConfigRaw.provider ?? "oidc",
+      issuerUrl: ssoConfigRaw.issuerUrl,
+      clientId: ssoConfigRaw.clientId,
+      clientSecret: ssoConfigRaw.clientSecret,
+      callbackUrl:
+        ssoConfigRaw.callbackUrl ?? `http://${bindHost}:${params.port}/auth/sso/callback`,
+      scopes: ssoConfigRaw.scopes ?? DEFAULT_SSO_CONFIG.scopes ?? ["openid", "profile", "email"],
+      roleMapping: ssoConfigRaw.roleMapping ?? DEFAULT_SSO_CONFIG.roleMapping ?? {},
+      allowFallback: ssoConfigRaw.allowFallback ?? DEFAULT_SSO_CONFIG.allowFallback ?? true,
+    };
+    oidcProvider = new OIDCProvider(ssoConfig);
+    sessionManager = new SessionManager(new FileSessionStore(join(stateDir, "sso-sessions.json")));
+  }
+
+  // RBAC is always initialized (built-in roles exist even without SSO)
+  const rbacStorage = new FileRBACStorage(join(stateDir, "rbac.json"));
+  const rbacManager = new GatewayRBACManager(rbacStorage);
+  await rbacManager.initialize();
 
   return {
     bindHost,
@@ -109,5 +157,9 @@ export async function resolveGatewayRuntimeConfig(params: {
     tailscaleMode,
     hooksConfig,
     canvasHostEnabled,
+    oidcProvider,
+    sessionManager,
+    rbacManager,
+    ssoConfig,
   };
 }

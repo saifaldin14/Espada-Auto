@@ -4,6 +4,8 @@ import type { ResolvedGatewayAuth } from "./auth.js";
 import { attachGatewayWsConnectionHandler } from "./server/ws-connection.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./server-methods/types.js";
+import type { SessionManager } from "./sso/session-store.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
 
 export function attachGatewayWsHandlers(params: {
   wss: WebSocketServer;
@@ -28,6 +30,8 @@ export function attachGatewayWsHandlers(params: {
     },
   ) => void;
   context: GatewayRequestContext;
+  sessionManager?: SessionManager | null;
+  rbacManager?: GatewayRBACManager | null;
 }) {
   attachGatewayWsConnectionHandler({
     wss: params.wss,
@@ -45,5 +49,7 @@ export function attachGatewayWsHandlers(params: {
     extraHandlers: params.extraHandlers,
     broadcast: params.broadcast,
     buildRequestContext: () => params.context,
+    sessionManager: params.sessionManager ?? null,
+    rbacManager: params.rbacManager ?? null,
   });
 }

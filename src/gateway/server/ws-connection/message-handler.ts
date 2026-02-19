@@ -115,6 +115,12 @@ function formatGatewayAuthFailureMessage(params: {
       return "unauthorized: tailscale identity check failed (use Tailscale Serve auth or gateway token/password)";
     case "tailscale_user_mismatch":
       return "unauthorized: tailscale identity mismatch (use Tailscale Serve auth or gateway token/password)";
+    case "sso_required":
+      return "unauthorized: SSO authentication required (authenticate via the SSO login flow)";
+    case "sso_session_expired":
+      return "unauthorized: SSO session expired (re-authenticate via SSO login)";
+    case "sso_session_not_found":
+      return "unauthorized: SSO session not found (re-authenticate via SSO login)";
     default:
       break;
   }
@@ -157,6 +163,8 @@ export function attachGatewayWsMessageHandler(params: {
   logGateway: SubsystemLogger;
   logHealth: SubsystemLogger;
   logWsControl: SubsystemLogger;
+  sessionManager?: import("../../sso/session-store.js").SessionManager | null;
+  rbacManager?: import("../../rbac/manager.js").GatewayRBACManager | null;
 }) {
   const {
     socket,
@@ -569,6 +577,8 @@ export function attachGatewayWsMessageHandler(params: {
           connectAuth: connectParams.auth,
           req: upgradeReq,
           trustedProxies,
+          sessionManager: params.sessionManager ?? undefined,
+          rbacManager: params.rbacManager ?? undefined,
         });
         let authOk = authResult.ok;
         let authMethod =
@@ -818,6 +828,10 @@ export function attachGatewayWsMessageHandler(params: {
           connect: connectParams,
           connId,
           presenceKey,
+          ssoUser: authResult.ssoUser,
+          ssoSessionId: authResult.ssoSessionId,
+          authMethod: authMethod as GatewayWsClient["authMethod"],
+          roles: authResult.roles,
         };
         setClient(nextClient);
         setHandshakeState("connected");

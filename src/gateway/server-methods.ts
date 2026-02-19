@@ -16,6 +16,7 @@ import { nodeHandlers } from "./server-methods/nodes.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
+import { ssoRbacHandlers } from "./server-methods/sso-rbac.js";
 import { systemHandlers } from "./server-methods/system.js";
 import { talkHandlers } from "./server-methods/talk.js";
 import { ttsHandlers } from "./server-methods/tts.js";
@@ -72,6 +73,12 @@ const READ_METHODS = new Set([
   "node.list",
   "node.describe",
   "chat.history",
+  "sso.status",
+  "sso.sessions",
+  "rbac.roles",
+  "rbac.assignments",
+  "rbac.check",
+  "rbac.permissions",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -88,6 +95,9 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
+  "sso.revoke",
+  "rbac.assign",
+  "rbac.remove",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -171,6 +181,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...agentHandlers,
   ...agentsHandlers,
   ...browserHandlers,
+  ...ssoRbacHandlers,
 };
 
 export async function handleGatewayRequest(
