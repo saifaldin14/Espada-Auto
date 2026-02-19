@@ -16,7 +16,12 @@ export type CloudProvider =
   | "azure"
   | "gcp"
   | "kubernetes"
-  | "custom";
+  | "custom"
+  // Hybrid/edge providers:
+  | "azure-arc"
+  | "gdc"
+  | "vmware"
+  | "nutanix";
 
 // =============================================================================
 // Graph Node — Universal Resource Representation
@@ -52,7 +57,15 @@ export type GraphResourceType =
   | "cdn"
   | "topic"
   | "stream"
-  | "custom";
+  | "custom"
+  // Hybrid/edge resource types:
+  | "hybrid-machine"
+  | "connected-cluster"
+  | "custom-location"
+  | "outpost"
+  | "edge-site"
+  | "hci-cluster"
+  | "fleet";
 
 /** Canonical resource status. */
 export type GraphNodeStatus =
@@ -185,7 +198,13 @@ export type GraphRelationshipType =
   | "connects-via"
   | "exposes"
   | "inherits-from"
-  | "custom";
+  | "custom"
+  // Hybrid/edge relationship types:
+  | "managed-by"
+  | "hosted-on"
+  | "member-of-fleet"
+  | "deployed-at"
+  | "connected-to";
 
 /** How a relationship was discovered. */
 export type EdgeDiscoveryMethod =
@@ -542,4 +561,54 @@ export type GraphStats = {
   lastSyncAt: string | null;
   oldestChange: string | null;
   newestChange: string | null;
+};
+
+// =============================================================================
+// Hybrid/Edge Location Types
+// =============================================================================
+
+/** Classification of a resource's physical or logical location. */
+export type GraphNodeLocationType =
+  | "cloud-region"
+  | "availability-zone"
+  | "edge-site"
+  | "on-premises"
+  | "custom-location";
+
+/** Connectivity status for hybrid/edge resources. */
+export type ConnectivityStatus =
+  | "connected"
+  | "degraded"
+  | "disconnected"
+  | "unknown";
+
+/**
+ * Generalised location for graph nodes — extends "region" to include
+ * physical sites, edge locations, and on-premises data centres.
+ */
+export type GraphNodeLocation = {
+  /** Location classification. */
+  type: GraphNodeLocationType;
+  /** Human-readable name (e.g. "Seattle Warehouse 3"). */
+  name: string;
+  /** Cloud provider managing this location. */
+  provider: CloudProvider;
+  /** Cloud region (for cloud-region / availability-zone types). */
+  region?: string;
+  /** Parent cloud region this edge site connects to. */
+  parentRegion?: string;
+  /** Geographic coordinates. */
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  /** Physical address. */
+  address?: {
+    city?: string;
+    state?: string;
+    country: string;
+    postalCode?: string;
+  };
+  /** Current connectivity status. */
+  connectivityStatus?: ConnectivityStatus;
 };

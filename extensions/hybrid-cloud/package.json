@@ -1,0 +1,29 @@
+{
+  "name": "@espada/hybrid-cloud",
+  "version": "1.0.0",
+  "description": "Hybrid/edge infrastructure discovery — unified topology across Azure Arc, AWS Outposts, GKE Enterprise, and Google Distributed Cloud",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./types": {
+      "import": "./dist/src/types.js",
+      "types": "./dist/src/types.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "oxlint src/"
+  },
+  "devDependencies": {
+    "espada": "workspace:*",
+    "typescript": "^5.5.0",
+    "vitest": "^4.0.0"
+  }
+}

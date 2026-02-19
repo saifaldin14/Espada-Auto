@@ -1,0 +1,34 @@
+{
+  "id": "hybrid-cloud",
+  "name": "Hybrid/Edge Infrastructure",
+  "description": "Unified topology discovery across Azure Arc, Azure Local, AWS Outposts, GKE Enterprise fleets, and Google Distributed Cloud",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "category": "infrastructure",
+  "capabilities": [
+    "hybrid-topology",
+    "edge-site-discovery",
+    "fleet-management",
+    "cross-boundary-analysis",
+    "disconnected-ops-assessment"
+  ],
+  "dependencies": [
+    "@espada/knowledge-graph"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "syncIntervalMinutes": {
+        "type": "number",
+        "description": "Minutes between automatic hybrid discovery syncs",
+        "default": 30
+      },
+      "enabledProviders": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "Which hybrid providers to discover (azure-arc, aws-outposts, gke-fleet, gdc)",
+        "default": ["azure-arc", "aws-outposts", "gke-fleet"]
+      }
+    }
+  }
+}
