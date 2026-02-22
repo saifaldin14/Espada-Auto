@@ -26,6 +26,8 @@ import {
   diffTimestamps,
   getEvolutionSummary,
 } from "./temporal.js";
+import { parseIQL, executeQuery, IQLSyntaxError } from "./iql/index.js";
+import type { IQLExecutorOptions } from "./iql/index.js";
 
 // =============================================================================
 // Constants
@@ -620,7 +622,7 @@ const APPROVAL_STATUSES = ["pending", "approved", "rejected", "auto-approved"] a
 export function registerGovernanceTools(
   api: EspadaPluginApi,
   governor: import("./governance.js").ChangeGovernor,
-  storage: GraphStorage,
+  _storage: GraphStorage,
 ): void {
   // ---------------------------------------------------------------------------
   // 10. Audit Trail
@@ -1351,5 +1353,173 @@ export function registerTemporalTools(
       },
     },
     { names: ["kg_list_snapshots"] },
+  );
+}
+
+// =============================================================================
+// IQL (Infrastructure Query Language) Tools — Tool 20
+// =============================================================================
+
+/**
+ * Register IQL tools with the Espada plugin API.
+ */
+export function registerIQLTools(
+  api: EspadaPluginApi,
+  storage: GraphStorage,
+  temporal?: TemporalGraphStorage,
+): void {
+  // ---------------------------------------------------------------------------
+  // 20. IQL Query
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_query",
+      label: "Infrastructure Query (IQL)",
+      description:
+        "Execute an Infrastructure Query Language (IQL) query against the knowledge graph. " +
+        "IQL is a purpose-built language for querying infrastructure resources.\n\n" +
+        "Query types:\n" +
+        "- FIND resources WHERE provider = 'aws' AND cost > $1000/mo\n" +
+        "- FIND downstream OF '<nodeId>' WHERE depth <= 3\n" +
+        "- FIND PATH FROM '<pattern>' TO '<pattern>'\n" +
+        "- SUMMARIZE cost BY provider, resourceType WHERE ...\n" +
+        "- FIND resources AT '<timestamp>' DIFF WITH NOW\n\n" +
+        "WHERE supports: =, !=, >, <, >=, <=, LIKE, IN, MATCHES, AND, OR, NOT\n" +
+        "Functions: tagged('<key>'), drifted_since('<date>'), has_edge('<type>'), " +
+        "created_after('<date>'), created_before('<date>')\n" +
+        "Fields: provider, resourceType, region, account, status, name, owner, cost, " +
+        "tag.<Key>, metadata.<key>",
+      parameters: Type.Object({
+        query: Type.String({
+          description:
+            "IQL query string. Examples:\n" +
+            "  FIND resources WHERE provider = 'aws'\n" +
+            "  FIND resources WHERE cost > $500/mo AND NOT tagged('Owner')\n" +
+            "  FIND PATH FROM 'aws:*:*:load-balancer:*' TO 'aws:*:*:database:*'\n" +
+            "  SUMMARIZE cost BY provider, resourceType",
+        }),
+      }),
+      async execute(_toolCallId, params) {
+        const { query } = params as { query: string };
+
+        try {
+          const ast = parseIQL(query);
+          const execOpts: IQLExecutorOptions = {
+            storage,
+            temporal,
+            defaultLimit: 200,
+            maxTraversalDepth: 8,
+          };
+          const result = await executeQuery(ast, execOpts);
+
+          if (result.type === "find") {
+            const lines = [
+              `## IQL Results (${result.totalCount} resources, $${result.totalCost.toFixed(2)}/mo)`,
+              "",
+            ];
+            if (result.nodes.length > 0) {
+              lines.push(
+                "| Name | Provider | Type | Region | Status | Cost/mo |",
+                "|------|----------|------|--------|--------|---------|",
+                ...result.nodes.map(
+                  (n) =>
+                    `| ${n.name} | ${n.provider} | ${n.resourceType} | ${n.region} | ${n.status} | ${n.costMonthly != null ? "$" + n.costMonthly.toFixed(2) : "—"} |`,
+                ),
+              );
+            } else {
+              lines.push("No matching resources found.");
+            }
+            return {
+              content: [{ type: "text" as const, text: lines.join("\n") }],
+              details: result,
+            };
+          }
+
+          if (result.type === "summarize") {
+            const lines = [
+              `## IQL Summary (total: ${result.total})`,
+              "",
+            ];
+            if (result.groups.length > 0) {
+              const keys = Object.keys(result.groups[0].key);
+              lines.push(
+                `| ${keys.join(" | ")} | Value |`,
+                `| ${keys.map(() => "---").join(" | ")} | ----- |`,
+                ...result.groups.map(
+                  (g) =>
+                    `| ${keys.map((k) => g.key[k]).join(" | ")} | ${g.value.toFixed(2)} |`,
+                ),
+              );
+            }
+            return {
+              content: [{ type: "text" as const, text: lines.join("\n") }],
+              details: result,
+            };
+          }
+
+          if (result.type === "path") {
+            const lines = result.found
+              ? [
+                  `## Path Found (${result.hops} hops)`,
+                  "",
+                  ...result.path.map(
+                    (n, i) =>
+                      `${i + 1}. **${n.name}** (${n.resourceType})` +
+                      (i < result.edges.length
+                        ? ` → _${result.edges[i].relationshipType}_`
+                        : ""),
+                  ),
+                ]
+              : ["## No Path Found", "", "No path exists between the given resources."];
+            return {
+              content: [{ type: "text" as const, text: lines.join("\n") }],
+              details: result,
+            };
+          }
+
+          if (result.type === "diff") {
+            const lines = [
+              `## Infrastructure Diff`,
+              `From: ${result.fromTimestamp} → To: ${result.toTimestamp}`,
+              "",
+              `- Added: ${result.added}`,
+              `- Removed: ${result.removed}`,
+              `- Changed: ${result.changed}`,
+              `- Cost delta: $${result.costDelta.toFixed(2)}/mo`,
+            ];
+            if (result.details.length > 0) {
+              lines.push(
+                "",
+                "| Node | Change | Fields |",
+                "|------|--------|--------|",
+                ...result.details.slice(0, 50).map(
+                  (d) =>
+                    `| ${d.name} | ${d.change} | ${d.changedFields?.join(", ") ?? "—"} |`,
+                ),
+              );
+            }
+            return {
+              content: [{ type: "text" as const, text: lines.join("\n") }],
+              details: result,
+            };
+          }
+
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            details: result,
+          };
+        } catch (err) {
+          const msg =
+            err instanceof IQLSyntaxError
+              ? `**IQL Syntax Error:** ${err.message}`
+              : `**Query Error:** ${err instanceof Error ? err.message : String(err)}`;
+          return {
+            content: [{ type: "text" as const, text: msg }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_query"] },
   );
 }

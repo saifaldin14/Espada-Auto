@@ -39,6 +39,7 @@ import {
   diffTimestamps,
   getEvolutionSummary,
 } from "./temporal.js";
+import { parseIQL, executeQuery, IQLSyntaxError } from "./iql/index.js";
 // queries.js helpers available if needed:
 // import { findOrphans, findSinglePointsOfFailure } from "./queries.js";
 import type { CloudProvider, GraphStorage } from "./types.js";
@@ -1370,6 +1371,115 @@ export function registerInfraCli(ctx: InfraCliContext): void {
             ctx.logger.error(`Unknown action: ${opts.action}. Use: create, list, diff, history, evolution`);
             process.exitCode = 1;
         }
+      } finally {
+        await storage.close();
+      }
+    });
+
+  // ---------------------------------------------------------------------------
+  // espada infra query — IQL interactive query
+  // ---------------------------------------------------------------------------
+  infra
+    .command("query")
+    .description("Execute an Infrastructure Query Language (IQL) query against the knowledge graph")
+    .argument("<iql...>", "IQL query (e.g. FIND resources WHERE provider = 'aws')")
+    .option("--db <path>", "SQLite database path", "infra-graph.db")
+    .option("--output <format>", "Output format (json, terminal)", "terminal")
+    .option("--limit <n>", "Max results (overrides LIMIT in query)", (v: string) => parseInt(v, 10))
+    .action(async (iqlParts: string[], opts: { db: string; output: string; limit?: number }) => {
+      const dbPath = resolve(opts.db);
+      const iqlQuery = iqlParts.join(" ");
+
+      if (!existsSync(dbPath)) {
+        ctx.logger.error(`Database not found: ${dbPath}. Run 'espada infra scan' first.`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const storage = new SQLiteGraphStorage(dbPath);
+      try {
+        await storage.initialize();
+
+        // Parse and execute the IQL query
+        const ast = parseIQL(iqlQuery);
+        const result = await executeQuery(ast, {
+          storage,
+          defaultLimit: opts.limit ?? 200,
+          maxTraversalDepth: 8,
+        });
+
+        if (opts.output === "json") {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+
+        // Terminal output
+        if (result.type === "find") {
+          console.log(`\n  Found ${result.totalCount} resources (total cost: $${result.totalCost.toFixed(2)}/mo)\n`);
+          if (result.nodes.length === 0) {
+            console.log("  No matching resources.");
+          } else {
+            // Simple table output
+            const maxName = Math.min(
+              30,
+              Math.max(4, ...result.nodes.map((n) => n.name.length)),
+            );
+            console.log(
+              `  ${"Name".padEnd(maxName)}  ${"Provider".padEnd(10)}  ${"Type".padEnd(16)}  ${"Region".padEnd(14)}  ${"Status".padEnd(10)}  Cost/mo`,
+            );
+            console.log(`  ${"─".repeat(maxName)}  ${"─".repeat(10)}  ${"─".repeat(16)}  ${"─".repeat(14)}  ${"─".repeat(10)}  ${"─".repeat(10)}`);
+            for (const n of result.nodes) {
+              const cost = n.costMonthly != null ? `$${n.costMonthly.toFixed(2)}` : "—";
+              console.log(
+                `  ${n.name.slice(0, maxName).padEnd(maxName)}  ${n.provider.padEnd(10)}  ${n.resourceType.padEnd(16)}  ${n.region.padEnd(14)}  ${n.status.padEnd(10)}  ${cost}`,
+              );
+            }
+          }
+        } else if (result.type === "summarize") {
+          console.log(`\n  Summary (total: ${result.total})\n`);
+          if (result.groups.length > 0) {
+            const keys = Object.keys(result.groups[0].key);
+            const header = keys.map((k) => k.padEnd(16)).join("  ") + "  Value";
+            console.log(`  ${header}`);
+            console.log(`  ${keys.map(() => "─".repeat(16)).join("  ")}  ${"─".repeat(12)}`);
+            for (const g of result.groups) {
+              const vals = keys.map((k) => (g.key[k] ?? "—").padEnd(16)).join("  ");
+              console.log(`  ${vals}  ${g.value.toFixed(2)}`);
+            }
+          }
+        } else if (result.type === "path") {
+          if (result.found) {
+            console.log(`\n  Path found (${result.hops} hops):\n`);
+            for (let i = 0; i < result.path.length; i++) {
+              const n = result.path[i];
+              console.log(`  ${i + 1}. ${n.name} (${n.resourceType})`);
+              if (i < result.edges.length) {
+                console.log(`     └─ ${result.edges[i].relationshipType} ─→`);
+              }
+            }
+          } else {
+            console.log("\n  No path found between the given resources.\n");
+          }
+        } else if (result.type === "diff") {
+          console.log(`\n  Infrastructure Diff: ${result.fromTimestamp} → ${result.toTimestamp}\n`);
+          console.log(`  Added: ${result.added}  Removed: ${result.removed}  Changed: ${result.changed}`);
+          console.log(`  Cost delta: $${result.costDelta.toFixed(2)}/mo\n`);
+          if (result.details.length > 0) {
+            for (const d of result.details.slice(0, 50)) {
+              const fields = d.changedFields ? ` (${d.changedFields.join(", ")})` : "";
+              console.log(`  • ${d.change.toUpperCase()} ${d.name}${fields}`);
+            }
+          }
+        }
+
+        console.log("");
+      } catch (err) {
+        if (err instanceof IQLSyntaxError) {
+          ctx.logger.error(`IQL syntax error: ${err.message}`);
+        } else {
+          ctx.logger.error(`Query failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        process.exitCode = 1;
       } finally {
         await storage.close();
       }
