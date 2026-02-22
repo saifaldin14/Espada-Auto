@@ -38,7 +38,7 @@ import type {
 // Schema DDL
 // =============================================================================
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA_DDL = `
 -- Version tracking
@@ -106,6 +106,8 @@ CREATE TABLE IF NOT EXISTS changes (
   detected_at     TEXT NOT NULL,
   detected_via    TEXT NOT NULL DEFAULT 'sync',
   correlation_id  TEXT,
+  initiator       TEXT,
+  initiator_type  TEXT,
   metadata        TEXT NOT NULL DEFAULT '{}'
 );
 
@@ -113,6 +115,8 @@ CREATE INDEX IF NOT EXISTS idx_changes_target ON changes(target_id);
 CREATE INDEX IF NOT EXISTS idx_changes_type ON changes(change_type);
 CREATE INDEX IF NOT EXISTS idx_changes_detected_at ON changes(detected_at);
 CREATE INDEX IF NOT EXISTS idx_changes_correlation ON changes(correlation_id);
+CREATE INDEX IF NOT EXISTS idx_changes_initiator ON changes(initiator);
+CREATE INDEX IF NOT EXISTS idx_changes_initiator_type ON changes(initiator_type);
 
 -- Logical groupings
 CREATE TABLE IF NOT EXISTS groups_ (
@@ -210,6 +214,17 @@ export class SQLiteGraphStorage implements GraphStorage {
       | undefined;
     if (!versionRow) {
       this.db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(SCHEMA_VERSION);
+    } else if (versionRow.version < SCHEMA_VERSION) {
+      // Migration: v1 → v2: add initiator columns to changes
+      if (versionRow.version < 2) {
+        this.db.exec(`
+          ALTER TABLE changes ADD COLUMN initiator TEXT;
+          ALTER TABLE changes ADD COLUMN initiator_type TEXT;
+          CREATE INDEX IF NOT EXISTS idx_changes_initiator ON changes(initiator);
+          CREATE INDEX IF NOT EXISTS idx_changes_initiator_type ON changes(initiator_type);
+        `);
+      }
+      this.db.prepare("UPDATE schema_version SET version = ?").run(SCHEMA_VERSION);
     }
   }
 
@@ -540,8 +555,8 @@ export class SQLiteGraphStorage implements GraphStorage {
   async appendChange(change: GraphChange): Promise<void> {
     this.db
       .prepare(
-        `INSERT INTO changes (id, target_id, change_type, field, previous_value, new_value, detected_at, detected_via, correlation_id, metadata)
-         VALUES (@id, @targetId, @changeType, @field, @previousValue, @newValue, @detectedAt, @detectedVia, @correlationId, @metadata)`,
+        `INSERT INTO changes (id, target_id, change_type, field, previous_value, new_value, detected_at, detected_via, correlation_id, initiator, initiator_type, metadata)
+         VALUES (@id, @targetId, @changeType, @field, @previousValue, @newValue, @detectedAt, @detectedVia, @correlationId, @initiator, @initiatorType, @metadata)`,
       )
       .run({
         id: change.id,
@@ -553,6 +568,8 @@ export class SQLiteGraphStorage implements GraphStorage {
         detectedAt: change.detectedAt,
         detectedVia: change.detectedVia,
         correlationId: change.correlationId,
+        initiator: change.initiator ?? null,
+        initiatorType: change.initiatorType ?? null,
         metadata: JSON.stringify(change.metadata),
       });
   }
@@ -560,8 +577,8 @@ export class SQLiteGraphStorage implements GraphStorage {
   async appendChanges(changes: GraphChange[]): Promise<void> {
     const insert = this.db.transaction((batch: GraphChange[]) => {
       const stmt = this.db.prepare(
-        `INSERT INTO changes (id, target_id, change_type, field, previous_value, new_value, detected_at, detected_via, correlation_id, metadata)
-         VALUES (@id, @targetId, @changeType, @field, @previousValue, @newValue, @detectedAt, @detectedVia, @correlationId, @metadata)`,
+        `INSERT INTO changes (id, target_id, change_type, field, previous_value, new_value, detected_at, detected_via, correlation_id, initiator, initiator_type, metadata)
+         VALUES (@id, @targetId, @changeType, @field, @previousValue, @newValue, @detectedAt, @detectedVia, @correlationId, @initiator, @initiatorType, @metadata)`,
       );
       for (const change of batch) {
         stmt.run({
@@ -574,6 +591,8 @@ export class SQLiteGraphStorage implements GraphStorage {
           detectedAt: change.detectedAt,
           detectedVia: change.detectedVia,
           correlationId: change.correlationId,
+          initiator: change.initiator ?? null,
+          initiatorType: change.initiatorType ?? null,
           metadata: JSON.stringify(change.metadata),
         });
       }
@@ -616,6 +635,14 @@ export class SQLiteGraphStorage implements GraphStorage {
     if (filter.correlationId) {
       clauses.push("correlation_id = @correlationId");
       params.correlationId = filter.correlationId;
+    }
+    if (filter.initiator) {
+      clauses.push("initiator = @initiator");
+      params.initiator = filter.initiator;
+    }
+    if (filter.initiatorType) {
+      clauses.push("initiator_type = @initiatorType");
+      params.initiatorType = filter.initiatorType;
     }
 
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -973,6 +1000,8 @@ type RawChangeRow = {
   detected_at: string;
   detected_via: string;
   correlation_id: string | null;
+  initiator: string | null;
+  initiator_type: string | null;
   metadata: string;
 };
 
@@ -987,6 +1016,8 @@ function rowToChange(row: RawChangeRow): GraphChange {
     detectedAt: row.detected_at,
     detectedVia: row.detected_via as GraphChange["detectedVia"],
     correlationId: row.correlation_id,
+    initiator: row.initiator,
+    initiatorType: row.initiator_type as GraphChange["initiatorType"],
     metadata: jsonParse(row.metadata, {}),
   };
 }

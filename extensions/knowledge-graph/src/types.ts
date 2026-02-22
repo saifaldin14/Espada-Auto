@@ -58,6 +58,18 @@ export type GraphResourceType =
   | "topic"
   | "stream"
   | "custom"
+  // Kubernetes resource types:
+  | "namespace"
+  | "deployment"
+  | "statefulset"
+  | "daemonset"
+  | "replicaset"
+  | "ingress"
+  | "configmap"
+  | "persistent-volume"
+  | "persistent-volume-claim"
+  | "cronjob"
+  | "job"
   // Hybrid/edge resource types:
   | "hybrid-machine"
   | "connected-cluster"
@@ -310,6 +322,12 @@ export type GraphChange = {
   /** Links to audit logger events, operation IDs, etc. */
   correlationId: string | null;
 
+  /** Who initiated the change (human username, agent ID, or system process). */
+  initiator: string | null;
+
+  /** Whether the change was initiated by a human or an AI agent. */
+  initiatorType: "human" | "agent" | "system" | null;
+
   /** Additional context. */
   metadata: Record<string, unknown>;
 };
@@ -434,6 +452,10 @@ export type ChangeFilter = {
   until?: string;
   detectedVia?: ChangeDetectionMethod;
   correlationId?: string;
+  /** Filter by who initiated the change. */
+  initiator?: string;
+  /** Filter by initiator type: human, agent, or system. */
+  initiatorType?: "human" | "agent" | "system";
 };
 
 /** Direction for dependency chain traversal. */

@@ -194,6 +194,8 @@ export class GraphEngine {
             detectedAt: now(),
             detectedVia: "sync",
             correlationId: syncId,
+            initiator: null,
+            initiatorType: null,
             metadata: { provider: adapter.provider, resourceType: nodeInput.resourceType },
           });
         } else {
@@ -227,6 +229,8 @@ export class GraphEngine {
             detectedAt: now(),
             detectedVia: "sync",
             correlationId: syncId,
+            initiator: null,
+            initiatorType: null,
             metadata: { relationshipType: edgeInput.relationshipType },
           });
         }
@@ -250,6 +254,8 @@ export class GraphEngine {
           detectedAt: now(),
           detectedVia: "sync",
           correlationId: syncId,
+          initiator: null,
+          initiatorType: null,
           metadata: {},
         });
       }
@@ -306,6 +312,8 @@ export class GraphEngine {
           detectedAt: ts,
           detectedVia: "sync",
           correlationId: null,
+          initiator: null,
+          initiatorType: null,
           metadata: {},
         });
       }
@@ -323,6 +331,8 @@ export class GraphEngine {
         detectedAt: ts,
         detectedVia: "sync",
         correlationId: null,
+        initiator: null,
+        initiatorType: null,
         metadata: {},
       });
     }
@@ -339,6 +349,8 @@ export class GraphEngine {
         detectedAt: ts,
         detectedVia: "sync",
         correlationId: null,
+        initiator: null,
+        initiatorType: null,
         metadata: {},
       });
     }
@@ -355,6 +367,8 @@ export class GraphEngine {
         detectedAt: ts,
         detectedVia: "sync",
         correlationId: null,
+        initiator: null,
+        initiatorType: null,
         metadata: {},
       });
     }

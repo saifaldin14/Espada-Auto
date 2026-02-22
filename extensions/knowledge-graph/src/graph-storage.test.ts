@@ -305,6 +305,8 @@ function runStorageTests(name: string, createStorage: () => GraphStorage) {
             detectedAt: new Date().toISOString(),
             detectedVia: "sync",
             correlationId: "sync-1",
+            initiator: null,
+            initiatorType: null,
             metadata: {},
           },
         ];

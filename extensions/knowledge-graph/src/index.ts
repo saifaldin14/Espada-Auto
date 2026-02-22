@@ -57,7 +57,44 @@ export type { PathResult, CriticalNode, ClusterResult } from "./queries.js";
 export { exportTopology } from "./export.js";
 export type { ExportFormat, ExportResult, ExportOptions } from "./export.js";
 
+// Terraform adapter
+export { TerraformDiscoveryAdapter, parseTerraformState, TERRAFORM_TYPE_MAP } from "./adapters/index.js";
+export type { TerraformAdapterConfig } from "./adapters/index.js";
+
+// Report generator
+export { generateScanReport } from "./report.js";
+export type { ReportFormat, ScanReport, ReportFindings, ReportOptions } from "./report.js";
+
+// Infra CLI
+export { registerInfraCli } from "./infra-cli.js";
+export type { InfraCliContext } from "./infra-cli.js";
+
 // Tools & CLI (for direct use / testing)
-export { registerGraphTools } from "./tools.js";
+export { registerGraphTools, registerTemporalTools } from "./tools.js";
 export { registerPolicyScanTool } from "./policy-scan-tool.js";
 export { registerGraphCli } from "./cli.js";
+
+// Kubernetes adapter
+export { KubernetesDiscoveryAdapter, buildK8sNodeId, extractK8sRelationships, extractCrossCloudEdges, detectHelmReleases } from "./adapters/index.js";
+export type { K8sAdapterConfig, K8sClient, K8sRawResource, HelmRelease } from "./adapters/index.js";
+
+// Temporal Knowledge Graph
+export {
+  InMemoryTemporalStorage,
+  takeSnapshot,
+  getTopologyAt,
+  getNodeHistory,
+  diffSnapshots,
+  diffTimestamps,
+  getEvolutionSummary,
+  syncWithSnapshot,
+  DEFAULT_RETENTION,
+} from "./temporal.js";
+export type {
+  GraphSnapshot,
+  NodeVersion,
+  EdgeVersion,
+  SnapshotDiff,
+  SnapshotRetentionConfig,
+  TemporalGraphStorage,
+} from "./temporal.js";

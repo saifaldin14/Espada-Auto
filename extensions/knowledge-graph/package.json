@@ -51,6 +51,10 @@
     ]
   },
   "dependencies": {
+    "@aws-sdk/client-cloudtrail": "^3.978.0",
+    "@azure/arm-resourcegraph": "^4.2.1",
+    "@azure/identity": "^4.13.0",
+    "@google-cloud/asset": "^5.7.1",
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {

@@ -246,6 +246,8 @@ export class InMemoryGraphStorage implements GraphStorage {
     if (filter.until) results = results.filter((c) => c.detectedAt <= filter.until!);
     if (filter.detectedVia) results = results.filter((c) => c.detectedVia === filter.detectedVia);
     if (filter.correlationId) results = results.filter((c) => c.correlationId === filter.correlationId);
+    if (filter.initiator) results = results.filter((c) => c.initiator === filter.initiator);
+    if (filter.initiatorType) results = results.filter((c) => c.initiatorType === filter.initiatorType);
 
     return results.sort((a, b) => b.detectedAt.localeCompare(a.detectedAt));
   }

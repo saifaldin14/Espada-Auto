@@ -17,6 +17,15 @@ import {
   findSinglePointsOfFailure,
 } from "./queries.js";
 import { exportTopology } from "./export.js";
+import type { TemporalGraphStorage } from "./temporal.js";
+import {
+  takeSnapshot,
+  getTopologyAt,
+  getNodeHistory as getNodeHistoryFn,
+  diffSnapshots as diffSnapshotsFn,
+  diffTimestamps,
+  getEvolutionSummary,
+} from "./temporal.js";
 
 // =============================================================================
 // Constants
@@ -594,5 +603,753 @@ export function registerGraphTools(
       },
     },
     { names: ["kg_export"] },
+  );
+}
+
+// =============================================================================
+// Governance Tools
+// =============================================================================
+
+const CHANGE_ACTIONS = ["create", "update", "delete", "scale", "reconfigure"] as const;
+const INITIATOR_TYPES = ["human", "agent", "system"] as const;
+const APPROVAL_STATUSES = ["pending", "approved", "rejected", "auto-approved"] as const;
+
+/**
+ * Register governance/audit agent tools with the Espada plugin API.
+ */
+export function registerGovernanceTools(
+  api: EspadaPluginApi,
+  governor: import("./governance.js").ChangeGovernor,
+  storage: GraphStorage,
+): void {
+  // ---------------------------------------------------------------------------
+  // 10. Audit Trail
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_audit_trail",
+      label: "Audit Trail",
+      description:
+        "Query the infrastructure change audit trail. " +
+        "Shows who changed what, when, risk scores, and approval status. " +
+        "Filter by initiator (human/agent), time range, resource, or status.",
+      parameters: Type.Object({
+        initiator: Type.Optional(
+          Type.String({ description: "Filter by initiator name (human username or agent ID)" }),
+        ),
+        initiatorType: Type.Optional(
+          stringEnum(INITIATOR_TYPES, { description: "Filter by initiator type" }),
+        ),
+        targetResourceId: Type.Optional(
+          Type.String({ description: "Filter by target resource ID" }),
+        ),
+        status: Type.Optional(
+          stringEnum(APPROVAL_STATUSES, { description: "Filter by approval status" }),
+        ),
+        since: Type.Optional(
+          Type.String({ description: "Show changes after this ISO 8601 date" }),
+        ),
+        limit: Type.Optional(
+          Type.Number({ description: "Maximum results (default: 25)" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const p = params as {
+          initiator?: string;
+          initiatorType?: "human" | "agent" | "system";
+          targetResourceId?: string;
+          status?: "pending" | "approved" | "rejected" | "auto-approved";
+          since?: string;
+          limit?: number;
+        };
+
+        const trail = governor.getAuditTrail({
+          initiator: p.initiator,
+          initiatorType: p.initiatorType,
+          targetResourceId: p.targetResourceId,
+          status: p.status,
+          since: p.since,
+          limit: p.limit ?? 25,
+        });
+
+        if (trail.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No change requests found matching the filters." }],
+            details: { count: 0 },
+          };
+        }
+
+        const rows = trail.map((r) =>
+          `| ${r.createdAt.slice(0, 19)} | ${r.initiator} (${r.initiatorType}) | ${r.action} | ${r.resourceType} | ${r.risk.level} (${r.risk.score}) | ${r.status} |`,
+        );
+
+        const summary = [
+          `## Audit Trail (${trail.length} results)`,
+          "",
+          "| Time | Initiator | Action | Resource Type | Risk | Status |",
+          "|------|-----------|--------|---------------|------|--------|",
+          ...rows,
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: summary.join("\n") }],
+          details: { count: trail.length, requests: trail },
+        };
+      },
+    },
+    { names: ["kg_audit_trail"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 11. Request Approval
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_request_change",
+      label: "Request Infrastructure Change",
+      description:
+        "Submit an infrastructure change for governance review. " +
+        "The change will be risk-scored and either auto-approved or queued for manual approval. " +
+        "Use before making any infrastructure modifications.",
+      parameters: Type.Object({
+        targetResourceId: Type.String({
+          description: "Graph node ID of the resource to modify",
+        }),
+        resourceType: Type.String({
+          description: "Resource type (e.g. ec2-instance, s3-bucket, rds-instance)",
+        }),
+        provider: stringEnum(PROVIDERS, {
+          description: "Cloud provider",
+        }),
+        action: stringEnum(CHANGE_ACTIONS, {
+          description: "The action to perform",
+        }),
+        description: Type.String({
+          description: "Description of the intended change",
+        }),
+      }),
+      async execute(_toolCallId, params) {
+        const p = params as {
+          targetResourceId: string;
+          resourceType: string;
+          provider: string;
+          action: "create" | "update" | "delete" | "scale" | "reconfigure";
+          description: string;
+        };
+
+        const request = await governor.interceptChange({
+          initiator: "agent",
+          initiatorType: "agent",
+          targetResourceId: p.targetResourceId,
+          resourceType: p.resourceType as import("./types.js").GraphResourceType,
+          provider: p.provider as import("./types.js").CloudProvider,
+          action: p.action,
+          description: p.description,
+        });
+
+        const statusEmoji =
+          request.status === "auto-approved" ? "✓" :
+          request.status === "pending" ? "⏳" :
+          request.status === "approved" ? "✓" :
+          "✗";
+
+        const summary = [
+          `## Change Request: ${statusEmoji} ${request.status.toUpperCase()}`,
+          "",
+          `**Request ID:** ${request.id}`,
+          `**Action:** ${request.action} ${request.resourceType}`,
+          `**Target:** ${request.targetResourceId}`,
+          `**Risk:** ${request.risk.level} (score: ${request.risk.score}/100)`,
+          "",
+          "### Risk Factors",
+          ...request.risk.factors.map((f) => `- ${f}`),
+          "",
+        ];
+
+        if (request.policyViolations.length > 0) {
+          summary.push(
+            "### Policy Violations",
+            ...request.policyViolations.map((v) => `- ⚠ ${v}`),
+            "",
+          );
+        }
+
+        if (request.status === "pending") {
+          summary.push(
+            "**Action required:** This change needs manual approval before proceeding.",
+          );
+        }
+
+        return {
+          content: [{ type: "text" as const, text: summary.join("\n") }],
+          details: request,
+        };
+      },
+    },
+    { names: ["kg_request_change"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 12. Governance Summary
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_governance_summary",
+      label: "Governance Summary",
+      description:
+        "Get a dashboard summary of infrastructure governance activity: " +
+        "changes per agent, approval rates, risk distribution, and policy violations.",
+      parameters: Type.Object({
+        since: Type.Optional(
+          Type.String({ description: "Start of period (ISO 8601). Default: last 7 days." }),
+        ),
+        until: Type.Optional(
+          Type.String({ description: "End of period (ISO 8601). Default: now." }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const p = params as { since?: string; until?: string };
+
+        const summary = governor.getSummary(p.since, p.until);
+
+        const lines = [
+          "## Infrastructure Governance Summary",
+          "",
+          `**Period:** ${summary.period.since.slice(0, 10)} to ${summary.period.until.slice(0, 10)}`,
+          `**Total requests:** ${summary.totalRequests}`,
+          `**Avg risk score:** ${summary.avgRiskScore}/100`,
+          `**Policy violations:** ${summary.policyViolationCount}`,
+          "",
+          "### By Status",
+          ...Object.entries(summary.byStatus).map(([s, c]) => `- ${s}: ${c}`),
+          "",
+          "### By Initiator",
+          ...Object.entries(summary.byInitiator)
+            .sort(([, a], [, b]) => b - a)
+            .map(([name, c]) => `- ${name}: ${c} changes`),
+          "",
+          "### By Risk Level",
+          ...Object.entries(summary.byRiskLevel).map(([l, c]) => `- ${l}: ${c}`),
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: summary,
+        };
+      },
+    },
+    { names: ["kg_governance_summary"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 13. Check Pending Approvals
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_pending_approvals",
+      label: "Pending Approvals",
+      description:
+        "List all infrastructure changes currently awaiting manual approval. " +
+        "Shows risk assessment and policy violations for each pending request.",
+      parameters: Type.Object({}),
+      async execute() {
+        const pending = governor.getPendingRequests();
+
+        if (pending.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No pending approval requests." }],
+            details: { count: 0 },
+          };
+        }
+
+        const lines = [
+          `## Pending Approvals (${pending.length})`,
+          "",
+          "| ID | Initiator | Action | Resource | Risk | Violations |",
+          "|----|-----------|--------|----------|------|------------|",
+          ...pending.map((r) =>
+            `| ${r.id.slice(-8)} | ${r.initiator} | ${r.action} | ${r.resourceType} | ${r.risk.level} (${r.risk.score}) | ${r.policyViolations.length} |`,
+          ),
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: { count: pending.length, requests: pending },
+        };
+      },
+    },
+    { names: ["kg_pending_approvals"] },
+  );
+}
+
+// =============================================================================
+// Temporal Knowledge Graph Tools
+// =============================================================================
+
+const SNAPSHOT_TRIGGERS = ["sync", "manual", "scheduled"] as const;
+
+/**
+ * Register temporal / time-travel agent tools with the Espada plugin API.
+ */
+export function registerTemporalTools(
+  api: EspadaPluginApi,
+  temporal: TemporalGraphStorage,
+): void {
+  // ---------------------------------------------------------------------------
+  // 14. Time Travel — view graph at a point in time
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_time_travel",
+      label: "Time Travel",
+      description:
+        "View the infrastructure graph as it existed at a specific point in time. " +
+        "Shows nodes, edges, and costs from a historical snapshot. " +
+        "Use when investigating past incidents or tracking infrastructure evolution.",
+      parameters: Type.Object({
+        timestamp: Type.String({
+          description:
+            "ISO 8601 timestamp to travel to (e.g. 2024-11-15T10:00:00Z). " +
+            "Returns the closest snapshot at or before this time.",
+        }),
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, {
+            description: "Filter by cloud provider",
+          }),
+        ),
+        resourceType: Type.Optional(
+          Type.String({
+            description: "Filter by resource type (e.g. compute, database, storage)",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { timestamp, provider, resourceType } = params as {
+          timestamp: string;
+          provider?: string;
+          resourceType?: string;
+        };
+
+        const filter: import("./types.js").NodeFilter = {};
+        if (provider) filter.provider = provider as import("./types.js").CloudProvider;
+        if (resourceType) filter.resourceType = resourceType as import("./types.js").GraphResourceType;
+
+        const result = await getTopologyAt(temporal, timestamp, filter);
+
+        if (!result) {
+          return {
+            content: [{ type: "text" as const, text: "No snapshots found at or before the given timestamp." }],
+            details: { timestamp, found: false },
+          };
+        }
+
+        const totalCost = result.nodes.reduce((sum, n) => sum + (n.costMonthly ?? 0), 0);
+
+        const lines = [
+          `## Infrastructure at ${result.snapshot.createdAt}`,
+          "",
+          `**Snapshot:** ${result.snapshot.id}`,
+          `**Trigger:** ${result.snapshot.trigger}`,
+          `**Nodes:** ${result.nodes.length}`,
+          `**Edges:** ${result.edges.length}`,
+          `**Total cost:** $${totalCost.toFixed(2)}/mo`,
+          "",
+          "### Resources",
+          "| Name | Type | Provider | Region | Status | Cost/mo |",
+          "|------|------|----------|--------|--------|---------|",
+          ...result.nodes.slice(0, 50).map((n) =>
+            `| ${n.name} | ${n.resourceType} | ${n.provider} | ${n.region} | ${n.status} | ${n.costMonthly != null ? "$" + n.costMonthly.toFixed(2) : "—"} |`,
+          ),
+        ];
+
+        if (result.nodes.length > 50) {
+          lines.push(`\n*...and ${result.nodes.length - 50} more resources*`);
+        }
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: {
+            snapshotId: result.snapshot.id,
+            snapshotTime: result.snapshot.createdAt,
+            nodeCount: result.nodes.length,
+            edgeCount: result.edges.length,
+            totalCost,
+          },
+        };
+      },
+    },
+    { names: ["kg_time_travel"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 15. Snapshot Diff — compare two points in time
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_diff",
+      label: "Snapshot Diff",
+      description:
+        "Compare the infrastructure graph between two points in time. " +
+        "Shows added, removed, and changed resources plus cost delta. " +
+        "Use to understand what changed between incidents, deployments, or time periods.",
+      parameters: Type.Object({
+        from: Type.String({
+          description:
+            "Start timestamp (ISO 8601) or snapshot ID. " +
+            "If a timestamp, uses the closest snapshot at or before that time.",
+        }),
+        to: Type.String({
+          description:
+            "End timestamp (ISO 8601) or snapshot ID. " +
+            "If a timestamp, uses the closest snapshot at or before that time.",
+        }),
+      }),
+      async execute(_toolCallId, params) {
+        const { from, to } = params as { from: string; to: string };
+
+        // Determine if IDs or timestamps
+        const isSnapshotId = (s: string) => s.startsWith("snap-");
+        let diff: import("./temporal.js").SnapshotDiff | null;
+
+        if (isSnapshotId(from) && isSnapshotId(to)) {
+          diff = await diffSnapshotsFn(temporal, from, to);
+        } else {
+          diff = await diffTimestamps(temporal, from, to);
+        }
+
+        if (!diff) {
+          return {
+            content: [{ type: "text" as const, text: "Could not find snapshots for the specified time range." }],
+            details: { from, to, found: false },
+          };
+        }
+
+        const lines = [
+          `## Infrastructure Diff`,
+          "",
+          `**From:** ${diff.fromSnapshot.createdAt} (${diff.fromSnapshot.id})`,
+          `**To:** ${diff.toSnapshot.createdAt} (${diff.toSnapshot.id})`,
+          `**Cost delta:** ${diff.costDelta >= 0 ? "+" : ""}$${diff.costDelta.toFixed(2)}/mo`,
+          "",
+        ];
+
+        if (diff.addedNodes.length > 0) {
+          lines.push(
+            `### Added Resources (+${diff.addedNodes.length})`,
+            "| Name | Type | Provider | Cost/mo |",
+            "|------|------|----------|---------|",
+            ...diff.addedNodes.slice(0, 25).map((n) =>
+              `| ${n.name} | ${n.resourceType} | ${n.provider} | ${n.costMonthly != null ? "$" + n.costMonthly.toFixed(2) : "—"} |`,
+            ),
+            "",
+          );
+        }
+
+        if (diff.removedNodes.length > 0) {
+          lines.push(
+            `### Removed Resources (-${diff.removedNodes.length})`,
+            "| Name | Type | Provider | Cost/mo |",
+            "|------|------|----------|---------|",
+            ...diff.removedNodes.slice(0, 25).map((n) =>
+              `| ${n.name} | ${n.resourceType} | ${n.provider} | ${n.costMonthly != null ? "$" + n.costMonthly.toFixed(2) : "—"} |`,
+            ),
+            "",
+          );
+        }
+
+        if (diff.changedNodes.length > 0) {
+          lines.push(
+            `### Changed Resources (~${diff.changedNodes.length})`,
+            "| Resource | Changed Fields |",
+            "|----------|----------------|",
+            ...diff.changedNodes.slice(0, 25).map((c) =>
+              `| ${c.before.name} | ${c.changedFields.join(", ")} |`,
+            ),
+            "",
+          );
+        }
+
+        if (diff.addedEdges.length > 0 || diff.removedEdges.length > 0) {
+          lines.push(
+            `### Relationship Changes`,
+            `- Added: ${diff.addedEdges.length}`,
+            `- Removed: ${diff.removedEdges.length}`,
+            "",
+          );
+        }
+
+        if (
+          diff.addedNodes.length === 0 &&
+          diff.removedNodes.length === 0 &&
+          diff.changedNodes.length === 0
+        ) {
+          lines.push("No changes between these snapshots.");
+        }
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: {
+            fromSnapshot: diff.fromSnapshot.id,
+            toSnapshot: diff.toSnapshot.id,
+            addedCount: diff.addedNodes.length,
+            removedCount: diff.removedNodes.length,
+            changedCount: diff.changedNodes.length,
+            addedEdges: diff.addedEdges.length,
+            removedEdges: diff.removedEdges.length,
+            costDelta: diff.costDelta,
+          },
+        };
+      },
+    },
+    { names: ["kg_diff"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 16. Node History — track changes to a specific resource over time
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_node_history",
+      label: "Node History",
+      description:
+        "View the history of a specific infrastructure resource across snapshots. " +
+        "Shows how its status, cost, tags, and metadata changed over time. " +
+        "Use when investigating a resource's lifecycle or debugging drift.",
+      parameters: Type.Object({
+        nodeId: Type.String({
+          description: "The graph node ID of the resource to track",
+        }),
+        limit: Type.Optional(
+          Type.Number({
+            description: "Max number of history entries to return (default: 20)",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { nodeId, limit } = params as { nodeId: string; limit?: number };
+        const maxEntries = Math.min(limit ?? 20, 100);
+
+        const history = await getNodeHistoryFn(temporal, nodeId, maxEntries);
+
+        if (history.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: `No history found for node: ${nodeId}` }],
+            details: { nodeId, entries: 0 },
+          };
+        }
+
+        const lines = [
+          `## History: ${history[0]!.node.name} (${nodeId})`,
+          "",
+          `**Snapshots:** ${history.length}`,
+          "",
+          "### Timeline",
+        ];
+
+        // Show changes between consecutive entries
+        for (let i = 0; i < history.length; i++) {
+          const entry = history[i]!;
+          const prev = i + 1 < history.length ? history[i + 1]! : null;
+
+          lines.push(`\n#### ${entry.snapshotCreatedAt}`);
+          lines.push(`Status: ${entry.node.status} | Cost: $${entry.node.costMonthly?.toFixed(2) ?? "—"}/mo`);
+
+          if (prev) {
+            const changes: string[] = [];
+            if (prev.node.status !== entry.node.status) {
+              changes.push(`status: ${prev.node.status} → ${entry.node.status}`);
+            }
+            if (prev.node.costMonthly !== entry.node.costMonthly) {
+              changes.push(
+                `cost: $${prev.node.costMonthly?.toFixed(2) ?? "—"} → $${entry.node.costMonthly?.toFixed(2) ?? "—"}`,
+              );
+            }
+            if (JSON.stringify(prev.node.tags) !== JSON.stringify(entry.node.tags)) {
+              changes.push("tags changed");
+            }
+            if (JSON.stringify(prev.node.metadata) !== JSON.stringify(entry.node.metadata)) {
+              changes.push("metadata changed");
+            }
+            if (changes.length > 0) {
+              lines.push(`Changes: ${changes.join("; ")}`);
+            }
+          }
+        }
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: {
+            nodeId,
+            entries: history.length,
+            currentStatus: history[0]!.node.status,
+            currentCost: history[0]!.node.costMonthly,
+          },
+        };
+      },
+    },
+    { names: ["kg_node_history"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 17. Evolution Summary — graph trends over time
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_evolution",
+      label: "Infrastructure Evolution",
+      description:
+        "Get an overview of how infrastructure has evolved over time. " +
+        "Shows node count trends, cost trends, and net changes. " +
+        "Use for executive summaries or reporting on infrastructure growth.",
+      parameters: Type.Object({
+        since: Type.Optional(
+          Type.String({
+            description: "Start of period (ISO 8601). Default: all history.",
+          }),
+        ),
+        until: Type.Optional(
+          Type.String({
+            description: "End of period (ISO 8601). Default: now.",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { since, until } = params as { since?: string; until?: string };
+
+        const summary = await getEvolutionSummary(temporal, since, until);
+
+        if (summary.snapshots.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No snapshots found for the specified period." }],
+            details: { snapshots: 0 },
+          };
+        }
+
+        const lines = [
+          "## Infrastructure Evolution",
+          "",
+          `**Snapshots:** ${summary.snapshots.length}`,
+          `**Net nodes added:** ${summary.netChange.nodesAdded}`,
+          `**Net nodes removed:** ${summary.netChange.nodesRemoved}`,
+          `**Cost delta:** ${summary.netChange.costDelta >= 0 ? "+" : ""}$${summary.netChange.costDelta.toFixed(2)}/mo`,
+          "",
+          "### Node Count Trend",
+          ...summary.nodeCountTrend.map((p) => `- ${p.timestamp.slice(0, 16)}: ${p.count} nodes`),
+          "",
+          "### Cost Trend",
+          ...summary.costTrend.map((p) => `- ${p.timestamp.slice(0, 16)}: $${p.cost.toFixed(2)}/mo`),
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: summary,
+        };
+      },
+    },
+    { names: ["kg_evolution"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 18. Create Snapshot — manually capture current state
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_snapshot",
+      label: "Create Snapshot",
+      description:
+        "Take a manual snapshot of the current infrastructure graph. " +
+        "Useful before making changes, as a checkpoint, or for periodic archival. " +
+        "Snapshots enable time-travel queries and diffing.",
+      parameters: Type.Object({
+        label: Type.Optional(
+          Type.String({
+            description:
+              "Human-readable label for this snapshot (e.g. 'pre-deployment', 'quarterly-review')",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { label } = params as { label?: string };
+
+        const snapshot = await takeSnapshot(temporal, "manual", label);
+
+        const lines = [
+          "## Snapshot Created",
+          "",
+          `**ID:** ${snapshot.id}`,
+          `**Time:** ${snapshot.createdAt}`,
+          `**Label:** ${snapshot.label ?? "(none)"}`,
+          `**Nodes:** ${snapshot.nodeCount}`,
+          `**Edges:** ${snapshot.edgeCount}`,
+          `**Total cost:** $${snapshot.totalCostMonthly.toFixed(2)}/mo`,
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: snapshot,
+        };
+      },
+    },
+    { names: ["kg_snapshot"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // 19. List Snapshots — browse available snapshots
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_list_snapshots",
+      label: "List Snapshots",
+      description:
+        "List available infrastructure graph snapshots. " +
+        "Shows snapshot IDs, timestamps, trigger types, and resource counts. " +
+        "Use to find snapshot IDs for time-travel or diff queries.",
+      parameters: Type.Object({
+        trigger: Type.Optional(
+          stringEnum(SNAPSHOT_TRIGGERS, {
+            description: "Filter by trigger type",
+          }),
+        ),
+        limit: Type.Optional(
+          Type.Number({
+            description: "Max number of snapshots to list (default: 20)",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { trigger, limit } = params as {
+          trigger?: "sync" | "manual" | "scheduled";
+          limit?: number;
+        };
+
+        const snapshots = await temporal.listSnapshots({
+          trigger,
+          limit: Math.min(limit ?? 20, 100),
+        });
+
+        if (snapshots.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No snapshots found." }],
+            details: { count: 0 },
+          };
+        }
+
+        const lines = [
+          `## Snapshots (${snapshots.length})`,
+          "",
+          "| ID | Time | Trigger | Nodes | Edges | Cost/mo | Label |",
+          "|----|------|---------|-------|-------|---------|-------|",
+          ...snapshots.map((s) =>
+            `| ${s.id} | ${s.createdAt.slice(0, 19)} | ${s.trigger} | ${s.nodeCount} | ${s.edgeCount} | $${s.totalCostMonthly.toFixed(2)} | ${s.label ?? "—"} |`,
+          ),
+        ];
+
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          details: { count: snapshots.length, snapshots },
+        };
+      },
+    },
+    { names: ["kg_list_snapshots"] },
   );
 }
