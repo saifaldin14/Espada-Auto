@@ -412,10 +412,10 @@ function formatJson(report: ScanReport): string {
   return JSON.stringify(
     {
       generatedAt: report.generatedAt,
-      summary: {
-        totalResources: report.stats.totalNodes,
-        totalRelationships: report.stats.totalEdges,
-        totalMonthlyCost: report.stats.totalCostMonthly,
+      stats: {
+        totalNodes: report.stats.totalNodes,
+        totalEdges: report.stats.totalEdges,
+        totalCostMonthly: report.stats.totalCostMonthly,
         providers: report.providers,
         regions: report.regions,
         nodesByProvider: report.stats.nodesByProvider,

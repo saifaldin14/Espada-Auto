@@ -49,6 +49,7 @@ export type TerraformResource = {
   type: string;
   name: string;
   provider: string;
+  depends_on?: string[];
   instances: TerraformInstance[];
 };
 
@@ -223,6 +224,7 @@ export const ATTRIBUTE_RELATIONSHIP_RULES: TerraformRelationshipRule[] = [
 
   // Security
   { attribute: "security_groups", relationship: "secured-by", isArray: true },
+  { attribute: "security_group_ids", relationship: "secured-by", isArray: true },
   { attribute: "vpc_security_group_ids", relationship: "secured-by", isArray: true },
   { attribute: "security_group_id", relationship: "secured-by", isArray: false },
   { attribute: "network_security_group_id", relationship: "secured-by", isArray: false },
@@ -452,13 +454,18 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
       if (resource.mode === "data") continue;
 
       for (const instance of resource.instances) {
-        if (!instance.dependencies) continue;
+        // Collect dependency references from both instance.dependencies and resource.depends_on
+        const deps: string[] = [
+          ...(instance.dependencies ?? []),
+          ...(resource.depends_on ?? []),
+        ];
+        if (deps.length === 0) continue;
 
         const addr = this.buildTerraformAddress(resource, instance);
         const sourceNodeId = addressToNodeId.get(addr);
         if (!sourceNodeId) continue;
 
-        for (const dep of instance.dependencies) {
+        for (const dep of deps) {
           // deps are in form "module.x.resource_type.name" or "resource_type.name"
           const targetNodeId = this.resolveDepAddress(dep, addressToNodeId);
           if (!targetNodeId || targetNodeId === sourceNodeId) continue;
@@ -488,8 +495,13 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
         const attrs = instance.attributes;
         if (!attrs) continue;
 
-        const outputs = attrs["outputs"] as Record<string, unknown> | null;
+        let outputs = attrs["outputs"] as Record<string, unknown> | null;
         if (!outputs || typeof outputs !== "object") continue;
+
+        // Unwrap Terraform's {value: {...}} wrapper if present
+        if ("value" in outputs && typeof outputs["value"] === "object" && outputs["value"] !== null) {
+          outputs = outputs["value"] as Record<string, unknown>;
+        }
 
         // Extract referenced IDs from remote state outputs and link them
         // to local resources that reference them via data source attributes
@@ -566,6 +578,7 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
                   remoteWorkspace,
                   outputName,
                   isRemoteReference: true,
+                  placeholder: true,
                 },
                 costMonthly: null,
                 owner: null,
@@ -687,6 +700,7 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
         terraformType: resource.type,
         terraformName: resource.name,
         terraformModule: resource.module,
+        terraformProvider: resource.provider,
         ...this.extractRelevantMetadata(resource.type, attrs),
       },
       costMonthly,

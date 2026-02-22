@@ -166,6 +166,8 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
   private nodeVersions: Map<string, Map<string, GraphNode>> = new Map(); // snapshotId → nodeId → node
   private edgeVersions: Map<string, Map<string, GraphEdge>> = new Map(); // snapshotId → edgeId → edge
   private storage: GraphStorage;
+  private _seq: Map<string, number> = new Map(); // snapshot ID → creation order
+  private _nextSeq = 0;
 
   constructor(storage: GraphStorage) {
     this.storage = storage;
@@ -217,6 +219,7 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
     };
 
     this.snapshots.set(id, snapshot);
+    this._seq.set(id, this._nextSeq++);
     this.nodeVersions.set(id, nodesMap);
     this.edgeVersions.set(id, edgesMap);
 
@@ -249,7 +252,12 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
       results = results.filter((s) => s.provider === filter.provider);
     }
 
-    results.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    results.sort((a, b) => {
+      const cmp = b.createdAt.localeCompare(a.createdAt);
+      if (cmp !== 0) return cmp;
+      // Tiebreaker: higher sequence = newer
+      return (this._seq.get(b.id) ?? 0) - (this._seq.get(a.id) ?? 0);
+    });
 
     if (filter?.limit) {
       results = results.slice(0, filter.limit);
@@ -298,7 +306,11 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
 
     // Sort snapshots chronologically (newest first)
     const sorted = Array.from(this.snapshots.values()).sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt),
+      (a, b) => {
+        const cmp = b.createdAt.localeCompare(a.createdAt);
+        if (cmp !== 0) return cmp;
+        return (this._seq.get(b.id) ?? 0) - (this._seq.get(a.id) ?? 0);
+      },
     );
 
     for (const snap of sorted) {
@@ -321,7 +333,7 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
   async getEdgeHistory(edgeId: string, limit = 50): Promise<EdgeVersion[]> {
     const history: EdgeVersion[] = [];
     const sorted = Array.from(this.snapshots.values()).sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt),
+      (a, b) => b.createdAt.localeCompare(a.createdAt) || (this._seq.get(b.id) ?? 0) - (this._seq.get(a.id) ?? 0),
     );
 
     for (const snap of sorted) {
@@ -358,7 +370,7 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
   async pruneSnapshots(retention: SnapshotRetentionConfig): Promise<number> {
     let pruned = 0;
     const sorted = Array.from(this.snapshots.values()).sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt),
+      (a, b) => b.createdAt.localeCompare(a.createdAt) || (this._seq.get(b.id) ?? 0) - (this._seq.get(a.id) ?? 0),
     );
 
     const cutoffDate = retention.maxAgeMs
@@ -381,7 +393,11 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
 
   async getSnapshotAt(timestamp: string): Promise<GraphSnapshot | null> {
     const sorted = Array.from(this.snapshots.values()).sort(
-      (a, b) => b.createdAt.localeCompare(a.createdAt),
+      (a, b) => {
+        const cmp = b.createdAt.localeCompare(a.createdAt);
+        if (cmp !== 0) return cmp;
+        return (this._seq.get(b.id) ?? 0) - (this._seq.get(a.id) ?? 0);
+      },
     );
 
     // Find closest snapshot at or before the timestamp
@@ -594,8 +610,8 @@ export async function getEvolutionSummary(
 }> {
   const snapshots = await temporal.listSnapshots({ since, until });
 
-  // Oldest first for trend
-  const sorted = [...snapshots].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // listSnapshots returns newest-first (stable); reverse for oldest-first trend
+  const sorted = [...snapshots].reverse();
 
   const summarySnapshots = sorted.map((s) => ({
     id: s.id,

@@ -696,12 +696,12 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     }
 
     try {
-      const params: Record<string, unknown> = {
+      const params = {
         RoleArn: roleArn,
         RoleSessionName: `espada-kg-discovery-${Date.now()}`,
         DurationSeconds: 3600,
+        ...(externalId ? { ExternalId: externalId } : {}),
       };
-      if (externalId) params["ExternalId"] = externalId;
 
       const module = await import("@aws-sdk/client-sts");
       const command = new module.AssumeRoleCommand(params);
@@ -761,11 +761,7 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
    * Handles nested paths like "Reservations[].Instances[]".
    */
   private extractResponseItems(response: Record<string, unknown>, responseKey: string): unknown[] {
-    return resolveFieldPath(response, responseKey).map((v) => {
-      // If it's a stringified object reference, return it directly
-      if (typeof v === "string") return { __rawValue: v };
-      return v;
-    });
+    return resolveFieldPathRaw(response, responseKey).flat();
   }
 
   /**
@@ -989,15 +985,16 @@ const DEFAULT_REGIONS = [
 
 /**
  * Resolve a dot-separated field path with array notation from a raw object.
+ * Returns raw (uncoerced) values — use resolveFieldPath() when you need strings.
  *
  * Supports:
- *   "VpcId"                              → ["vpc-123"]
- *   "SecurityGroups[].GroupId"            → ["sg-1", "sg-2"]
- *   "Tags[Name]"                         → ["my-instance"]
- *   "VpcConfig.SubnetIds[]"              → ["subnet-a", "subnet-b"]
- *   "RedrivePolicy.deadLetterTargetArn"  → ["arn:..."]
+ *   "VpcId"                              → [value]
+ *   "SecurityGroups[].GroupId"            → [value, value]
+ *   "Tags[Name]"                         → [value]
+ *   "VpcConfig.SubnetIds[]"              → [value, value]
+ *   "RedrivePolicy.deadLetterTargetArn"  → [value]
  */
-export function resolveFieldPath(obj: unknown, path: string): string[] {
+export function resolveFieldPathRaw(obj: unknown, path: string): unknown[] {
   if (obj == null || typeof obj !== "object") return [];
 
   const parts = path.split(".");
@@ -1045,8 +1042,15 @@ export function resolveFieldPath(obj: unknown, path: string): string[] {
     if (current.length === 0) break;
   }
 
-  // Flatten to strings
-  return current
+  return current;
+}
+
+/**
+ * Resolve a dot-separated field path with array notation from a raw object.
+ * Returns all leaf values as strings (flattened).
+ */
+export function resolveFieldPath(obj: unknown, path: string): string[] {
+  return resolveFieldPathRaw(obj, path)
     .flat(Infinity)
     .filter((v) => v != null)
     .map((v) => String(v));

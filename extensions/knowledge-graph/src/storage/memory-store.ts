@@ -112,7 +112,7 @@ export class InMemoryGraphStorage implements GraphStorage {
       results = results.filter((n) => statuses.includes(n.status));
     }
     if (filter.namePattern) {
-      const lower = filter.namePattern.toLowerCase();
+      const lower = filter.namePattern.replace(/%/g, '').toLowerCase();
       results = results.filter((n) => n.name.toLowerCase().includes(lower));
     }
     if (filter.owner) results = results.filter((n) => n.owner === filter.owner);

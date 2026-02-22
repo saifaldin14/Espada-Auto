@@ -456,7 +456,7 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
       metadata: {
         resourceGroup: resource.resourceGroup,
         ...this.extractMetadata(resource, mapping),
-        ...(mapping.isAiWorkload ? { aiWorkload: true } : {}),
+        ...(mapping.isAiWorkload ? { isAiWorkload: true } : {}),
       },
       costMonthly: this.estimateCost(resource, mapping),
       owner: tags["Owner"] ?? tags["owner"] ?? tags["Team"] ?? tags["team"] ?? null,
@@ -550,20 +550,23 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
         if (props["kind"]) meta["cognitiveKind"] = props["kind"];
         // Azure OpenAI is a Cognitive Services kind
         if (props["kind"] === "OpenAI") {
-          meta["aiWorkload"] = true;
+          meta["isAiWorkload"] = true;
           meta["isAzureOpenAI"] = true;
         }
         break;
       }
       case "microsoft.machinelearningservices/workspaces": {
         if (props["friendlyName"]) meta["friendlyName"] = props["friendlyName"];
-        meta["aiWorkload"] = true;
+        meta["isAiWorkload"] = true;
         break;
       }
       case "microsoft.storage/storageaccounts": {
         if (props["primaryEndpoints"]) meta["endpoints"] = props["primaryEndpoints"];
         if (props["supportsHttpsTrafficOnly"] === false) meta["httpOnly"] = true;
-        if (props["allowBlobPublicAccess"] === true) meta["publicAccessEnabled"] = true;
+        if (props["allowBlobPublicAccess"] === true) meta["publicAccess"] = true;
+        // Also detect public access via network ACLs defaultAction
+        const networkAcls = props["networkAcls"] as Record<string, unknown> | undefined;
+        if (networkAcls && networkAcls["defaultAction"] === "Allow") meta["publicAccess"] = true;
         break;
       }
       case "microsoft.web/sites": {

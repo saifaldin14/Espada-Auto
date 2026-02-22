@@ -11,7 +11,7 @@
  * - GPU/AI workload detection
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   resolveFieldPath,
   extractResourceId,
@@ -612,6 +612,9 @@ describe("AwsDiscoveryAdapter without SDK", () => {
       accountId: "123456789",
       // No clientFactory and no real SDK installed
     });
+
+    // Force SDK unavailable to simulate missing @aws-sdk packages
+    vi.spyOn(adapter as any, "ensureSdkAvailable").mockResolvedValue(false);
 
     const result = await adapter.discover({ resourceTypes: ["compute"] });
     // Without the real AWS SDK, should get an error

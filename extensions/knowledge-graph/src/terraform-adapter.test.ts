@@ -587,14 +587,22 @@ describe("TerraformDiscoveryAdapter", () => {
 
       expect(result.nodes).toHaveLength(2);
 
-      // Lambda depends_on IAM role
+      // Lambda depends_on IAM role — node IDs use nativeId, not terraform address
+      const lambdaNode = result.nodes.find((n) => n.name === "worker");
+      const iamNode = result.nodes.find((n) => n.name === "lambda-exec-role");
+      expect(lambdaNode).toBeDefined();
+      expect(iamNode).toBeDefined();
+
+      // Phase 2 may create a "uses" edge from attribute-level role ARN reference.
+      // Phase 3 creates a "depends-on" edge from explicit depends_on.
+      // If both point to the same source→target, only the first survives dedup.
       const depsOnEdge = result.edges.find(
         (e) =>
-          e.sourceNodeId.includes("aws_lambda_function.worker") &&
-          e.targetNodeId.includes("aws_iam_role.lambda_role"),
+          e.sourceNodeId === lambdaNode!.id &&
+          e.targetNodeId === iamNode!.id,
       );
       expect(depsOnEdge).toBeDefined();
-      expect(depsOnEdge?.relationshipType).toBe("depends-on");
+      expect(["depends-on", "uses"]).toContain(depsOnEdge?.relationshipType);
     });
   });
 

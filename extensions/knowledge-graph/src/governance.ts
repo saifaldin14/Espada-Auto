@@ -193,7 +193,7 @@ export function calculateRiskScore(params: {
   let score = 0;
 
   // 1. Blast radius (0–25)
-  const brScore = Math.min(params.blastRadiusSize / 20, 1) * RISK_WEIGHTS.blastRadius;
+  const brScore = Math.min(params.blastRadiusSize / 10, 1) * RISK_WEIGHTS.blastRadius;
   score += brScore;
   if (params.blastRadiusSize > 0) {
     factors.push(
@@ -302,7 +302,7 @@ function isGpuOrAiResource(node: GraphNode | null): boolean {
 
   // Check instance type metadata for GPU indicators
   const instanceType = String(node.metadata?.instanceType ?? "");
-  if (/^(p[2-5]|g[4-6]|inf[12]|trn[12]|dl[12])\./i.test(instanceType)) return true;
+  if (/^(p[2-5]|g[4-6]|inf[12]|trn[12]|dl[12])\w*\./i.test(instanceType)) return true;
 
   // Check tags
   const tags = node.tags ?? {};
@@ -402,10 +402,10 @@ export class ChangeGovernor {
     const blastRadiusSize = blastRadius.nodes.size;
     const costAtRisk = blastRadius.totalCostMonthly;
 
-    // Count direct dependents
+    // Count direct dependents (nodes that depend ON the target)
     const downstreamEdges = await this.storage.getEdgesForNode(
       params.targetResourceId,
-      "downstream",
+      "upstream",
     );
     const dependentCount = downstreamEdges.length;
 
@@ -451,8 +451,8 @@ export class ChangeGovernor {
       // High risk: always require approval
       status = "pending";
     } else {
-      // Medium risk: auto-approve humans, block agents
-      status = params.initiatorType === "human" ? "auto-approved" : "pending";
+      // Medium risk: require approval
+      status = "pending";
     }
 
     const request: ChangeRequest = {
