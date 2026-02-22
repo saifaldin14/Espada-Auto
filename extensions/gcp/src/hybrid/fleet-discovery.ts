@@ -14,6 +14,7 @@ import type {
   GcpFleetListOptions,
   GcpOnPremClusterListOptions,
 } from "./types.js";
+import { gcpList } from "../api.js";
 
 // ── Local KG type mirrors (cross-extension rootDir pattern) ─────────────────
 
@@ -73,6 +74,7 @@ type HybridDiscoveryAdapter = {
 export class GKEFleetDiscoveryAdapter implements HybridDiscoveryAdapter {
   constructor(
     private projectId: string,
+    private getAccessToken: () => Promise<string>,
     private options: {
       location?: string;
     } = {},
@@ -206,29 +208,37 @@ export class GKEFleetDiscoveryAdapter implements HybridDiscoveryAdapter {
   // ── GCP REST Stubs ────────────────────────────────────────────────────
 
   async listFleets(_opts?: GcpFleetListOptions): Promise<GKEFleet[]> {
-    // TODO: implement via @google-cloud/gke-hub
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "global";
+    const url = `https://gkehub.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/fleets`;
+    return gcpList<GKEFleet>(url, token, "fleets");
   }
 
   async listFleetMemberships(
     _opts?: GcpFleetListOptions,
   ): Promise<GKEFleetMembership[]> {
-    // TODO: implement via @google-cloud/gke-hub
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "-";
+    const url = `https://gkehub.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/memberships`;
+    return gcpList<GKEFleetMembership>(url, token, "resources");
   }
 
   async listOnPremClusters(
     _opts?: GcpOnPremClusterListOptions,
   ): Promise<GKEOnPremCluster[]> {
-    // TODO: implement via @google-cloud/gke-on-prem
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "-";
+    const url = `https://gkeonprem.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/vmwareClusters`;
+    return gcpList<GKEOnPremCluster>(url, token, "vmwareClusters");
   }
 
   async listBareMetalClusters(
     _opts?: GcpOnPremClusterListOptions,
   ): Promise<GKEBareMetalCluster[]> {
-    // TODO: implement via @google-cloud/gke-on-prem
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "-";
+    const url = `https://gkeonprem.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/bareMetalClusters`;
+    return gcpList<GKEBareMetalCluster>(url, token, "bareMetalClusters");
   }
 }
 

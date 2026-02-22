@@ -1,12 +1,12 @@
 /**
  * GCP Extension — Vertex AI Manager
  *
- * Manages AI models, endpoints, and datasets via Vertex AI.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
+ * Manages AI models, endpoints, and datasets via Vertex AI REST API.
  */
 
 import type { GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList } from "../api.js";
 
 // =============================================================================
 // Types
@@ -52,10 +52,12 @@ export type GcpAIDataset = {
  */
 export class GcpAIManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
@@ -63,16 +65,18 @@ export class GcpAIManager {
   async listModels(opts?: { location?: string }): Promise<GcpAIModel[]> {
     return withGcpRetry(async () => {
       const loc = opts?.location ?? "us-central1";
-      const _endpoint = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/models`;
-      return [] as GcpAIModel[];
+      const token = await this.getAccessToken();
+      const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/models`;
+      return gcpList<GcpAIModel>(url, token, "models");
     }, this.retryOptions);
   }
 
   /** Get a single AI model by location and model ID. */
   async getModel(location: string, modelId: string): Promise<GcpAIModel> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${location}/models/${modelId}`;
-      throw new Error(`Model ${modelId} not found in ${location} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${location}/models/${modelId}`;
+      return gcpRequest(url, token) as Promise<GcpAIModel>;
     }, this.retryOptions);
   }
 
@@ -80,16 +84,18 @@ export class GcpAIManager {
   async listEndpoints(opts?: { location?: string }): Promise<GcpAIEndpoint[]> {
     return withGcpRetry(async () => {
       const loc = opts?.location ?? "us-central1";
-      const _endpoint = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/endpoints`;
-      return [] as GcpAIEndpoint[];
+      const token = await this.getAccessToken();
+      const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/endpoints`;
+      return gcpList<GcpAIEndpoint>(url, token, "endpoints");
     }, this.retryOptions);
   }
 
   /** Get a single AI endpoint by location and endpoint ID. */
   async getEndpoint(location: string, endpointId: string): Promise<GcpAIEndpoint> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://${location}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${location}/endpoints/${endpointId}`;
-      throw new Error(`Endpoint ${endpointId} not found in ${location} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://${location}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${location}/endpoints/${endpointId}`;
+      return gcpRequest(url, token) as Promise<GcpAIEndpoint>;
     }, this.retryOptions);
   }
 
@@ -97,8 +103,9 @@ export class GcpAIManager {
   async listDatasets(opts?: { location?: string }): Promise<GcpAIDataset[]> {
     return withGcpRetry(async () => {
       const loc = opts?.location ?? "us-central1";
-      const _endpoint = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/datasets`;
-      return [] as GcpAIDataset[];
+      const token = await this.getAccessToken();
+      const url = `https://${loc}-aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/datasets`;
+      return gcpList<GcpAIDataset>(url, token, "datasets");
     }, this.retryOptions);
   }
 }

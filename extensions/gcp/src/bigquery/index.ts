@@ -2,11 +2,12 @@
  * GCP Extension — BigQuery Manager
  *
  * Manages BigQuery datasets, tables, queries, and jobs.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
+ * Uses BigQuery REST API v2 via shared helpers.
  */
 
-import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
+import type { GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList } from "../api.js";
 
 // =============================================================================
 // Types
@@ -52,6 +53,86 @@ export type GcpBQJob = {
 };
 
 // =============================================================================
+// Internal API response shapes
+// =============================================================================
+
+type DatasetRaw = {
+  datasetReference?: { datasetId?: string };
+  location?: string;
+  defaultTableExpirationMs?: string;
+  labels?: Record<string, string>;
+  creationTime?: string;
+};
+
+type TableRaw = {
+  tableReference?: { tableId?: string; datasetId?: string };
+  type?: string;
+  numRows?: string;
+  numBytes?: string;
+  schema?: { fields?: Array<{ name: string; type: string; mode?: string; description?: string }> };
+  creationTime?: string;
+};
+
+type QueryResponseRaw = {
+  rows?: Array<{ f: Array<{ v: unknown }> }>;
+  totalRows?: string;
+  schema?: { fields?: Array<{ name: string; type: string }> };
+  jobReference?: { jobId?: string };
+  totalBytesProcessed?: string;
+  cacheHit?: boolean;
+};
+
+type JobRaw = {
+  jobReference?: { jobId?: string };
+  status?: { state?: string; errorResult?: { reason: string; message: string } };
+  statistics?: Record<string, unknown> & { creationTime?: string };
+};
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+const BQ_BASE = "https://bigquery.googleapis.com/bigquery/v2";
+
+function msToIso(ms: string | undefined): string {
+  if (!ms) return "";
+  return new Date(Number(ms)).toISOString();
+}
+
+function mapDataset(raw: DatasetRaw): GcpBQDataset {
+  const expMs = raw.defaultTableExpirationMs;
+  return {
+    id: raw.datasetReference?.datasetId ?? "",
+    location: raw.location ?? "",
+    defaultTableExpiration: expMs ? Number(expMs) : null,
+    labels: raw.labels ?? {},
+    createdAt: msToIso(raw.creationTime),
+  };
+}
+
+function mapTable(raw: TableRaw): GcpBQTable {
+  return {
+    id: raw.tableReference?.tableId ?? "",
+    datasetId: raw.tableReference?.datasetId ?? "",
+    type: raw.type ?? "",
+    numRows: raw.numRows ? Number(raw.numRows) : 0,
+    numBytes: raw.numBytes ? Number(raw.numBytes) : 0,
+    schema: raw.schema?.fields ?? [],
+    createdAt: msToIso(raw.creationTime),
+  };
+}
+
+function mapJob(raw: JobRaw): GcpBQJob {
+  return {
+    id: raw.jobReference?.jobId ?? "",
+    state: raw.status?.state ?? "",
+    statistics: raw.statistics ?? {},
+    errorResult: raw.status?.errorResult ?? null,
+    createdAt: msToIso(raw.statistics?.creationTime as string | undefined),
+  };
+}
+
+// =============================================================================
 // GcpBigQueryManager
 // =============================================================================
 
@@ -63,50 +144,52 @@ export type GcpBQJob = {
  */
 export class GcpBigQueryManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
   /** List all datasets in the project. */
   async listDatasets(): Promise<GcpBQDataset[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.datasets.list
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/datasets`;
-
-      return [] as GcpBQDataset[];
+      const token = await this.getAccessToken();
+      const url = `${BQ_BASE}/projects/${this.projectId}/datasets`;
+      const items = await gcpList<DatasetRaw>(url, token, "datasets");
+      return items.map(mapDataset);
     }, this.retryOptions);
   }
 
   /** Get a single dataset by ID. */
   async getDataset(id: string): Promise<GcpBQDataset> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.datasets.get
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/datasets/${id}`;
-
-      throw new Error(`BigQuery dataset ${id} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `${BQ_BASE}/projects/${this.projectId}/datasets/${encodeURIComponent(id)}`;
+      const raw = await gcpRequest<DatasetRaw>(url, token);
+      return mapDataset(raw);
     }, this.retryOptions);
   }
 
   /** List tables in a dataset. */
   async listTables(datasetId: string): Promise<GcpBQTable[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.tables.list
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/datasets/${datasetId}/tables`;
-
-      return [] as GcpBQTable[];
+      const token = await this.getAccessToken();
+      const url = `${BQ_BASE}/projects/${this.projectId}/datasets/${encodeURIComponent(datasetId)}/tables`;
+      const items = await gcpList<TableRaw>(url, token, "tables");
+      return items.map(mapTable);
     }, this.retryOptions);
   }
 
   /** Get a single table by dataset and table ID. */
   async getTable(datasetId: string, tableId: string): Promise<GcpBQTable> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.tables.get
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/datasets/${datasetId}/tables/${tableId}`;
-
-      throw new Error(`BigQuery table ${datasetId}.${tableId} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `${BQ_BASE}/projects/${this.projectId}/datasets/${encodeURIComponent(datasetId)}/tables/${encodeURIComponent(tableId)}`;
+      const raw = await gcpRequest<TableRaw>(url, token);
+      return mapTable(raw);
     }, this.retryOptions);
   }
 
@@ -118,35 +201,56 @@ export class GcpBigQueryManager {
    */
   async runQuery(query: string, opts?: { dryRun?: boolean; maxResults?: number }): Promise<GcpBQQueryResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.jobs.query
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/queries`;
-      void query;
-      void opts;
+      const token = await this.getAccessToken();
+      const url = `${BQ_BASE}/projects/${this.projectId}/queries`;
+      const body: Record<string, unknown> = {
+        query,
+        useLegacySql: false,
+      };
+      if (opts?.dryRun) body.dryRun = true;
+      if (opts?.maxResults != null) body.maxResults = opts.maxResults;
+
+      const raw = await gcpRequest<QueryResponseRaw>(url, token, { method: "POST", body });
+
+      // Convert BQ row format ({f:[{v:...}]}) to named objects using schema
+      const schemaFields = raw.schema?.fields ?? [];
+      const rows: Array<Record<string, unknown>> = (raw.rows ?? []).map((row) => {
+        const obj: Record<string, unknown> = {};
+        row.f.forEach((cell, i) => {
+          const fieldName = schemaFields[i]?.name ?? `col_${i}`;
+          obj[fieldName] = cell.v;
+        });
+        return obj;
+      });
 
       return {
-        rows: [],
-        totalRows: 0,
-        schema: [],
-        jobId: `job-${Date.now()}`,
-        totalBytesProcessed: 0,
-        cacheHit: false,
-      } satisfies GcpBQQueryResult;
+        rows,
+        totalRows: raw.totalRows ? Number(raw.totalRows) : 0,
+        schema: schemaFields,
+        jobId: raw.jobReference?.jobId ?? "",
+        totalBytesProcessed: raw.totalBytesProcessed ? Number(raw.totalBytesProcessed) : 0,
+        cacheHit: raw.cacheHit ?? false,
+      };
     }, this.retryOptions);
   }
 
   /** List BigQuery jobs, optionally filtered by state. */
   async listJobs(opts?: { stateFilter?: string }): Promise<GcpBQJob[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call bigquery.jobs.list
-      const params = opts?.stateFilter ? `?stateFilter=${opts.stateFilter}` : "";
-      const _endpoint = `https://bigquery.googleapis.com/bigquery/v2/projects/${this.projectId}/jobs${params}`;
-
-      return [] as GcpBQJob[];
+      const token = await this.getAccessToken();
+      const params = opts?.stateFilter ? `?stateFilter=${encodeURIComponent(opts.stateFilter)}` : "";
+      const url = `${BQ_BASE}/projects/${this.projectId}/jobs${params}`;
+      const items = await gcpList<JobRaw>(url, token, "jobs");
+      return items.map(mapJob);
     }, this.retryOptions);
   }
 }
 
 /** Factory: create a GcpBigQueryManager instance. */
-export function createBigQueryManager(projectId: string, retryOptions?: GcpRetryOptions): GcpBigQueryManager {
-  return new GcpBigQueryManager(projectId, retryOptions);
+export function createBigQueryManager(
+  projectId: string,
+  getAccessToken: () => Promise<string>,
+  retryOptions?: GcpRetryOptions,
+): GcpBigQueryManager {
+  return new GcpBigQueryManager(projectId, getAccessToken, retryOptions);
 }

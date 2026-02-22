@@ -2,11 +2,11 @@
  * GCP Extension — Cloud Tasks Manager
  *
  * Manages Cloud Tasks queues and tasks.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
  */
 
 import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpList, gcpMutate, gcpRequest, shortName } from "../api.js";
 
 // =============================================================================
 // Types
@@ -31,6 +31,30 @@ export type GcpTask = {
 };
 
 // =============================================================================
+// Helpers
+// =============================================================================
+
+function mapQueue(raw: Record<string, unknown>): GcpTaskQueue {
+  return {
+    name: shortName((raw.name as string) ?? ""),
+    state: (raw.state as string) ?? "",
+    rateLimits: (raw.rateLimits as Record<string, unknown>) ?? {},
+    retryConfig: (raw.retryConfig as Record<string, unknown>) ?? {},
+  };
+}
+
+function mapTask(raw: Record<string, unknown>): GcpTask {
+  return {
+    name: shortName((raw.name as string) ?? ""),
+    scheduleTime: (raw.scheduleTime as string) ?? "",
+    createTime: (raw.createTime as string) ?? "",
+    dispatchCount: (raw.dispatchCount as number) ?? 0,
+    responseCount: (raw.responseCount as number) ?? 0,
+    view: (raw.view as string) ?? "BASIC",
+  };
+}
+
+// =============================================================================
 // GcpTasksManager
 // =============================================================================
 
@@ -42,26 +66,32 @@ export type GcpTask = {
  */
 export class GcpTasksManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
   /** List all task queues in a specific location. */
   async listQueues(location: string): Promise<GcpTaskQueue[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues`;
-      return [] as GcpTaskQueue[];
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues`;
+      const raw = await gcpList<Record<string, unknown>>(url, token, "queues");
+      return raw.map(mapQueue);
     }, this.retryOptions);
   }
 
   /** Get a single task queue by name. */
   async getQueue(location: string, name: string): Promise<GcpTaskQueue> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}`;
-      throw new Error(`Queue ${name} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return mapQueue(raw);
     }, this.retryOptions);
   }
 
@@ -71,41 +101,50 @@ export class GcpTasksManager {
     queue: { name: string; rateLimits?: { maxDispatchesPerSecond?: number } },
   ): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues`;
-      const _body = queue;
-      return { success: true, message: `Queue ${queue.name} created (placeholder)` } as GcpOperationResult;
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues`;
+      const body = {
+        name: `projects/${this.projectId}/locations/${location}/queues/${queue.name}`,
+        rateLimits: queue.rateLimits,
+      };
+      return gcpMutate(url, token, body, "POST");
     }, this.retryOptions);
   }
 
   /** Delete a task queue by name. */
   async deleteQueue(location: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}`;
-      return { success: true, message: `Queue ${name} deleted (placeholder)` } as GcpOperationResult;
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}`;
+      return gcpMutate(url, token, {}, "DELETE");
     }, this.retryOptions);
   }
 
   /** Pause a task queue. */
   async pauseQueue(location: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}:pause`;
-      return { success: true, message: `Queue ${name} paused (placeholder)` } as GcpOperationResult;
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}:pause`;
+      return gcpMutate(url, token, {}, "POST");
     }, this.retryOptions);
   }
 
   /** Resume a paused task queue. */
   async resumeQueue(location: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}:resume`;
-      return { success: true, message: `Queue ${name} resumed (placeholder)` } as GcpOperationResult;
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${name}:resume`;
+      return gcpMutate(url, token, {}, "POST");
     }, this.retryOptions);
   }
 
   /** List tasks within a specific queue. */
   async listTasks(location: string, queue: string): Promise<GcpTask[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${queue}/tasks`;
-      return [] as GcpTask[];
+      const token = await this.getAccessToken();
+      const url = `https://cloudtasks.googleapis.com/v2/projects/${this.projectId}/locations/${location}/queues/${queue}/tasks`;
+      const raw = await gcpList<Record<string, unknown>>(url, token, "tasks");
+      return raw.map(mapTask);
     }, this.retryOptions);
   }
 }

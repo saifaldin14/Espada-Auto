@@ -2,11 +2,12 @@
  * GCP Extension — Cloud Functions Manager
  *
  * Manages Cloud Functions (1st and 2nd gen).
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
+ * Uses native fetch() via shared API helpers — no SDK needed.
  */
 
 import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpList, gcpRequest, gcpMutate, shortName } from "../api.js";
 
 // =============================================================================
 // Types
@@ -52,9 +53,11 @@ export type GcpCloudFunction = {
 export class GcpFunctionsManager {
   private projectId: string;
   private retryOptions: GcpRetryOptions;
+  private getAccessToken: () => Promise<string>;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
@@ -65,11 +68,11 @@ export class GcpFunctionsManager {
    */
   async listFunctions(opts?: { location?: string }): Promise<GcpCloudFunction[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call cloudfunctions.projects.locations.functions.list
-      const location = opts?.location ?? "-"; // "-" means all locations
-      const _endpoint = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions`;
-
-      return [] as GcpCloudFunction[];
+      const token = await this.getAccessToken();
+      const location = opts?.location ?? "-";
+      const url = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions`;
+      const raw = await gcpList<Record<string, unknown>>(url, token, "functions");
+      return raw.map((f) => this.mapFunction(f));
     }, this.retryOptions);
   }
 
@@ -81,10 +84,10 @@ export class GcpFunctionsManager {
    */
   async getFunction(location: string, name: string): Promise<GcpCloudFunction> {
     return withGcpRetry(async () => {
-      // Placeholder: would call cloudfunctions.projects.locations.functions.get
-      const _endpoint = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions/${name}`;
-
-      throw new Error(`Function ${name} not found in ${location} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapFunction(raw);
     }, this.retryOptions);
   }
 
@@ -96,14 +99,9 @@ export class GcpFunctionsManager {
    */
   async deleteFunction(location: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call cloudfunctions.projects.locations.functions.delete
-      const _endpoint = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions/${name}`;
-
-      return {
-        success: true,
-        message: `Function ${name} deletion initiated in ${location}`,
-        operationId: `op-delete-fn-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations/${location}/functions/${name}`;
+      return gcpMutate(url, token, undefined, "DELETE");
     }, this.retryOptions);
   }
 
@@ -112,27 +110,57 @@ export class GcpFunctionsManager {
    */
   async listLocations(): Promise<string[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call cloudfunctions.projects.locations.list
-      const _endpoint = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations`;
-
-      // Return well-known locations as placeholder data
-      return [
-        "us-central1",
-        "us-east1",
-        "us-east4",
-        "us-west1",
-        "europe-west1",
-        "europe-west2",
-        "europe-west3",
-        "asia-east1",
-        "asia-east2",
-        "asia-northeast1",
-      ];
+      const token = await this.getAccessToken();
+      const url = `https://cloudfunctions.googleapis.com/v2/projects/${this.projectId}/locations`;
+      const raw = await gcpList<Record<string, unknown>>(url, token, "locations");
+      return raw.map((loc) => (loc as { locationId: string }).locationId);
     }, this.retryOptions);
+  }
+
+  /** Map raw v2 API response to GcpCloudFunction. */
+  private mapFunction(f: Record<string, unknown>): GcpCloudFunction {
+    const fullName = (f.name as string) ?? "";
+    // Extract location from full resource name: projects/P/locations/L/functions/F
+    const parts = fullName.split("/");
+    const locationIndex = parts.indexOf("locations");
+    const location = locationIndex >= 0 ? parts[locationIndex + 1] ?? "unknown" : "unknown";
+
+    const buildConfig = (f.buildConfig as Record<string, unknown>) ?? {};
+    const serviceConfig = (f.serviceConfig as Record<string, unknown>) ?? {};
+    const eventTrigger = f.eventTrigger as Record<string, unknown> | undefined;
+
+    const triggerType: "https" | "event" = eventTrigger ? "event" : "https";
+
+    const result: GcpCloudFunction = {
+      name: shortName(fullName),
+      location,
+      runtime: (buildConfig.runtime as string) ?? "",
+      status: (f.state as string) ?? "UNKNOWN",
+      entryPoint: (buildConfig.entryPoint as string) ?? "",
+      trigger: triggerType,
+      labels: (f.labels as Record<string, string>) ?? {},
+    };
+
+    if (eventTrigger) {
+      const filters = (eventTrigger.eventFilters as Array<Record<string, string>>) ?? [];
+      result.eventTrigger = {
+        eventType: (eventTrigger.eventType as string) ?? "",
+        resource: filters[0]?.value ?? "",
+      };
+    } else {
+      const uri = (serviceConfig.uri as string) ?? "";
+      result.httpsTrigger = { url: uri };
+    }
+
+    return result;
   }
 }
 
 /** Factory: create a GcpFunctionsManager instance. */
-export function createFunctionsManager(projectId: string, retryOptions?: GcpRetryOptions): GcpFunctionsManager {
-  return new GcpFunctionsManager(projectId, retryOptions);
+export function createFunctionsManager(
+  projectId: string,
+  getAccessToken: () => Promise<string>,
+  retryOptions?: GcpRetryOptions,
+): GcpFunctionsManager {
+  return new GcpFunctionsManager(projectId, getAccessToken, retryOptions);
 }

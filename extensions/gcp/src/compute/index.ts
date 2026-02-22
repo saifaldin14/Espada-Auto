@@ -2,11 +2,11 @@
  * GCP Extension — Compute Engine Manager
  *
  * Manages Compute Engine instances, machine types, and disks.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
  */
 
 import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList, gcpAggregatedList, shortName, gcpMutate } from "../api.js";
 
 // =============================================================================
 // Types
@@ -71,10 +71,12 @@ export type GcpDisk = {
  */
 export class GcpComputeManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
@@ -85,13 +87,15 @@ export class GcpComputeManager {
    */
   async listInstances(opts?: { zone?: string }): Promise<GcpComputeInstance[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.aggregatedList or compute.instances.list
-      const _endpoint = opts?.zone
-        ? `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${opts.zone}/instances`
-        : `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/aggregated/instances`;
-
-      // Placeholder response
-      return [] as GcpComputeInstance[];
+      const token = await this.getAccessToken();
+      if (opts?.zone) {
+        const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${opts.zone}/instances`;
+        const items = await gcpList<Record<string, unknown>>(url, token, "items");
+        return items.map((i) => this.mapInstance(i));
+      }
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/aggregated/instances`;
+      const items = await gcpAggregatedList<Record<string, unknown>>(url, token, "instances");
+      return items.map((i) => this.mapInstance(i));
     }, this.retryOptions);
   }
 
@@ -103,10 +107,10 @@ export class GcpComputeManager {
    */
   async getInstance(zone: string, name: string): Promise<GcpComputeInstance> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.get
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}`;
-
-      throw new Error(`Instance ${name} not found in zone ${zone} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapInstance(raw);
     }, this.retryOptions);
   }
 
@@ -118,14 +122,9 @@ export class GcpComputeManager {
    */
   async startInstance(zone: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.start
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/start`;
-
-      return {
-        success: true,
-        message: `Instance ${name} start initiated in ${zone}`,
-        operationId: `op-start-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/start`;
+      return gcpMutate(url, token, {}, "POST");
     }, this.retryOptions);
   }
 
@@ -137,14 +136,9 @@ export class GcpComputeManager {
    */
   async stopInstance(zone: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.stop
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/stop`;
-
-      return {
-        success: true,
-        message: `Instance ${name} stop initiated in ${zone}`,
-        operationId: `op-stop-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/stop`;
+      return gcpMutate(url, token, {}, "POST");
     }, this.retryOptions);
   }
 
@@ -156,14 +150,9 @@ export class GcpComputeManager {
    */
   async resetInstance(zone: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.reset
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/reset`;
-
-      return {
-        success: true,
-        message: `Instance ${name} reset initiated in ${zone}`,
-        operationId: `op-reset-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}/reset`;
+      return gcpMutate(url, token, {}, "POST");
     }, this.retryOptions);
   }
 
@@ -175,14 +164,9 @@ export class GcpComputeManager {
    */
   async deleteInstance(zone: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.instances.delete
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}`;
-
-      return {
-        success: true,
-        message: `Instance ${name} deletion initiated in ${zone}`,
-        operationId: `op-delete-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/instances/${name}`;
+      return gcpMutate(url, token, {}, "DELETE");
     }, this.retryOptions);
   }
 
@@ -193,10 +177,15 @@ export class GcpComputeManager {
    */
   async listMachineTypes(zone: string): Promise<GcpMachineType[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.machineTypes.list
-      const _endpoint = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/machineTypes`;
-
-      return [] as GcpMachineType[];
+      const token = await this.getAccessToken();
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${zone}/machineTypes`;
+      const items = await gcpList<Record<string, unknown>>(url, token, "items");
+      return items.map((mt) => ({
+        name: String(mt.name ?? ""),
+        description: String(mt.description ?? ""),
+        guestCpus: Number(mt.guestCpus ?? 0),
+        memoryMb: Number(mt.memoryMb ?? 0),
+      }));
     }, this.retryOptions);
   }
 
@@ -207,17 +196,71 @@ export class GcpComputeManager {
    */
   async listDisks(opts?: { zone?: string }): Promise<GcpDisk[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call compute.disks.aggregatedList or compute.disks.list
-      const _endpoint = opts?.zone
-        ? `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${opts.zone}/disks`
-        : `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/aggregated/disks`;
-
-      return [] as GcpDisk[];
+      const token = await this.getAccessToken();
+      if (opts?.zone) {
+        const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/zones/${opts.zone}/disks`;
+        const items = await gcpList<Record<string, unknown>>(url, token, "items");
+        return items.map((d) => this.mapDisk(d));
+      }
+      const url = `https://compute.googleapis.com/compute/v1/projects/${this.projectId}/aggregated/disks`;
+      const items = await gcpAggregatedList<Record<string, unknown>>(url, token, "disks");
+      return items.map((d) => this.mapDisk(d));
     }, this.retryOptions);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private mapping helpers
+  // ---------------------------------------------------------------------------
+
+  private mapInstance(raw: Record<string, unknown>): GcpComputeInstance {
+    const networkInterfaces = (Array.isArray(raw.networkInterfaces) ? raw.networkInterfaces : []) as Array<Record<string, unknown>>;
+    const disks = (Array.isArray(raw.disks) ? raw.disks : []) as Array<Record<string, unknown>>;
+    return {
+      name: String(raw.name ?? ""),
+      zone: shortName(String(raw.zone ?? "")),
+      machineType: shortName(String(raw.machineType ?? "")),
+      status: String(raw.status ?? ""),
+      networkInterfaces: networkInterfaces.map((ni) => ({
+        network: String(ni.network ?? ""),
+        subnetwork: ni.subnetwork ? String(ni.subnetwork) : undefined,
+        networkIP: ni.networkIP ? String(ni.networkIP) : undefined,
+        accessConfigs: Array.isArray(ni.accessConfigs)
+          ? (ni.accessConfigs as Array<Record<string, unknown>>).map((ac) => ({
+              name: String(ac.name ?? ""),
+              natIP: ac.natIP ? String(ac.natIP) : undefined,
+              type: String(ac.type ?? ""),
+            }))
+          : undefined,
+      })),
+      disks: disks.map((d) => ({
+        deviceName: String(d.deviceName ?? ""),
+        source: String(d.source ?? ""),
+        boot: Boolean(d.boot),
+        autoDelete: Boolean(d.autoDelete),
+        sizeGb: d.diskSizeGb != null ? Number(d.diskSizeGb) : undefined,
+      })),
+      labels: (raw.labels as Record<string, string>) ?? {},
+      createdAt: String(raw.creationTimestamp ?? ""),
+    };
+  }
+
+  private mapDisk(raw: Record<string, unknown>): GcpDisk {
+    return {
+      name: String(raw.name ?? ""),
+      zone: shortName(String(raw.zone ?? "")),
+      sizeGb: Number(raw.sizeGb ?? 0),
+      type: shortName(String(raw.type ?? "")),
+      status: String(raw.status ?? ""),
+      sourceImage: String(raw.sourceImage ?? ""),
+    };
   }
 }
 
 /** Factory: create a GcpComputeManager instance. */
-export function createComputeManager(projectId: string, retryOptions?: GcpRetryOptions): GcpComputeManager {
-  return new GcpComputeManager(projectId, retryOptions);
+export function createComputeManager(
+  projectId: string,
+  getAccessToken: () => Promise<string>,
+  retryOptions?: GcpRetryOptions,
+): GcpComputeManager {
+  return new GcpComputeManager(projectId, getAccessToken, retryOptions);
 }

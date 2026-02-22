@@ -2,12 +2,12 @@
  * GCP Extension — Cloud Monitoring Manager
  *
  * Manages alert policies, uptime checks, metric descriptors, time series,
- * and notification channels.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
+ * and notification channels via the Cloud Monitoring REST API (v3).
  */
 
-import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
+import type { GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList } from "../api.js";
 
 // =============================================================================
 // Types
@@ -71,43 +71,66 @@ export type GcpNotificationChannel = {
  */
 export class GcpMonitoringManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
+  }
+
+  /** Map raw API response to our GcpAlertPolicy shape. */
+  private mapAlertPolicy(raw: Record<string, unknown>): GcpAlertPolicy {
+    return {
+      name: (raw.name ?? "") as string,
+      displayName: (raw.displayName ?? "") as string,
+      enabled: (raw.enabled ?? false) as boolean,
+      conditions: (raw.conditions ?? []) as Array<Record<string, unknown>>,
+      combiner: (raw.combiner ?? "") as string,
+      notificationChannels: (raw.notificationChannels ?? []) as string[],
+      createdAt: ((raw.mutateTime ?? (raw.creationRecord as Record<string, unknown>)?.mutateTime ?? "") as string),
+    };
   }
 
   /** List all alert policies in the project. */
   async listAlertPolicies(): Promise<GcpAlertPolicy[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/alertPolicies`;
-      return [] as GcpAlertPolicy[];
+      const token = await this.getAccessToken();
+      const url = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/alertPolicies`;
+      const raw = await gcpList<Record<string, unknown>>(url, token, "alertPolicies");
+      return raw.map((r) => this.mapAlertPolicy(r));
     }, this.retryOptions);
   }
 
   /** Get a single alert policy by resource name. */
   async getAlertPolicy(name: string): Promise<GcpAlertPolicy> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://monitoring.googleapis.com/v3/${name}`;
-      throw new Error(`Alert policy ${name} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://monitoring.googleapis.com/v3/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapAlertPolicy(raw);
     }, this.retryOptions);
   }
 
   /** List all uptime check configurations. */
   async listUptimeChecks(): Promise<GcpUptimeCheck[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/uptimeCheckConfigs`;
-      return [] as GcpUptimeCheck[];
+      const token = await this.getAccessToken();
+      const url = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/uptimeCheckConfigs`;
+      return gcpList<GcpUptimeCheck>(url, token, "uptimeCheckConfigs");
     }, this.retryOptions);
   }
 
   /** List metric descriptors, optionally filtered. */
   async listMetricDescriptors(filter?: string): Promise<GcpMetricDescriptor[]> {
     return withGcpRetry(async () => {
-      const _filter = filter ?? "";
-      const _endpoint = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/metricDescriptors`;
-      return [] as GcpMetricDescriptor[];
+      const token = await this.getAccessToken();
+      let url = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/metricDescriptors`;
+      if (filter) {
+        url += `?filter=${encodeURIComponent(filter)}`;
+      }
+      return gcpList<GcpMetricDescriptor>(url, token, "metricDescriptors");
     }, this.retryOptions);
   }
 
@@ -117,17 +140,23 @@ export class GcpMonitoringManager {
     interval: { startTime: string; endTime: string },
   ): Promise<GcpTimeSeries[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/timeSeries`;
-      const _params = { filter, interval };
-      return [] as GcpTimeSeries[];
+      const token = await this.getAccessToken();
+      const url =
+        `https://monitoring.googleapis.com/v3/projects/${this.projectId}/timeSeries` +
+        `?filter=${encodeURIComponent(filter)}` +
+        `&interval.startTime=${encodeURIComponent(interval.startTime)}` +
+        `&interval.endTime=${encodeURIComponent(interval.endTime)}`;
+      const data = await gcpRequest<{ timeSeries?: GcpTimeSeries[] }>(url, token);
+      return data.timeSeries ?? [];
     }, this.retryOptions);
   }
 
   /** List all notification channels in the project. */
   async listNotificationChannels(): Promise<GcpNotificationChannel[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/notificationChannels`;
-      return [] as GcpNotificationChannel[];
+      const token = await this.getAccessToken();
+      const url = `https://monitoring.googleapis.com/v3/projects/${this.projectId}/notificationChannels`;
+      return gcpList<GcpNotificationChannel>(url, token, "notificationChannels");
     }, this.retryOptions);
   }
 }

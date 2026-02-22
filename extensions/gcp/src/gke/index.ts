@@ -2,11 +2,11 @@
  * GCP Extension — Google Kubernetes Engine (GKE) Manager
  *
  * Manages GKE clusters and node pools.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
  */
 
 import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList, gcpMutate } from "../api.js";
 
 // =============================================================================
 // Types
@@ -53,10 +53,12 @@ export type GcpGKECluster = {
  */
 export class GcpGKEManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
@@ -67,11 +69,11 @@ export class GcpGKEManager {
    */
   async listClusters(opts?: { location?: string }): Promise<GcpGKECluster[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call container.projects.locations.clusters.list
-      const location = opts?.location ?? "-"; // "-" means all locations in the GKE API
-      const _endpoint = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters`;
-
-      return [] as GcpGKECluster[];
+      const token = await this.getAccessToken();
+      const location = opts?.location ?? "-";
+      const url = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters`;
+      const items = await gcpList<Record<string, unknown>>(url, token, "clusters");
+      return items.map((c) => this.mapCluster(c));
     }, this.retryOptions);
   }
 
@@ -83,10 +85,10 @@ export class GcpGKEManager {
    */
   async getCluster(location: string, name: string): Promise<GcpGKECluster> {
     return withGcpRetry(async () => {
-      // Placeholder: would call container.projects.locations.clusters.get
-      const _endpoint = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${name}`;
-
-      throw new Error(`Cluster ${name} not found in ${location} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapCluster(raw);
     }, this.retryOptions);
   }
 
@@ -98,14 +100,9 @@ export class GcpGKEManager {
    */
   async deleteCluster(location: string, name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call container.projects.locations.clusters.delete
-      const _endpoint = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${name}`;
-
-      return {
-        success: true,
-        message: `Cluster ${name} deletion initiated in ${location}`,
-        operationId: `op-delete-cluster-${Date.now()}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${name}`;
+      return gcpMutate(url, token, {}, "DELETE");
     }, this.retryOptions);
   }
 
@@ -117,15 +114,51 @@ export class GcpGKEManager {
    */
   async listNodePools(location: string, cluster: string): Promise<GcpNodePool[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call container.projects.locations.clusters.nodePools.list
-      const _endpoint = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${cluster}/nodePools`;
-
-      return [] as GcpNodePool[];
+      const token = await this.getAccessToken();
+      const url = `https://container.googleapis.com/v1/projects/${this.projectId}/locations/${location}/clusters/${cluster}/nodePools`;
+      const items = await gcpList<Record<string, unknown>>(url, token, "nodePools");
+      return items.map((np) => {
+        const config = (np.config ?? {}) as Record<string, unknown>;
+        const autoscaling = (np.autoscaling ?? {}) as Record<string, unknown>;
+        return {
+          name: String(np.name ?? ""),
+          machineType: String(config.machineType ?? ""),
+          diskSizeGb: Number(config.diskSizeGb ?? 0),
+          nodeCount: Number(np.initialNodeCount ?? 0),
+          status: String(np.status ?? ""),
+          autoscaling: {
+            enabled: Boolean(autoscaling.enabled),
+            minNodeCount: autoscaling.minNodeCount != null ? Number(autoscaling.minNodeCount) : undefined,
+            maxNodeCount: autoscaling.maxNodeCount != null ? Number(autoscaling.maxNodeCount) : undefined,
+          },
+        };
+      });
     }, this.retryOptions);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private mapping helpers
+  // ---------------------------------------------------------------------------
+
+  private mapCluster(raw: Record<string, unknown>): GcpGKECluster {
+    return {
+      name: String(raw.name ?? ""),
+      location: String(raw.location ?? ""),
+      status: String(raw.status ?? ""),
+      nodeCount: Number(raw.currentNodeCount ?? 0),
+      currentMasterVersion: String(raw.currentMasterVersion ?? ""),
+      labels: (raw.resourceLabels as Record<string, string>) ?? {},
+      endpoint: String(raw.endpoint ?? ""),
+      network: String(raw.network ?? ""),
+    };
   }
 }
 
 /** Factory: create a GcpGKEManager instance. */
-export function createGKEManager(projectId: string, retryOptions?: GcpRetryOptions): GcpGKEManager {
-  return new GcpGKEManager(projectId, retryOptions);
+export function createGKEManager(
+  projectId: string,
+  getAccessToken: () => Promise<string>,
+  retryOptions?: GcpRetryOptions,
+): GcpGKEManager {
+  return new GcpGKEManager(projectId, getAccessToken, retryOptions);
 }

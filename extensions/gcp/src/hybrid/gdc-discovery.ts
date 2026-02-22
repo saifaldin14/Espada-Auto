@@ -7,6 +7,7 @@
  */
 
 import type { GDCZone, GDCNode, GcpHybridDiscoveryResult } from "./types.js";
+import { gcpList } from "../api.js";
 
 // ── Local KG type mirrors (cross-extension rootDir pattern) ─────────────────
 
@@ -66,6 +67,7 @@ type HybridDiscoveryAdapter = {
 export class GDCDiscoveryAdapter implements HybridDiscoveryAdapter {
   constructor(
     private projectId: string,
+    private getAccessToken: () => Promise<string>,
     private options: {
       location?: string;
     } = {},
@@ -153,14 +155,17 @@ export class GDCDiscoveryAdapter implements HybridDiscoveryAdapter {
   // ── GDC REST Stubs ────────────────────────────────────────────────────
 
   async listGDCZones(): Promise<GDCZone[]> {
-    void this.options;
-    // TODO: implement via GDC management API
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "-";
+    const url = `https://edgecontainer.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/zones`;
+    return gcpList<GDCZone>(url, token, "zones");
   }
 
   async listGDCNodes(): Promise<GDCNode[]> {
-    // TODO: implement via GDC management API
-    return [];
+    const token = await this.getAccessToken();
+    const loc = this.options.location ?? "-";
+    const url = `https://edgecontainer.googleapis.com/v1/projects/${this.projectId}/locations/${loc}/machines`;
+    return gcpList<GDCNode>(url, token, "machines");
   }
 }
 

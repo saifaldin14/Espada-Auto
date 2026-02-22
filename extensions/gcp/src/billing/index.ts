@@ -1,12 +1,13 @@
 /**
  * GCP Extension — Cloud Billing Manager
  *
- * Manages billing accounts, project billing info, budgets, and cost breakdowns.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
+ * Manages billing accounts, project billing info, budgets, and cost breakdowns
+ * via the Cloud Billing REST API (v1) and Cloud Billing Budget API (v1).
  */
 
-import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
+import type { GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList } from "../api.js";
 
 // =============================================================================
 // Types
@@ -63,45 +64,61 @@ export type GcpCostBreakdown = {
  */
 export class GcpBillingManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
   /** List all billing accounts accessible to the caller. */
   async listBillingAccounts(): Promise<GcpBillingAccount[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudbilling.googleapis.com/v1/billingAccounts`;
-      return [] as GcpBillingAccount[];
+      const token = await this.getAccessToken();
+      const url = `https://cloudbilling.googleapis.com/v1/billingAccounts`;
+      return gcpList<GcpBillingAccount>(url, token, "billingAccounts");
     }, this.retryOptions);
   }
 
   /** Get billing info for the current project. */
   async getBillingInfo(): Promise<GcpProjectBillingInfo> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudbilling.googleapis.com/v1/projects/${this.projectId}/billingInfo`;
-      throw new Error(`Billing info for project ${this.projectId} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://cloudbilling.googleapis.com/v1/projects/${this.projectId}/billingInfo`;
+      return gcpRequest<GcpProjectBillingInfo>(url, token);
     }, this.retryOptions);
   }
 
   /** List budgets for a given billing account. */
   async listBudgets(billingAccount: string): Promise<GcpBudget[]> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://billingbudgets.googleapis.com/v1/${billingAccount}/budgets`;
-      return [] as GcpBudget[];
+      const token = await this.getAccessToken();
+      const url = `https://billingbudgets.googleapis.com/v1/${billingAccount}/budgets`;
+      return gcpList<GcpBudget>(url, token, "budgets");
     }, this.retryOptions);
   }
 
-  /** Get a cost breakdown for the project over a date range. */
+  /**
+   * Get a cost breakdown for the project over a date range.
+   *
+   * GCP requires BigQuery billing export for detailed cost data.
+   * This method fetches the project's billing info as a best-effort
+   * approach and returns a structured (empty) breakdown.
+   */
   async getCostBreakdown(opts?: {
     startDate?: string;
     endDate?: string;
   }): Promise<GcpCostBreakdown> {
     return withGcpRetry(async () => {
-      const _endpoint = `https://cloudbilling.googleapis.com/v1/projects/${this.projectId}/costs`;
-      const _params = opts;
+      const token = await this.getAccessToken();
+      // GCP requires BigQuery billing export for detailed cost data.
+      // Fetch billing info to validate the project; return empty breakdown.
+      await gcpRequest<Record<string, unknown>>(
+        `https://cloudbilling.googleapis.com/v1/projects/${this.projectId}/billingInfo`,
+        token,
+      );
       return {
         totalCost: 0,
         currency: "USD",
@@ -110,7 +127,7 @@ export class GcpBillingManager {
           startDate: opts?.startDate ?? "",
           endDate: opts?.endDate ?? "",
         },
-      } as GcpCostBreakdown;
+      };
     }, this.retryOptions);
   }
 }

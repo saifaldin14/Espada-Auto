@@ -2,11 +2,11 @@
  * GCP Extension — Cloud Storage Manager
  *
  * Manages Cloud Storage buckets and objects.
- * No real SDK imports — placeholder methods mirror the Azure extension pattern.
  */
 
 import type { GcpOperationResult, GcpRetryOptions } from "../types.js";
 import { withGcpRetry } from "../retry.js";
+import { gcpRequest, gcpList, gcpMutate } from "../api.js";
 
 // =============================================================================
 // Types
@@ -57,10 +57,12 @@ export type GcpStorageObject = {
  */
 export class GcpStorageManager {
   private projectId: string;
+  private getAccessToken: () => Promise<string>;
   private retryOptions: GcpRetryOptions;
 
-  constructor(projectId: string, retryOptions?: GcpRetryOptions) {
+  constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
+    this.getAccessToken = getAccessToken;
     this.retryOptions = retryOptions ?? {};
   }
 
@@ -69,10 +71,10 @@ export class GcpStorageManager {
    */
   async listBuckets(): Promise<GcpBucket[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.buckets.list
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b?project=${this.projectId}`;
-
-      return [] as GcpBucket[];
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b?project=${this.projectId}`;
+      const items = await gcpList<Record<string, unknown>>(url, token, "items");
+      return items.map((b) => this.mapBucket(b));
     }, this.retryOptions);
   }
 
@@ -83,10 +85,10 @@ export class GcpStorageManager {
    */
   async getBucket(name: string): Promise<GcpBucket> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.buckets.get
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b/${name}`;
-
-      throw new Error(`Bucket ${name} not found (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b/${name}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapBucket(raw);
     }, this.retryOptions);
   }
 
@@ -101,18 +103,14 @@ export class GcpStorageManager {
     opts: { location: string; storageClass?: string },
   ): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.buckets.insert
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b?project=${this.projectId}`;
-      const _body = {
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b?project=${this.projectId}`;
+      const body = {
         name,
         location: opts.location,
         storageClass: opts.storageClass ?? "STANDARD",
       };
-
-      return {
-        success: true,
-        message: `Bucket ${name} created in ${opts.location}`,
-      };
+      return gcpMutate(url, token, body, "POST");
     }, this.retryOptions);
   }
 
@@ -123,13 +121,9 @@ export class GcpStorageManager {
    */
   async deleteBucket(name: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.buckets.delete
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b/${name}`;
-
-      return {
-        success: true,
-        message: `Bucket ${name} deleted`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b/${name}`;
+      return gcpMutate(url, token, {}, "DELETE");
     }, this.retryOptions);
   }
 
@@ -141,12 +135,13 @@ export class GcpStorageManager {
    */
   async listObjects(bucket: string, opts?: { prefix?: string }): Promise<GcpStorageObject[]> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.objects.list
+      const token = await this.getAccessToken();
       const params = new URLSearchParams();
       if (opts?.prefix) params.set("prefix", opts.prefix);
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b/${bucket}/o?${params}`;
-
-      return [] as GcpStorageObject[];
+      const qs = params.toString();
+      const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o${qs ? `?${qs}` : ""}`;
+      const items = await gcpList<Record<string, unknown>>(url, token, "items");
+      return items.map((o) => this.mapObject(o));
     }, this.retryOptions);
   }
 
@@ -158,10 +153,10 @@ export class GcpStorageManager {
    */
   async getObjectMetadata(bucket: string, object: string): Promise<GcpStorageObject> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.objects.get
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object)}`;
-
-      throw new Error(`Object ${object} not found in bucket ${bucket} (placeholder)`);
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object)}`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapObject(raw);
     }, this.retryOptions);
   }
 
@@ -173,13 +168,9 @@ export class GcpStorageManager {
    */
   async deleteObject(bucket: string, object: string): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
-      // Placeholder: would call storage.objects.delete
-      const _endpoint = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object)}`;
-
-      return {
-        success: true,
-        message: `Object ${object} deleted from bucket ${bucket}`,
-      };
+      const token = await this.getAccessToken();
+      const url = `https://storage.googleapis.com/storage/v1/b/${bucket}/o/${encodeURIComponent(object)}`;
+      return gcpMutate(url, token, {}, "DELETE");
     }, this.retryOptions);
   }
 
@@ -193,20 +184,88 @@ export class GcpStorageManager {
   async generateSignedUrl(
     bucket: string,
     object: string,
-    opts?: { expiration?: number },
+    opts?: { expiration?: number; serviceAccountEmail?: string },
   ): Promise<string> {
     return withGcpRetry(async () => {
-      // Placeholder: would use IAM signBlob or service account key to sign
+      const email = opts?.serviceAccountEmail;
+      if (!email) {
+        throw new Error(
+          "serviceAccountEmail is required to generate a signed URL via IAM signBlob. " +
+          "Pass it in opts or configure a default service account.",
+        );
+      }
+      const token = await this.getAccessToken();
       const expiration = opts?.expiration ?? 3600;
-      const expiresAt = Math.floor(Date.now() / 1000) + expiration;
+      const expireTime = Math.floor(Date.now() / 1000) + expiration;
 
-      // Placeholder signed URL
-      return `https://storage.googleapis.com/${bucket}/${encodeURIComponent(object)}?X-Goog-Expires=${expiration}&X-Goog-Date=${new Date().toISOString()}&X-Goog-Expiration=${expiresAt}&X-Goog-Signature=placeholder`;
+      // Build the string-to-sign for a V2 signed URL
+      const stringToSign = `GET\n\n\n${expireTime}\n/${bucket}/${object}`;
+      const encodedPayload = Buffer.from(stringToSign).toString("base64");
+
+      // Use IAM signBlob to sign
+      const signUrl = `https://iam.googleapis.com/v1/projects/-/serviceAccounts/${email}:signBlob`;
+      const signResponse = await gcpRequest<{ signedBytes: string }>(signUrl, token, {
+        method: "POST",
+        body: { bytesToSign: encodedPayload },
+      });
+
+      const signature = encodeURIComponent(signResponse.signedBytes);
+      return `https://storage.googleapis.com/${bucket}/${encodeURIComponent(object)}?GoogleAccessId=${encodeURIComponent(email)}&Expires=${expireTime}&Signature=${signature}`;
     }, this.retryOptions);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Private mapping helpers
+  // ---------------------------------------------------------------------------
+
+  private mapBucket(raw: Record<string, unknown>): GcpBucket {
+    const versioning = raw.versioning as Record<string, unknown> | undefined;
+    const lifecycle = raw.lifecycle as Record<string, unknown> | undefined;
+    const rules = (lifecycle?.rule ?? []) as Array<Record<string, unknown>>;
+    return {
+      name: String(raw.name ?? ""),
+      location: String(raw.location ?? ""),
+      storageClass: String(raw.storageClass ?? ""),
+      labels: (raw.labels as Record<string, string>) ?? {},
+      createdAt: String(raw.timeCreated ?? ""),
+      versioning: Boolean(versioning?.enabled),
+      lifecycle: rules.map((r) => {
+        const action = (r.action ?? {}) as Record<string, unknown>;
+        const condition = (r.condition ?? {}) as Record<string, unknown>;
+        return {
+          action: {
+            type: String(action.type ?? ""),
+            storageClass: action.storageClass ? String(action.storageClass) : undefined,
+          },
+          condition: {
+            age: condition.age != null ? Number(condition.age) : undefined,
+            matchesStorageClass: condition.matchesStorageClass as string[] | undefined,
+            isLive: condition.isLive != null ? Boolean(condition.isLive) : undefined,
+            numNewerVersions: condition.numNewerVersions != null ? Number(condition.numNewerVersions) : undefined,
+          },
+        };
+      }),
+    };
+  }
+
+  private mapObject(raw: Record<string, unknown>): GcpStorageObject {
+    return {
+      name: String(raw.name ?? ""),
+      bucket: String(raw.bucket ?? ""),
+      size: Number(raw.size ?? 0),
+      contentType: String(raw.contentType ?? ""),
+      createdAt: String(raw.timeCreated ?? ""),
+      updatedAt: String(raw.updated ?? ""),
+      metadata: (raw.metadata as Record<string, string>) ?? {},
+    };
   }
 }
 
 /** Factory: create a GcpStorageManager instance. */
-export function createStorageManager(projectId: string, retryOptions?: GcpRetryOptions): GcpStorageManager {
-  return new GcpStorageManager(projectId, retryOptions);
+export function createStorageManager(
+  projectId: string,
+  getAccessToken: () => Promise<string>,
+  retryOptions?: GcpRetryOptions,
+): GcpStorageManager {
+  return new GcpStorageManager(projectId, getAccessToken, retryOptions);
 }
