@@ -166,6 +166,16 @@ export const AWS_RELATIONSHIP_RULES: AwsRelationshipRule[] = [
 
   // --- Step Functions ---
   { sourceType: "custom", field: "definition.States[].Resource", targetType: "serverless-function", relationship: "triggers", isArray: true, bidirectional: false },
+
+  // --- CI/CD Pipelines ---
+  { sourceType: "custom", field: "stages[].actions[].configuration.FunctionName", targetType: "serverless-function", relationship: "triggers", isArray: true, bidirectional: false },
+  { sourceType: "custom", field: "stages[].actions[].configuration.ClusterName", targetType: "cluster", relationship: "depends-on", isArray: true, bidirectional: false },
+  { sourceType: "custom", field: "stages[].actions[].roleArn", targetType: "iam-role", relationship: "uses", isArray: true, bidirectional: false },
+
+  // --- Cognito ---
+  { sourceType: "identity", field: "LambdaConfig.PreSignUp", targetType: "serverless-function", relationship: "triggers", isArray: false, bidirectional: false },
+  { sourceType: "identity", field: "LambdaConfig.PostConfirmation", targetType: "serverless-function", relationship: "triggers", isArray: false, bidirectional: false },
+  { sourceType: "identity", field: "LambdaConfig.PreAuthentication", targetType: "serverless-function", relationship: "triggers", isArray: false, bidirectional: false },
 ];
 
 // =============================================================================
@@ -322,6 +332,10 @@ export type AwsManagerOverrides = {
   elasticache?: unknown;
   compliance?: unknown;
   automation?: unknown;
+  ec2?: unknown;
+  rds?: unknown;
+  cicd?: unknown;
+  cognito?: unknown;
 };
 
 /**
@@ -452,6 +466,10 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   private _backupManager: unknown | undefined = undefined;
   private _complianceManager: unknown | undefined = undefined;
   private _automationManager: unknown | undefined = undefined;
+  private _ec2Manager: unknown | undefined = undefined;
+  private _rdsManager: unknown | undefined = undefined;
+  private _cicdManager: unknown | undefined = undefined;
+  private _cognitoManager: unknown | undefined = undefined;
 
   constructor(config: AwsAdapterConfig) {
     this.config = config;
@@ -643,6 +661,42 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
         await this.discoverAutomation(nodes, edges);
       } catch {
         // Automation discovery is best-effort
+      }
+    }
+
+    // Discover deeper EC2 resources (ASGs, LBs, target groups) via EC2Manager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.discoverEC2Deeper(nodes, edges);
+      } catch {
+        // EC2 deeper discovery is best-effort
+      }
+    }
+
+    // Discover deeper RDS resources (read replicas, snapshots, parameter groups) via RDSManager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.discoverRDSDeeper(nodes, edges);
+      } catch {
+        // RDS deeper discovery is best-effort
+      }
+    }
+
+    // Discover CI/CD pipelines, build projects, and deploy apps via CICDManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverCICD(nodes, edges);
+      } catch {
+        // CI/CD discovery is best-effort
+      }
+    }
+
+    // Discover Cognito user pools, identity pools, and app clients via CognitoManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverCognito(nodes, edges);
+      } catch {
+        // Cognito discovery is best-effort
       }
     }
 
@@ -1804,6 +1858,108 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
       return this._automationManager as unknown;
     } catch {
       this._automationManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an AWSEC2Manager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getEC2Manager(): Promise<unknown | null> {
+    if (this._ec2Manager !== undefined) return this._ec2Manager as unknown | null;
+
+    if (this.config.managers?.ec2 !== undefined) {
+      this._ec2Manager = this.config.managers.ec2;
+      return this._ec2Manager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/ec2");
+      const creds = await this.getCredentialsManager();
+      if (!creds) { this._ec2Manager = null; return null; }
+      this._ec2Manager = mod.createEC2Manager(creds as any, "us-east-1");
+      return this._ec2Manager as unknown;
+    } catch {
+      this._ec2Manager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an RDSManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getRDSManager(): Promise<unknown | null> {
+    if (this._rdsManager !== undefined) return this._rdsManager as unknown | null;
+
+    if (this.config.managers?.rds !== undefined) {
+      this._rdsManager = this.config.managers.rds;
+      return this._rdsManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/rds");
+      const config = this.buildManagerConfig();
+      this._rdsManager = mod.createRDSManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._rdsManager as unknown;
+    } catch {
+      this._rdsManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a CICDManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getCICDManager(): Promise<unknown | null> {
+    if (this._cicdManager !== undefined) return this._cicdManager as unknown | null;
+
+    if (this.config.managers?.cicd !== undefined) {
+      this._cicdManager = this.config.managers.cicd;
+      return this._cicdManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/cicd");
+      const config = this.buildManagerConfig();
+      this._cicdManager = mod.createCICDManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._cicdManager as unknown;
+    } catch {
+      this._cicdManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a CognitoManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getCognitoManager(): Promise<unknown | null> {
+    if (this._cognitoManager !== undefined) return this._cognitoManager as unknown | null;
+
+    if (this.config.managers?.cognito !== undefined) {
+      this._cognitoManager = this.config.managers.cognito;
+      return this._cognitoManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/cognito");
+      const config = this.buildManagerConfig();
+      this._cognitoManager = mod.createCognitoManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._cognitoManager as unknown;
+    } catch {
+      this._cognitoManager = null;
       return null;
     }
   }
@@ -3221,6 +3377,1079 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   }
 
   /**
+   * Discover deeper EC2 resources: Auto Scaling Groups, Load Balancers,
+   * and Target Groups via the AWSEC2Manager from @espada/aws.
+   *
+   * Enriches existing compute nodes with ASG membership and creates new
+   * nodes for ALBs/NLBs and target groups with appropriate edges.
+   */
+  private async discoverEC2Deeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getEC2Manager();
+    if (!mgr) return;
+
+    // Discover Auto Scaling Groups
+    const asgResult = await (mgr as {
+      listAutoScalingGroups: (opts?: { maxResults?: number }) => Promise<{
+        groups: Array<{
+          autoScalingGroupName?: string;
+          autoScalingGroupARN?: string;
+          launchTemplate?: { launchTemplateName?: string; launchTemplateId?: string };
+          minSize?: number;
+          maxSize?: number;
+          desiredCapacity?: number;
+          instances?: Array<{ instanceId?: string; healthStatus?: string; lifecycleState?: string }>;
+          targetGroupARNs?: string[];
+          healthCheckType?: string;
+          createdTime?: string;
+          status?: string;
+        }>;
+      }>;
+    }).listAutoScalingGroups();
+
+    if (asgResult.groups) {
+      for (const asg of asgResult.groups) {
+        if (!asg.autoScalingGroupName) continue;
+
+        const asgNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          `asg-${asg.autoScalingGroupName}`,
+        );
+
+        nodes.push({
+          id: asgNodeId,
+          name: asg.autoScalingGroupName,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: asg.autoScalingGroupARN ?? asg.autoScalingGroupName,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "auto-scaling-group",
+            minSize: asg.minSize,
+            maxSize: asg.maxSize,
+            desiredCapacity: asg.desiredCapacity,
+            healthCheckType: asg.healthCheckType,
+            launchTemplate: asg.launchTemplate?.launchTemplateName,
+            instanceCount: asg.instances?.length ?? 0,
+            discoverySource: "ec2-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: asg.createdTime ?? null,
+        });
+
+        // Link ASG → instances (contains edges)
+        if (asg.instances) {
+          for (const inst of asg.instances) {
+            if (!inst.instanceId) continue;
+            const instNode = nodes.find((n) =>
+              n.nativeId === inst.instanceId || n.nativeId.includes(inst.instanceId!),
+            );
+            if (!instNode) continue;
+
+            const containsEdgeId = `${asgNodeId}--contains--${instNode.id}`;
+            if (!edges.some((e) => e.id === containsEdgeId)) {
+              edges.push({
+                id: containsEdgeId,
+                sourceNodeId: asgNodeId,
+                targetNodeId: instNode.id,
+                relationshipType: "contains",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: { healthStatus: inst.healthStatus, lifecycleState: inst.lifecycleState },
+              });
+            }
+          }
+        }
+
+        // Link ASG → target groups
+        if (asg.targetGroupARNs) {
+          for (const tgArn of asg.targetGroupARNs) {
+            const tgNode = findNodeByArnOrId(nodes, tgArn, extractResourceId(tgArn));
+            if (!tgNode) continue;
+            const attachedEdgeId = `${asgNodeId}--attached-to--${tgNode.id}`;
+            if (!edges.some((e) => e.id === attachedEdgeId)) {
+              edges.push({
+                id: attachedEdgeId,
+                sourceNodeId: asgNodeId,
+                targetNodeId: tgNode.id,
+                relationshipType: "attached-to",
+                confidence: 0.9,
+                discoveredVia: "api-field",
+                metadata: {},
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Discover Load Balancers
+    const lbResult = await (mgr as {
+      listLoadBalancers: (opts?: { maxResults?: number }) => Promise<{
+        loadBalancers: Array<{
+          loadBalancerArn?: string;
+          loadBalancerName?: string;
+          dnsName?: string;
+          type?: string;
+          scheme?: string;
+          state?: { code?: string };
+          vpcId?: string;
+          availabilityZones?: Array<{ zoneName?: string; subnetId?: string }>;
+          securityGroups?: string[];
+          createdTime?: string;
+        }>;
+      }>;
+    }).listLoadBalancers();
+
+    if (lbResult.loadBalancers) {
+      for (const lb of lbResult.loadBalancers) {
+        if (!lb.loadBalancerName) continue;
+
+        // Check if this LB was already discovered via the base adapter
+        const existingLb = nodes.find((n) =>
+          n.resourceType === "load-balancer" &&
+          (n.nativeId === lb.loadBalancerArn || n.name === lb.loadBalancerName),
+        );
+
+        if (existingLb) {
+          // Enrich existing LB node with deeper metadata
+          existingLb.metadata["dnsName"] = lb.dnsName;
+          existingLb.metadata["lbType"] = lb.type;
+          existingLb.metadata["scheme"] = lb.scheme;
+          existingLb.metadata["discoverySource"] = "ec2-manager";
+          continue;
+        }
+
+        const lbNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "load-balancer",
+          lb.loadBalancerName,
+        );
+
+        nodes.push({
+          id: lbNodeId,
+          name: lb.loadBalancerName,
+          resourceType: "load-balancer",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: lb.loadBalancerArn ?? lb.loadBalancerName,
+          status: lb.state?.code === "active" ? "running" : (lb.state?.code as GraphNodeInput["status"]) ?? "unknown",
+          tags: {},
+          metadata: {
+            dnsName: lb.dnsName,
+            lbType: lb.type,
+            scheme: lb.scheme,
+            discoverySource: "ec2-manager",
+          },
+          costMonthly: 20,
+          owner: null,
+          createdAt: lb.createdTime ?? null,
+        });
+
+        // SG edges for LBs
+        if (lb.securityGroups) {
+          for (const sgId of lb.securityGroups) {
+            const sgNode = nodes.find((n) => n.nativeId === sgId || n.nativeId.includes(sgId));
+            if (!sgNode) continue;
+            const edgeId = `${lbNodeId}--secured-by--${sgNode.id}`;
+            if (!edges.some((e) => e.id === edgeId)) {
+              edges.push({
+                id: edgeId,
+                sourceNodeId: lbNodeId,
+                targetNodeId: sgNode.id,
+                relationshipType: "secured-by",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: {},
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Discover Target Groups
+    const tgResult = await (mgr as {
+      listTargetGroups: (opts?: { maxResults?: number }) => Promise<{
+        targetGroups: Array<{
+          targetGroupArn?: string;
+          targetGroupName?: string;
+          protocol?: string;
+          port?: number;
+          targetType?: string;
+          healthCheckEnabled?: boolean;
+          healthCheckProtocol?: string;
+          healthCheckPath?: string;
+          vpcId?: string;
+          loadBalancerArns?: string[];
+        }>;
+      }>;
+    }).listTargetGroups();
+
+    if (tgResult.targetGroups) {
+      for (const tg of tgResult.targetGroups) {
+        if (!tg.targetGroupName) continue;
+
+        const tgNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          `tg-${tg.targetGroupName}`,
+        );
+
+        nodes.push({
+          id: tgNodeId,
+          name: tg.targetGroupName,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: tg.targetGroupArn ?? tg.targetGroupName,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "target-group",
+            protocol: tg.protocol,
+            port: tg.port,
+            targetType: tg.targetType,
+            healthCheckEnabled: tg.healthCheckEnabled,
+            healthCheckPath: tg.healthCheckPath,
+            discoverySource: "ec2-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: null,
+        });
+
+        // Link LBs → target group (routes-to)
+        if (tg.loadBalancerArns) {
+          for (const lbArn of tg.loadBalancerArns) {
+            const lbNode = findNodeByArnOrId(nodes, lbArn, extractResourceId(lbArn));
+            if (!lbNode) continue;
+            const routeEdgeId = `${lbNode.id}--routes-to--${tgNodeId}`;
+            if (!edges.some((e) => e.id === routeEdgeId)) {
+              edges.push({
+                id: routeEdgeId,
+                sourceNodeId: lbNode.id,
+                targetNodeId: tgNodeId,
+                relationshipType: "routes-to",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: {},
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Discover deeper RDS resources: read replicas, snapshots, subnet groups,
+   * and parameter groups via the RDSManager from @espada/aws.
+   *
+   * Enriches existing database nodes with replica/snapshot metadata and
+   * creates additional relationship edges.
+   */
+  private async discoverRDSDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getRDSManager();
+    if (!mgr) return;
+
+    // Find existing RDS database nodes to enrich
+    const rdsNodes = nodes.filter((n) =>
+      n.resourceType === "database" && n.provider === "aws" &&
+      n.metadata["discoverySource"] !== "dynamodb",
+    );
+
+    for (const rdsNode of rdsNodes) {
+      const dbId = rdsNode.name ?? extractResourceId(rdsNode.nativeId);
+
+      // Discover read replicas
+      try {
+        const replicas = await (mgr as {
+          listReadReplicas: (dbInstanceIdentifier: string, region?: string) => Promise<Array<{
+            DBInstanceIdentifier?: string;
+            DBInstanceArn?: string;
+            DBInstanceStatus?: string;
+            DBInstanceClass?: string;
+            Engine?: string;
+            AvailabilityZone?: string;
+            ReadReplicaSourceDBInstanceIdentifier?: string;
+          }>>;
+        }).listReadReplicas(dbId);
+
+        if (replicas && replicas.length > 0) {
+          rdsNode.metadata["replicaCount"] = replicas.length;
+
+          for (const replica of replicas) {
+            if (!replica.DBInstanceIdentifier) continue;
+
+            // Check if replica already exists as a node
+            const existingReplica = nodes.find((n) =>
+              n.nativeId === replica.DBInstanceArn ||
+              n.name === replica.DBInstanceIdentifier,
+            );
+
+            if (!existingReplica) {
+              const replicaNodeId = buildAwsNodeId(
+                this.config.accountId,
+                replica.AvailabilityZone ?? "us-east-1",
+                "database",
+                replica.DBInstanceIdentifier,
+              );
+
+              nodes.push({
+                id: replicaNodeId,
+                name: replica.DBInstanceIdentifier,
+                resourceType: "database",
+                provider: "aws",
+                region: replica.AvailabilityZone ?? "us-east-1",
+                account: this.config.accountId,
+                nativeId: replica.DBInstanceArn ?? replica.DBInstanceIdentifier,
+                status: replica.DBInstanceStatus === "available" ? "running" : (replica.DBInstanceStatus as GraphNodeInput["status"]) ?? "unknown",
+                tags: {},
+                metadata: {
+                  engine: replica.Engine,
+                  instanceClass: replica.DBInstanceClass,
+                  isReadReplica: true,
+                  sourceInstance: dbId,
+                  discoverySource: "rds-manager",
+                },
+                costMonthly: this.estimateCostStatic("database", { instanceType: replica.DBInstanceClass }),
+                owner: null,
+                createdAt: null,
+              });
+
+              // Create replicates edge
+              const replicatesEdgeId = `${replicaNodeId}--replicates--${rdsNode.id}`;
+              edges.push({
+                id: replicatesEdgeId,
+                sourceNodeId: replicaNodeId,
+                targetNodeId: rdsNode.id,
+                relationshipType: "replicates",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: {},
+              });
+            }
+          }
+        }
+      } catch {
+        // Replica discovery is best-effort
+      }
+
+      // Get Multi-AZ status
+      try {
+        const multiAZStatus = await (mgr as {
+          getMultiAZStatus: (dbInstanceIdentifier: string, region?: string) => Promise<{
+            multiAZ: boolean;
+            secondaryAZ?: string;
+          }>;
+        }).getMultiAZStatus(dbId);
+
+        if (multiAZStatus) {
+          rdsNode.metadata["multiAZ"] = multiAZStatus.multiAZ;
+          rdsNode.metadata["secondaryAZ"] = multiAZStatus.secondaryAZ;
+        }
+      } catch {
+        // Multi-AZ status is best-effort
+      }
+    }
+
+    // Discover RDS snapshots
+    try {
+      const snapshotResult = await (mgr as {
+        listSnapshots: (opts?: { maxResults?: number }) => Promise<{
+          snapshots: Array<{
+            DBSnapshotIdentifier?: string;
+            DBSnapshotArn?: string;
+            DBInstanceIdentifier?: string;
+            SnapshotCreateTime?: string;
+            Status?: string;
+            Engine?: string;
+            AllocatedStorage?: number;
+            SnapshotType?: string;
+            Encrypted?: boolean;
+          }>;
+        }>;
+      }).listSnapshots({ maxResults: 50 });
+
+      if (snapshotResult.snapshots) {
+        for (const snap of snapshotResult.snapshots) {
+          if (!snap.DBSnapshotIdentifier) continue;
+
+          const snapNodeId = buildAwsNodeId(
+            this.config.accountId,
+            "us-east-1",
+            "storage",
+            `rds-snap-${snap.DBSnapshotIdentifier}`,
+          );
+
+          nodes.push({
+            id: snapNodeId,
+            name: snap.DBSnapshotIdentifier,
+            resourceType: "storage",
+            provider: "aws",
+            region: "us-east-1",
+            account: this.config.accountId,
+            nativeId: snap.DBSnapshotArn ?? snap.DBSnapshotIdentifier,
+            status: snap.Status === "available" ? "running" : (snap.Status as GraphNodeInput["status"]) ?? "unknown",
+            tags: {},
+            metadata: {
+              resourceSubtype: "rds-snapshot",
+              engine: snap.Engine,
+              allocatedStorageGB: snap.AllocatedStorage,
+              snapshotType: snap.SnapshotType,
+              encrypted: snap.Encrypted ?? false,
+              sourceInstance: snap.DBInstanceIdentifier,
+              discoverySource: "rds-manager",
+            },
+            costMonthly: Math.round((snap.AllocatedStorage ?? 20) * 0.095 * 100) / 100,
+            owner: null,
+            createdAt: snap.SnapshotCreateTime ?? null,
+          });
+
+          // Link snapshot → source RDS instance (backs-up)
+          if (snap.DBInstanceIdentifier) {
+            const sourceNode = nodes.find((n) =>
+              n.resourceType === "database" && n.name === snap.DBInstanceIdentifier,
+            );
+            if (sourceNode) {
+              const backsUpEdgeId = `${snapNodeId}--backs-up--${sourceNode.id}`;
+              if (!edges.some((e) => e.id === backsUpEdgeId)) {
+                edges.push({
+                  id: backsUpEdgeId,
+                  sourceNodeId: snapNodeId,
+                  targetNodeId: sourceNode.id,
+                  relationshipType: "backs-up",
+                  confidence: 0.95,
+                  discoveredVia: "api-field",
+                  metadata: { snapshotType: snap.SnapshotType },
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Snapshot discovery is best-effort
+    }
+
+    // Discover subnet groups
+    try {
+      const subnetGroupResult = await (mgr as {
+        listSubnetGroups: (opts?: { maxResults?: number }) => Promise<{
+          groups: Array<{
+            DBSubnetGroupName?: string;
+            DBSubnetGroupArn?: string;
+            DBSubnetGroupDescription?: string;
+            VpcId?: string;
+            SubnetGroupStatus?: string;
+            Subnets?: Array<{ SubnetIdentifier?: string; SubnetAvailabilityZone?: { Name?: string } }>;
+          }>;
+        }>;
+      }).listSubnetGroups();
+
+      if (subnetGroupResult.groups) {
+        for (const sg of subnetGroupResult.groups) {
+          if (!sg.DBSubnetGroupName) continue;
+
+          const sgNodeId = buildAwsNodeId(
+            this.config.accountId,
+            "us-east-1",
+            "custom",
+            `rds-subnet-group-${sg.DBSubnetGroupName}`,
+          );
+
+          nodes.push({
+            id: sgNodeId,
+            name: sg.DBSubnetGroupName,
+            resourceType: "custom",
+            provider: "aws",
+            region: "us-east-1",
+            account: this.config.accountId,
+            nativeId: sg.DBSubnetGroupArn ?? sg.DBSubnetGroupName,
+            status: sg.SubnetGroupStatus === "Complete" ? "running" : "unknown",
+            tags: {},
+            metadata: {
+              resourceSubtype: "rds-subnet-group",
+              description: sg.DBSubnetGroupDescription,
+              vpcId: sg.VpcId,
+              subnetCount: sg.Subnets?.length ?? 0,
+              discoverySource: "rds-manager",
+            },
+            costMonthly: 0,
+            owner: null,
+            createdAt: null,
+          });
+
+          // Link subnet group → subnets
+          if (sg.Subnets) {
+            for (const subnet of sg.Subnets) {
+              if (!subnet.SubnetIdentifier) continue;
+              const subnetNode = nodes.find((n) =>
+                n.nativeId === subnet.SubnetIdentifier || n.nativeId.includes(subnet.SubnetIdentifier!),
+              );
+              if (!subnetNode) continue;
+
+              const containsEdgeId = `${sgNodeId}--contains--${subnetNode.id}`;
+              if (!edges.some((e) => e.id === containsEdgeId)) {
+                edges.push({
+                  id: containsEdgeId,
+                  sourceNodeId: sgNodeId,
+                  targetNodeId: subnetNode.id,
+                  relationshipType: "contains",
+                  confidence: 0.9,
+                  discoveredVia: "api-field",
+                  metadata: {},
+                });
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Subnet group discovery is best-effort
+    }
+  }
+
+  /**
+   * Discover CI/CD infrastructure: CodePipeline pipelines, CodeBuild
+   * projects, and CodeDeploy applications via the CICDManager.
+   *
+   * Creates `custom` nodes for pipelines, build projects, and deploy apps.
+   * Creates edges: pipeline→S3 (artifact store), pipeline→build project,
+   * build project→IAM role, deploy app→instances.
+   */
+  private async discoverCICD(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getCICDManager();
+    if (!mgr) return;
+
+    // Discover CodePipeline pipelines
+    const pipelinesResult = await (mgr as {
+      listPipelines: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: { pipelines: Array<{ name?: string; version?: number; created?: string; updated?: string }>; nextToken?: string };
+      }>;
+    }).listPipelines();
+
+    if (pipelinesResult.success && pipelinesResult.data?.pipelines) {
+      for (const pipeline of pipelinesResult.data.pipelines) {
+        if (!pipeline.name) continue;
+
+        const pipelineNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          `pipeline-${pipeline.name}`,
+        );
+
+        nodes.push({
+          id: pipelineNodeId,
+          name: pipeline.name,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: pipeline.name,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "codepipeline",
+            version: pipeline.version,
+            lastUpdated: pipeline.updated,
+            discoverySource: "cicd-manager",
+          },
+          costMonthly: 1,
+          owner: null,
+          createdAt: pipeline.created ?? null,
+        });
+
+        // Get pipeline details for stage/action edges
+        try {
+          const detailResult = await (mgr as {
+            getPipeline: (name: string) => Promise<{
+              success: boolean;
+              data?: {
+                name?: string;
+                roleArn?: string;
+                artifactStore?: { type?: string; location?: string };
+                stages?: Array<{
+                  name?: string;
+                  actions?: Array<{
+                    name?: string;
+                    actionTypeId?: { category?: string; provider?: string };
+                    configuration?: Record<string, string>;
+                    roleArn?: string;
+                  }>;
+                }>;
+              };
+            }>;
+          }).getPipeline(pipeline.name);
+
+          if (detailResult.success && detailResult.data) {
+            const detail = detailResult.data;
+
+            // Link pipeline → IAM role
+            if (detail.roleArn) {
+              const roleNode = findNodeByArnOrId(nodes, detail.roleArn, extractResourceId(detail.roleArn));
+              if (roleNode) {
+                const usesEdgeId = `${pipelineNodeId}--uses--${roleNode.id}`;
+                if (!edges.some((e) => e.id === usesEdgeId)) {
+                  edges.push({
+                    id: usesEdgeId,
+                    sourceNodeId: pipelineNodeId,
+                    targetNodeId: roleNode.id,
+                    relationshipType: "uses",
+                    confidence: 0.95,
+                    discoveredVia: "api-field",
+                    metadata: {},
+                  });
+                }
+              }
+            }
+
+            // Link pipeline → artifact store (S3)
+            if (detail.artifactStore?.location) {
+              const s3Node = nodes.find((n) =>
+                n.resourceType === "storage" && n.name === detail.artifactStore!.location,
+              );
+              if (s3Node) {
+                const storesInEdgeId = `${pipelineNodeId}--stores-in--${s3Node.id}`;
+                if (!edges.some((e) => e.id === storesInEdgeId)) {
+                  edges.push({
+                    id: storesInEdgeId,
+                    sourceNodeId: pipelineNodeId,
+                    targetNodeId: s3Node.id,
+                    relationshipType: "stores-in",
+                    confidence: 0.9,
+                    discoveredVia: "api-field",
+                    metadata: {},
+                  });
+                }
+              }
+            }
+
+            // Scan stages for CodeBuild/CodeDeploy/Lambda actions → edges
+            if (detail.stages) {
+              for (const stage of detail.stages) {
+                if (!stage.actions) continue;
+                for (const action of stage.actions) {
+                  if (!action.configuration) continue;
+
+                  // CodeBuild action → build project
+                  if (action.actionTypeId?.provider === "CodeBuild" && action.configuration["ProjectName"]) {
+                    const buildNode = nodes.find((n) =>
+                      n.metadata["resourceSubtype"] === "codebuild-project" &&
+                      n.name === action.configuration!["ProjectName"],
+                    );
+                    if (buildNode) {
+                      const depEdgeId = `${pipelineNodeId}--depends-on--${buildNode.id}`;
+                      if (!edges.some((e) => e.id === depEdgeId)) {
+                        edges.push({
+                          id: depEdgeId,
+                          sourceNodeId: pipelineNodeId,
+                          targetNodeId: buildNode.id,
+                          relationshipType: "depends-on",
+                          confidence: 0.9,
+                          discoveredVia: "config-scan",
+                          metadata: { stage: stage.name },
+                        });
+                      }
+                    }
+                  }
+
+                  // Lambda action → function
+                  if (action.actionTypeId?.provider === "Lambda" && action.configuration["FunctionName"]) {
+                    const fnNode = nodes.find((n) =>
+                      n.resourceType === "serverless-function" &&
+                      (n.name === action.configuration!["FunctionName"] ||
+                       n.nativeId.includes(action.configuration!["FunctionName"]!)),
+                    );
+                    if (fnNode) {
+                      const triggersEdgeId = `${pipelineNodeId}--triggers--${fnNode.id}`;
+                      if (!edges.some((e) => e.id === triggersEdgeId)) {
+                        edges.push({
+                          id: triggersEdgeId,
+                          sourceNodeId: pipelineNodeId,
+                          targetNodeId: fnNode.id,
+                          relationshipType: "triggers",
+                          confidence: 0.9,
+                          discoveredVia: "config-scan",
+                          metadata: { stage: stage.name },
+                        });
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        } catch {
+          // Pipeline detail is best-effort
+        }
+      }
+    }
+
+    // Discover CodeBuild projects
+    const buildProjectsResult = await (mgr as {
+      listBuildProjects: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: { projects: string[] };
+      }>;
+    }).listBuildProjects();
+
+    if (buildProjectsResult.success && buildProjectsResult.data?.projects) {
+      for (const projectName of buildProjectsResult.data.projects) {
+        try {
+          const projectResult = await (mgr as {
+            getBuildProject: (name: string) => Promise<{
+              success: boolean;
+              data?: {
+                name?: string;
+                arn?: string;
+                description?: string;
+                source?: { type?: string; location?: string };
+                environment?: { computeType?: string; image?: string; type?: string };
+                serviceRole?: string;
+                created?: string;
+                lastModified?: string;
+                badge?: { badgeEnabled?: boolean; badgeRequestUrl?: string };
+              };
+            }>;
+          }).getBuildProject(projectName);
+
+          if (!projectResult.success || !projectResult.data) continue;
+          const project = projectResult.data;
+
+          const buildNodeId = buildAwsNodeId(
+            this.config.accountId,
+            "us-east-1",
+            "custom",
+            `codebuild-${projectName}`,
+          );
+
+          nodes.push({
+            id: buildNodeId,
+            name: projectName,
+            resourceType: "custom",
+            provider: "aws",
+            region: "us-east-1",
+            account: this.config.accountId,
+            nativeId: project.arn ?? projectName,
+            status: "running",
+            tags: {},
+            metadata: {
+              resourceSubtype: "codebuild-project",
+              description: project.description,
+              sourceType: project.source?.type,
+              sourceLocation: project.source?.location,
+              computeType: project.environment?.computeType,
+              buildImage: project.environment?.image,
+              discoverySource: "cicd-manager",
+            },
+            costMonthly: 0,
+            owner: null,
+            createdAt: project.created ?? null,
+          });
+
+          // Link build project → IAM role
+          if (project.serviceRole) {
+            const roleNode = findNodeByArnOrId(nodes, project.serviceRole, extractResourceId(project.serviceRole));
+            if (roleNode) {
+              const usesEdgeId = `${buildNodeId}--uses--${roleNode.id}`;
+              if (!edges.some((e) => e.id === usesEdgeId)) {
+                edges.push({
+                  id: usesEdgeId,
+                  sourceNodeId: buildNodeId,
+                  targetNodeId: roleNode.id,
+                  relationshipType: "uses",
+                  confidence: 0.95,
+                  discoveredVia: "api-field",
+                  metadata: {},
+                });
+              }
+            }
+          }
+        } catch {
+          // Individual build project is best-effort
+        }
+      }
+    }
+
+    // Discover CodeDeploy applications
+    const deployAppsResult = await (mgr as {
+      listApplications: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: { applications: string[] };
+      }>;
+    }).listApplications();
+
+    if (deployAppsResult.success && deployAppsResult.data?.applications) {
+      for (const appName of deployAppsResult.data.applications) {
+        try {
+          const appResult = await (mgr as {
+            getApplication: (name: string) => Promise<{
+              success: boolean;
+              data?: {
+                applicationName?: string;
+                applicationId?: string;
+                computePlatform?: string;
+                createTime?: string;
+                linkedToGitHub?: boolean;
+              };
+            }>;
+          }).getApplication(appName);
+
+          if (!appResult.success || !appResult.data) continue;
+          const app = appResult.data;
+
+          const deployNodeId = buildAwsNodeId(
+            this.config.accountId,
+            "us-east-1",
+            "custom",
+            `codedeploy-${appName}`,
+          );
+
+          nodes.push({
+            id: deployNodeId,
+            name: appName,
+            resourceType: "custom",
+            provider: "aws",
+            region: "us-east-1",
+            account: this.config.accountId,
+            nativeId: app.applicationId ?? appName,
+            status: "running",
+            tags: {},
+            metadata: {
+              resourceSubtype: "codedeploy-application",
+              computePlatform: app.computePlatform,
+              linkedToGitHub: app.linkedToGitHub ?? false,
+              discoverySource: "cicd-manager",
+            },
+            costMonthly: 0,
+            owner: null,
+            createdAt: app.createTime ?? null,
+          });
+        } catch {
+          // Individual deploy app is best-effort
+        }
+      }
+    }
+  }
+
+  /**
+   * Discover Cognito resources: User Pools, Identity Pools, and App Clients
+   * via the CognitoManager from @espada/aws.
+   *
+   * Creates `identity` nodes for user pools and identity pools, links
+   * app clients as sub-resources, and creates edges to Lambda triggers.
+   */
+  private async discoverCognito(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getCognitoManager();
+    if (!mgr) return;
+
+    // Discover User Pools
+    const userPoolsResult = await (mgr as {
+      listUserPools: (maxResults?: number) => Promise<{
+        success: boolean;
+        data?: Array<{
+          Id?: string;
+          Name?: string;
+          Status?: string;
+          CreationDate?: Date | string;
+          LastModifiedDate?: Date | string;
+          LambdaConfig?: Record<string, string>;
+        }>;
+      }>;
+    }).listUserPools(50);
+
+    if (userPoolsResult.success && userPoolsResult.data) {
+      for (const pool of userPoolsResult.data) {
+        if (!pool.Id) continue;
+
+        const poolNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "identity",
+          `userpool-${pool.Id}`,
+        );
+
+        const createdAt = pool.CreationDate instanceof Date
+          ? pool.CreationDate.toISOString()
+          : pool.CreationDate ?? null;
+
+        nodes.push({
+          id: poolNodeId,
+          name: pool.Name ?? pool.Id,
+          resourceType: "identity",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: pool.Id,
+          status: pool.Status === "Enabled" || !pool.Status ? "running" : "stopped",
+          tags: {},
+          metadata: {
+            resourceSubtype: "cognito-user-pool",
+            hasLambdaTriggers: pool.LambdaConfig ? Object.keys(pool.LambdaConfig).length > 0 : false,
+            discoverySource: "cognito-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt,
+        });
+
+        // Link user pool → Lambda triggers
+        if (pool.LambdaConfig) {
+          for (const [triggerName, lambdaArn] of Object.entries(pool.LambdaConfig)) {
+            if (!lambdaArn) continue;
+            const fnNode = findNodeByArnOrId(nodes, lambdaArn, extractResourceId(lambdaArn));
+            if (!fnNode) continue;
+
+            const triggersEdgeId = `${poolNodeId}--triggers--${fnNode.id}`;
+            if (!edges.some((e) => e.id === triggersEdgeId)) {
+              edges.push({
+                id: triggersEdgeId,
+                sourceNodeId: poolNodeId,
+                targetNodeId: fnNode.id,
+                relationshipType: "triggers",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: { triggerType: triggerName },
+              });
+            }
+          }
+        }
+
+        // Discover app clients for this user pool
+        try {
+          const clientsResult = await (mgr as {
+            listAppClients: (userPoolId: string) => Promise<{
+              success: boolean;
+              data?: Array<{
+                ClientId?: string;
+                ClientName?: string;
+                UserPoolId?: string;
+              }>;
+            }>;
+          }).listAppClients(pool.Id);
+
+          if (clientsResult.success && clientsResult.data) {
+            for (const client of clientsResult.data) {
+              if (!client.ClientId) continue;
+
+              const clientNodeId = buildAwsNodeId(
+                this.config.accountId,
+                "us-east-1",
+                "custom",
+                `cognito-client-${client.ClientId}`,
+              );
+
+              nodes.push({
+                id: clientNodeId,
+                name: client.ClientName ?? client.ClientId,
+                resourceType: "custom",
+                provider: "aws",
+                region: "us-east-1",
+                account: this.config.accountId,
+                nativeId: client.ClientId,
+                status: "running",
+                tags: {},
+                metadata: {
+                  resourceSubtype: "cognito-app-client",
+                  userPoolId: pool.Id,
+                  discoverySource: "cognito-manager",
+                },
+                costMonthly: 0,
+                owner: null,
+                createdAt: null,
+              });
+
+              // Link app client → user pool (member-of)
+              const memberEdgeId = `${clientNodeId}--member-of--${poolNodeId}`;
+              if (!edges.some((e) => e.id === memberEdgeId)) {
+                edges.push({
+                  id: memberEdgeId,
+                  sourceNodeId: clientNodeId,
+                  targetNodeId: poolNodeId,
+                  relationshipType: "member-of",
+                  confidence: 0.95,
+                  discoveredVia: "api-field",
+                  metadata: {},
+                });
+              }
+            }
+          }
+        } catch {
+          // App client discovery is best-effort
+        }
+      }
+    }
+
+    // Discover Identity Pools
+    const identityPoolsResult = await (mgr as {
+      listIdentityPools: (maxResults?: number) => Promise<{
+        success: boolean;
+        data?: Array<{
+          IdentityPoolId?: string;
+          IdentityPoolName?: string;
+        }>;
+      }>;
+    }).listIdentityPools(50);
+
+    if (identityPoolsResult.success && identityPoolsResult.data) {
+      for (const idPool of identityPoolsResult.data) {
+        if (!idPool.IdentityPoolId) continue;
+
+        const idPoolNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "identity",
+          `idpool-${idPool.IdentityPoolId}`,
+        );
+
+        nodes.push({
+          id: idPoolNodeId,
+          name: idPool.IdentityPoolName ?? idPool.IdentityPoolId,
+          resourceType: "identity",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: idPool.IdentityPoolId,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "cognito-identity-pool",
+            discoverySource: "cognito-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: null,
+        });
+      }
+    }
+  }
+
+  /**
    * Enrich discovered nodes with real cost data from AWS Cost Explorer.
    *
    * Delegates to the `@espada/aws` CostManager for CE queries, then
@@ -3771,6 +5000,10 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     this._backupManager = undefined;
     this._complianceManager = undefined;
     this._automationManager = undefined;
+    this._ec2Manager = undefined;
+    this._rdsManager = undefined;
+    this._cicdManager = undefined;
+    this._cognitoManager = undefined;
   }
 }
 

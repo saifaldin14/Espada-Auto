@@ -2859,4 +2859,601 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       expect((adapter as any).estimateCostStatic("transit-gateway", {})).toBe(0);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // EC2 deeper discovery (ASGs, LBs, Target Groups)
+  // ---------------------------------------------------------------------------
+
+  describe("EC2 deeper discovery", () => {
+    it("should discover Auto Scaling Groups and link to instances", async () => {
+      const mockEC2 = {
+        listAutoScalingGroups: vi.fn().mockResolvedValue({
+          groups: [
+            {
+              autoScalingGroupName: "web-asg",
+              autoScalingGroupARN: "arn:aws:autoscaling:us-east-1:123:autoScalingGroup:web-asg",
+              minSize: 1,
+              maxSize: 4,
+              desiredCapacity: 2,
+              healthCheckType: "ELB",
+              instances: [
+                { instanceId: "i-abc123", healthStatus: "Healthy", lifecycleState: "InService" },
+              ],
+              targetGroupARNs: [],
+            },
+          ],
+        }),
+        listLoadBalancers: vi.fn().mockResolvedValue({ loadBalancers: [] }),
+        listTargetGroups: vi.fn().mockResolvedValue({ targetGroups: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { ec2: mockEC2 },
+      });
+
+      // Pre-populate an EC2 instance
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:compute:i-abc123",
+          provider: "aws", resourceType: "compute", nativeId: "i-abc123",
+          name: "web-1", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverEC2Deeper(nodes, edges);
+
+      // Should create ASG node
+      const asgNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "auto-scaling-group");
+      expect(asgNodes).toHaveLength(1);
+      expect(asgNodes[0].name).toBe("web-asg");
+      expect(asgNodes[0].metadata["minSize"]).toBe(1);
+      expect(asgNodes[0].metadata["maxSize"]).toBe(4);
+      expect(asgNodes[0].metadata["desiredCapacity"]).toBe(2);
+
+      // Should have contains edge (ASG → instance)
+      const containsEdges = edges.filter((e: any) => e.relationshipType === "contains");
+      expect(containsEdges).toHaveLength(1);
+      expect(containsEdges[0].metadata.healthStatus).toBe("Healthy");
+    });
+
+    it("should discover Load Balancers and enrich existing ones", async () => {
+      const mockEC2 = {
+        listAutoScalingGroups: vi.fn().mockResolvedValue({ groups: [] }),
+        listLoadBalancers: vi.fn().mockResolvedValue({
+          loadBalancers: [
+            {
+              loadBalancerArn: "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/my-alb/abc",
+              loadBalancerName: "my-alb",
+              dnsName: "my-alb-123.us-east-1.elb.amazonaws.com",
+              type: "application",
+              scheme: "internet-facing",
+              state: { code: "active" },
+              securityGroups: ["sg-123"],
+            },
+          ],
+        }),
+        listTargetGroups: vi.fn().mockResolvedValue({ targetGroups: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { ec2: mockEC2 },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverEC2Deeper(nodes, edges);
+
+      // Should create new LB node
+      const lbNodes = nodes.filter((n) => n.resourceType === "load-balancer");
+      expect(lbNodes).toHaveLength(1);
+      expect(lbNodes[0].name).toBe("my-alb");
+      expect(lbNodes[0].metadata["lbType"]).toBe("application");
+      expect(lbNodes[0].metadata["scheme"]).toBe("internet-facing");
+      expect(lbNodes[0].status).toBe("running");
+    });
+
+    it("should discover Target Groups and link to Load Balancers", async () => {
+      const mockEC2 = {
+        listAutoScalingGroups: vi.fn().mockResolvedValue({ groups: [] }),
+        listLoadBalancers: vi.fn().mockResolvedValue({
+          loadBalancers: [
+            {
+              loadBalancerArn: "arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/my-alb/abc",
+              loadBalancerName: "my-alb",
+              type: "application",
+              state: { code: "active" },
+            },
+          ],
+        }),
+        listTargetGroups: vi.fn().mockResolvedValue({
+          targetGroups: [
+            {
+              targetGroupArn: "arn:aws:elasticloadbalancing:us-east-1:123:targetgroup/my-tg/def",
+              targetGroupName: "my-tg",
+              protocol: "HTTPS",
+              port: 443,
+              targetType: "instance",
+              healthCheckEnabled: true,
+              healthCheckPath: "/health",
+              loadBalancerArns: ["arn:aws:elasticloadbalancing:us-east-1:123:loadbalancer/app/my-alb/abc"],
+            },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { ec2: mockEC2 },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverEC2Deeper(nodes, edges);
+
+      // Should create target group node
+      const tgNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "target-group");
+      expect(tgNodes).toHaveLength(1);
+      expect(tgNodes[0].name).toBe("my-tg");
+      expect(tgNodes[0].metadata["protocol"]).toBe("HTTPS");
+      expect(tgNodes[0].metadata["port"]).toBe(443);
+      expect(tgNodes[0].metadata["targetType"]).toBe("instance");
+
+      // Should have routes-to edge (LB → TG)
+      const routesEdges = edges.filter((e: any) => e.relationshipType === "routes-to");
+      expect(routesEdges).toHaveLength(1);
+    });
+
+    it("should skip EC2 deeper discovery when manager unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { ec2: null },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverEC2Deeper(nodes, edges);
+
+      // Should not add any nodes
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // RDS deeper discovery (Replicas, Snapshots, Subnet Groups)
+  // ---------------------------------------------------------------------------
+
+  describe("RDS deeper discovery", () => {
+    it("should discover read replicas and create replicates edges", async () => {
+      const mockRDS = {
+        listReadReplicas: vi.fn().mockResolvedValue([
+          {
+            DBInstanceIdentifier: "mydb-replica-1",
+            DBInstanceArn: "arn:aws:rds:us-east-1:123:db:mydb-replica-1",
+            DBInstanceStatus: "available",
+            DBInstanceClass: "db.r5.large",
+            Engine: "mysql",
+            AvailabilityZone: "us-east-1b",
+          },
+        ]),
+        getMultiAZStatus: vi.fn().mockResolvedValue({ multiAZ: true, secondaryAZ: "us-east-1b" }),
+        listSnapshots: vi.fn().mockResolvedValue({ snapshots: [] }),
+        listSubnetGroups: vi.fn().mockResolvedValue({ groups: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { rds: mockRDS },
+      });
+
+      // Pre-populate an RDS node
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:database:mydb",
+          provider: "aws", resourceType: "database", nativeId: "arn:aws:rds:us-east-1:123:db:mydb",
+          name: "mydb", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverRDSDeeper(nodes, edges);
+
+      // Should add replica node
+      const replicaNodes = nodes.filter((n) => n.metadata["isReadReplica"] === true);
+      expect(replicaNodes).toHaveLength(1);
+      expect(replicaNodes[0].name).toBe("mydb-replica-1");
+      expect(replicaNodes[0].metadata["engine"]).toBe("mysql");
+      expect(replicaNodes[0].metadata["sourceInstance"]).toBe("mydb");
+
+      // Should have replicates edge
+      const replicatesEdges = edges.filter((e: any) => e.relationshipType === "replicates");
+      expect(replicatesEdges).toHaveLength(1);
+
+      // Should have multi-AZ metadata on the primary
+      expect(nodes[0].metadata["multiAZ"]).toBe(true);
+      expect(nodes[0].metadata["secondaryAZ"]).toBe("us-east-1b");
+    });
+
+    it("should discover RDS snapshots and create backs-up edges", async () => {
+      const mockRDS = {
+        listReadReplicas: vi.fn().mockResolvedValue([]),
+        getMultiAZStatus: vi.fn().mockResolvedValue({ multiAZ: false }),
+        listSnapshots: vi.fn().mockResolvedValue({
+          snapshots: [
+            {
+              DBSnapshotIdentifier: "mydb-snap-2024",
+              DBSnapshotArn: "arn:aws:rds:us-east-1:123:snapshot:mydb-snap-2024",
+              DBInstanceIdentifier: "mydb",
+              SnapshotCreateTime: "2024-01-15",
+              Status: "available",
+              Engine: "postgres",
+              AllocatedStorage: 100,
+              SnapshotType: "manual",
+              Encrypted: true,
+            },
+          ],
+        }),
+        listSubnetGroups: vi.fn().mockResolvedValue({ groups: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { rds: mockRDS },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:database:mydb",
+          provider: "aws", resourceType: "database", nativeId: "arn:aws:rds:us-east-1:123:db:mydb",
+          name: "mydb", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverRDSDeeper(nodes, edges);
+
+      // Should add snapshot node
+      const snapNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "rds-snapshot");
+      expect(snapNodes).toHaveLength(1);
+      expect(snapNodes[0].name).toBe("mydb-snap-2024");
+      expect(snapNodes[0].metadata["engine"]).toBe("postgres");
+      expect(snapNodes[0].metadata["allocatedStorageGB"]).toBe(100);
+      expect(snapNodes[0].metadata["encrypted"]).toBe(true);
+      expect(snapNodes[0].costMonthly).toBe(9.5); // 100 * 0.095
+
+      // Should have backs-up edge (snapshot → instance)
+      const backsUpEdges = edges.filter((e: any) => e.relationshipType === "backs-up");
+      expect(backsUpEdges).toHaveLength(1);
+    });
+
+    it("should skip RDS deeper when manager unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { rds: null },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverRDSDeeper(nodes, edges);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // CI/CD discovery (CodePipeline, CodeBuild, CodeDeploy)
+  // ---------------------------------------------------------------------------
+
+  describe("CI/CD discovery", () => {
+    it("should discover CodePipeline pipelines with stages", async () => {
+      const mockCICD = {
+        listPipelines: vi.fn().mockResolvedValue({
+          success: true,
+          data: { pipelines: [{ name: "deploy-pipeline", version: 3, created: "2023-06-01" }] },
+        }),
+        getPipeline: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            name: "deploy-pipeline",
+            roleArn: "arn:aws:iam::123:role/PipelineRole",
+            artifactStore: { type: "S3", location: "my-artifact-bucket" },
+            stages: [
+              {
+                name: "Build",
+                actions: [
+                  {
+                    name: "CodeBuild",
+                    actionTypeId: { category: "Build", provider: "CodeBuild" },
+                    configuration: { ProjectName: "my-build-project" },
+                  },
+                ],
+              },
+              {
+                name: "Deploy",
+                actions: [
+                  {
+                    name: "InvokeLambda",
+                    actionTypeId: { category: "Invoke", provider: "Lambda" },
+                    configuration: { FunctionName: "deploy-fn" },
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        listBuildProjects: vi.fn().mockResolvedValue({
+          success: true,
+          data: { projects: ["my-build-project"] },
+        }),
+        getBuildProject: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            name: "my-build-project",
+            arn: "arn:aws:codebuild:us-east-1:123:project/my-build-project",
+            source: { type: "GITHUB", location: "https://github.com/example/repo" },
+            environment: { computeType: "BUILD_GENERAL1_SMALL", image: "aws/codebuild/standard:5.0" },
+            serviceRole: "arn:aws:iam::123:role/CodeBuildRole",
+            created: "2023-06-01",
+          },
+        }),
+        listApplications: vi.fn().mockResolvedValue({
+          success: true,
+          data: { applications: ["my-deploy-app"] },
+        }),
+        getApplication: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            applicationName: "my-deploy-app",
+            applicationId: "app-abcdef",
+            computePlatform: "Server",
+            createTime: "2023-07-01",
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cicd: mockCICD },
+      });
+
+      // Pre-populate related nodes (including build project, since pipeline stage scan needs it)
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:storage:my-artifact-bucket",
+          provider: "aws", resourceType: "storage", nativeId: "my-artifact-bucket",
+          name: "my-artifact-bucket", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+        {
+          id: "aws:123456789:us-east-1:serverless-function:deploy-fn",
+          provider: "aws", resourceType: "serverless-function", nativeId: "arn:aws:lambda:us-east-1:123:function:deploy-fn",
+          name: "deploy-fn", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+        {
+          id: "aws:123456789:us-east-1:custom:codebuild-my-build-project",
+          provider: "aws", resourceType: "custom", nativeId: "arn:aws:codebuild:us-east-1:123:project/my-build-project",
+          name: "my-build-project", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: { resourceSubtype: "codebuild-project" }, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverCICD(nodes, edges);
+
+      // Should create pipeline node
+      const pipelineNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "codepipeline");
+      expect(pipelineNodes).toHaveLength(1);
+      expect(pipelineNodes[0].name).toBe("deploy-pipeline");
+      expect(pipelineNodes[0].metadata["version"]).toBe(3);
+
+      // Should create build project node (1 pre-populated + 1 discovered)
+      const buildNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "codebuild-project");
+      expect(buildNodes.length).toBeGreaterThanOrEqual(1);
+      expect(buildNodes.some((n) => n.metadata["sourceType"] === "GITHUB")).toBe(true);
+
+      // Should create deploy app node
+      const deployNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "codedeploy-application");
+      expect(deployNodes).toHaveLength(1);
+      expect(deployNodes[0].name).toBe("my-deploy-app");
+
+      // Should have stores-in edge (pipeline → S3)
+      expect(edges.some((e: any) => e.relationshipType === "stores-in")).toBe(true);
+
+      // Should have triggers edge (pipeline → Lambda)
+      expect(edges.some((e: any) => e.relationshipType === "triggers")).toBe(true);
+
+      // Should have depends-on edge (pipeline → build project)
+      expect(edges.some((e: any) =>
+        e.relationshipType === "depends-on" &&
+        e.sourceNodeId.includes("pipeline") &&
+        e.targetNodeId.includes("codebuild"),
+      )).toBe(true);
+    });
+
+    it("should handle empty CI/CD results gracefully", async () => {
+      const mockCICD = {
+        listPipelines: vi.fn().mockResolvedValue({ success: true, data: { pipelines: [] } }),
+        listBuildProjects: vi.fn().mockResolvedValue({ success: true, data: { projects: [] } }),
+        listApplications: vi.fn().mockResolvedValue({ success: true, data: { applications: [] } }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cicd: mockCICD },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverCICD(nodes, edges);
+
+      expect(nodes).toHaveLength(0);
+      expect(edges).toHaveLength(0);
+    });
+
+    it("should skip CI/CD discovery when manager unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cicd: null },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverCICD(nodes, edges);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cognito discovery (User Pools, Identity Pools, App Clients)
+  // ---------------------------------------------------------------------------
+
+  describe("Cognito discovery", () => {
+    it("should discover user pools with Lambda triggers", async () => {
+      const mockCognito = {
+        listUserPools: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            {
+              Id: "us-east-1_abc123",
+              Name: "main-user-pool",
+              Status: "Enabled",
+              CreationDate: "2023-04-01",
+              LambdaConfig: {
+                PreSignUp: "arn:aws:lambda:us-east-1:123:function:presignup-fn",
+              },
+            },
+          ],
+        }),
+        listAppClients: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { ClientId: "client-xyz", ClientName: "web-app", UserPoolId: "us-east-1_abc123" },
+          ],
+        }),
+        listIdentityPools: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { IdentityPoolId: "us-east-1:id-pool-1", IdentityPoolName: "main-identity-pool" },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cognito: mockCognito },
+      });
+
+      // Pre-populate Lambda node
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:serverless-function:presignup-fn",
+          provider: "aws", resourceType: "serverless-function",
+          nativeId: "arn:aws:lambda:us-east-1:123:function:presignup-fn",
+          name: "presignup-fn", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverCognito(nodes, edges);
+
+      // Should create user pool node
+      const poolNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-user-pool");
+      expect(poolNodes).toHaveLength(1);
+      expect(poolNodes[0].name).toBe("main-user-pool");
+      expect(poolNodes[0].resourceType).toBe("identity");
+      expect(poolNodes[0].metadata["hasLambdaTriggers"]).toBe(true);
+      expect(poolNodes[0].createdAt).toBe("2023-04-01");
+
+      // Should have triggers edge (user pool → Lambda)
+      const triggersEdges = edges.filter((e: any) => e.relationshipType === "triggers");
+      expect(triggersEdges).toHaveLength(1);
+      expect(triggersEdges[0].metadata.triggerType).toBe("PreSignUp");
+
+      // Should create app client node
+      const clientNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-app-client");
+      expect(clientNodes).toHaveLength(1);
+      expect(clientNodes[0].name).toBe("web-app");
+
+      // Should have member-of edge (client → user pool)
+      const memberEdges = edges.filter((e: any) => e.relationshipType === "member-of");
+      expect(memberEdges).toHaveLength(1);
+
+      // Should create identity pool node
+      const idPoolNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-identity-pool");
+      expect(idPoolNodes).toHaveLength(1);
+      expect(idPoolNodes[0].name).toBe("main-identity-pool");
+      expect(idPoolNodes[0].resourceType).toBe("identity");
+    });
+
+    it("should handle user pool without Lambda triggers", async () => {
+      const mockCognito = {
+        listUserPools: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Id: "us-east-1_nolambda", Name: "simple-pool", CreationDate: "2024-01-01" },
+          ],
+        }),
+        listAppClients: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listIdentityPools: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cognito: mockCognito },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverCognito(nodes, edges);
+
+      const poolNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-user-pool");
+      expect(poolNodes).toHaveLength(1);
+      expect(poolNodes[0].metadata["hasLambdaTriggers"]).toBe(false);
+      expect(edges.filter((e: any) => e.relationshipType === "triggers")).toHaveLength(0);
+    });
+
+    it("should skip Cognito discovery when manager unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cognito: null },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverCognito(nodes, edges);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // dispose() — fourth wave managers
+  // ---------------------------------------------------------------------------
+
+  describe("dispose() — fourth wave managers", () => {
+    it("should reset EC2, RDS, CI/CD, and Cognito managers on dispose", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: {
+          ec2: { listAutoScalingGroups: vi.fn() },
+          rds: { listReadReplicas: vi.fn() },
+          cicd: { listPipelines: vi.fn() },
+          cognito: { listUserPools: vi.fn() },
+        },
+      });
+
+      // Force lazy load
+      await (adapter as any).getEC2Manager();
+      await (adapter as any).getRDSManager();
+      await (adapter as any).getCICDManager();
+      await (adapter as any).getCognitoManager();
+
+      await adapter.dispose();
+
+      expect((adapter as any)._ec2Manager).toBeUndefined();
+      expect((adapter as any)._rdsManager).toBeUndefined();
+      expect((adapter as any)._cicdManager).toBeUndefined();
+      expect((adapter as any)._cognitoManager).toBeUndefined();
+    });
+  });
 });

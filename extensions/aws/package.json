@@ -122,6 +122,14 @@
     "./automation": {
       "import": "./dist/automation/index.js",
       "types": "./dist/automation/index.d.ts"
+    },
+    "./cicd": {
+      "import": "./dist/cicd/index.js",
+      "types": "./dist/cicd/index.d.ts"
+    },
+    "./cognito": {
+      "import": "./dist/cognito/index.js",
+      "types": "./dist/cognito/index.d.ts"
     }
   },
   "scripts": {
