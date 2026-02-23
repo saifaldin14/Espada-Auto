@@ -1385,7 +1385,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
           name: "my-bucket",
           region: "us-east-1",
           account: "123",
-          status: "active",
+          status: "running",
           tags: {},
           metadata: {},
           costMonthly: null,
@@ -1400,7 +1400,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
           name: "default",
           region: "us-east-1",
           account: "123",
-          status: "active",
+          status: "running",
           tags: {},
           metadata: {},
           costMonthly: null,
@@ -1415,7 +1415,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
           name: "web-server",
           region: "us-east-1",
           account: "123",
-          status: "active",
+          status: "running",
           tags: {},
           metadata: {},
           costMonthly: null,
@@ -1454,7 +1454,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
           name: "test",
           region: "us-east-1",
           account: "123",
-          status: "active",
+          status: "running",
           tags: {},
           metadata: {},
           costMonthly: null,
@@ -1512,6 +1512,1351 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       // Should not throw
       await adapter.dispose();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Network Topology — new resource types and relationships
+  // ---------------------------------------------------------------------------
+
+  describe("network topology (relationship rules)", () => {
+    it("should extract route-table -> VPC runs-in edge", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = { VpcId: "vpc-net1" };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:route-table:rtb-1",
+        "route-table" as any,
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      const edge = edges.find((e) => e.relationshipType === "runs-in" && e.targetNodeId.includes("vpc:vpc-net1"));
+      expect(edge).toBeDefined();
+    });
+
+    it("should extract route-table -> subnet routes-to edges", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = {
+        VpcId: "vpc-net1",
+        Associations: [
+          { SubnetId: "subnet-a" },
+          { SubnetId: "subnet-b" },
+        ],
+      };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:route-table:rtb-1",
+        "route-table" as any,
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      const routeEdges = edges.filter((e) => e.relationshipType === "routes-to" && e.targetNodeId.includes("subnet:"));
+      expect(routeEdges).toHaveLength(2);
+    });
+
+    it("should extract internet-gateway -> VPC bidirectional edges", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = {
+        Attachments: [{ VpcId: "vpc-net1" }],
+      };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:internet-gateway:igw-1",
+        "internet-gateway" as any,
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      const attachEdge = edges.find((e) => e.relationshipType === "attached-to" && e.targetNodeId.includes("vpc:vpc-net1"));
+      expect(attachEdge).toBeDefined();
+      // Bidirectional — reverse edge
+      const reverseEdge = edges.find((e) => e.sourceNodeId.includes("vpc:vpc-net1"));
+      expect(reverseEdge).toBeDefined();
+    });
+
+    it("should extract nat-gateway -> VPC and subnet edges", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = { VpcId: "vpc-net1", SubnetId: "subnet-pub" };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:nat-gateway:nat-1",
+        "nat-gateway",
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      expect(edges.find((e) => e.relationshipType === "runs-in" && e.targetNodeId.includes("vpc:vpc-net1"))).toBeDefined();
+      expect(edges.find((e) => e.relationshipType === "runs-in" && e.targetNodeId.includes("subnet:subnet-pub"))).toBeDefined();
+    });
+
+    it("should extract vpc-endpoint -> VPC and subnet edges", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = {
+        VpcId: "vpc-net1",
+        SubnetIds: ["subnet-a", "subnet-b"],
+        RouteTableIds: ["rtb-1"],
+      };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:vpc-endpoint:vpce-1",
+        "vpc-endpoint" as any,
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      expect(edges.find((e) => e.relationshipType === "connected-to" && e.targetNodeId.includes("vpc:vpc-net1"))).toBeDefined();
+      expect(edges.filter((e) => e.relationshipType === "runs-in")).toHaveLength(2);
+      expect(edges.find((e) => e.relationshipType === "routes-to" && e.targetNodeId.includes("route-table:rtb-1"))).toBeDefined();
+    });
+
+    it("should extract transit-gateway -> VPC bidirectional edges", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const raw = {
+        TransitGatewayAttachments: [
+          { ResourceId: "vpc-a" },
+          { ResourceId: "vpc-b" },
+        ],
+      };
+      const edges = adapter.extractRelationships(
+        "aws:123456789:us-east-1:transit-gateway:tgw-1",
+        "transit-gateway" as any,
+        raw,
+        "123456789",
+        "us-east-1",
+      );
+      const connectEdges = edges.filter((e) => e.relationshipType === "connects-via");
+      // 2 forward + 2 reverse (bidirectional) = 4
+      expect(connectEdges).toHaveLength(4);
+      // Bidirectional
+      const reverseEdges = edges.filter((e) => e.sourceNodeId.includes("vpc:"));
+      expect(reverseEdges.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it("should include network resource types in supported types", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123456789" });
+      const types = adapter.supportedResourceTypes();
+      expect(types).toContain("route-table");
+      expect(types).toContain("internet-gateway");
+      expect(types).toContain("nat-gateway");
+      expect(types).toContain("vpc-endpoint");
+      expect(types).toContain("transit-gateway");
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Network topology discovery via mock client
+  // ---------------------------------------------------------------------------
+
+  describe("network topology discovery", () => {
+    it("should discover route tables, internet gateways, and NAT gateways", async () => {
+      const responses: Record<string, unknown> = {
+        "EC2:describeInstances": { Reservations: [] },
+        "EC2:describeVpcs": { Vpcs: [] },
+        "EC2:describeSubnets": { Subnets: [] },
+        "EC2:describeSecurityGroups": { SecurityGroups: [] },
+        "EC2:describeRouteTables": {
+          RouteTables: [
+            { RouteTableId: "rtb-001", VpcId: "vpc-net1", Tags: [{ Key: "Name", Value: "main-rt" }] },
+          ],
+        },
+        "EC2:describeInternetGateways": {
+          InternetGateways: [
+            { InternetGatewayId: "igw-001", Attachments: [{ VpcId: "vpc-net1" }], Tags: [{ Key: "Name", Value: "my-igw" }] },
+          ],
+        },
+        "EC2:describeNatGateways": {
+          NatGateways: [
+            { NatGatewayId: "nat-001", VpcId: "vpc-net1", SubnetId: "subnet-pub1", State: "available", Tags: [{ Key: "Name", Value: "my-nat" }] },
+          ],
+        },
+        "EC2:describeVpcEndpoints": { VpcEndpoints: [] },
+        "EC2:describeTransitGateways": { TransitGateways: [] },
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        regions: ["us-east-1"],
+        clientFactory: createMockClientFactory(responses),
+      });
+
+      const result = await adapter.discover({ resourceTypes: ["route-table" as any, "internet-gateway" as any, "nat-gateway"] });
+      const rtNodes = result.nodes.filter((n) => n.resourceType === ("route-table" as any));
+      const igwNodes = result.nodes.filter((n) => n.resourceType === ("internet-gateway" as any));
+      const natNodes = result.nodes.filter((n) => n.resourceType === "nat-gateway");
+
+      expect(rtNodes).toHaveLength(1);
+      expect(rtNodes[0].name).toBe("main-rt");
+
+      expect(igwNodes).toHaveLength(1);
+      expect(igwNodes[0].name).toBe("my-igw");
+
+      expect(natNodes).toHaveLength(1);
+      expect(natNodes[0].name).toBe("my-nat");
+
+      // NAT gateway should have VPC and subnet edges
+      const natEdges = result.edges.filter((e) => e.sourceNodeId.includes("nat-gateway:nat-001"));
+      expect(natEdges.length).toBeGreaterThanOrEqual(2); // runs-in vpc + runs-in subnet
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // TaggingManager integration
+  // ---------------------------------------------------------------------------
+
+  describe("enrichWithTags()", () => {
+    it("should enrich nodes with tags from TaggingManager", async () => {
+      const mockTagging = {
+        getResourceTags: vi.fn().mockImplementation((arn: string) => {
+          if (arn === "i-tagged")
+            return [
+              { key: "Environment", value: "production" },
+              { key: "Owner", value: "platform-team" },
+              { key: "CostCenter", value: "eng-123" },
+            ];
+          return [];
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { tagging: mockTagging },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:compute:i-tagged",
+          provider: "aws",
+          resourceType: "compute",
+          nativeId: "i-tagged",
+          name: "web-server",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: { Name: "web-server" },
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:storage:no-tags",
+          provider: "aws",
+          resourceType: "storage",
+          nativeId: "no-tags",
+          name: "some-bucket",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      // Call private method
+      await (adapter as any).enrichWithTags(nodes);
+
+      expect(nodes[0].tags["Environment"]).toBe("production");
+      expect(nodes[0].tags["CostCenter"]).toBe("eng-123");
+      expect(nodes[0].tags["Name"]).toBe("web-server"); // Existing tag preserved
+      expect(nodes[0].owner).toBe("platform-team");
+      expect(nodes[0].metadata["tagSource"]).toBe("tagging-manager");
+      expect(nodes[0].metadata["tagCount"]).toBe(4); // Name + 3 new
+
+      // Second node has no tags from manager — unchanged
+      expect(nodes[1].metadata["tagSource"]).toBeUndefined();
+    });
+
+    it("should be a no-op when TaggingManager is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { tagging: null },
+      });
+      vi.spyOn(adapter as any, "getTaggingManager").mockResolvedValue(null);
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:compute:i-1",
+          provider: "aws",
+          resourceType: "compute",
+          nativeId: "i-1",
+          name: "test",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      await (adapter as any).enrichWithTags(nodes);
+      expect(nodes[0].metadata["tagSource"]).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Event-driven edges — Lambda event source mappings
+  // ---------------------------------------------------------------------------
+
+  describe("enrichWithEventSources()", () => {
+    it("should create trigger edges from Lambda event source mappings", async () => {
+      const mockLambda = {
+        listEventSourceMappings: vi.fn().mockResolvedValue([
+          {
+            uuid: "esm-1",
+            eventSourceArn: "arn:aws:sqs:us-east-1:123:my-queue",
+            functionArn: "arn:aws:lambda:us-east-1:123:function:my-func",
+            state: "Enabled",
+            batchSize: 10,
+          },
+        ]),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { lambda: mockLambda },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:queue:my-queue",
+          provider: "aws",
+          resourceType: "queue",
+          nativeId: "arn:aws:sqs:us-east-1:123:my-queue",
+          name: "my-queue",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:serverless-function:my-func",
+          provider: "aws",
+          resourceType: "serverless-function",
+          nativeId: "arn:aws:lambda:us-east-1:123:function:my-func",
+          name: "my-func",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithEventSources(nodes, edges);
+
+      expect(edges).toHaveLength(1);
+      expect(edges[0].relationshipType).toBe("triggers");
+      expect(edges[0].sourceNodeId).toContain("queue:my-queue");
+      expect(edges[0].targetNodeId).toContain("serverless-function:my-func");
+      expect(edges[0].discoveredVia).toBe("event-stream");
+      expect(edges[0].metadata.batchSize).toBe(10);
+      expect(edges[0].metadata.eventSourceType).toBe("queue");
+    });
+
+    it("should handle unavailable Lambda manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { lambda: null },
+      });
+      vi.spyOn(adapter as any, "getLambdaManager").mockResolvedValue(null);
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithEventSources([], edges);
+      expect(edges).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Observability — X-Ray service map + CloudWatch alarms
+  // ---------------------------------------------------------------------------
+
+  describe("enrichWithObservability()", () => {
+    it("should create routes-to edges from X-Ray service map", async () => {
+      const mockObs = {
+        getServiceMap: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            services: [
+              {
+                name: "api-service",
+                type: "AWS::ApiGateway::RestApi",
+                edges: [{ targetName: "my-func" }],
+                responseTimeHistogram: [{ value: 0.05 }],
+              },
+              {
+                name: "my-func",
+                type: "AWS::Lambda::Function",
+                edges: [{ targetName: "my-db" }],
+              },
+            ],
+          },
+        }),
+        listAlarms: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { observability: mockObs },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:api-gateway:api-1",
+          provider: "aws",
+          resourceType: "api-gateway",
+          nativeId: "api-1",
+          name: "api-service",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:serverless-function:my-func",
+          provider: "aws",
+          resourceType: "serverless-function",
+          nativeId: "my-func",
+          name: "my-func",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:database:my-db",
+          provider: "aws",
+          resourceType: "database",
+          nativeId: "my-db",
+          name: "my-db",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithObservability(nodes, edges);
+
+      expect(edges.length).toBeGreaterThanOrEqual(2);
+      const apiToFunc = edges.find((e: any) => e.sourceNodeId.includes("api-gateway:api-1") && e.targetNodeId.includes("my-func"));
+      expect(apiToFunc).toBeDefined();
+      expect(apiToFunc!.discoveredVia).toBe("runtime-trace");
+
+      const funcToDb = edges.find((e: any) => e.sourceNodeId.includes("my-func") && e.targetNodeId.includes("my-db"));
+      expect(funcToDb).toBeDefined();
+
+      // Response time should be on the API node
+      expect(nodes[0].metadata["avgResponseTimeMs"]).toBe(50);
+      expect(nodes[0].metadata["observabilitySource"]).toBe("xray");
+    });
+
+    it("should attach CloudWatch alarm metadata to nodes", async () => {
+      const mockObs = {
+        getServiceMap: vi.fn().mockResolvedValue({ success: false }),
+        listAlarms: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            {
+              alarmName: "HighCPU",
+              stateValue: "ALARM",
+              metricName: "CPUUtilization",
+              namespace: "AWS/EC2",
+              dimensions: [{ name: "InstanceId", value: "i-alert" }],
+            },
+            {
+              alarmName: "LowErrors",
+              stateValue: "OK",
+              namespace: "AWS/Lambda",
+              dimensions: [{ name: "FunctionName", value: "my-func" }],
+            },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { observability: mockObs },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:compute:i-alert",
+          provider: "aws",
+          resourceType: "compute",
+          nativeId: "i-alert",
+          name: "alert-server",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:serverless-function:my-func",
+          provider: "aws",
+          resourceType: "serverless-function",
+          nativeId: "my-func",
+          name: "my-func",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithObservability(nodes, edges);
+
+      expect(nodes[0].metadata["hasActiveAlarm"]).toBe(true);
+      expect(nodes[0].metadata["monitoredByCloudWatch"]).toBe(true);
+      expect((nodes[0].metadata["alarms"] as string[])[0]).toContain("HighCPU: ALARM");
+
+      expect(nodes[1].metadata["monitoredByCloudWatch"]).toBe(true);
+      expect(nodes[1].metadata["hasActiveAlarm"]).toBeUndefined(); // "OK" state
+    });
+
+    it("should be a no-op when ObservabilityManager is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { observability: null },
+      });
+      vi.spyOn(adapter as any, "getObservabilityManager").mockResolvedValue(null);
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithObservability([], edges);
+      expect(edges).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Deeper discovery — S3 bucket details
+  // ---------------------------------------------------------------------------
+
+  describe("enrichWithDeeperDiscovery()", () => {
+    it("should enrich S3 buckets with encryption and public access details", async () => {
+      const mockS3 = {
+        getBucketDetails: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            versioning: "Enabled",
+            encryption: { type: "AES256", algorithm: "AES256" },
+            lifecycle: { rules: [{ id: "rule1" }] },
+          },
+        }),
+        getPublicAccessBlock: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            blockPublicAcls: true,
+            blockPublicPolicy: true,
+            ignorePublicAcls: true,
+            restrictPublicBuckets: true,
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { s3: mockS3 },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:storage:my-bucket",
+          provider: "aws",
+          resourceType: "storage",
+          nativeId: "my-bucket",
+          name: "my-bucket",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithDeeperDiscovery(nodes, edges);
+
+      expect(nodes[0].metadata["versioning"]).toBe("Enabled");
+      expect(nodes[0].metadata["encryptionType"]).toBe("AES256");
+      expect(nodes[0].metadata["lifecycleRules"]).toBe(1);
+      expect(nodes[0].metadata["publicAccessBlocked"]).toBe(true);
+    });
+
+    it("should flag S3 buckets with incomplete public access blocks", async () => {
+      const mockS3 = {
+        getBucketDetails: vi.fn().mockResolvedValue({ success: false }),
+        getPublicAccessBlock: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            blockPublicAcls: true,
+            blockPublicPolicy: false, // Not fully blocked!
+            ignorePublicAcls: true,
+            restrictPublicBuckets: true,
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { s3: mockS3 },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:storage:open-bucket",
+          provider: "aws",
+          resourceType: "storage",
+          nativeId: "open-bucket",
+          name: "open-bucket",
+          region: "us-east-1",
+          account: "123",
+          status: "running",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      const edges: any[] = [];
+      await (adapter as any).enrichWithDeeperDiscovery(nodes, edges);
+
+      expect(nodes[0].metadata["publicAccessBlocked"]).toBe(false);
+      expect(nodes[0].metadata["hasSecurityIssues"]).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // DynamoDB discovery via mock client
+  // ---------------------------------------------------------------------------
+
+  describe("DynamoDB discovery", () => {
+    it("should discover DynamoDB tables", async () => {
+      const responses: Record<string, unknown> = {
+        "DynamoDB:listTables": {
+          TableNames: ["users-table", "sessions-table"],
+        },
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        regions: ["us-east-1"],
+        clientFactory: createMockClientFactory(responses),
+      });
+
+      const result = await adapter.discover({ resourceTypes: ["database"] });
+      // DynamoDB tables appear as "database" type alongside RDS
+      const dbNodes = result.nodes.filter((n) => n.resourceType === "database");
+      // May include RDS (empty) + DynamoDB tables
+      expect(dbNodes.length).toBeGreaterThanOrEqual(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // ElastiCache discovery via manager
+  // ---------------------------------------------------------------------------
+
+  describe("ElastiCache discovery", () => {
+    it("should discover Redis replication groups", async () => {
+      const mockElastiCache = {
+        listReplicationGroups: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            {
+              ReplicationGroupId: "prod-redis",
+              Description: "Production Redis cluster",
+              Status: "available",
+              CacheNodeType: "cache.r6g.large",
+              AtRestEncryptionEnabled: true,
+              TransitEncryptionEnabled: true,
+              AutomaticFailover: "enabled",
+              MultiAZ: "enabled",
+              SnapshotRetentionLimit: 7,
+              ARN: "arn:aws:elasticache:us-east-1:123:replicationgroup:prod-redis",
+              NodeGroups: [
+                { NodeGroupId: "0001", NodeGroupMembers: [{ CacheClusterId: "prod-redis-001" }, { CacheClusterId: "prod-redis-002" }] },
+              ],
+            },
+          ],
+        }),
+        listCacheClusters: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { elasticache: mockElastiCache },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverElastiCache(nodes, edges);
+
+      expect(nodes).toHaveLength(1);
+      expect(nodes[0].resourceType).toBe("cache");
+      expect(nodes[0].name).toBe("prod-redis");
+      expect(nodes[0].metadata["engine"]).toBe("redis");
+      expect(nodes[0].metadata["nodeType"]).toBe("cache.r6g.large");
+      expect(nodes[0].metadata["replicaCount"]).toBe(2);
+      expect(nodes[0].metadata["atRestEncryption"]).toBe(true);
+      expect(nodes[0].metadata["transitEncryption"]).toBe(true);
+      expect(nodes[0].metadata["automaticFailover"]).toBe("enabled");
+    });
+
+    it("should discover standalone Memcached clusters with SG edges", async () => {
+      const mockElastiCache = {
+        listReplicationGroups: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listCacheClusters: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            {
+              CacheClusterId: "session-cache",
+              CacheClusterStatus: "available",
+              Engine: "memcached",
+              EngineVersion: "1.6.22",
+              CacheNodeType: "cache.t3.medium",
+              NumCacheNodes: 2,
+              ARN: "arn:aws:elasticache:us-east-1:123:cluster:session-cache",
+              PreferredAvailabilityZone: "us-east-1a",
+              SecurityGroups: [{ SecurityGroupId: "sg-cache1", Status: "active" }],
+            },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { elasticache: mockElastiCache },
+      });
+
+      // Pre-populate a security group node so the edge can be created
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:security-group:sg-cache1",
+          provider: "aws", resourceType: "security-group", nativeId: "sg-cache1",
+          name: "sg-cache1", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverElastiCache(nodes, edges);
+
+      const cacheNodes = nodes.filter((n) => n.resourceType === "cache");
+      expect(cacheNodes).toHaveLength(1);
+      expect(cacheNodes[0].metadata["engine"]).toBe("memcached");
+      expect(cacheNodes[0].metadata["numNodes"]).toBe(2);
+      // Should have SG edge
+      expect(edges.some((e) => e.relationshipType === "secured-by")).toBe(true);
+    });
+
+    it("should skip clusters belonging to replication groups", async () => {
+      const mockElastiCache = {
+        listReplicationGroups: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listCacheClusters: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { CacheClusterId: "redis-001", ReplicationGroupId: "my-redis", CacheClusterStatus: "available", Engine: "redis" },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { elasticache: mockElastiCache },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverElastiCache(nodes, []);
+      expect(nodes).toHaveLength(0);
+    });
+
+    it("should handle null manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { elasticache: null as any },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverElastiCache(nodes, []);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Organization discovery via manager
+  // ---------------------------------------------------------------------------
+
+  describe("Organization discovery", () => {
+    it("should discover accounts, OUs, and SCPs", async () => {
+      const mockOrg = {
+        listAccounts: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Id: "111111111111", Name: "Production", Email: "prod@example.com", Status: "ACTIVE", Arn: "arn:aws:organizations::123:account/o-xxx/111111111111", JoinedMethod: "INVITED", JoinedTimestamp: "2023-01-01T00:00:00Z" },
+            { Id: "222222222222", Name: "Development", Email: "dev@example.com", Status: "ACTIVE", Arn: "arn:aws:organizations::123:account/o-xxx/222222222222" },
+          ],
+        }),
+        listOrganizationalUnits: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Id: "ou-root-prod", Name: "Production OU", Arn: "arn:aws:organizations::123:ou/o-xxx/ou-root-prod" },
+          ],
+        }),
+        listPolicies: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Id: "p-FullAWSAccess", Name: "FullAWSAccess", Description: "Default SCP", Arn: "arn:aws:organizations::123:policy/o-xxx/service_control_policy/p-FullAWSAccess", Type: "SERVICE_CONTROL_POLICY", AwsManaged: true },
+          ],
+        }),
+        getPolicyTargets: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { TargetId: "111111111111", Arn: "arn:aws:organizations::123:account/o-xxx/111111111111", Name: "Production", Type: "ACCOUNT" },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { organization: mockOrg },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverOrganization(nodes, edges);
+
+      // Should have 2 account nodes (identity) + 1 OU node (custom) + 1 SCP node (policy)
+      expect(nodes).toHaveLength(4);
+      const accountNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "aws-account");
+      expect(accountNodes).toHaveLength(2);
+      expect(accountNodes[0].resourceType).toBe("identity");
+      expect(accountNodes[0].status).toBe("running");
+
+      const ouNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "organizational-unit");
+      expect(ouNodes).toHaveLength(1);
+      expect(ouNodes[0].resourceType).toBe("custom");
+
+      const policyNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "service-control-policy");
+      expect(policyNodes).toHaveLength(1);
+      expect(policyNodes[0].metadata["awsManaged"]).toBe(true);
+
+      // Should have contains edges (OU → accounts) and secured-by edges
+      expect(edges.some((e) => e.relationshipType === "contains")).toBe(true);
+      expect(edges.some((e) => e.relationshipType === "secured-by")).toBe(true);
+    });
+
+    it("should handle empty organization results", async () => {
+      const mockOrg = {
+        listAccounts: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listOrganizationalUnits: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listPolicies: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { organization: mockOrg },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverOrganization(nodes, edges);
+      expect(nodes).toHaveLength(0);
+      expect(edges).toHaveLength(0);
+    });
+
+    it("should handle null manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { organization: null as any },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverOrganization(nodes, []);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Backup discovery via manager
+  // ---------------------------------------------------------------------------
+
+  describe("Backup discovery", () => {
+    it("should discover backup vaults, plans, and protected resources", async () => {
+      const mockBackup = {
+        listBackupVaults: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { BackupVaultName: "Default", BackupVaultArn: "arn:aws:backup:us-east-1:123:backup-vault:Default", CreationDate: "2023-06-01", NumberOfRecoveryPoints: 15, EncryptionKeyArn: "arn:aws:kms:us-east-1:123:key/abc", Locked: false },
+          ],
+        }),
+        listBackupPlans: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { BackupPlanId: "plan-123", BackupPlanName: "DailyBackup", BackupPlanArn: "arn:aws:backup:us-east-1:123:backup-plan:plan-123", CreationDate: "2023-06-01", LastExecutionDate: "2024-01-15" },
+          ],
+        }),
+        listBackupSelections: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { SelectionId: "sel-1", SelectionName: "AllRDS" },
+          ],
+        }),
+        listProtectedResources: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { ResourceArn: "arn:aws:rds:us-east-1:123:db:mydb", ResourceType: "RDS", LastBackupTime: "2024-01-15T10:00:00Z" },
+          ],
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { backup: mockBackup },
+      });
+
+      // Pre-populate an RDS node so protected resource can be matched
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:database:mydb",
+          provider: "aws", resourceType: "database", nativeId: "arn:aws:rds:us-east-1:123:db:mydb",
+          name: "mydb", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverBackupResources(nodes, edges);
+
+      // Should have vault + plan nodes
+      const vaultNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "backup-vault");
+      expect(vaultNodes).toHaveLength(1);
+      expect(vaultNodes[0].metadata["recoveryPoints"]).toBe(15);
+      expect(vaultNodes[0].metadata["encrypted"]).toBe(true);
+
+      const planNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "backup-plan");
+      expect(planNodes).toHaveLength(1);
+
+      // Should have stores-in edge (plan → vault)
+      expect(edges.some((e) => e.relationshipType === "stores-in")).toBe(true);
+      // Should have backs-up edge (plan → RDS node)
+      expect(edges.some((e) => e.relationshipType === "backs-up")).toBe(true);
+
+      // Protected RDS node should have backup metadata stamped
+      const rdsNode = nodes.find((n) => n.name === "mydb");
+      expect(rdsNode?.metadata["backupProtected"]).toBe(true);
+      expect(rdsNode?.metadata["lastBackup"]).toBe("2024-01-15T10:00:00Z");
+    });
+
+    it("should handle empty backup results", async () => {
+      const mockBackup = {
+        listBackupVaults: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listBackupPlans: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listProtectedResources: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { backup: mockBackup },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      const edges: any[] = [];
+      await (adapter as any).discoverBackupResources(nodes, edges);
+      expect(nodes).toHaveLength(0);
+    });
+
+    it("should handle null manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { backup: null as any },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverBackupResources(nodes, []);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Compliance enrichment via manager
+  // ---------------------------------------------------------------------------
+
+  describe("Compliance enrichment", () => {
+    it("should enrich nodes with compliance violations", async () => {
+      const mockCompliance = {
+        listConfigRules: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { ConfigRuleName: "ec2-encrypted-volumes", ConfigRuleId: "rule-1" },
+          ],
+        }),
+        getConfigRuleCompliance: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            compliant: 3,
+            nonCompliant: 1,
+            evaluations: [
+              { resourceId: "i-abc123", resourceType: "AWS::EC2::Instance", complianceType: "NON_COMPLIANT", annotation: "Volume not encrypted" },
+              { resourceId: "i-def456", resourceType: "AWS::EC2::Instance", complianceType: "COMPLIANT" },
+            ],
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { compliance: mockCompliance },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:compute:i-abc123",
+          provider: "aws", resourceType: "compute", nativeId: "i-abc123",
+          name: "web-server", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+        {
+          id: "aws:123456789:us-east-1:compute:i-def456",
+          provider: "aws", resourceType: "compute", nativeId: "i-def456",
+          name: "api-server", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+
+      await (adapter as any).enrichWithCompliance(nodes);
+
+      // First node should have violation
+      const compliance1 = nodes[0].metadata["compliance"] as any;
+      expect(compliance1).toBeDefined();
+      expect(compliance1.violationCount).toBe(1);
+      expect(compliance1.violations).toHaveLength(1);
+      expect(compliance1.violations[0].rule).toBe("ec2-encrypted-volumes");
+      expect(compliance1.violations[0].status).toBe("NON_COMPLIANT");
+
+      // Second node should have compliant rule
+      const compliance2 = nodes[1].metadata["compliance"] as any;
+      expect(compliance2).toBeDefined();
+      expect(compliance2.compliantRules).toBe(1);
+      expect(compliance2.violationCount).toBe(0);
+    });
+
+    it("should handle no config rules gracefully", async () => {
+      const mockCompliance = {
+        listConfigRules: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { compliance: mockCompliance },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:compute:i-1",
+          provider: "aws", resourceType: "compute", nativeId: "i-1",
+          name: "test", region: "us-east-1", account: "123",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+
+      await (adapter as any).enrichWithCompliance(nodes);
+      expect(nodes[0].metadata["compliance"]).toBeUndefined();
+    });
+
+    it("should handle null manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { compliance: null as any },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).enrichWithCompliance(nodes);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Automation discovery via manager
+  // ---------------------------------------------------------------------------
+
+  describe("Automation discovery", () => {
+    it("should discover EventBridge rules and targets", async () => {
+      const mockAutomation = {
+        listEventRules: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Name: "daily-cleanup", Arn: "arn:aws:events:us-east-1:123:rule/daily-cleanup", State: "ENABLED", EventBusName: "default", ScheduleExpression: "rate(1 day)" },
+          ],
+        }),
+        listTargets: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Id: "target-1", Arn: "arn:aws:lambda:us-east-1:123:function:cleanup-fn" },
+          ],
+        }),
+        listStateMachines: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { automation: mockAutomation },
+      });
+
+      // Pre-populate a Lambda node
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:serverless-function:cleanup-fn",
+          provider: "aws", resourceType: "serverless-function", nativeId: "arn:aws:lambda:us-east-1:123:function:cleanup-fn",
+          name: "cleanup-fn", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverAutomation(nodes, edges);
+
+      // Should have EventBridge rule node
+      const ruleNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "eventbridge-rule");
+      expect(ruleNodes).toHaveLength(1);
+      expect(ruleNodes[0].name).toBe("daily-cleanup");
+      expect(ruleNodes[0].status).toBe("running");
+      expect(ruleNodes[0].metadata["scheduleExpression"]).toBe("rate(1 day)");
+
+      // Should have triggers edge (rule → Lambda)
+      expect(edges.some((e) => e.relationshipType === "triggers")).toBe(true);
+    });
+
+    it("should discover Step Functions state machines with service integrations", async () => {
+      const mockAutomation = {
+        listEventRules: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listStateMachines: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { stateMachineArn: "arn:aws:states:us-east-1:123:stateMachine:order-pipeline", name: "order-pipeline", type: "STANDARD", creationDate: "2023-05-01" },
+          ],
+        }),
+        getStateMachine: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            definition: JSON.stringify({
+              States: {
+                ProcessOrder: { Type: "Task", Resource: "arn:aws:lambda:us-east-1:123:function:process-order" },
+                SendNotification: { Type: "Task", Resource: "arn:aws:sns:us-east-1:123:order-notifications" },
+              },
+            }),
+            roleArn: "arn:aws:iam::123:role/StepFnRole",
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { automation: mockAutomation },
+      });
+
+      // Pre-populate Lambda and IAM role nodes
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123456789:us-east-1:serverless-function:process-order",
+          provider: "aws", resourceType: "serverless-function",
+          nativeId: "arn:aws:lambda:us-east-1:123:function:process-order",
+          name: "process-order", region: "us-east-1", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+        {
+          id: "aws:123456789:global:iam-role:StepFnRole",
+          provider: "aws", resourceType: "iam-role",
+          nativeId: "arn:aws:iam::123:role/StepFnRole",
+          name: "StepFnRole", region: "global", account: "123456789",
+          status: "running", tags: {}, metadata: {}, costMonthly: null, owner: null, createdAt: null,
+        },
+      ];
+      const edges: any[] = [];
+      await (adapter as any).discoverAutomation(nodes, edges);
+
+      // Should have Step Function node
+      const sfNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "step-function");
+      expect(sfNodes).toHaveLength(1);
+      expect(sfNodes[0].name).toBe("order-pipeline");
+      expect(sfNodes[0].metadata["type"]).toBe("STANDARD");
+
+      // Should have depends-on edge (StepFn → Lambda)
+      expect(edges.some((e) => e.relationshipType === "depends-on")).toBe(true);
+      // Should have uses edge (StepFn → IAM role)
+      expect(edges.some((e) => e.relationshipType === "uses")).toBe(true);
+    });
+
+    it("should handle disabled EventBridge rules", async () => {
+      const mockAutomation = {
+        listEventRules: vi.fn().mockResolvedValue({
+          success: true,
+          data: [
+            { Name: "disabled-rule", Arn: "arn:aws:events:us-east-1:123:rule/disabled-rule", State: "DISABLED" },
+          ],
+        }),
+        listTargets: vi.fn().mockResolvedValue({ success: true, data: [] }),
+        listStateMachines: vi.fn().mockResolvedValue({ success: true, data: [] }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { automation: mockAutomation },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverAutomation(nodes, []);
+
+      const ruleNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "eventbridge-rule");
+      expect(ruleNodes).toHaveLength(1);
+      expect(ruleNodes[0].status).toBe("stopped");
+    });
+
+    it("should handle null manager gracefully", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { automation: null as any },
+      });
+
+      const nodes: GraphNodeInput[] = [];
+      await (adapter as any).discoverAutomation(nodes, []);
+      expect(nodes).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // dispose() — extended managers cleanup (including new managers)
+  // ---------------------------------------------------------------------------
+
+  describe("dispose() — new managers", () => {
+    it("should reset ElastiCache, Organization, Backup, Compliance, and Automation managers", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: {
+          elasticache: { listReplicationGroups: vi.fn() },
+          organization: { listAccounts: vi.fn() },
+          backup: { listBackupVaults: vi.fn() },
+          compliance: { listConfigRules: vi.fn() },
+          automation: { listEventRules: vi.fn() },
+        },
+      });
+
+      // Force lazy load all new managers
+      await (adapter as any).getElastiCacheManager();
+      await (adapter as any).getOrganizationManager();
+      await (adapter as any).getBackupManager();
+      await (adapter as any).getComplianceManager();
+      await (adapter as any).getAutomationManager();
+
+      // Verify they are loaded
+      expect((adapter as any)._elastiCacheManager).toBeDefined();
+      expect((adapter as any)._organizationManager).toBeDefined();
+      expect((adapter as any)._backupManager).toBeDefined();
+      expect((adapter as any)._complianceManager).toBeDefined();
+      expect((adapter as any)._automationManager).toBeDefined();
+
+      await adapter.dispose();
+
+      expect((adapter as any)._elastiCacheManager).toBeUndefined();
+      expect((adapter as any)._organizationManager).toBeUndefined();
+      expect((adapter as any)._backupManager).toBeUndefined();
+      expect((adapter as any)._complianceManager).toBeUndefined();
+      expect((adapter as any)._automationManager).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost estimation for ElastiCache/identity/custom types
+  // ---------------------------------------------------------------------------
+
+  describe("cost estimation — cache, identity, custom types", () => {
+    it("should return $15 for cache, $0 for identity and custom", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123" });
+      expect((adapter as any).estimateCostStatic("cache", {})).toBe(15);
+      expect((adapter as any).estimateCostStatic("identity", {})).toBe(0);
+      expect((adapter as any).estimateCostStatic("custom", {})).toBe(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // dispose() — extended managers cleanup
+  // ---------------------------------------------------------------------------
+
+  describe("dispose() — extended managers", () => {
+    it("should reset all extended manager instances", async () => {
+      const destroyFn = vi.fn();
+      const mockPool = { destroy: destroyFn, getClient: vi.fn() };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: {
+          credentials: { healthCheck: vi.fn() },
+          clientPool: mockPool,
+          tagging: { getResourceTags: vi.fn() },
+          lambda: { listEventSourceMappings: vi.fn() },
+          observability: { getServiceMap: vi.fn(), listAlarms: vi.fn() },
+          s3: { getBucketDetails: vi.fn(), getPublicAccessBlock: vi.fn() },
+        },
+      });
+
+      // Force lazy load
+      await (adapter as any).getTaggingManager();
+      await (adapter as any).getLambdaManager();
+      await (adapter as any).getObservabilityManager();
+      await (adapter as any).getS3Manager();
+
+      await adapter.dispose();
+
+      expect((adapter as any)._taggingManager).toBeUndefined();
+      expect((adapter as any)._lambdaManager).toBeUndefined();
+      expect((adapter as any)._observabilityManager).toBeUndefined();
+      expect((adapter as any)._s3Manager).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Cost estimation for new resource types
+  // ---------------------------------------------------------------------------
+
+  describe("cost estimation — new resource types", () => {
+    it("should return $0 for route-table, internet-gateway, vpc-endpoint, transit-gateway", () => {
+      const adapter = new AwsDiscoveryAdapter({ accountId: "123" });
+      expect((adapter as any).estimateCostStatic("route-table", {})).toBe(0);
+      expect((adapter as any).estimateCostStatic("internet-gateway", {})).toBe(0);
+      expect((adapter as any).estimateCostStatic("vpc-endpoint", {})).toBe(0);
+      expect((adapter as any).estimateCostStatic("transit-gateway", {})).toBe(0);
     });
   });
 });

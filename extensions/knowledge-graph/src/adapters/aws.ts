@@ -144,6 +144,28 @@ export const AWS_RELATIONSHIP_RULES: AwsRelationshipRule[] = [
   // --- Lambda Event Source Mappings ---
   { sourceType: "serverless-function", field: "EventSourceArn", targetType: "queue", relationship: "receives-from", isArray: false, bidirectional: false },
   { sourceType: "serverless-function", field: "EventSourceArn", targetType: "stream", relationship: "receives-from", isArray: false, bidirectional: false },
+
+  // --- Network Topology ---
+  { sourceType: "route-table" as GraphResourceType, field: "VpcId", targetType: "vpc", relationship: "runs-in", isArray: false, bidirectional: false },
+  { sourceType: "route-table" as GraphResourceType, field: "Associations[].SubnetId", targetType: "subnet", relationship: "routes-to", isArray: true, bidirectional: false },
+  { sourceType: "internet-gateway" as GraphResourceType, field: "Attachments[].VpcId", targetType: "vpc", relationship: "attached-to", isArray: true, bidirectional: true },
+  { sourceType: "nat-gateway", field: "VpcId", targetType: "vpc", relationship: "runs-in", isArray: false, bidirectional: false },
+  { sourceType: "nat-gateway", field: "SubnetId", targetType: "subnet", relationship: "runs-in", isArray: false, bidirectional: false },
+  { sourceType: "vpc-endpoint" as GraphResourceType, field: "VpcId", targetType: "vpc", relationship: "connected-to", isArray: false, bidirectional: false },
+  { sourceType: "vpc-endpoint" as GraphResourceType, field: "SubnetIds[]", targetType: "subnet", relationship: "runs-in", isArray: true, bidirectional: false },
+  { sourceType: "vpc-endpoint" as GraphResourceType, field: "RouteTableIds[]", targetType: "route-table" as GraphResourceType, relationship: "routes-to", isArray: true, bidirectional: false },
+  { sourceType: "transit-gateway" as GraphResourceType, field: "TransitGatewayAttachments[].ResourceId", targetType: "vpc", relationship: "connects-via", isArray: true, bidirectional: true },
+
+  // --- DynamoDB ---
+  { sourceType: "database", field: "TableArn", targetType: "stream", relationship: "publishes-to", isArray: false, bidirectional: false },
+
+  // --- Backup ---
+  { sourceType: "custom", field: "BackupPlanSelections[].ResourceArn", targetType: "compute", relationship: "backs-up", isArray: true, bidirectional: false },
+  { sourceType: "custom", field: "BackupPlanSelections[].ResourceArn", targetType: "database", relationship: "backs-up", isArray: true, bidirectional: false },
+  { sourceType: "custom", field: "BackupPlanSelections[].ResourceArn", targetType: "storage", relationship: "backs-up", isArray: true, bidirectional: false },
+
+  // --- Step Functions ---
+  { sourceType: "custom", field: "definition.States[].Resource", targetType: "serverless-function", relationship: "triggers", isArray: true, bidirectional: false },
 ];
 
 // =============================================================================
@@ -199,6 +221,16 @@ export const AWS_SERVICE_MAPPINGS: AwsServiceMapping[] = [
 
   // Bedrock — AI workloads
   { graphType: "custom", awsService: "Bedrock", listMethod: "listProvisionedModelThroughputs", responseKey: "provisionedModelSummaries", idField: "provisionedModelName", nameField: "provisionedModelName", arnField: "provisionedModelArn", regional: true },
+
+  // Network topology resources
+  { graphType: "route-table" as GraphResourceType, awsService: "EC2", listMethod: "describeRouteTables", responseKey: "RouteTables", idField: "RouteTableId", nameField: "Tags[Name]", arnField: "RouteTableId", regional: true },
+  { graphType: "internet-gateway" as GraphResourceType, awsService: "EC2", listMethod: "describeInternetGateways", responseKey: "InternetGateways", idField: "InternetGatewayId", nameField: "Tags[Name]", arnField: "InternetGatewayId", regional: true },
+  { graphType: "nat-gateway", awsService: "EC2", listMethod: "describeNatGateways", responseKey: "NatGateways", idField: "NatGatewayId", nameField: "Tags[Name]", arnField: "NatGatewayId", regional: true },
+  { graphType: "vpc-endpoint" as GraphResourceType, awsService: "EC2", listMethod: "describeVpcEndpoints", responseKey: "VpcEndpoints", idField: "VpcEndpointId", nameField: "Tags[Name]", arnField: "VpcEndpointId", regional: true },
+  { graphType: "transit-gateway" as GraphResourceType, awsService: "EC2", listMethod: "describeTransitGateways", responseKey: "TransitGateways", idField: "TransitGatewayId", nameField: "Tags[Name]", arnField: "TransitGatewayArn", regional: true },
+
+  // DynamoDB tables
+  { graphType: "database", awsService: "DynamoDB", listMethod: "listTables", responseKey: "TableNames", idField: "TableName", nameField: "TableName", arnField: "TableArn", regional: true },
 ];
 
 // =============================================================================
@@ -274,6 +306,22 @@ export type AwsManagerOverrides = {
   cost?: unknown;
   cloudtrail?: unknown;
   security?: unknown;
+  tagging?: unknown;
+  network?: unknown;
+  lambda?: unknown;
+  sns?: unknown;
+  sqs?: unknown;
+  observability?: unknown;
+  containers?: unknown;
+  s3?: unknown;
+  route53?: unknown;
+  apigateway?: unknown;
+  dynamodb?: unknown;
+  organization?: unknown;
+  backup?: unknown;
+  elasticache?: unknown;
+  compliance?: unknown;
+  automation?: unknown;
 };
 
 /**
@@ -395,6 +443,15 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   private _costManager: unknown | undefined = undefined;
   private _cloudTrailManager: unknown | undefined = undefined;
   private _securityManager: unknown | undefined = undefined;
+  private _taggingManager: unknown | undefined = undefined;
+  private _lambdaManager: unknown | undefined = undefined;
+  private _observabilityManager: unknown | undefined = undefined;
+  private _s3Manager: unknown | undefined = undefined;
+  private _elastiCacheManager: unknown | undefined = undefined;
+  private _organizationManager: unknown | undefined = undefined;
+  private _backupManager: unknown | undefined = undefined;
+  private _complianceManager: unknown | undefined = undefined;
+  private _automationManager: unknown | undefined = undefined;
 
   constructor(config: AwsAdapterConfig) {
     this.config = config;
@@ -504,6 +561,88 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
           node.costMonthly = fallback;
           node.metadata["costSource"] = "static-estimate";
         }
+      }
+    }
+
+    // Enrich nodes with tags from TaggingManager (@espada/aws).
+    // Fills in missing tags, owner, and adds tag-based metadata.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichWithTags(nodes);
+      } catch {
+        // Tag enrichment is best-effort
+      }
+    }
+
+    // Enrich with event-driven edges (Lambda event source mappings, SNS subscriptions, SQS DLQ).
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichWithEventSources(nodes, edges);
+      } catch {
+        // Event source enrichment is best-effort
+      }
+    }
+
+    // Enrich with observability data (X-Ray service map edges, alarm metadata).
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichWithObservability(nodes, edges);
+      } catch {
+        // Observability enrichment is best-effort
+      }
+    }
+
+    // Enrich with deeper service-specific metadata (S3, containers).
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichWithDeeperDiscovery(nodes, edges);
+      } catch {
+        // Deeper discovery enrichment is best-effort
+      }
+    }
+
+    // Discover ElastiCache resources via ElastiCacheManager (@espada/aws).
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.discoverElastiCache(nodes, edges);
+      } catch {
+        // ElastiCache discovery is best-effort
+      }
+    }
+
+    // Discover Organization structure (accounts, OUs, SCPs) via OrganizationManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverOrganization(nodes, edges);
+      } catch {
+        // Organization discovery is best-effort
+      }
+    }
+
+    // Discover Backup plans, vaults, and protected resources via BackupManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverBackupResources(nodes, edges);
+      } catch {
+        // Backup discovery is best-effort
+      }
+    }
+
+    // Enrich nodes with compliance posture from ComplianceManager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichWithCompliance(nodes);
+      } catch {
+        // Compliance enrichment is best-effort
+      }
+    }
+
+    // Discover Automation resources (EventBridge rules, Step Functions).
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverAutomation(nodes, edges);
+      } catch {
+        // Automation discovery is best-effort
       }
     }
 
@@ -1211,11 +1350,26 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
         return STORAGE_COSTS["ecs-fargate-task"];
       }
 
+      case "cache": {
+        // ElastiCache: depends on node type. cache.t3.micro ~$12/mo,
+        // cache.r6g.large ~$130/mo. Use a conservative small-instance estimate.
+        return 15;
+      }
+
+      case "identity":
+      case "custom":
+        // Identity (org accounts) and custom resources: no direct AWS cost.
+        return 0;
+
       case "iam-role":
       case "security-group":
       case "vpc":
       case "subnet":
       case "policy":
+      case "route-table":
+      case "internet-gateway":
+      case "vpc-endpoint":
+      case "transit-gateway":
         // Free-tier / no-cost resources. Mark as $0 explicitly.
         return 0;
 
@@ -1423,6 +1577,1646 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     } catch {
       this._securityManager = null;
       return null;
+    }
+  }
+
+  // ===========================================================================
+  // @espada/aws Extended Manager Lazy-Loading
+  // ===========================================================================
+
+  /**
+   * Lazily get or create a TaggingManager from @espada/aws.
+   * Returns null if the extension or CredentialsManager is unavailable.
+   */
+  private async getTaggingManager(): Promise<unknown | null> {
+    if (this._taggingManager !== undefined) return this._taggingManager as unknown | null;
+
+    if (this.config.managers?.tagging) {
+      this._taggingManager = this.config.managers.tagging;
+      return this._taggingManager as unknown;
+    }
+
+    try {
+      const cm = await this.getCredentialsManager();
+      if (!cm) { this._taggingManager = null; return null; }
+
+      const mod = await import("@espada/aws/tagging");
+      this._taggingManager = mod.createTaggingManager(cm as never);
+      return this._taggingManager as unknown;
+    } catch {
+      this._taggingManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a LambdaManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getLambdaManager(): Promise<unknown | null> {
+    if (this._lambdaManager !== undefined) return this._lambdaManager as unknown | null;
+
+    if (this.config.managers?.lambda) {
+      this._lambdaManager = this.config.managers.lambda;
+      return this._lambdaManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/lambda");
+      const config = this.buildManagerConfig();
+      this._lambdaManager = new mod.LambdaManager(config);
+      return this._lambdaManager as unknown;
+    } catch {
+      this._lambdaManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an ObservabilityManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getObservabilityManager(): Promise<unknown | null> {
+    if (this._observabilityManager !== undefined) return this._observabilityManager as unknown | null;
+
+    if (this.config.managers?.observability) {
+      this._observabilityManager = this.config.managers.observability;
+      return this._observabilityManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/observability");
+      const config = this.buildManagerConfig();
+      this._observabilityManager = new mod.ObservabilityManager(config);
+      return this._observabilityManager as unknown;
+    } catch {
+      this._observabilityManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an S3Manager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getS3Manager(): Promise<unknown | null> {
+    if (this._s3Manager !== undefined) return this._s3Manager as unknown | null;
+
+    if (this.config.managers?.s3) {
+      this._s3Manager = this.config.managers.s3;
+      return this._s3Manager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/s3");
+      const config = this.buildManagerConfig();
+      this._s3Manager = new mod.S3Manager(config);
+      return this._s3Manager as unknown;
+    } catch {
+      this._s3Manager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an ElastiCacheManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getElastiCacheManager(): Promise<unknown | null> {
+    if (this._elastiCacheManager !== undefined) return this._elastiCacheManager as unknown | null;
+
+    if (this.config.managers?.elasticache) {
+      this._elastiCacheManager = this.config.managers.elasticache;
+      return this._elastiCacheManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/elasticache");
+      const config = this.buildManagerConfig();
+      this._elastiCacheManager = mod.createElastiCacheManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._elastiCacheManager as unknown;
+    } catch {
+      this._elastiCacheManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an OrganizationManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getOrganizationManager(): Promise<unknown | null> {
+    if (this._organizationManager !== undefined) return this._organizationManager as unknown | null;
+
+    if (this.config.managers?.organization) {
+      this._organizationManager = this.config.managers.organization;
+      return this._organizationManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/organization");
+      const config = this.buildManagerConfig();
+      this._organizationManager = mod.createOrganizationManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._organizationManager as unknown;
+    } catch {
+      this._organizationManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a BackupManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getBackupManager(): Promise<unknown | null> {
+    if (this._backupManager !== undefined) return this._backupManager as unknown | null;
+
+    if (this.config.managers?.backup) {
+      this._backupManager = this.config.managers.backup;
+      return this._backupManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/backup");
+      const config = this.buildManagerConfig();
+      this._backupManager = mod.createBackupManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._backupManager as unknown;
+    } catch {
+      this._backupManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a ComplianceManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getComplianceManager(): Promise<unknown | null> {
+    if (this._complianceManager !== undefined) return this._complianceManager as unknown | null;
+
+    if (this.config.managers?.compliance) {
+      this._complianceManager = this.config.managers.compliance;
+      return this._complianceManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/compliance");
+      const config = this.buildManagerConfig();
+      this._complianceManager = new mod.AWSComplianceManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._complianceManager as unknown;
+    } catch {
+      this._complianceManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an AutomationManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getAutomationManager(): Promise<unknown | null> {
+    if (this._automationManager !== undefined) return this._automationManager as unknown | null;
+
+    if (this.config.managers?.automation) {
+      this._automationManager = this.config.managers.automation;
+      return this._automationManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/automation");
+      const config = this.buildManagerConfig();
+      this._automationManager = new mod.AWSAutomationManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._automationManager as unknown;
+    } catch {
+      this._automationManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Build a standard config object for @espada/aws managers that take
+   * `{ region?, credentials? }` style configuration.
+   */
+  private buildManagerConfig(): Record<string, unknown> {
+    const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
+    if (this.assumedCredentials) {
+      const creds = this.assumedCredentials as Record<string, unknown>;
+      config["credentials"] = {
+        accessKeyId: creds["accessKeyId"],
+        secretAccessKey: creds["secretAccessKey"],
+        sessionToken: creds["sessionToken"],
+      };
+    }
+    return config;
+  }
+
+  // ===========================================================================
+  // Post-Discovery Enrichment Methods
+  // ===========================================================================
+
+  /**
+   * Enrich discovered nodes with tags from TaggingManager.
+   *
+   * For each node with an ARN, queries the TaggingManager for resource tags.
+   * Fills in missing tags, sets owner from tag values, and adds tag metadata.
+   */
+  private async enrichWithTags(nodes: GraphNodeInput[]): Promise<void> {
+    const tm = await this.getTaggingManager();
+    if (!tm) return;
+
+    // Process nodes in parallel batches of 10
+    const batchSize = 10;
+    for (let i = 0; i < nodes.length; i += batchSize) {
+      const batch = nodes.slice(i, i + batchSize);
+      await Promise.allSettled(
+        batch.map(async (node) => {
+          try {
+            const arn = node.nativeId;
+            if (!arn) return;
+
+            const tags = await (tm as {
+              getResourceTags: (arn: string, opts?: { region?: string }) => Promise<Array<{ key: string; value: string }>>;
+            }).getResourceTags(arn, { region: node.region });
+
+            if (!tags || tags.length === 0) return;
+
+            // Merge tags (existing tags take precedence)
+            for (const tag of tags) {
+              if (!node.tags[tag.key]) {
+                node.tags[tag.key] = tag.value;
+              }
+            }
+
+            // Fill owner from tags if not set
+            if (!node.owner) {
+              node.owner = node.tags["Owner"] ?? node.tags["owner"] ??
+                node.tags["Team"] ?? node.tags["team"] ?? null;
+            }
+
+            node.metadata["tagSource"] = "tagging-manager";
+            node.metadata["tagCount"] = Object.keys(node.tags).length;
+          } catch {
+            // Individual tag lookup failure is non-fatal
+          }
+        }),
+      );
+    }
+  }
+
+  /**
+   * Enrich with event-driven edges from Lambda, SNS, and SQS.
+   *
+   * - Lambda event source mappings → triggers edges (SQS/DynamoDB/Kinesis → Lambda)
+   * - SNS topic subscriptions → publishes-to edges (SNS → Lambda/SQS)
+   * - SQS dead-letter queue configs → publishes-to edges (Queue → DLQ)
+   */
+  private async enrichWithEventSources(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const lambdaMgr = await this.getLambdaManager();
+
+    // Index nodes by ARN/native-id for fast edge construction
+    const nodesByArn = new Map<string, GraphNodeInput>();
+    const nodesByNativeId = new Map<string, GraphNodeInput>();
+    for (const node of nodes) {
+      nodesByNativeId.set(node.nativeId, node);
+      // Many AWS IDs contain the ARN
+      if (node.nativeId.startsWith("arn:")) {
+        nodesByArn.set(node.nativeId, node);
+      }
+    }
+
+    // Lambda event source mappings
+    if (lambdaMgr) {
+      try {
+        const mappings = await (lambdaMgr as {
+          listEventSourceMappings: (opts?: { functionName?: string; eventSourceArn?: string }) => Promise<Array<{
+            uuid: string;
+            eventSourceArn?: string;
+            functionArn?: string;
+            state?: string;
+            batchSize?: number;
+          }>>;
+        }).listEventSourceMappings({});
+
+        for (const mapping of mappings) {
+          if (!mapping.eventSourceArn || !mapping.functionArn) continue;
+
+          const sourceId = extractResourceId(mapping.eventSourceArn);
+          const targetId = extractResourceId(mapping.functionArn);
+
+          // Determine source resource type from ARN
+          let sourceType: GraphResourceType = "custom";
+          if (mapping.eventSourceArn.includes(":sqs:")) sourceType = "queue";
+          else if (mapping.eventSourceArn.includes(":dynamodb:")) sourceType = "database";
+          else if (mapping.eventSourceArn.includes(":kinesis:")) sourceType = "stream";
+
+          // Find matching source and target nodes
+          const sourceNode = findNodeByArnOrId(nodes, mapping.eventSourceArn, sourceId);
+          const targetNode = findNodeByArnOrId(nodes, mapping.functionArn, targetId);
+          if (!sourceNode || !targetNode) continue;
+
+          const edgeId = `${sourceNode.id}--triggers--${targetNode.id}`;
+          // Avoid duplicate edges
+          if (edges.some((e) => e.id === edgeId)) continue;
+
+          edges.push({
+            id: edgeId,
+            sourceNodeId: sourceNode.id,
+            targetNodeId: targetNode.id,
+            relationshipType: "triggers",
+            confidence: 0.95,
+            discoveredVia: "event-stream",
+            metadata: {
+              eventSourceType: sourceType,
+              batchSize: mapping.batchSize,
+              state: mapping.state,
+              mappingId: mapping.uuid,
+            },
+          });
+        }
+      } catch {
+        // Lambda event source enrichment is best-effort
+      }
+    }
+
+    // SNS subscription edges
+    const topicNodes = nodes.filter((n) => n.resourceType === "topic");
+    if (topicNodes.length > 0) {
+      for (const topicNode of topicNodes) {
+        try {
+          // Try to get subscriptions via SNS SDK
+          const client = await this.createClient("SNS", topicNode.region);
+          if (!client) continue;
+
+          try {
+            const command = await this.buildCommand("SNS", "listSubscriptionsByTopic");
+            if (!command) continue;
+
+            // Inject TopicArn into the command
+            (command as Record<string, unknown>)["input"] = { TopicArn: topicNode.nativeId };
+            const response = await client.send(command) as Record<string, unknown>;
+            const subscriptions = (response["Subscriptions"] ?? []) as Array<{
+              SubscriptionArn?: string;
+              Endpoint?: string;
+              Protocol?: string;
+            }>;
+
+            for (const sub of subscriptions) {
+              if (!sub.Endpoint || sub.Endpoint === "PendingConfirmation") continue;
+
+              const targetNode = findNodeByArnOrId(nodes, sub.Endpoint, extractResourceId(sub.Endpoint));
+              if (!targetNode) continue;
+
+              const edgeId = `${topicNode.id}--publishes-to--${targetNode.id}`;
+              if (edges.some((e) => e.id === edgeId)) continue;
+
+              edges.push({
+                id: edgeId,
+                sourceNodeId: topicNode.id,
+                targetNodeId: targetNode.id,
+                relationshipType: "publishes-to",
+                confidence: 0.95,
+                discoveredVia: "event-stream",
+                metadata: {
+                  protocol: sub.Protocol,
+                  subscriptionArn: sub.SubscriptionArn,
+                },
+              });
+            }
+          } finally {
+            client.destroy?.();
+          }
+        } catch {
+          // SNS subscription enrichment is best-effort per topic
+        }
+      }
+    }
+  }
+
+  /**
+   * Enrich with observability data from X-Ray service map and CloudWatch alarms.
+   *
+   * - X-Ray service map → routes-to edges between services
+   * - CloudWatch alarms → alarm state metadata on monitored nodes
+   */
+  private async enrichWithObservability(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const obsMgr = await this.getObservabilityManager();
+    if (!obsMgr) return;
+
+    // X-Ray service map: creates routes-to edges between communicating services
+    try {
+      const endTime = new Date();
+      const startTime = new Date(endTime.getTime() - 3600000); // Last hour
+
+      const result = await (obsMgr as {
+        getServiceMap: (startTime: Date, endTime: Date, groupName?: string) => Promise<{
+          success: boolean;
+          data?: {
+            services?: Array<{
+              name: string;
+              type?: string;
+              edges?: Array<{ referenceId?: number; targetName?: string }>;
+              responseTimeHistogram?: Array<{ value?: number }>;
+            }>;
+          };
+        }>;
+      }).getServiceMap(startTime, endTime);
+
+      if (result.success && result.data?.services) {
+        for (const service of result.data.services) {
+          if (!service.edges) continue;
+
+          // Find the source node matching this service
+          const sourceNode = nodes.find((n) =>
+            n.name === service.name ||
+            n.nativeId.includes(service.name) ||
+            n.name.toLowerCase().includes(service.name.toLowerCase()),
+          );
+          if (!sourceNode) continue;
+
+          // Add response time metadata from X-Ray
+          if (service.responseTimeHistogram?.[0]?.value) {
+            sourceNode.metadata["avgResponseTimeMs"] = Math.round(service.responseTimeHistogram[0].value * 1000);
+            sourceNode.metadata["observabilitySource"] = "xray";
+          }
+
+          for (const edge of service.edges) {
+            if (!edge.targetName) continue;
+
+            const targetNode = nodes.find((n) =>
+              n.name === edge.targetName ||
+              n.nativeId.includes(edge.targetName!) ||
+              n.name.toLowerCase().includes(edge.targetName!.toLowerCase()),
+            );
+            if (!targetNode) continue;
+
+            const edgeId = `${sourceNode.id}--routes-to--${targetNode.id}`;
+            if (edges.some((e) => e.id === edgeId)) continue;
+
+            edges.push({
+              id: edgeId,
+              sourceNodeId: sourceNode.id,
+              targetNodeId: targetNode.id,
+              relationshipType: "routes-to",
+              confidence: 0.85,
+              discoveredVia: "runtime-trace",
+              metadata: { source: "xray-service-map" },
+            });
+          }
+        }
+      }
+    } catch {
+      // X-Ray service map is best-effort
+    }
+
+    // CloudWatch alarms: attach alarm state to matching nodes
+    try {
+      const alarmsResult = await (obsMgr as {
+        listAlarms: (opts?: { stateValue?: string; maxRecords?: number }) => Promise<{
+          success: boolean;
+          data?: Array<{
+            alarmName: string;
+            stateValue?: string;
+            metricName?: string;
+            namespace?: string;
+            dimensions?: Array<{ name: string; value: string }>;
+          }>;
+        }>;
+      }).listAlarms({ maxRecords: 100 });
+
+      if (alarmsResult.success && alarmsResult.data) {
+        for (const alarm of alarmsResult.data) {
+          if (!alarm.dimensions) continue;
+
+          // Match alarm dimensions to nodes
+          for (const dim of alarm.dimensions) {
+            const matchingNode = nodes.find((n) =>
+              n.nativeId === dim.value ||
+              n.nativeId.includes(dim.value) ||
+              n.name === dim.value,
+            );
+            if (!matchingNode) continue;
+
+            const existing = (matchingNode.metadata["alarms"] as string[] | undefined) ?? [];
+            existing.push(`${alarm.alarmName}: ${alarm.stateValue ?? "UNKNOWN"}`);
+            matchingNode.metadata["alarms"] = existing;
+
+            if (alarm.stateValue === "ALARM") {
+              matchingNode.metadata["hasActiveAlarm"] = true;
+            }
+            matchingNode.metadata["monitoredByCloudWatch"] = true;
+          }
+        }
+      }
+    } catch {
+      // CloudWatch alarm enrichment is best-effort
+    }
+  }
+
+  /**
+   * Enrich with deeper service-specific metadata.
+   *
+   * - S3: encryption, versioning, public access block status
+   * - ECS containers: cluster→service→task chains
+   * - Route53: DNS record → target resource edges
+   * - API Gateway: integration → Lambda/HTTP edges
+   */
+  private async enrichWithDeeperDiscovery(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    // S3 bucket details
+    const s3Mgr = await this.getS3Manager();
+    if (s3Mgr) {
+      const bucketNodes = nodes.filter((n) => n.resourceType === "storage");
+      for (const bucket of bucketNodes) {
+        try {
+          const details = await (s3Mgr as {
+            getBucketDetails: (bucketName: string, region?: string) => Promise<{
+              success: boolean;
+              data?: {
+                versioning?: string;
+                encryption?: { type?: string; algorithm?: string };
+                lifecycle?: { rules?: unknown[] };
+              };
+            }>;
+          }).getBucketDetails(bucket.nativeId, bucket.region);
+
+          if (details.success && details.data) {
+            bucket.metadata["versioning"] = details.data.versioning ?? "Disabled";
+            if (details.data.encryption) {
+              bucket.metadata["encryptionType"] = details.data.encryption.type ?? details.data.encryption.algorithm ?? "unknown";
+            }
+            if (details.data.lifecycle?.rules) {
+              bucket.metadata["lifecycleRules"] = (details.data.lifecycle.rules as unknown[]).length;
+            }
+          }
+
+          // Public access block
+          const publicAccess = await (s3Mgr as {
+            getPublicAccessBlock: (bucketName: string, region?: string) => Promise<{
+              success: boolean;
+              data?: { blockPublicAcls?: boolean; blockPublicPolicy?: boolean; ignorePublicAcls?: boolean; restrictPublicBuckets?: boolean };
+            }>;
+          }).getPublicAccessBlock(bucket.nativeId, bucket.region);
+
+          if (publicAccess.success && publicAccess.data) {
+            const isFullyBlocked = publicAccess.data.blockPublicAcls &&
+              publicAccess.data.blockPublicPolicy &&
+              publicAccess.data.ignorePublicAcls &&
+              publicAccess.data.restrictPublicBuckets;
+            bucket.metadata["publicAccessBlocked"] = isFullyBlocked;
+            if (!isFullyBlocked) {
+              bucket.metadata["hasSecurityIssues"] = true;
+            }
+          }
+        } catch {
+          // Individual bucket detail failure is non-fatal
+        }
+      }
+    }
+
+    // Route53: DNS record → target resource edges
+    const dnsNodes = nodes.filter((n) => n.resourceType === "dns");
+    for (const zone of dnsNodes) {
+      try {
+        const client = await this.createClient("Route53", "us-east-1");
+        if (!client) continue;
+
+        try {
+          const command = await this.buildCommand("Route53", "listResourceRecordSets");
+          if (!command) continue;
+
+          (command as Record<string, unknown>)["input"] = { HostedZoneId: zone.nativeId };
+          const response = await client.send(command) as Record<string, unknown>;
+          const records = (response["ResourceRecordSets"] ?? []) as Array<{
+            Name?: string;
+            Type?: string;
+            AliasTarget?: { DNSName?: string };
+          }>;
+
+          for (const record of records) {
+            if (!record.AliasTarget?.DNSName) continue;
+
+            // Find target node (load balancer, CloudFront, S3, etc.)
+            const dnsName = record.AliasTarget.DNSName.replace(/\.$/, "");
+            const targetNode = nodes.find((n) =>
+              n.metadata["dnsName"] === dnsName ||
+              n.nativeId.includes(dnsName) ||
+              n.name === dnsName,
+            );
+            if (!targetNode) continue;
+
+            const edgeId = `${zone.id}--resolves-to--${targetNode.id}`;
+            if (edges.some((e) => e.id === edgeId)) continue;
+
+            edges.push({
+              id: edgeId,
+              sourceNodeId: zone.id,
+              targetNodeId: targetNode.id,
+              relationshipType: "resolves-to",
+              confidence: 0.95,
+              discoveredVia: "api-field",
+              metadata: {
+                recordName: record.Name,
+                recordType: record.Type,
+              },
+            });
+          }
+        } finally {
+          client.destroy?.();
+        }
+      } catch {
+        // DNS record enrichment is best-effort
+      }
+    }
+
+    // API Gateway: integration → Lambda/HTTP edges
+    const apiNodes = nodes.filter((n) => n.resourceType === "api-gateway");
+    for (const api of apiNodes) {
+      try {
+        const client = await this.createClient("APIGateway", api.region);
+        if (!client) continue;
+
+        try {
+          const command = await this.buildCommand("APIGateway", "getResources");
+          if (!command) continue;
+
+          (command as Record<string, unknown>)["input"] = { restApiId: api.nativeId };
+          const response = await client.send(command) as Record<string, unknown>;
+          const resources = (response["items"] ?? []) as Array<{
+            id?: string;
+            path?: string;
+            resourceMethods?: Record<string, { methodIntegration?: { uri?: string; type?: string } }>;
+          }>;
+
+          for (const resource of resources) {
+            if (!resource.resourceMethods) continue;
+            for (const method of Object.values(resource.resourceMethods)) {
+              const uri = method.methodIntegration?.uri;
+              if (!uri) continue;
+
+              const targetNode = findNodeByArnOrId(nodes, uri, extractResourceId(uri));
+              if (!targetNode) continue;
+
+              const edgeId = `${api.id}--routes-to--${targetNode.id}`;
+              if (edges.some((e) => e.id === edgeId)) continue;
+
+              edges.push({
+                id: edgeId,
+                sourceNodeId: api.id,
+                targetNodeId: targetNode.id,
+                relationshipType: "routes-to",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: {
+                  path: resource.path,
+                  integrationType: method.methodIntegration?.type,
+                },
+              });
+            }
+          }
+        } finally {
+          client.destroy?.();
+        }
+      } catch {
+        // API Gateway integration enrichment is best-effort
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Extended Discovery — ElastiCache, Organization, Backup, Compliance, Automation
+  // ===========================================================================
+
+  /**
+   * Discover ElastiCache replication groups and standalone clusters via
+   * the ElastiCacheManager from @espada/aws.
+   *
+   * Creates `cache` nodes with engine, version, node type, encryption,
+   * and replica metadata. Links to VPCs/subnets/SGs via relationship rules.
+   */
+  private async discoverElastiCache(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getElastiCacheManager();
+    if (!mgr) return;
+
+    // Discover replication groups (Redis/Valkey)
+    const rgResult = await (mgr as {
+      listReplicationGroups: (opts?: { maxResults?: number }) => Promise<{
+        success: boolean;
+        data?: Array<{
+          ReplicationGroupId?: string;
+          Description?: string;
+          Status?: string;
+          NodeGroups?: Array<{
+            NodeGroupId?: string;
+            Status?: string;
+            NodeGroupMembers?: Array<{ CacheClusterId?: string; PreferredAvailabilityZone?: string }>;
+          }>;
+          CacheNodeType?: string;
+          AtRestEncryptionEnabled?: boolean;
+          TransitEncryptionEnabled?: boolean;
+          ARN?: string;
+          AuthTokenEnabled?: boolean;
+          AutomaticFailover?: string;
+          MultiAZ?: string;
+          SnapshotRetentionLimit?: number;
+        }>;
+      }>;
+    }).listReplicationGroups();
+
+    if (rgResult.success && rgResult.data) {
+      for (const rg of rgResult.data) {
+        if (!rg.ReplicationGroupId) continue;
+
+        const nodeId = buildAwsNodeId(
+          this.config.accountId,
+          "global",
+          "cache",
+          rg.ReplicationGroupId,
+        );
+
+        const replicaCount = rg.NodeGroups?.reduce(
+          (sum, ng) => sum + (ng.NodeGroupMembers?.length ?? 0),
+          0,
+        ) ?? 0;
+
+        nodes.push({
+          id: nodeId,
+          name: rg.ReplicationGroupId,
+          resourceType: "cache",
+          provider: "aws",
+          region: "global",
+          account: this.config.accountId,
+          nativeId: rg.ARN ?? rg.ReplicationGroupId,
+          status: rg.Status === "available" ? "running" : (rg.Status as GraphNodeInput["status"]) ?? "unknown",
+          tags: {},
+          metadata: {
+            engine: "redis",
+            description: rg.Description,
+            nodeType: rg.CacheNodeType,
+            replicaCount,
+            atRestEncryption: rg.AtRestEncryptionEnabled ?? false,
+            transitEncryption: rg.TransitEncryptionEnabled ?? false,
+            automaticFailover: rg.AutomaticFailover,
+            multiAZ: rg.MultiAZ,
+            snapshotRetention: rg.SnapshotRetentionLimit,
+            discoverySource: "elasticache-manager",
+          },
+          costMonthly: 15,
+          owner: null,
+          createdAt: null,
+        });
+      }
+    }
+
+    // Discover standalone Memcached clusters
+    const ccResult = await (mgr as {
+      listCacheClusters: (opts?: { showNodeInfo?: boolean; maxResults?: number }) => Promise<{
+        success: boolean;
+        data?: Array<{
+          CacheClusterId?: string;
+          CacheClusterStatus?: string;
+          Engine?: string;
+          EngineVersion?: string;
+          CacheNodeType?: string;
+          NumCacheNodes?: number;
+          ARN?: string;
+          PreferredAvailabilityZone?: string;
+          CacheSubnetGroupName?: string;
+          SecurityGroups?: Array<{ SecurityGroupId?: string; Status?: string }>;
+          ReplicationGroupId?: string;
+        }>;
+      }>;
+    }).listCacheClusters({ showNodeInfo: true });
+
+    if (ccResult.success && ccResult.data) {
+      for (const cc of ccResult.data) {
+        // Skip clusters that belong to a replication group (already discovered above)
+        if (cc.ReplicationGroupId || !cc.CacheClusterId) continue;
+
+        const nodeId = buildAwsNodeId(
+          this.config.accountId,
+          cc.PreferredAvailabilityZone ?? "us-east-1",
+          "cache",
+          cc.CacheClusterId,
+        );
+
+        nodes.push({
+          id: nodeId,
+          name: cc.CacheClusterId,
+          resourceType: "cache",
+          provider: "aws",
+          region: cc.PreferredAvailabilityZone ?? "us-east-1",
+          account: this.config.accountId,
+          nativeId: cc.ARN ?? cc.CacheClusterId,
+          status: cc.CacheClusterStatus === "available" ? "running" : (cc.CacheClusterStatus as GraphNodeInput["status"]) ?? "unknown",
+          tags: {},
+          metadata: {
+            engine: cc.Engine,
+            engineVersion: cc.EngineVersion,
+            nodeType: cc.CacheNodeType,
+            numNodes: cc.NumCacheNodes,
+            subnetGroup: cc.CacheSubnetGroupName,
+            discoverySource: "elasticache-manager",
+          },
+          costMonthly: 15,
+          owner: null,
+          createdAt: null,
+        });
+
+        // Create security group edges
+        if (cc.SecurityGroups) {
+          for (const sg of cc.SecurityGroups) {
+            if (!sg.SecurityGroupId) continue;
+            const sgNode = nodes.find((n) => n.nativeId === sg.SecurityGroupId || n.nativeId.includes(sg.SecurityGroupId!));
+            if (!sgNode) continue;
+
+            const edgeId = `${nodeId}--secured-by--${sgNode.id}`;
+            if (!edges.some((e) => e.id === edgeId)) {
+              edges.push({
+                id: edgeId,
+                sourceNodeId: nodeId,
+                targetNodeId: sgNode.id,
+                relationshipType: "secured-by",
+                confidence: 0.95,
+                discoveredVia: "api-field",
+                metadata: {},
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Discover AWS Organization structure: accounts, OUs, and SCPs.
+   *
+   * Creates `identity` nodes for accounts, `custom` nodes for OUs,
+   * and `policy` nodes for SCPs. Links them with `contains`, `member-of`,
+   * and `secured-by` edges.
+   */
+  private async discoverOrganization(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getOrganizationManager();
+    if (!mgr) return;
+
+    // Discover accounts
+    const accountsResult = await (mgr as {
+      listAccounts: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          Id?: string;
+          Name?: string;
+          Email?: string;
+          Status?: string;
+          Arn?: string;
+          JoinedMethod?: string;
+          JoinedTimestamp?: string;
+        }>;
+      }>;
+    }).listAccounts();
+
+    if (accountsResult.success && accountsResult.data) {
+      for (const account of accountsResult.data) {
+        if (!account.Id) continue;
+
+        const nodeId = buildAwsNodeId(
+          this.config.accountId,
+          "global",
+          "identity",
+          account.Id,
+        );
+
+        nodes.push({
+          id: nodeId,
+          name: account.Name ?? account.Id,
+          resourceType: "identity",
+          provider: "aws",
+          region: "global",
+          account: this.config.accountId,
+          nativeId: account.Arn ?? account.Id,
+          status: account.Status === "ACTIVE" ? "running" : "stopped",
+          tags: {},
+          metadata: {
+            email: account.Email,
+            joinedMethod: account.JoinedMethod,
+            joinedTimestamp: account.JoinedTimestamp,
+            resourceSubtype: "aws-account",
+            discoverySource: "organization-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: account.JoinedTimestamp ?? null,
+        });
+      }
+    }
+
+    // Discover organizational units
+    const ousResult = await (mgr as {
+      listOrganizationalUnits: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          Id?: string;
+          Name?: string;
+          Arn?: string;
+        }>;
+      }>;
+    }).listOrganizationalUnits();
+
+    if (ousResult.success && ousResult.data) {
+      for (const ou of ousResult.data) {
+        if (!ou.Id) continue;
+
+        const ouNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "global",
+          "custom",
+          ou.Id,
+        );
+
+        nodes.push({
+          id: ouNodeId,
+          name: ou.Name ?? ou.Id,
+          resourceType: "custom",
+          provider: "aws",
+          region: "global",
+          account: this.config.accountId,
+          nativeId: ou.Arn ?? ou.Id,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "organizational-unit",
+            discoverySource: "organization-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: null,
+        });
+
+        // Link accounts to their OU — find accounts whose ARN contains this OU
+        const accountNodes = nodes.filter((n) =>
+          n.metadata["resourceSubtype"] === "aws-account",
+        );
+        for (const accNode of accountNodes) {
+          const containsEdgeId = `${ouNodeId}--contains--${accNode.id}`;
+          if (!edges.some((e) => e.id === containsEdgeId)) {
+            edges.push({
+              id: containsEdgeId,
+              sourceNodeId: ouNodeId,
+              targetNodeId: accNode.id,
+              relationshipType: "contains",
+              confidence: 0.8,
+              discoveredVia: "api-field",
+              metadata: {},
+            });
+          }
+        }
+      }
+    }
+
+    // Discover SCPs (Service Control Policies)
+    const policiesResult = await (mgr as {
+      listPolicies: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          Id?: string;
+          Name?: string;
+          Description?: string;
+          Arn?: string;
+          Type?: string;
+          AwsManaged?: boolean;
+        }>;
+      }>;
+    }).listPolicies();
+
+    if (policiesResult.success && policiesResult.data) {
+      for (const policy of policiesResult.data) {
+        if (!policy.Id) continue;
+
+        const policyNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "global",
+          "policy",
+          policy.Id,
+        );
+
+        nodes.push({
+          id: policyNodeId,
+          name: policy.Name ?? policy.Id,
+          resourceType: "policy",
+          provider: "aws",
+          region: "global",
+          account: this.config.accountId,
+          nativeId: policy.Arn ?? policy.Id,
+          status: "running",
+          tags: {},
+          metadata: {
+            description: policy.Description,
+            policyType: policy.Type,
+            awsManaged: policy.AwsManaged ?? false,
+            resourceSubtype: "service-control-policy",
+            discoverySource: "organization-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: null,
+        });
+
+        // Get policy targets → `secured-by` edges
+        try {
+          const targetsResult = await (mgr as {
+            getPolicyTargets: (policyId: string) => Promise<{
+              success: boolean;
+              data?: Array<{
+                TargetId?: string;
+                Arn?: string;
+                Name?: string;
+                Type?: string;
+              }>;
+            }>;
+          }).getPolicyTargets(policy.Id);
+
+          if (targetsResult.success && targetsResult.data) {
+            for (const target of targetsResult.data) {
+              if (!target.TargetId) continue;
+
+              const targetNode = nodes.find((n) =>
+                n.nativeId.includes(target.TargetId!) ||
+                n.metadata["resourceSubtype"] === "aws-account" && n.nativeId.includes(target.TargetId!),
+              );
+              if (!targetNode) continue;
+
+              const securedByEdgeId = `${targetNode.id}--secured-by--${policyNodeId}`;
+              if (!edges.some((e) => e.id === securedByEdgeId)) {
+                edges.push({
+                  id: securedByEdgeId,
+                  sourceNodeId: targetNode.id,
+                  targetNodeId: policyNodeId,
+                  relationshipType: "secured-by",
+                  confidence: 0.95,
+                  discoveredVia: "api-field",
+                  metadata: { targetType: target.Type },
+                });
+              }
+            }
+          }
+        } catch {
+          // Policy target resolution is best-effort
+        }
+      }
+    }
+  }
+
+  /**
+   * Discover AWS Backup resources: plans, vaults, and protected resources.
+   *
+   * Creates `custom` nodes for backup plans and vaults, then creates
+   * `backs-up` edges from plans to protected resources and `stores-in`
+   * edges from recovery points to vaults.
+   */
+  private async discoverBackupResources(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getBackupManager();
+    if (!mgr) return;
+
+    // Discover backup vaults
+    const vaultsResult = await (mgr as {
+      listBackupVaults: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          BackupVaultName?: string;
+          BackupVaultArn?: string;
+          CreationDate?: string;
+          EncryptionKeyArn?: string;
+          NumberOfRecoveryPoints?: number;
+          Locked?: boolean;
+        }>;
+      }>;
+    }).listBackupVaults();
+
+    const vaultNodes: GraphNodeInput[] = [];
+    if (vaultsResult.success && vaultsResult.data) {
+      for (const vault of vaultsResult.data) {
+        if (!vault.BackupVaultName) continue;
+
+        const vaultNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          vault.BackupVaultName,
+        );
+
+        const vaultNode: GraphNodeInput = {
+          id: vaultNodeId,
+          name: vault.BackupVaultName,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: vault.BackupVaultArn ?? vault.BackupVaultName,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "backup-vault",
+            recoveryPoints: vault.NumberOfRecoveryPoints ?? 0,
+            encrypted: !!vault.EncryptionKeyArn,
+            locked: vault.Locked ?? false,
+            creationDate: vault.CreationDate,
+            discoverySource: "backup-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: vault.CreationDate ?? null,
+        };
+
+        vaultNodes.push(vaultNode);
+        nodes.push(vaultNode);
+      }
+    }
+
+    // Discover backup plans
+    const plansResult = await (mgr as {
+      listBackupPlans: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          BackupPlanId?: string;
+          BackupPlanName?: string;
+          BackupPlanArn?: string;
+          CreationDate?: string;
+          LastExecutionDate?: string;
+          VersionId?: string;
+        }>;
+      }>;
+    }).listBackupPlans();
+
+    if (plansResult.success && plansResult.data) {
+      for (const plan of plansResult.data) {
+        if (!plan.BackupPlanId) continue;
+
+        const planNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          plan.BackupPlanId,
+        );
+
+        nodes.push({
+          id: planNodeId,
+          name: plan.BackupPlanName ?? plan.BackupPlanId,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: plan.BackupPlanArn ?? plan.BackupPlanId,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "backup-plan",
+            lastExecution: plan.LastExecutionDate,
+            versionId: plan.VersionId,
+            creationDate: plan.CreationDate,
+            discoverySource: "backup-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: plan.CreationDate ?? null,
+        });
+
+        // Discover selections for this plan → `backs-up` edges
+        try {
+          const selectionsResult = await (mgr as {
+            listBackupSelections: (planId: string) => Promise<{
+              success: boolean;
+              data?: Array<{
+                SelectionId?: string;
+                SelectionName?: string;
+                IamRoleArn?: string;
+              }>;
+            }>;
+          }).listBackupSelections(plan.BackupPlanId);
+
+          if (selectionsResult.success && selectionsResult.data) {
+            for (const selection of selectionsResult.data) {
+              if (!selection.SelectionId) continue;
+
+              // Link plan to default vault (first vault) via stores-in
+              if (vaultNodes.length > 0) {
+                const storesInEdgeId = `${planNodeId}--stores-in--${vaultNodes[0]!.id}`;
+                if (!edges.some((e) => e.id === storesInEdgeId)) {
+                  edges.push({
+                    id: storesInEdgeId,
+                    sourceNodeId: planNodeId,
+                    targetNodeId: vaultNodes[0]!.id,
+                    relationshipType: "stores-in",
+                    confidence: 0.8,
+                    discoveredVia: "api-field",
+                    metadata: { selectionName: selection.SelectionName },
+                  });
+                }
+              }
+            }
+          }
+        } catch {
+          // Selection resolution is best-effort
+        }
+      }
+    }
+
+    // Discover protected resources → link to existing nodes
+    const protectedResult = await (mgr as {
+      listProtectedResources: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          ResourceArn?: string;
+          ResourceType?: string;
+          LastBackupTime?: string;
+        }>;
+      }>;
+    }).listProtectedResources();
+
+    if (protectedResult.success && protectedResult.data) {
+      for (const pr of protectedResult.data) {
+        if (!pr.ResourceArn) continue;
+
+        const targetNode = findNodeByArnOrId(nodes, pr.ResourceArn, extractResourceId(pr.ResourceArn));
+        if (!targetNode) continue;
+
+        // Stamp backup metadata on the protected resource
+        targetNode.metadata["lastBackup"] = pr.LastBackupTime;
+        targetNode.metadata["backupProtected"] = true;
+        targetNode.metadata["backupResourceType"] = pr.ResourceType;
+
+        // Find the most recently created backup plan and create backs-up edge
+        const planNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "backup-plan");
+        if (planNodes.length > 0) {
+          const planNode = planNodes[0]!;
+          const backsUpEdgeId = `${planNode.id}--backs-up--${targetNode.id}`;
+          if (!edges.some((e) => e.id === backsUpEdgeId)) {
+            edges.push({
+              id: backsUpEdgeId,
+              sourceNodeId: planNode.id,
+              targetNodeId: targetNode.id,
+              relationshipType: "backs-up",
+              confidence: 0.9,
+              discoveredVia: "api-field",
+              metadata: { resourceType: pr.ResourceType },
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Enrich discovered nodes with compliance posture from ComplianceManager.
+   *
+   * Queries AWS Config rules and conformance packs, then stamps
+   * `metadata.compliance` on each discovered node with violation count,
+   * rule evaluations, and overall compliance status.
+   */
+  private async enrichWithCompliance(nodes: GraphNodeInput[]): Promise<void> {
+    const mgr = await this.getComplianceManager();
+    if (!mgr) return;
+
+    // Get Config rule compliance summaries
+    const rulesResult = await (mgr as {
+      listConfigRules: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          ConfigRuleName?: string;
+          ConfigRuleId?: string;
+          ConfigRuleArn?: string;
+          Description?: string;
+          Source?: { Owner?: string; SourceIdentifier?: string };
+          Scope?: { ComplianceResourceTypes?: string[] };
+        }>;
+      }>;
+    }).listConfigRules();
+
+    if (!rulesResult.success || !rulesResult.data) return;
+
+    // For each rule, get compliance details
+    for (const rule of rulesResult.data) {
+      if (!rule.ConfigRuleName) continue;
+
+      try {
+        const evalResult = await (mgr as {
+          getConfigRuleCompliance: (ruleName: string) => Promise<{
+            success: boolean;
+            data?: {
+              compliant?: number;
+              nonCompliant?: number;
+              notApplicable?: number;
+              evaluations?: Array<{
+                resourceId?: string;
+                resourceType?: string;
+                complianceType?: string;
+                annotation?: string;
+              }>;
+            };
+          }>;
+        }).getConfigRuleCompliance(rule.ConfigRuleName);
+
+        if (!evalResult.success || !evalResult.data?.evaluations) continue;
+
+        for (const evaluation of evalResult.data.evaluations) {
+          if (!evaluation.resourceId) continue;
+
+          // Find the matching node
+          const node = nodes.find((n) =>
+            n.nativeId === evaluation.resourceId ||
+            n.nativeId.includes(evaluation.resourceId!) ||
+            n.name === evaluation.resourceId,
+          );
+          if (!node) continue;
+
+          // Initialize or update compliance metadata
+          const existing = (node.metadata["compliance"] as Record<string, unknown>) ?? {};
+          const violations = ((existing["violations"] as unknown[]) ?? []) as Array<{
+            rule: string; status: string; annotation?: string;
+          }>;
+
+          violations.push({
+            rule: rule.ConfigRuleName,
+            status: evaluation.complianceType ?? "UNKNOWN",
+            annotation: evaluation.annotation,
+          });
+
+          node.metadata["compliance"] = {
+            ...existing,
+            violations,
+            violationCount: violations.filter((v) => v.status === "NON_COMPLIANT").length,
+            compliantRules: violations.filter((v) => v.status === "COMPLIANT").length,
+            lastEvaluated: new Date().toISOString(),
+          };
+        }
+      } catch {
+        // Individual rule evaluation is best-effort
+      }
+    }
+  }
+
+  /**
+   * Discover EventBridge rules, targets, and Step Functions state machines
+   * via the AutomationManager from @espada/aws.
+   *
+   * Creates nodes for EventBridge rules and Step Functions state machines.
+   * Creates `triggers` edges from rules to target Lambda/SQS/SNS/StepFn.
+   */
+  private async discoverAutomation(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    const mgr = await this.getAutomationManager();
+    if (!mgr) return;
+
+    // Discover EventBridge rules
+    const rulesResult = await (mgr as {
+      listEventRules: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          Name?: string;
+          Arn?: string;
+          Description?: string;
+          State?: string;
+          EventBusName?: string;
+          ScheduleExpression?: string;
+          EventPattern?: string;
+        }>;
+      }>;
+    }).listEventRules();
+
+    if (rulesResult.success && rulesResult.data) {
+      for (const rule of rulesResult.data) {
+        if (!rule.Name) continue;
+
+        const ruleNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          `eventbridge-rule-${rule.Name}`,
+        );
+
+        nodes.push({
+          id: ruleNodeId,
+          name: rule.Name,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: rule.Arn ?? rule.Name,
+          status: rule.State === "ENABLED" ? "running" : "stopped",
+          tags: {},
+          metadata: {
+            resourceSubtype: "eventbridge-rule",
+            eventBus: rule.EventBusName ?? "default",
+            description: rule.Description,
+            scheduleExpression: rule.ScheduleExpression,
+            hasEventPattern: !!rule.EventPattern,
+            discoverySource: "automation-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: null,
+        });
+
+        // Get targets for this rule → `triggers` edges
+        try {
+          const targetsResult = await (mgr as {
+            listTargets: (ruleName: string, eventBusName?: string) => Promise<{
+              success: boolean;
+              data?: Array<{
+                Id?: string;
+                Arn?: string;
+                RoleArn?: string;
+                Input?: string;
+              }>;
+            }>;
+          }).listTargets(rule.Name, rule.EventBusName);
+
+          if (targetsResult.success && targetsResult.data) {
+            for (const target of targetsResult.data) {
+              if (!target.Arn) continue;
+
+              const targetNode = findNodeByArnOrId(
+                nodes,
+                target.Arn,
+                extractResourceId(target.Arn),
+              );
+              if (!targetNode) continue;
+
+              const triggersEdgeId = `${ruleNodeId}--triggers--${targetNode.id}`;
+              if (!edges.some((e) => e.id === triggersEdgeId)) {
+                edges.push({
+                  id: triggersEdgeId,
+                  sourceNodeId: ruleNodeId,
+                  targetNodeId: targetNode.id,
+                  relationshipType: "triggers",
+                  confidence: 0.95,
+                  discoveredVia: "api-field",
+                  metadata: { targetId: target.Id },
+                });
+              }
+            }
+          }
+        } catch {
+          // Target resolution is best-effort
+        }
+      }
+    }
+
+    // Discover Step Functions state machines
+    const sfResult = await (mgr as {
+      listStateMachines: (opts?: unknown) => Promise<{
+        success: boolean;
+        data?: Array<{
+          stateMachineArn?: string;
+          name?: string;
+          type?: string;
+          creationDate?: string;
+        }>;
+      }>;
+    }).listStateMachines();
+
+    if (sfResult.success && sfResult.data) {
+      for (const sm of sfResult.data) {
+        if (!sm.name) continue;
+
+        const smNodeId = buildAwsNodeId(
+          this.config.accountId,
+          "us-east-1",
+          "custom",
+          `stepfn-${sm.name}`,
+        );
+
+        nodes.push({
+          id: smNodeId,
+          name: sm.name,
+          resourceType: "custom",
+          provider: "aws",
+          region: "us-east-1",
+          account: this.config.accountId,
+          nativeId: sm.stateMachineArn ?? sm.name,
+          status: "running",
+          tags: {},
+          metadata: {
+            resourceSubtype: "step-function",
+            type: sm.type,
+            creationDate: sm.creationDate,
+            discoverySource: "automation-manager",
+          },
+          costMonthly: 0,
+          owner: null,
+          createdAt: sm.creationDate ?? null,
+        });
+
+        // Get state machine definition to find service integrations
+        if (sm.stateMachineArn) {
+          try {
+            const smDetail = await (mgr as {
+              getStateMachine: (arn: string) => Promise<{
+                success: boolean;
+                data?: {
+                  definition?: string;
+                  roleArn?: string;
+                  loggingConfiguration?: unknown;
+                };
+              }>;
+            }).getStateMachine(sm.stateMachineArn);
+
+            if (smDetail.success && smDetail.data?.definition) {
+              // Parse the ASL definition for Lambda/service invocations
+              try {
+                const def = JSON.parse(smDetail.data.definition) as {
+                  States?: Record<string, { Resource?: string; Type?: string }>;
+                };
+                if (def.States) {
+                  for (const state of Object.values(def.States)) {
+                    if (!state.Resource) continue;
+
+                    // Match Lambda ARNs or service integration patterns
+                    const targetNode = findNodeByArnOrId(
+                      nodes,
+                      state.Resource,
+                      extractResourceId(state.Resource),
+                    );
+                    if (!targetNode) continue;
+
+                    const depEdgeId = `${smNodeId}--depends-on--${targetNode.id}`;
+                    if (!edges.some((e) => e.id === depEdgeId)) {
+                      edges.push({
+                        id: depEdgeId,
+                        sourceNodeId: smNodeId,
+                        targetNodeId: targetNode.id,
+                        relationshipType: "depends-on",
+                        confidence: 0.9,
+                        discoveredVia: "config-scan",
+                        metadata: { stateType: state.Type },
+                      });
+                    }
+                  }
+                }
+              } catch {
+                // ASL parse failure is non-fatal
+              }
+            }
+
+            // Link state machine to its IAM role
+            if (smDetail.data?.roleArn) {
+              const roleNode = findNodeByArnOrId(
+                nodes,
+                smDetail.data.roleArn,
+                extractResourceId(smDetail.data.roleArn),
+              );
+              if (roleNode) {
+                const usesEdgeId = `${smNodeId}--uses--${roleNode.id}`;
+                if (!edges.some((e) => e.id === usesEdgeId)) {
+                  edges.push({
+                    id: usesEdgeId,
+                    sourceNodeId: smNodeId,
+                    targetNodeId: roleNode.id,
+                    relationshipType: "uses",
+                    confidence: 0.95,
+                    discoveredVia: "api-field",
+                    metadata: {},
+                  });
+                }
+              }
+            }
+          } catch {
+            // State machine detail resolution is best-effort
+          }
+        }
+      }
     }
   }
 
@@ -1968,6 +3762,15 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     this._costManager = undefined;
     this._cloudTrailManager = undefined;
     this._securityManager = undefined;
+    this._taggingManager = undefined;
+    this._lambdaManager = undefined;
+    this._observabilityManager = undefined;
+    this._s3Manager = undefined;
+    this._elastiCacheManager = undefined;
+    this._organizationManager = undefined;
+    this._backupManager = undefined;
+    this._complianceManager = undefined;
+    this._automationManager = undefined;
   }
 }
 
@@ -2085,7 +3888,8 @@ const AWS_SERVICE_TO_RESOURCE_TYPE: Record<string, GraphResourceType[]> = {
   "Amazon Bedrock": ["custom"],
   "Elastic Load Balancing": ["load-balancer"],
   "AWS Identity and Access Management": ["iam-role"],
-  "Amazon Virtual Private Cloud": ["vpc", "subnet", "security-group", "nat-gateway"],
+  "Amazon Virtual Private Cloud": ["vpc", "subnet", "security-group", "nat-gateway", "route-table" as GraphResourceType, "internet-gateway" as GraphResourceType, "vpc-endpoint" as GraphResourceType, "transit-gateway" as GraphResourceType],
+  "Amazon DynamoDB": ["database"],
 };
 
 /** Default regions to scan when region list can't be obtained dynamically. */
@@ -2114,6 +3918,7 @@ const AWS_SERVICE_TO_POOL_NAME: Record<string, string> = {
   IAM: "iam",
   SecretsManager: "secretsmanager",
   STS: "sts",
+  DynamoDB: "dynamodb",
   CloudFront: "cloudfront", // Not in pool — will fall through
   // Note: ELBv2, APIGateway, SageMaker, Bedrock, CostExplorer are NOT in
   // the ClientPoolManager's factory map, so they're omitted here and will
@@ -2145,6 +3950,7 @@ const AWS_SDK_PACKAGES: Record<string, string> = {
   SageMaker: "@aws-sdk/client-sagemaker",
   Bedrock: "@aws-sdk/client-bedrock",
   CostExplorer: "@aws-sdk/client-cost-explorer",
+  DynamoDB: "@aws-sdk/client-dynamodb",
 };
 
 // =============================================================================
@@ -2253,6 +4059,23 @@ export function extractResourceId(value: string): string {
 }
 
 /**
+ * Find a graph node by matching its ARN or native ID against
+ * a target ARN/ID string. Used by enrichment methods.
+ */
+function findNodeByArnOrId(
+  nodes: GraphNodeInput[],
+  arn: string,
+  extractedId: string,
+): GraphNodeInput | undefined {
+  return nodes.find((n) =>
+    n.nativeId === arn ||
+    n.nativeId === extractedId ||
+    arn.includes(n.nativeId) ||
+    n.nativeId.includes(extractedId),
+  );
+}
+
+/**
  * Get the reverse relationship type for bidirectional edges.
  */
 function reverseRelationship(rel: GraphRelationshipType): GraphRelationshipType {
@@ -2281,6 +4104,8 @@ function reverseRelationship(rel: GraphRelationshipType): GraphRelationshipType 
     "backed-by": "backs",
     "backs": "backed-by",
     "aliases": "aliases",
+    "connects-via": "connects-via",
+    "connected-to": "connected-to",
   };
   return reverseMap[rel] ?? rel;
 }

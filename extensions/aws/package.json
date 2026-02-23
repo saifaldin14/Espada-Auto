@@ -110,6 +110,18 @@
     "./reconciliation": {
       "import": "./dist/reconciliation/index.js",
       "types": "./dist/reconciliation/index.d.ts"
+    },
+    "./elasticache": {
+      "import": "./dist/elasticache/index.js",
+      "types": "./dist/elasticache/index.d.ts"
+    },
+    "./compliance": {
+      "import": "./dist/compliance/index.js",
+      "types": "./dist/compliance/index.d.ts"
+    },
+    "./automation": {
+      "import": "./dist/automation/index.js",
+      "types": "./dist/automation/index.d.ts"
     }
   },
   "scripts": {

@@ -120,4 +120,4 @@ export class AdapterRegistry {
   }
 }
 
-export { type GraphDiscoveryAdapter as Adapter };
+export { type GraphDiscoveryAdapter as Adapter, type GraphNodeInput };
