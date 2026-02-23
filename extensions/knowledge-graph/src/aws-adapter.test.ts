@@ -18,7 +18,16 @@ import {
   buildAwsNodeId,
   AwsDiscoveryAdapter,
 } from "./adapters/aws.js";
-import type { AwsClient, AwsClientFactory } from "./adapters/aws.js";
+import type {
+  AwsClient,
+  AwsClientFactory,
+  AwsForecastResult,
+  AwsOptimizationResult,
+  AwsUnusedResourcesResult,
+  AwsIncrementalChanges,
+  AwsSecurityPosture,
+} from "./adapters/aws.js";
+import type { GraphNodeInput } from "./adapters/types.js";
 
 // =============================================================================
 // resolveFieldPath
@@ -621,5 +630,888 @@ describe("AwsDiscoveryAdapter without SDK", () => {
     expect(result.errors.length).toBe(1);
     expect(result.errors[0].message).toContain("AWS SDK");
     expect(result.nodes).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Cost Estimation — Static Fallback
+// =============================================================================
+
+describe("Cost estimation — static fallback", () => {
+  /**
+   * Helper to create a mock factory that returns resources without instance-type
+   * lookups (Lambda, S3, IAM, etc.) so the code exercises the static fallback path.
+   */
+  function createCostTestAdapter(
+    responses: Record<string, unknown>,
+  ): AwsDiscoveryAdapter {
+    return new AwsDiscoveryAdapter({
+      accountId: "123456789",
+      regions: ["us-east-1"],
+      enableCostExplorer: false, // Disable CE so only static fallback is used
+      clientFactory: createMockClientFactory(responses),
+    });
+  }
+
+  it("should assign static cost to Lambda functions based on memory", async () => {
+    const adapter = createCostTestAdapter({
+      "Lambda:listFunctions": {
+        Functions: [
+          {
+            FunctionName: "my-func",
+            FunctionArn: "arn:aws:lambda:us-east-1:123456789:function:my-func",
+            Runtime: "nodejs20.x",
+            MemorySize: 512,
+            Timeout: 30,
+            Handler: "index.handler",
+            CodeSize: 4096,
+            Role: "arn:aws:iam::123456789:role/exec",
+            Tags: {},
+          },
+        ],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["serverless-function"] });
+    expect(result.nodes).toHaveLength(1);
+    const fn = result.nodes[0];
+    // Lambda should get a non-null static estimate
+    expect(fn.costMonthly).not.toBeNull();
+    expect(fn.costMonthly).toBeGreaterThan(0);
+    expect(fn.metadata["costSource"]).toBe("static-estimate");
+  });
+
+  it("should assign static cost to S3 buckets", async () => {
+    const adapter = createCostTestAdapter({
+      "S3:listBuckets": {
+        Buckets: [
+          { Name: "my-bucket", CreationDate: "2024-01-01T00:00:00Z" },
+        ],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["storage"] });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].costMonthly).toBeGreaterThan(0);
+    expect(result.nodes[0].metadata["costSource"]).toBe("static-estimate");
+  });
+
+  it("should assign $0 cost to IAM roles (free-tier)", async () => {
+    const adapter = createCostTestAdapter({
+      "IAM:listRoles": {
+        Roles: [
+          {
+            RoleName: "admin-role",
+            Arn: "arn:aws:iam::123456789:role/admin-role",
+            Path: "/",
+            CreateDate: "2024-01-01T00:00:00Z",
+          },
+        ],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["iam-role"] });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].costMonthly).toBe(0);
+  });
+
+  it("should assign $0 cost to VPCs, subnets, and security groups", async () => {
+    const adapter = createCostTestAdapter({
+      "EC2:describeVpcs": {
+        Vpcs: [{ VpcId: "vpc-1", CidrBlock: "10.0.0.0/16", IsDefault: true, Tags: [] }],
+      },
+      "EC2:describeSubnets": {
+        Subnets: [{ SubnetId: "subnet-1", VpcId: "vpc-1", CidrBlock: "10.0.1.0/24", Tags: [] }],
+      },
+      "EC2:describeSecurityGroups": {
+        SecurityGroups: [{ GroupId: "sg-1", GroupName: "default", VpcId: "vpc-1", Tags: [] }],
+      },
+    });
+
+    const result = await adapter.discover({
+      resourceTypes: ["vpc", "subnet", "security-group"],
+    });
+    expect(result.nodes).toHaveLength(3);
+    for (const node of result.nodes) {
+      expect(node.costMonthly).toBe(0);
+    }
+  });
+
+  it("should assign static cost to Secrets Manager secrets", async () => {
+    const adapter = createCostTestAdapter({
+      "SecretsManager:listSecrets": {
+        SecretList: [
+          { Name: "db-password", ARN: "arn:aws:secretsmanager:us-east-1:123456789:secret:db-password" },
+        ],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["secret"] });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].costMonthly).toBe(0.40); // $0.40/secret/month
+    expect(result.nodes[0].metadata["costSource"]).toBe("static-estimate");
+  });
+
+  it("should use instance-type lookup for EC2 (not static fallback)", async () => {
+    const adapter = createCostTestAdapter({
+      "EC2:describeInstances": {
+        Reservations: [{
+          Instances: [{
+            InstanceId: "i-1",
+            InstanceType: "m5.large",
+            State: { Name: "running" },
+            Tags: [],
+          }],
+        }],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["compute"] });
+    expect(result.nodes).toHaveLength(1);
+    // EC2 should use the instance-type table, NOT static fallback
+    expect(result.nodes[0].costMonthly).toBe(70.08);
+    // costSource should NOT be "static-estimate" because the inline estimateCost found it
+    expect(result.nodes[0].metadata["costSource"]).toBeUndefined();
+  });
+
+  it("should assign static cost to DNS zones (Route 53)", async () => {
+    const adapter = createCostTestAdapter({
+      "Route53:listHostedZones": {
+        HostedZones: [
+          { Id: "/hostedzone/Z1234", Name: "example.com.", CallerReference: "ref1" },
+        ],
+      },
+    });
+
+    const result = await adapter.discover({ resourceTypes: ["dns"] });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].costMonthly).toBe(0.50); // $0.50/zone
+    expect(result.nodes[0].metadata["costSource"]).toBe("static-estimate");
+  });
+});
+
+// =============================================================================
+// Cost Explorer Enrichment
+// =============================================================================
+
+describe("Cost Explorer enrichment", () => {
+  it("should apply resource-level costs from Cost Explorer", async () => {
+    const adapter = new AwsDiscoveryAdapter({
+      accountId: "123456789",
+      regions: ["us-east-1"],
+      enableCostExplorer: true,
+      clientFactory: createMockClientFactory({
+        "Lambda:listFunctions": {
+          Functions: [
+            {
+              FunctionName: "data-processor",
+              FunctionArn: "arn:aws:lambda:us-east-1:123456789:function:data-processor",
+              Runtime: "python3.12",
+              MemorySize: 1024,
+              Timeout: 300,
+              Handler: "handler.main",
+              Role: "arn:aws:iam::123456789:role/exec",
+              Tags: {},
+            },
+          ],
+        },
+      }),
+    });
+
+    // Mock Cost Explorer methods
+    vi.spyOn(adapter as any, "queryServiceCosts").mockResolvedValue(
+      new Map([["AWS Lambda", 42.50]]),
+    );
+    vi.spyOn(adapter as any, "queryResourceCosts").mockResolvedValue(
+      new Map([["arn:aws:lambda:us-east-1:123456789:function:data-processor", 42.50]]),
+    );
+
+    const result = await adapter.discover({ resourceTypes: ["serverless-function"] });
+    expect(result.nodes).toHaveLength(1);
+    expect(result.nodes[0].costMonthly).toBe(42.50);
+    expect(result.nodes[0].metadata["costSource"]).toBe("cost-explorer");
+    expect(result.nodes[0].metadata["costArn"]).toBe(
+      "arn:aws:lambda:us-east-1:123456789:function:data-processor",
+    );
+  });
+
+  it("should distribute service-level costs when no resource-level data", async () => {
+    const adapter = new AwsDiscoveryAdapter({
+      accountId: "123456789",
+      regions: ["us-east-1"],
+      enableCostExplorer: true,
+      clientFactory: createMockClientFactory({
+        "S3:listBuckets": {
+          Buckets: [
+            { Name: "bucket-a", CreationDate: "2024-01-01T00:00:00Z" },
+            { Name: "bucket-b", CreationDate: "2024-03-01T00:00:00Z" },
+          ],
+        },
+      }),
+    });
+
+    // Service-level costs only, no resource-level
+    vi.spyOn(adapter as any, "queryServiceCosts").mockResolvedValue(
+      new Map([["Amazon Simple Storage Service", 10.00]]),
+    );
+    vi.spyOn(adapter as any, "queryResourceCosts").mockResolvedValue(null);
+
+    const result = await adapter.discover({ resourceTypes: ["storage"] });
+    expect(result.nodes).toHaveLength(2);
+
+    // Costs should be distributed (equal weight since both start at static ~$0.02)
+    const totalCost = result.nodes.reduce((sum, n) => sum + (n.costMonthly ?? 0), 0);
+    expect(totalCost).toBeCloseTo(10.00, 0);
+    expect(result.nodes[0].metadata["costSource"]).toBe("cost-explorer-distributed");
+  });
+
+  it("should fall back to static estimates when Cost Explorer fails", async () => {
+    const adapter = new AwsDiscoveryAdapter({
+      accountId: "123456789",
+      regions: ["us-east-1"],
+      enableCostExplorer: true,
+      clientFactory: createMockClientFactory({
+        "Lambda:listFunctions": {
+          Functions: [
+            {
+              FunctionName: "simple-func",
+              FunctionArn: "arn:aws:lambda:us-east-1:123456789:function:simple-func",
+              Runtime: "nodejs20.x",
+              MemorySize: 128,
+              Timeout: 3,
+              Handler: "index.handler",
+              Role: "arn:aws:iam::123456789:role/exec",
+              Tags: {},
+            },
+          ],
+        },
+      }),
+    });
+
+    // CE fails completely
+    vi.spyOn(adapter as any, "enrichWithCostExplorer").mockRejectedValue(
+      new Error("AccessDenied"),
+    );
+
+    const result = await adapter.discover({ resourceTypes: ["serverless-function"] });
+    expect(result.nodes).toHaveLength(1);
+    // Should still have a cost from static fallback
+    expect(result.nodes[0].costMonthly).not.toBeNull();
+    expect(result.nodes[0].costMonthly).toBeGreaterThan(0);
+    expect(result.nodes[0].metadata["costSource"]).toBe("static-estimate");
+  });
+
+  it("should skip Cost Explorer when enableCostExplorer is false", async () => {
+    const adapter = new AwsDiscoveryAdapter({
+      accountId: "123456789",
+      regions: ["us-east-1"],
+      enableCostExplorer: false,
+      clientFactory: createMockClientFactory({
+        "Lambda:listFunctions": {
+          Functions: [
+            {
+              FunctionName: "no-ce-func",
+              FunctionArn: "arn:aws:lambda:us-east-1:123456789:function:no-ce-func",
+              Runtime: "nodejs20.x",
+              MemorySize: 256,
+              Timeout: 10,
+              Handler: "index.handler",
+              Role: "arn:aws:iam::123456789:role/exec",
+              Tags: {},
+            },
+          ],
+        },
+      }),
+    });
+
+    const enrichSpy = vi.spyOn(adapter as any, "enrichWithCostExplorer");
+
+    const result = await adapter.discover({ resourceTypes: ["serverless-function"] });
+    expect(enrichSpy).not.toHaveBeenCalled();
+    // Should still have static estimate
+    expect(result.nodes[0].costMonthly).toBeGreaterThan(0);
+    expect(result.nodes[0].metadata["costSource"]).toBe("static-estimate");
+  });
+});
+
+// =============================================================================
+// @espada/aws Integration — Extended Capabilities
+// =============================================================================
+
+describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
+  // ---------------------------------------------------------------------------
+  // supportsIncrementalSync
+  // ---------------------------------------------------------------------------
+
+  describe("supportsIncrementalSync()", () => {
+    it("should return false when clientFactory is provided (test mode)", () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+      expect(adapter.supportsIncrementalSync()).toBe(false);
+    });
+
+    it("should return true when no clientFactory (production mode)", () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+      });
+      expect(adapter.supportsIncrementalSync()).toBe(true);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // forecastCosts — via injected CostManager mock
+  // ---------------------------------------------------------------------------
+
+  describe("forecastCosts()", () => {
+    it("should delegate to CostManager.forecastCosts()", async () => {
+      const mockCostManager = {
+        forecastCosts: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            totalForecastedCost: 420.50,
+            forecastPeriods: [
+              { start: "2025-01-01", end: "2025-01-31", amount: 420.50 },
+            ],
+            currency: "USD",
+            confidenceLevel: 0.85,
+          },
+        }),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      const result = await adapter.forecastCosts({ days: 30, granularity: "MONTHLY" });
+      expect(result).not.toBeNull();
+      expect(result!.totalForecastedCost).toBe(420.50);
+      expect(result!.forecastPeriods).toHaveLength(1);
+      expect(result!.currency).toBe("USD");
+      expect(result!.confidenceLevel).toBe(0.85);
+      expect(mockCostManager.forecastCosts).toHaveBeenCalledOnce();
+    });
+
+    it("should return null when CostManager is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+      // Spy on the private getter to return null
+      vi.spyOn(adapter as any, "getCostManagerInstance").mockResolvedValue(null);
+
+      const result = await adapter.forecastCosts();
+      expect(result).toBeNull();
+    });
+
+    it("should return null when CostManager throws", async () => {
+      const mockCostManager = {
+        forecastCosts: vi.fn().mockRejectedValue(new Error("CE not enabled")),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      const result = await adapter.forecastCosts();
+      expect(result).toBeNull();
+    });
+
+    it("should return null when forecast returns success:false", async () => {
+      const mockCostManager = {
+        forecastCosts: vi.fn().mockResolvedValue({
+          success: false,
+          error: "Insufficient data",
+        }),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      const result = await adapter.forecastCosts();
+      expect(result).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getOptimizationRecommendations — via injected CostManager mock
+  // ---------------------------------------------------------------------------
+
+  describe("getOptimizationRecommendations()", () => {
+    it("should return rightsizing and savings recommendations", async () => {
+      const mockCostManager = {
+        getOptimizationRecommendations: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            rightsizing: [
+              { instanceId: "i-abc", currentType: "m5.2xlarge", recommendedType: "m5.xlarge", estimatedSavings: 70 },
+            ],
+            reservedInstances: [
+              { service: "EC2", recommendedCount: 3, estimatedSavings: 200 },
+            ],
+            savingsPlans: [
+              { type: "Compute", commitment: 500, estimatedSavings: 150 },
+            ],
+            totalEstimatedSavings: 420,
+          },
+        }),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      const result = await adapter.getOptimizationRecommendations();
+      expect(result).not.toBeNull();
+      expect(result!.rightsizing).toHaveLength(1);
+      expect(result!.rightsizing[0].estimatedSavings).toBe(70);
+      expect(result!.reservedInstances).toHaveLength(1);
+      expect(result!.savingsPlans).toHaveLength(1);
+      expect(result!.totalEstimatedSavings).toBe(420);
+    });
+
+    it("should return null when CostManager is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+      vi.spyOn(adapter as any, "getCostManagerInstance").mockResolvedValue(null);
+
+      expect(await adapter.getOptimizationRecommendations()).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // findUnusedResources — via injected CostManager mock
+  // ---------------------------------------------------------------------------
+
+  describe("findUnusedResources()", () => {
+    it("should return unused resources with estimated waste", async () => {
+      const mockCostManager = {
+        findUnusedResources: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            resources: [
+              { resourceId: "vol-abc", resourceType: "EBS", reason: "Unattached volume", estimatedMonthlyCost: 12.50, region: "us-east-1" },
+              { resourceId: "eip-def", resourceType: "EIP", reason: "Unused Elastic IP", estimatedMonthlyCost: 3.60, region: "us-east-1" },
+            ],
+            totalWastedCost: 16.10,
+          },
+        }),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      const result = await adapter.findUnusedResources();
+      expect(result).not.toBeNull();
+      expect(result!.resources).toHaveLength(2);
+      expect(result!.totalWastedCost).toBe(16.10);
+      expect(result!.resources[0].reason).toBe("Unattached volume");
+    });
+
+    it("should return null when CostManager throws", async () => {
+      const mockCostManager = {
+        findUnusedResources: vi.fn().mockRejectedValue(new Error("access denied")),
+        getCostSummary: vi.fn(),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cost: mockCostManager },
+      });
+
+      expect(await adapter.findUnusedResources()).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getIncrementalChanges — via injected CloudTrailManager mock
+  // ---------------------------------------------------------------------------
+
+  describe("getIncrementalChanges()", () => {
+    it("should return null when clientFactory is provided (test mode guard)", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+
+      const result = await adapter.getIncrementalChanges(new Date("2025-01-01"));
+      expect(result).toBeNull();
+    });
+
+    it("should categorize CloudTrail events into creates/modifies/deletes", async () => {
+      const mockCloudTrail = {
+        getInfrastructureEvents: vi.fn().mockResolvedValue([
+          {
+            eventId: "evt-1",
+            eventName: "CreateSubnet",
+            eventTime: new Date("2025-01-15T10:00:00Z"),
+            eventSource: "ec2.amazonaws.com",
+            awsRegion: "us-east-1",
+            userIdentity: { userName: "admin" },
+            resources: [{ resourceType: "AWS::EC2::Subnet", resourceName: "subnet-abc" }],
+          },
+          {
+            eventId: "evt-2",
+            eventName: "ModifyInstanceAttribute",
+            eventTime: new Date("2025-01-15T11:00:00Z"),
+            eventSource: "ec2.amazonaws.com",
+            awsRegion: "us-west-2",
+            userIdentity: { arn: "arn:aws:iam::123:user/deploy" },
+            resources: [{ resourceType: "AWS::EC2::Instance", resourceName: "i-xyz" }],
+          },
+          {
+            eventId: "evt-3",
+            eventName: "DeleteBucket",
+            eventTime: new Date("2025-01-15T12:00:00Z"),
+            eventSource: "s3.amazonaws.com",
+            awsRegion: "us-east-1",
+            userIdentity: { userName: "cleanup-bot" },
+            resources: [{ resourceType: "AWS::S3::Bucket", resourceName: "old-bucket" }],
+          },
+          {
+            eventId: "evt-4",
+            eventName: "TerminateInstances",
+            eventTime: new Date("2025-01-15T12:30:00Z"),
+            eventSource: "ec2.amazonaws.com",
+            awsRegion: "us-east-1",
+            userIdentity: { userName: "admin" },
+            resources: [],
+          },
+          {
+            eventId: "evt-5",
+            eventName: "RunInstances",
+            eventTime: new Date("2025-01-15T13:00:00Z"),
+            eventSource: "ec2.amazonaws.com",
+            awsRegion: "us-east-1",
+            userIdentity: { userName: "admin" },
+            resources: [{ resourceType: "AWS::EC2::Instance", resourceName: "i-new" }],
+          },
+          {
+            eventId: "evt-6",
+            eventName: "PutBucketPolicy",
+            eventTime: new Date("2025-01-15T13:30:00Z"),
+            eventSource: "s3.amazonaws.com",
+            awsRegion: "us-east-1",
+            userIdentity: { userName: "admin" },
+            resources: [],
+          },
+          {
+            // Failed event — should be skipped
+            eventId: "evt-7",
+            eventName: "CreateVpc",
+            eventTime: new Date("2025-01-15T14:00:00Z"),
+            eventSource: "ec2.amazonaws.com",
+            awsRegion: "us-east-1",
+            errorCode: "UnauthorizedAccess",
+            userIdentity: { userName: "rogue" },
+            resources: [],
+          },
+        ]),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cloudtrail: mockCloudTrail },
+      });
+
+      const result = await adapter.getIncrementalChanges(new Date("2025-01-01"));
+      expect(result).not.toBeNull();
+
+      // Creates: CreateSubnet, RunInstances
+      expect(result!.creates).toHaveLength(2);
+      expect(result!.creates[0].eventName).toBe("CreateSubnet");
+      expect(result!.creates[0].service).toBe("ec2");
+      expect(result!.creates[0].actor).toBe("admin");
+      expect(result!.creates[1].eventName).toBe("RunInstances");
+
+      // Modifies: ModifyInstanceAttribute, PutBucketPolicy
+      expect(result!.modifies).toHaveLength(2);
+      expect(result!.modifies[0].eventName).toBe("ModifyInstanceAttribute");
+      expect(result!.modifies[0].actor).toBe("arn:aws:iam::123:user/deploy");
+      expect(result!.modifies[1].eventName).toBe("PutBucketPolicy");
+
+      // Deletes: DeleteBucket, TerminateInstances
+      expect(result!.deletes).toHaveLength(2);
+      expect(result!.deletes[0].eventName).toBe("DeleteBucket");
+      expect(result!.deletes[1].eventName).toBe("TerminateInstances");
+
+      // Failed event (evt-7) should not appear in any category
+      const allEvents = [...result!.creates, ...result!.modifies, ...result!.deletes];
+      expect(allEvents.find((e) => e.eventId === "evt-7")).toBeUndefined();
+    });
+
+    it("should return null when CloudTrailManager is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { cloudtrail: null },
+      });
+      // Override clientFactory check by using managers injection
+      vi.spyOn(adapter as any, "getCloudTrailManager").mockResolvedValue(null);
+
+      const result = await adapter.getIncrementalChanges(new Date("2025-01-01"));
+      expect(result).toBeNull();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getSecurityPosture — via injected SecurityManager mock
+  // ---------------------------------------------------------------------------
+
+  describe("getSecurityPosture()", () => {
+    it("should return null when clientFactory is provided (test mode guard)", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+
+      expect(await adapter.getSecurityPosture()).toBeNull();
+    });
+
+    it("should collect IAM, Security Hub, and GuardDuty findings", async () => {
+      const mockSecurity = {
+        listRoles: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            roles: [
+              { roleName: "AdminRole", arn: "arn:aws:iam::123:role/AdminRole" },
+              { roleName: "LambdaExec", arn: "arn:aws:iam::123:role/LambdaExec" },
+            ],
+          },
+        }),
+        listSecurityFindings: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            findings: [
+              { title: "S3 bucket public", severity: "HIGH", resources: [{ id: "my-bucket" }] },
+              { title: "Root account MFA", severity: "CRITICAL", resources: [{ id: "root" }] },
+            ],
+          },
+        }),
+        listGuardDutyFindings: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            findings: [
+              { title: "Unusual API call", severity: "MEDIUM", type: "Recon:IAMUser/MaliciousIPCaller" },
+            ],
+          },
+        }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { security: mockSecurity },
+      });
+
+      const result = await adapter.getSecurityPosture();
+      expect(result).not.toBeNull();
+      expect(result!.iamRoles).toBe(2);
+      expect(result!.securityFindings).toHaveLength(2);
+      expect(result!.securityFindings[0].severity).toBe("HIGH");
+      expect(result!.securityFindings[1].resourceId).toBe("root");
+      expect(result!.guardDutyFindings).toHaveLength(1);
+      expect(result!.guardDutyFindings[0].type).toBe("Recon:IAMUser/MaliciousIPCaller");
+      expect(result!.scannedAt).toBeDefined();
+    });
+
+    it("should handle SecurityHub/GuardDuty not being enabled", async () => {
+      const mockSecurity = {
+        listRoles: vi.fn().mockResolvedValue({
+          success: true,
+          data: { roles: [{ roleName: "OnlyRole", arn: "arn:aws:iam::123:role/OnlyRole" }] },
+        }),
+        listSecurityFindings: vi.fn().mockRejectedValue(new Error("SecurityHub not enabled")),
+        listGuardDutyFindings: vi.fn().mockRejectedValue(new Error("GuardDuty not enabled")),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { security: mockSecurity },
+      });
+
+      const result = await adapter.getSecurityPosture();
+      expect(result).not.toBeNull();
+      expect(result!.iamRoles).toBe(1);
+      expect(result!.securityFindings).toHaveLength(0);
+      expect(result!.guardDutyFindings).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // enrichWithSecurity — attaches findings to matching nodes
+  // ---------------------------------------------------------------------------
+
+  describe("enrichWithSecurity()", () => {
+    it("should attach security findings to matching nodes", async () => {
+      const mockSecurity = {
+        listRoles: vi.fn().mockResolvedValue({ success: true, data: { roles: [] } }),
+        listSecurityFindings: vi.fn().mockResolvedValue({
+          success: true,
+          data: {
+            findings: [
+              { title: "Bucket is public", severity: "HIGH", resources: [{ id: "my-bucket" }] },
+              { title: "Open security group", severity: "MEDIUM", resources: [{ id: "sg-abc" }] },
+            ],
+          },
+        }),
+        listGuardDutyFindings: vi.fn().mockResolvedValue({ success: true, data: { findings: [] } }),
+      };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: { security: mockSecurity },
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:storage:my-bucket",
+          provider: "aws",
+          resourceType: "storage",
+          nativeId: "my-bucket",
+          name: "my-bucket",
+          region: "us-east-1",
+          account: "123",
+          status: "active",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:security-group:sg-abc",
+          provider: "aws",
+          resourceType: "security-group",
+          nativeId: "sg-abc",
+          name: "default",
+          region: "us-east-1",
+          account: "123",
+          status: "active",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+        {
+          id: "aws:123:us-east-1:compute:i-xyz",
+          provider: "aws",
+          resourceType: "compute",
+          nativeId: "i-xyz",
+          name: "web-server",
+          region: "us-east-1",
+          account: "123",
+          status: "active",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      await adapter.enrichWithSecurity(nodes);
+
+      // my-bucket should have the finding
+      expect(nodes[0].metadata["hasSecurityIssues"]).toBe(true);
+      expect(nodes[0].metadata["securityFindings"]).toEqual(["[HIGH] Bucket is public"]);
+
+      // sg-abc should have the finding
+      expect(nodes[1].metadata["hasSecurityIssues"]).toBe(true);
+      expect(nodes[1].metadata["securityFindings"]).toEqual(["[MEDIUM] Open security group"]);
+
+      // i-xyz should NOT have findings
+      expect(nodes[2].metadata["hasSecurityIssues"]).toBeUndefined();
+      expect(nodes[2].metadata["securityFindings"]).toBeUndefined();
+    });
+
+    it("should be a no-op when security posture is unavailable", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+
+      const nodes: GraphNodeInput[] = [
+        {
+          id: "aws:123:us-east-1:compute:i-1",
+          provider: "aws",
+          resourceType: "compute",
+          nativeId: "i-1",
+          name: "test",
+          region: "us-east-1",
+          account: "123",
+          status: "active",
+          tags: {},
+          metadata: {},
+          costMonthly: null,
+          owner: null,
+          createdAt: null,
+        },
+      ];
+
+      await adapter.enrichWithSecurity(nodes);
+      expect(nodes[0].metadata["hasSecurityIssues"]).toBeUndefined();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // dispose — cleanup
+  // ---------------------------------------------------------------------------
+
+  describe("dispose()", () => {
+    it("should reset all manager instances", async () => {
+      const destroyFn = vi.fn();
+      const mockPool = { destroy: destroyFn, getClient: vi.fn() };
+
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        managers: {
+          credentials: { healthCheck: vi.fn() },
+          clientPool: mockPool,
+          cost: { getCostSummary: vi.fn() },
+          security: { listRoles: vi.fn() },
+        },
+      });
+
+      // Force lazy load of managers
+      await (adapter as any).getCredentialsManager();
+      await (adapter as any).getClientPoolManager();
+      await (adapter as any).getCostManagerInstance();
+      await (adapter as any).getSecurityManager();
+
+      await adapter.dispose();
+
+      expect(destroyFn).toHaveBeenCalledOnce();
+
+      // After dispose, managers should be reset to undefined
+      expect((adapter as any)._credentialsManager).toBeUndefined();
+      expect((adapter as any)._clientPoolManager).toBeUndefined();
+      expect((adapter as any)._costManager).toBeUndefined();
+      expect((adapter as any)._securityManager).toBeUndefined();
+    });
+
+    it("should handle dispose when no managers were loaded", async () => {
+      const adapter = new AwsDiscoveryAdapter({
+        accountId: "123456789",
+        clientFactory: createMockClientFactory({}),
+      });
+
+      // Should not throw
+      await adapter.dispose();
+    });
   });
 });

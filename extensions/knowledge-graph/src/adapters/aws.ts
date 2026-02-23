@@ -6,9 +6,23 @@
  * rule-based field mappings, and supports multi-region + cross-account
  * discovery through standard credential chains.
  *
- * AWS SDK dependencies are loaded dynamically at runtime — this module
- * works with both @aws-sdk/client-* v3 packages (if installed) and
- * falls back gracefully when they're unavailable.
+ * Deep integration with `@espada/aws` extension:
+ * - **CredentialsManager** — Unified credential resolution (env, profile,
+ *   SSO, instance metadata, assumed roles) replaces manual fromIni/STS code.
+ * - **ClientPoolManager** — Connection pooling with LRU eviction and TTL
+ *   replaces per-call client creation for supported services.
+ * - **ServiceDiscovery** — Region enumeration replaces manual EC2
+ *   DescribeRegions calls.
+ * - **CostManager** — Cost Explorer queries, forecasting, optimization
+ *   recommendations, and unused resource detection.
+ * - **CloudTrailManager** — Incremental sync via infrastructure change events.
+ * - **SecurityManager** — Security posture enrichment for discovered nodes.
+ * - Static pricing tables remain as fallback when CE is unavailable.
+ *
+ * All @espada/aws managers are lazy-loaded at runtime — the adapter works
+ * standalone (with direct AWS SDK dynamic imports) when the extension
+ * package is unavailable. When `clientFactory` is provided (tests),
+ * all manager delegation is bypassed.
  */
 
 import type {
@@ -223,10 +237,43 @@ export type AwsAdapterConfig = {
   concurrency?: number;
   /**
    * Optional SDK client factory for dependency injection.
-   * If provided, the adapter uses this instead of dynamic imports.
+   * If provided, the adapter uses this instead of dynamic imports
+   * AND bypasses all @espada/aws manager delegation. Used by tests.
    * Signature: (service: string, region: string) => client
    */
   clientFactory?: AwsClientFactory;
+  /**
+   * Enable AWS Cost Explorer API for real billing data.
+   * When enabled, discovered nodes are enriched with actual cost data
+   * from the last N days of billing. Falls back to static pricing
+   * tables when Cost Explorer is unavailable or returns no data.
+   * Default: true.
+   */
+  enableCostExplorer?: boolean;
+  /**
+   * Cost lookback period in days for Cost Explorer queries.
+   * Default: 30.
+   */
+  costLookbackDays?: number;
+  /**
+   * Pre-built @espada/aws managers for dependency injection.
+   * When omitted, managers are lazy-loaded from the extension at runtime.
+   * Ignored when `clientFactory` is provided (test mode).
+   */
+  managers?: AwsManagerOverrides;
+};
+
+/**
+ * Optional pre-built @espada/aws manager instances.
+ * The adapter lazy-loads any that aren't provided.
+ */
+export type AwsManagerOverrides = {
+  credentials?: unknown;
+  clientPool?: unknown;
+  discovery?: unknown;
+  cost?: unknown;
+  cloudtrail?: unknown;
+  security?: unknown;
 };
 
 /**
@@ -243,6 +290,67 @@ export type AwsClientFactory = (
 export type AwsClient = {
   send: (command: unknown) => Promise<unknown>;
   destroy?: () => void;
+};
+
+// =============================================================================
+// Extended Capability Result Types
+// =============================================================================
+
+/** Cost forecast result from CostManager.forecastCosts(). */
+export type AwsForecastResult = {
+  totalForecastedCost: number;
+  forecastPeriods: Array<{ start: string; end: string; amount: number }>;
+  currency: string;
+  confidenceLevel?: number;
+};
+
+/** Optimization recommendation result from CostManager. */
+export type AwsOptimizationResult = {
+  rightsizing: Array<{ instanceId: string; currentType: string; recommendedType: string; estimatedSavings: number }>;
+  reservedInstances: Array<{ service: string; recommendedCount: number; estimatedSavings: number }>;
+  savingsPlans: Array<{ type: string; commitment: number; estimatedSavings: number }>;
+  totalEstimatedSavings: number;
+};
+
+/** Unused resources result from CostManager.findUnusedResources(). */
+export type AwsUnusedResourcesResult = {
+  resources: Array<{
+    resourceId: string;
+    resourceType: string;
+    reason: string;
+    estimatedMonthlyCost: number;
+    region?: string;
+    lastUsed?: string;
+  }>;
+  totalWastedCost: number;
+};
+
+/** A single infrastructure change event from CloudTrail. */
+export type AwsChangeEvent = {
+  eventId: string;
+  eventName: string;
+  eventTime: string;
+  region: string;
+  service: string;
+  actor: string;
+  resources: Array<{ type: string; id: string }>;
+};
+
+/** Incremental changes since a given time from CloudTrail. */
+export type AwsIncrementalChanges = {
+  creates: AwsChangeEvent[];
+  modifies: AwsChangeEvent[];
+  deletes: AwsChangeEvent[];
+  since: string;
+  until: string;
+};
+
+/** Security posture summary from SecurityManager. */
+export type AwsSecurityPosture = {
+  iamRoles: number;
+  securityFindings: Array<{ title: string; severity: string; resourceId?: string }>;
+  guardDutyFindings: Array<{ title: string; severity: string; type?: string }>;
+  scannedAt: string;
 };
 
 // =============================================================================
@@ -278,6 +386,15 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
    */
   private assumedCredentials: unknown | null = null;
   private sdkAvailable: boolean | null = null;
+
+  // ---- @espada/aws lazy-loaded manager instances ----
+  // `undefined` = not yet initialized. `null` = unavailable.
+  private _credentialsManager: unknown | undefined = undefined;
+  private _clientPoolManager: unknown | undefined = undefined;
+  private _discoveryManager: unknown | undefined = undefined;
+  private _costManager: unknown | undefined = undefined;
+  private _cloudTrailManager: unknown | undefined = undefined;
+  private _securityManager: unknown | undefined = undefined;
 
   constructor(config: AwsAdapterConfig) {
     this.config = config;
@@ -319,7 +436,7 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     // Resolve credentials for cross-account if needed
     if (this.config.assumeRoleArn && !this.assumedCredentials) {
       try {
-        this.assumedCredentials = await this.assumeRole(this.config.assumeRoleArn, this.config.externalId);
+        this.assumedCredentials = await this.resolveAssumeRole(this.config.assumeRoleArn, this.config.externalId);
       } catch (error) {
         return {
           provider: "aws",
@@ -339,8 +456,8 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
       ? AWS_SERVICE_MAPPINGS.filter((m) => options.resourceTypes!.includes(m.graphType))
       : AWS_SERVICE_MAPPINGS;
 
-    // Determine target regions
-    const regions = options?.regions ?? this.config.regions ?? await this.getEnabledRegions();
+    // Determine target regions (ServiceDiscovery → EC2 fallback → defaults)
+    const regions = options?.regions ?? this.config.regions ?? await this.resolveRegions();
 
     for (const region of regions) {
       for (const mapping of mappings) {
@@ -364,6 +481,28 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
             message: error instanceof Error ? error.message : String(error),
             code: (error as { code?: string })?.code,
           });
+        }
+      }
+    }
+
+    // Enrich nodes with real cost data from AWS Cost Explorer.
+    // Falls back to static pricing tables when CE is unavailable.
+    const enableCE = this.config.enableCostExplorer !== false;
+    if (enableCE && nodes.length > 0) {
+      try {
+        await this.enrichWithCostExplorer(nodes, errors);
+      } catch {
+        // Cost enrichment is best-effort; don't fail the whole discovery
+      }
+    }
+
+    // Static fallback: fill in any nodes still missing cost estimates
+    for (const node of nodes) {
+      if (node.costMonthly == null) {
+        const fallback = this.estimateCostStatic(node.resourceType, node.metadata);
+        if (fallback != null) {
+          node.costMonthly = fallback;
+          node.metadata["costSource"] = "static-estimate";
         }
       }
     }
@@ -524,14 +663,30 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   }
 
   supportsIncrementalSync(): boolean {
-    // CloudTrail integration is Phase 6
-    return false;
+    // Incremental sync is supported via CloudTrail when @espada/aws is available.
+    // The adapter checks at runtime via getIncrementalChanges().
+    return !this.config.clientFactory;
   }
 
   /**
    * Verify AWS credentials by calling STS GetCallerIdentity.
+   * Delegates to CredentialsManager when available, falls back to direct STS.
    */
   async healthCheck(): Promise<boolean> {
+    // Try CredentialsManager first (richer, validates + caches)
+    if (!this.config.clientFactory) {
+      const cm = await this.getCredentialsManager();
+      if (cm) {
+        try {
+          const result = await (cm as { healthCheck: (p?: string) => Promise<{ ok: boolean }> }).healthCheck(this.config.profile);
+          return result.ok;
+        } catch {
+          // Fall through to direct STS
+        }
+      }
+    }
+
+    // Direct STS fallback
     try {
       const client = await this.createClient("STS", "us-east-1");
       if (!client) return false;
@@ -578,19 +733,44 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
 
   /**
    * Create an AWS SDK client for the given service and region.
-   * Uses the client factory if provided, otherwise dynamically imports the SDK.
+   *
+   * Resolution order:
+   * 1. `clientFactory` (test injection) — bypasses everything.
+   * 2. `AWSClientPoolManager` from @espada/aws — connection pooling + TTL.
+   * 3. Direct dynamic import fallback — per-call client creation.
    */
   private async createClient(service: string, region: string): Promise<AwsClient | null> {
     const credentials = this.assumedCredentials ?? undefined;
 
+    // 1. Test injection
     if (this.config.clientFactory) {
       return this.config.clientFactory(service, region, { credentials });
     }
 
+    // 2. Try ClientPoolManager for supported services
+    const poolServiceName = AWS_SERVICE_TO_POOL_NAME[service];
+    if (poolServiceName) {
+      const pool = await this.getClientPoolManager();
+      if (pool) {
+        try {
+          const creds = await this.resolveCredentials();
+          if (creds) {
+            const poolClient = await (pool as {
+              getClient: <T>(s: string, r: string, c: unknown, p?: string) => Promise<T>;
+            }).getClient(poolServiceName, region, creds, this.config.profile);
+            // Pool-managed clients should NOT be destroyed by the caller
+            return { send: (cmd: unknown) => (poolClient as { send: (c: unknown) => Promise<unknown> }).send(cmd) };
+          }
+        } catch {
+          // Fall through to manual creation
+        }
+      }
+    }
+
+    // 3. Direct dynamic import fallback
     try {
       const clientConfig: Record<string, unknown> = { region };
       if (this.config.profile) {
-        // Use the fromIni credential provider if a profile is specified
         const { fromIni } = await import("@aws-sdk/credential-provider-ini");
         clientConfig["credentials"] = fromIni({ profile: this.config.profile });
       }
@@ -598,29 +778,7 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
         clientConfig["credentials"] = credentials;
       }
 
-      // Map service names to SDK package names
-      const packageMap: Record<string, string> = {
-        EC2: "@aws-sdk/client-ec2",
-        RDS: "@aws-sdk/client-rds",
-        Lambda: "@aws-sdk/client-lambda",
-        S3: "@aws-sdk/client-s3",
-        ELBv2: "@aws-sdk/client-elastic-load-balancing-v2",
-        SQS: "@aws-sdk/client-sqs",
-        SNS: "@aws-sdk/client-sns",
-        ElastiCache: "@aws-sdk/client-elasticache",
-        ECS: "@aws-sdk/client-ecs",
-        EKS: "@aws-sdk/client-eks",
-        APIGateway: "@aws-sdk/client-api-gateway",
-        CloudFront: "@aws-sdk/client-cloudfront",
-        Route53: "@aws-sdk/client-route-53",
-        IAM: "@aws-sdk/client-iam",
-        SecretsManager: "@aws-sdk/client-secrets-manager",
-        STS: "@aws-sdk/client-sts",
-        SageMaker: "@aws-sdk/client-sagemaker",
-        Bedrock: "@aws-sdk/client-bedrock",
-      };
-
-      const packageName = packageMap[service];
+      const packageName = AWS_SDK_PACKAGES[service];
       if (!packageName) return null;
 
       const module = await import(packageName);
@@ -648,28 +806,7 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     }
 
     try {
-      const packageMap: Record<string, string> = {
-        EC2: "@aws-sdk/client-ec2",
-        RDS: "@aws-sdk/client-rds",
-        Lambda: "@aws-sdk/client-lambda",
-        S3: "@aws-sdk/client-s3",
-        ELBv2: "@aws-sdk/client-elastic-load-balancing-v2",
-        SQS: "@aws-sdk/client-sqs",
-        SNS: "@aws-sdk/client-sns",
-        ElastiCache: "@aws-sdk/client-elasticache",
-        ECS: "@aws-sdk/client-ecs",
-        EKS: "@aws-sdk/client-eks",
-        APIGateway: "@aws-sdk/client-api-gateway",
-        CloudFront: "@aws-sdk/client-cloudfront",
-        Route53: "@aws-sdk/client-route-53",
-        IAM: "@aws-sdk/client-iam",
-        SecretsManager: "@aws-sdk/client-secrets-manager",
-        STS: "@aws-sdk/client-sts",
-        SageMaker: "@aws-sdk/client-sagemaker",
-        Bedrock: "@aws-sdk/client-bedrock",
-      };
-
-      const packageName = packageMap[service];
+      const packageName = AWS_SDK_PACKAGES[service];
       if (!packageName) return null;
 
       const module = await import(packageName);
@@ -688,8 +825,29 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
 
   /**
    * Assume an IAM role for cross-account discovery.
+   * Delegates to CredentialsManager when available, falls back to direct STS.
    */
-  private async assumeRole(roleArn: string, externalId?: string): Promise<unknown> {
+  private async resolveAssumeRole(roleArn: string, externalId?: string): Promise<unknown> {
+    // Try CredentialsManager first
+    if (!this.config.clientFactory) {
+      const cm = await this.getCredentialsManager();
+      if (cm) {
+        try {
+          const creds = await (cm as {
+            assumeRole: (arn: string, opts?: Record<string, unknown>) => Promise<unknown>;
+          }).assumeRole(roleArn, {
+            sessionName: `espada-kg-discovery-${Date.now()}`,
+            duration: 3600,
+            ...(externalId ? { externalId } : {}),
+          });
+          return creds;
+        } catch {
+          // Fall through to direct STS
+        }
+      }
+    }
+
+    // Direct STS fallback
     const client = await this.createClient("STS", "us-east-1");
     if (!client) {
       throw new Error("STS client unavailable — cannot assume role");
@@ -722,10 +880,51 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   }
 
   /**
-   * Get list of enabled regions for the account.
-   * Falls back to common regions if the SDK call fails.
+   * Resolve current credentials via CredentialsManager.
+   * Returns null if the manager is unavailable.
    */
-  private async getEnabledRegions(): Promise<string[]> {
+  private async resolveCredentials(): Promise<unknown | null> {
+    if (this.assumedCredentials) return this.assumedCredentials;
+
+    const cm = await this.getCredentialsManager();
+    if (!cm) return null;
+
+    try {
+      const result = await (cm as {
+        getCredentials: (profile?: string) => Promise<{ credentials: unknown }>;
+      }).getCredentials(this.config.profile);
+      return result.credentials;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get list of enabled regions for the account.
+   *
+   * Resolution order:
+   * 1. ServiceDiscovery from @espada/aws (cached, comprehensive).
+   * 2. Direct EC2 DescribeRegions call.
+   * 3. Hardcoded defaults.
+   */
+  private async resolveRegions(): Promise<string[]> {
+    // 1. Try ServiceDiscovery
+    if (!this.config.clientFactory) {
+      const sd = await this.getServiceDiscovery();
+      if (sd) {
+        try {
+          const regions = await (sd as {
+            discoverRegions: () => Promise<Array<{ regionName: string; available: boolean }>>;
+          }).discoverRegions();
+          const enabled = regions.filter((r) => r.available).map((r) => r.regionName);
+          if (enabled.length > 0) return enabled;
+        } catch {
+          // Fall through
+        }
+      }
+    }
+
+    // 2. Direct EC2 DescribeRegions fallback
     try {
       const client = await this.createClient("EC2", "us-east-1");
       if (!client) return DEFAULT_REGIONS;
@@ -911,8 +1110,8 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   }
 
   /**
-   * Rough cost estimation from resource attributes.
-   * Uses the same pricing tables as the Terraform adapter.
+   * Rough cost estimation from resource attributes (inline, during discovery).
+   * Used as the primary estimate; Cost Explorer enrichment overrides later.
    */
   private estimateCost(resourceType: GraphResourceType, item: Record<string, unknown>): number | null {
     switch (resourceType) {
@@ -936,6 +1135,840 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
 
     return null;
   }
+
+  /**
+   * Static cost estimation fallback using resource metadata.
+   * Called for nodes that Cost Explorer didn't cover (or when CE is unavailable).
+   * Uses service-specific heuristics based on configuration attributes.
+   */
+  private estimateCostStatic(
+    resourceType: GraphResourceType,
+    metadata: Record<string, unknown>,
+  ): number | null {
+    switch (resourceType) {
+      case "serverless-function": {
+        // Lambda: estimate based on memory allocation and assumed invocations.
+        // Free tier: 1M requests + 400K GB-seconds/month. Beyond that:
+        // $0.20/1M requests + $0.0000166667/GB-second.
+        // Conservative estimate: 100K invocations/month, 200ms avg duration.
+        const memoryMb = (metadata["memorySize"] as number) ?? 128;
+        const assumedInvocations = 100_000;
+        const avgDurationMs = 200;
+        const gbSeconds = (memoryMb / 1024) * (avgDurationMs / 1000) * assumedInvocations;
+        const computeCost = Math.max(0, gbSeconds - 400_000) * 0.0000166667;
+        const requestCost = Math.max(0, assumedInvocations - 1_000_000) * 0.0000002;
+        const total = computeCost + requestCost;
+        // Return small estimated cost even in free tier to show activity
+        return total < 0.01 ? 0.01 : Math.round(total * 100) / 100;
+      }
+
+      case "storage": {
+        // S3: estimate based on storage class. Assume modest bucket size.
+        // Standard: $0.023/GB. Typical small bucket: ~1 GB = ~$0.02/mo.
+        // We can't see bucket size from listBuckets, so use a conservative floor.
+        return STORAGE_COSTS["s3-standard"];
+      }
+
+      case "queue": {
+        // SQS: $0.40/1M requests after free tier (1M free).
+        // Assume modest usage: 500K messages/month → free tier → $0.00.
+        return STORAGE_COSTS["sqs"];
+      }
+
+      case "topic": {
+        // SNS: $0.50/1M publishes. Assume modest usage.
+        return STORAGE_COSTS["sns"];
+      }
+
+      case "api-gateway": {
+        // API Gateway: $3.50/1M REST API calls. Assume 100K calls/month.
+        return STORAGE_COSTS["api-gateway"];
+      }
+
+      case "cdn": {
+        // CloudFront: varies by traffic. Base monthly cost for a distribution.
+        return STORAGE_COSTS["cloudfront"];
+      }
+
+      case "dns": {
+        // Route 53: $0.50/hosted zone + $0.40/1M queries.
+        return STORAGE_COSTS["route53-zone"];
+      }
+
+      case "secret": {
+        // Secrets Manager: $0.40/secret/month + $0.05/10K API calls.
+        return STORAGE_COSTS["secrets-manager"];
+      }
+
+      case "cluster": {
+        // EKS: $0.10/hour = $73/month for the control plane.
+        return STORAGE_COSTS["eks-cluster"];
+      }
+
+      case "container": {
+        // ECS service: cost depends on underlying compute (Fargate/EC2).
+        // Fargate base estimate: 0.5 vCPU, 1GB = ~$18/month.
+        return STORAGE_COSTS["ecs-fargate-task"];
+      }
+
+      case "iam-role":
+      case "security-group":
+      case "vpc":
+      case "subnet":
+      case "policy":
+        // Free-tier / no-cost resources. Mark as $0 explicitly.
+        return 0;
+
+      default:
+        return null;
+    }
+  }
+
+  // ===========================================================================
+  // @espada/aws Manager Lazy-Loading
+  // ===========================================================================
+
+  /**
+   * Lazily get or create an AWSCredentialsManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getCredentialsManager(): Promise<unknown | null> {
+    if (this._credentialsManager !== undefined) return this._credentialsManager as unknown | null;
+
+    if (this.config.managers?.credentials) {
+      this._credentialsManager = this.config.managers.credentials;
+      return this._credentialsManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/credentials");
+      const cm = mod.createCredentialsManager({
+        defaultProfile: this.config.profile,
+        defaultRegion: "us-east-1",
+      });
+      await (cm as { initialize: () => Promise<void> }).initialize();
+      this._credentialsManager = cm;
+      return cm;
+    } catch {
+      this._credentialsManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an AWSClientPoolManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getClientPoolManager(): Promise<unknown | null> {
+    if (this._clientPoolManager !== undefined) return this._clientPoolManager as unknown | null;
+
+    if (this.config.managers?.clientPool) {
+      this._clientPoolManager = this.config.managers.clientPool;
+      return this._clientPoolManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/client-pool");
+      const pool = mod.createClientPool({
+        maxClientsPerService: 5,
+        maxTotalClients: 50,
+        clientTTL: 3600000,
+        defaultRegion: "us-east-1",
+      });
+
+      // Initialize pool with credentials if available
+      const creds = await this.resolveCredentials();
+      if (creds) {
+        await (pool as { initialize: (c: unknown) => Promise<void> }).initialize(creds);
+      }
+
+      this._clientPoolManager = pool;
+      return pool;
+    } catch {
+      this._clientPoolManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an AWSServiceDiscovery from @espada/aws.
+   * Returns null if the extension or CredentialsManager is unavailable.
+   */
+  private async getServiceDiscovery(): Promise<unknown | null> {
+    if (this._discoveryManager !== undefined) return this._discoveryManager as unknown | null;
+
+    if (this.config.managers?.discovery) {
+      this._discoveryManager = this.config.managers.discovery;
+      return this._discoveryManager as unknown;
+    }
+
+    try {
+      const cm = await this.getCredentialsManager();
+      if (!cm) { this._discoveryManager = null; return null; }
+
+      const pool = await this.getClientPoolManager();
+      const mod = await import("@espada/aws/discovery");
+      // eslint-disable-next-line -- dynamic import loses type info; runtime validated
+      this._discoveryManager = mod.createServiceDiscovery(cm as never, (pool ?? undefined) as never);
+      return this._discoveryManager as unknown;
+    } catch {
+      this._discoveryManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Get or lazily create a CostManager instance from `@espada/aws`.
+   *
+   * Returns null if the aws extension package is not available (e.g. standalone
+   * deployment without the workspace). In that case the static pricing
+   * tables are used as fallback.
+   */
+  private async getCostManagerInstance(): Promise<unknown | null> {
+    if (this._costManager !== undefined) return this._costManager as unknown | null;
+
+    if (this.config.managers?.cost) {
+      this._costManager = this.config.managers.cost;
+      return this._costManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/cost");
+      const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
+
+      // Forward credentials when explicitly available
+      if (this.assumedCredentials) {
+        const creds = this.assumedCredentials as Record<string, unknown>;
+        config["credentials"] = {
+          accessKeyId: creds["accessKeyId"],
+          secretAccessKey: creds["secretAccessKey"],
+          sessionToken: creds["sessionToken"],
+        };
+      } else if (this.config.profile) {
+        try {
+          const { fromIni } = await import("@aws-sdk/credential-provider-ini");
+          const resolved = await fromIni({ profile: this.config.profile })();
+          config["credentials"] = {
+            accessKeyId: resolved.accessKeyId,
+            secretAccessKey: resolved.secretAccessKey,
+            sessionToken: resolved.sessionToken,
+          };
+        } catch {
+          // profile resolution failed — let CostManager try default chain
+        }
+      }
+
+      this._costManager = mod.createCostManager(config);
+      return this._costManager as unknown;
+    } catch {
+      this._costManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a CloudTrailManager from @espada/aws.
+   * Returns null if the extension or CredentialsManager is unavailable.
+   */
+  private async getCloudTrailManager(): Promise<unknown | null> {
+    if (this._cloudTrailManager !== undefined) return this._cloudTrailManager as unknown | null;
+
+    if (this.config.managers?.cloudtrail) {
+      this._cloudTrailManager = this.config.managers.cloudtrail;
+      return this._cloudTrailManager as unknown;
+    }
+
+    try {
+      const cm = await this.getCredentialsManager();
+      if (!cm) { this._cloudTrailManager = null; return null; }
+
+      const mod = await import("@espada/aws/cloudtrail");
+      // eslint-disable-next-line -- dynamic import loses type info; runtime validated
+      this._cloudTrailManager = mod.createCloudTrailManager(cm as never, "us-east-1");
+      return this._cloudTrailManager as unknown;
+    } catch {
+      this._cloudTrailManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a SecurityManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getSecurityManager(): Promise<unknown | null> {
+    if (this._securityManager !== undefined) return this._securityManager as unknown | null;
+
+    if (this.config.managers?.security) {
+      this._securityManager = this.config.managers.security;
+      return this._securityManager as unknown;
+    }
+
+    try {
+      const mod = await import("@espada/aws/security");
+      const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
+
+      // Forward credentials
+      if (this.assumedCredentials) {
+        const creds = this.assumedCredentials as Record<string, unknown>;
+        config["credentials"] = {
+          accessKeyId: creds["accessKeyId"],
+          secretAccessKey: creds["secretAccessKey"],
+          sessionToken: creds["sessionToken"],
+        };
+      }
+
+      this._securityManager = mod.createSecurityManager(config);
+      return this._securityManager as unknown;
+    } catch {
+      this._securityManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Enrich discovered nodes with real cost data from AWS Cost Explorer.
+   *
+   * Delegates to the `@espada/aws` CostManager for CE queries, then
+   * applies KG-specific distribution logic to map costs to graph nodes.
+   *
+   * Strategy:
+   * 1. Query `GetCostAndUsage` grouped by SERVICE for the last N days.
+   * 2. Map AWS service names to graph resource types.
+   * 3. Distribute per-service costs proportionally across discovered nodes
+   *    of that type (weighted by static estimates when available).
+   * 4. For services with resource-level granularity (EC2, RDS, Lambda),
+   *    also query `GetCostAndUsage` with RESOURCE dimension.
+   *
+   * Sets `metadata.costSource = "cost-explorer"` on enriched nodes.
+   */
+  async enrichWithCostExplorer(
+    nodes: GraphNodeInput[],
+    errors: DiscoveryError[],
+  ): Promise<void> {
+    const lookbackDays = this.config.costLookbackDays ?? 30;
+    const endDate = new Date();
+    const startDate = new Date(endDate.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+
+    const formatDate = (d: Date): string =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    const timePeriod = {
+      Start: formatDate(startDate),
+      End: formatDate(endDate),
+    };
+
+    try {
+      // Step 1: Get per-service cost totals (delegates to CostManager)
+      const serviceCosts = await this.queryServiceCosts(timePeriod, lookbackDays);
+      if (!serviceCosts || serviceCosts.size === 0) return;
+
+      // Step 2: Try resource-level cost data for supported services
+      const resourceCosts = await this.queryResourceCosts(timePeriod, lookbackDays);
+
+      // Step 3: Match resource-level costs to nodes by ARN/ID
+      if (resourceCosts && resourceCosts.size > 0) {
+        this.applyResourceCosts(nodes, resourceCosts);
+      }
+
+      // Step 4: Distribute remaining service-level costs to uncosted nodes
+      this.distributeServiceCosts(nodes, serviceCosts);
+    } catch (error) {
+      errors.push({
+        resourceType: "custom",
+        message: `Cost Explorer enrichment failed: ${error instanceof Error ? error.message : String(error)}`,
+        code: (error as { code?: string })?.code,
+      });
+    }
+  }
+
+  /**
+   * Query AWS Cost Explorer for per-service monthly costs.
+   * Delegates to `@espada/aws` CostManager.getCostSummary().
+   *
+   * Returns a map of AWS service name → monthly cost in USD.
+   */
+  private async queryServiceCosts(
+    timePeriod: { Start: string; End: string },
+    lookbackDays: number,
+  ): Promise<Map<string, number> | null> {
+    const cm = await this.getCostManagerInstance();
+    if (!cm) return null;
+
+    try {
+      // Use CostManager.getCostSummary() grouped by SERVICE
+      const result = await (cm as { getCostSummary: (opts: unknown) => Promise<{ success: boolean; data?: { groups?: Array<{ key: string; total: number }> } }> }).getCostSummary({
+        timePeriod: { start: timePeriod.Start, end: timePeriod.End },
+        granularity: "MONTHLY",
+        groupBy: [{ type: "DIMENSION", key: "SERVICE" }],
+        metrics: ["UnblendedCost"],
+      });
+
+      if (!result.success || !result.data?.groups) return null;
+
+      const serviceCosts = new Map<string, number>();
+      for (const group of result.data.groups) {
+        if (group.total > 0) {
+          serviceCosts.set(group.key, group.total);
+        }
+      }
+
+      // Normalize to monthly if lookback > 30 days
+      if (lookbackDays > 30) {
+        const factor = 30 / lookbackDays;
+        for (const [k, v] of serviceCosts.entries()) {
+          serviceCosts.set(k, Math.round(v * factor * 100) / 100);
+        }
+      }
+
+      return serviceCosts.size > 0 ? serviceCosts : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Query Cost Explorer for resource-level costs via CostManager.
+   * Uses DAILY granularity over the last 14 days, then extrapolates to monthly.
+   *
+   * Returns a map of resource ARN/ID → monthly cost in USD.
+   */
+  private async queryResourceCosts(
+    _timePeriod: { Start: string; End: string },
+    _lookbackDays: number,
+  ): Promise<Map<string, number> | null> {
+    const cm = await this.getCostManagerInstance();
+    if (!cm) return null;
+
+    try {
+      // Resource-level data requires DAILY granularity and max 14 days
+      const endDate = new Date();
+      const startDate = new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000);
+      const formatDate = (d: Date): string =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      const result = await (cm as { getCostSummary: (opts: unknown) => Promise<{ success: boolean; data?: { groups?: Array<{ key: string; total: number }> } }> }).getCostSummary({
+        timePeriod: { start: formatDate(startDate), end: formatDate(endDate) },
+        granularity: "DAILY",
+        groupBy: [{ type: "DIMENSION", key: "RESOURCE" }],
+        metrics: ["UnblendedCost"],
+        filter: {
+          dimension: "SERVICE",
+          values: [
+            "Amazon Elastic Compute Cloud - Compute",
+            "Amazon Relational Database Service",
+            "AWS Lambda",
+            "Amazon Simple Storage Service",
+            "Amazon ElastiCache",
+            "Amazon Elastic Container Service",
+            "Amazon Elastic Kubernetes Service",
+            "Amazon SageMaker",
+          ],
+        },
+      });
+
+      if (!result.success || !result.data?.groups) return null;
+
+      const resourceCosts = new Map<string, number>();
+      for (const group of result.data.groups) {
+        if (group.total > 0) {
+          resourceCosts.set(group.key, group.total);
+        }
+      }
+
+      // Extrapolate 14 days to monthly (×30/14)
+      const factor = 30 / 14;
+      for (const [k, v] of resourceCosts.entries()) {
+        resourceCosts.set(k, Math.round(v * factor * 100) / 100);
+      }
+
+      return resourceCosts.size > 0 ? resourceCosts : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Apply resource-level Cost Explorer data to matching nodes.
+   * Matches by ARN substring or native resource ID.
+   */
+  private applyResourceCosts(
+    nodes: GraphNodeInput[],
+    resourceCosts: Map<string, number>,
+  ): void {
+    for (const node of nodes) {
+      for (const [arn, cost] of resourceCosts.entries()) {
+        // Match by nativeId (contained in the ARN) or by full ARN match
+        if (
+          arn.includes(node.nativeId) ||
+          (node.metadata["arn"] && arn === node.metadata["arn"]) ||
+          arn.endsWith(`/${node.nativeId}`) ||
+          arn.endsWith(`:${node.nativeId}`)
+        ) {
+          node.costMonthly = cost;
+          node.metadata["costSource"] = "cost-explorer";
+          node.metadata["costArn"] = arn;
+          break;
+        }
+      }
+    }
+  }
+
+  /**
+   * Distribute service-level costs from Cost Explorer to discovered nodes
+   * that don't already have resource-level cost data.
+   *
+   * Strategy: for each AWS service bucket, find matching uncosted nodes
+   * and divide the service cost among them (weighted by static estimate
+   * if available, otherwise equal split).
+   */
+  private distributeServiceCosts(
+    nodes: GraphNodeInput[],
+    serviceCosts: Map<string, number>,
+  ): void {
+    for (const [awsService, totalCost] of serviceCosts.entries()) {
+      const resourceTypes = AWS_SERVICE_TO_RESOURCE_TYPE[awsService];
+      if (!resourceTypes) continue;
+
+      // Find nodes of this resource type that don't have CE cost yet
+      const uncostdNodes = nodes.filter(
+        (n) =>
+          resourceTypes.includes(n.resourceType) &&
+          n.metadata["costSource"] !== "cost-explorer",
+      );
+      if (uncostdNodes.length === 0) continue;
+
+      // Weighted distribution: use existing static estimates as weights
+      const totalStaticWeight = uncostdNodes.reduce(
+        (sum, n) => sum + (n.costMonthly ?? 1),
+        0,
+      );
+
+      for (const node of uncostdNodes) {
+        const weight = (node.costMonthly ?? 1) / totalStaticWeight;
+        node.costMonthly = Math.round(totalCost * weight * 100) / 100;
+        node.metadata["costSource"] = "cost-explorer-distributed";
+      }
+    }
+  }
+
+  // ===========================================================================
+  // Extended Capabilities — via @espada/aws
+  // ===========================================================================
+
+  /**
+   * Forecast future AWS costs using CostManager.forecastCosts().
+   *
+   * Returns a forecast result or null if the CostManager is unavailable
+   * or the forecast fails. This is a new capability enabled by the
+   * @espada/aws integration.
+   */
+  async forecastCosts(options?: {
+    /** Forecast horizon in days (default: 30). */
+    days?: number;
+    /** Granularity: "MONTHLY" | "DAILY" (default: "MONTHLY"). */
+    granularity?: string;
+  }): Promise<AwsForecastResult | null> {
+    const cm = await this.getCostManagerInstance();
+    if (!cm) return null;
+
+    try {
+      const days = options?.days ?? 30;
+      const startDate = new Date();
+      const endDate = new Date(startDate.getTime() + days * 24 * 60 * 60 * 1000);
+      const formatDate = (d: Date): string =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      const result = await (cm as {
+        forecastCosts: (opts: unknown) => Promise<{
+          success: boolean;
+          data?: {
+            totalForecastedCost: number;
+            forecastPeriods?: Array<{ start: string; end: string; amount: number }>;
+            currency?: string;
+            confidenceLevel?: number;
+          };
+          error?: string;
+        }>;
+      }).forecastCosts({
+        timePeriod: { start: formatDate(startDate), end: formatDate(endDate) },
+        granularity: options?.granularity ?? "MONTHLY",
+        metric: "UNBLENDED_COST",
+      });
+
+      if (!result.success || !result.data) return null;
+
+      return {
+        totalForecastedCost: result.data.totalForecastedCost,
+        forecastPeriods: result.data.forecastPeriods ?? [],
+        currency: result.data.currency ?? "USD",
+        confidenceLevel: result.data.confidenceLevel,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get optimization recommendations via CostManager.
+   *
+   * Covers rightsizing, reserved instance, and savings plan opportunities.
+   * Returns null if the CostManager is unavailable.
+   */
+  async getOptimizationRecommendations(): Promise<AwsOptimizationResult | null> {
+    const cm = await this.getCostManagerInstance();
+    if (!cm) return null;
+
+    try {
+      const result = await (cm as {
+        getOptimizationRecommendations: (opts?: unknown) => Promise<{
+          success: boolean;
+          data?: {
+            rightsizing?: Array<{ instanceId: string; currentType: string; recommendedType: string; estimatedSavings: number }>;
+            reservedInstances?: Array<{ service: string; recommendedCount: number; estimatedSavings: number }>;
+            savingsPlans?: Array<{ type: string; commitment: number; estimatedSavings: number }>;
+            totalEstimatedSavings?: number;
+          };
+          error?: string;
+        }>;
+      }).getOptimizationRecommendations();
+
+      if (!result.success || !result.data) return null;
+
+      return {
+        rightsizing: result.data.rightsizing ?? [],
+        reservedInstances: result.data.reservedInstances ?? [],
+        savingsPlans: result.data.savingsPlans ?? [],
+        totalEstimatedSavings: result.data.totalEstimatedSavings ?? 0,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Detect unused AWS resources via CostManager.findUnusedResources().
+   *
+   * Identifies idle EBS volumes, unused EIPs, stale snapshots, cold Lambda
+   * functions, idle instances, and unused load balancers.
+   */
+  async findUnusedResources(): Promise<AwsUnusedResourcesResult | null> {
+    const cm = await this.getCostManagerInstance();
+    if (!cm) return null;
+
+    try {
+      const result = await (cm as {
+        findUnusedResources: (opts?: unknown) => Promise<{
+          success: boolean;
+          data?: {
+            resources: Array<{
+              resourceId: string;
+              resourceType: string;
+              reason: string;
+              estimatedMonthlyCost: number;
+              region?: string;
+              lastUsed?: string;
+            }>;
+            totalWastedCost: number;
+          };
+          error?: string;
+        }>;
+      }).findUnusedResources();
+
+      if (!result.success || !result.data) return null;
+
+      return {
+        resources: result.data.resources,
+        totalWastedCost: result.data.totalWastedCost,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get incremental infrastructure changes since a given time via CloudTrail.
+   *
+   * Returns changed resources as partial graph updates: creates, modifies,
+   * and deletes detected from CloudTrail infrastructure events.
+   */
+  async getIncrementalChanges(since: Date): Promise<AwsIncrementalChanges | null> {
+    if (this.config.clientFactory) return null; // Not available in test mode
+
+    const ct = await this.getCloudTrailManager();
+    if (!ct) return null;
+
+    try {
+      const events = await (ct as {
+        getInfrastructureEvents: (opts?: { startTime?: Date; endTime?: Date; maxResults?: number }) => Promise<Array<{
+          eventId: string;
+          eventName: string;
+          eventTime: Date;
+          eventSource: string;
+          awsRegion: string;
+          userIdentity: { type?: string; userName?: string; arn?: string };
+          requestParameters?: Record<string, unknown>;
+          responseElements?: Record<string, unknown>;
+          errorCode?: string;
+          resources?: Array<{ resourceType?: string; resourceName?: string }>;
+        }>>;
+      }).getInfrastructureEvents({
+        startTime: since,
+        endTime: new Date(),
+        maxResults: 500,
+      });
+
+      const creates: AwsChangeEvent[] = [];
+      const modifies: AwsChangeEvent[] = [];
+      const deletes: AwsChangeEvent[] = [];
+
+      for (const event of events) {
+        if (event.errorCode) continue; // Skip failed actions
+
+        const changeEvent: AwsChangeEvent = {
+          eventId: event.eventId,
+          eventName: event.eventName,
+          eventTime: event.eventTime instanceof Date ? event.eventTime.toISOString() : String(event.eventTime),
+          region: event.awsRegion,
+          service: event.eventSource.replace(".amazonaws.com", ""),
+          actor: event.userIdentity?.userName ?? event.userIdentity?.arn ?? "unknown",
+          resources: event.resources?.map((r) => ({
+            type: r.resourceType ?? "unknown",
+            id: r.resourceName ?? "unknown",
+          })) ?? [],
+        };
+
+        const name = event.eventName.toLowerCase();
+        if (name.startsWith("create") || name.startsWith("run") || name.startsWith("launch")) {
+          creates.push(changeEvent);
+        } else if (name.startsWith("delete") || name.startsWith("terminate") || name.startsWith("remove")) {
+          deletes.push(changeEvent);
+        } else if (name.startsWith("modify") || name.startsWith("update") || name.startsWith("put") || name.startsWith("attach") || name.startsWith("detach")) {
+          modifies.push(changeEvent);
+        }
+      }
+
+      return { creates, modifies, deletes, since: since.toISOString(), until: new Date().toISOString() };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Get security posture summary via SecurityManager.
+   *
+   * Collects IAM findings, Security Hub results, GuardDuty alerts, and
+   * access analyzer findings. Returns null if SecurityManager is unavailable.
+   */
+  async getSecurityPosture(): Promise<AwsSecurityPosture | null> {
+    if (this.config.clientFactory) return null; // Not available in test mode
+
+    const sm = await this.getSecurityManager();
+    if (!sm) return null;
+
+    try {
+      // Collect IAM roles for policy analysis
+      const rolesResult = await (sm as {
+        listRoles: (opts?: unknown) => Promise<{ success: boolean; data?: { roles: Array<{ roleName: string; arn: string; createDate?: string }> } }>;
+      }).listRoles();
+
+      // Collect security findings if Security Hub is enabled
+      let securityFindings: Array<{ title: string; severity: string; resourceId?: string }> = [];
+      try {
+        const findingsResult = await (sm as {
+          listSecurityFindings: (opts?: unknown) => Promise<{
+            success: boolean;
+            data?: { findings: Array<{ title: string; severity: string; resources?: Array<{ id?: string }> }> };
+          }>;
+        }).listSecurityFindings({ maxResults: 100 });
+
+        if (findingsResult.success && findingsResult.data?.findings) {
+          securityFindings = findingsResult.data.findings.map((f) => ({
+            title: f.title,
+            severity: f.severity,
+            resourceId: f.resources?.[0]?.id,
+          }));
+        }
+      } catch {
+        // Security Hub might not be enabled — non-fatal
+      }
+
+      // Collect GuardDuty findings
+      let guardDutyFindings: Array<{ title: string; severity: string; type?: string }> = [];
+      try {
+        const gdResult = await (sm as {
+          listGuardDutyFindings: (opts?: unknown) => Promise<{
+            success: boolean;
+            data?: { findings: Array<{ title: string; severity: string; type?: string }> };
+          }>;
+        }).listGuardDutyFindings({ maxResults: 50 });
+
+        if (gdResult.success && gdResult.data?.findings) {
+          guardDutyFindings = gdResult.data.findings.map((f) => ({
+            title: f.title,
+            severity: f.severity,
+            type: f.type,
+          }));
+        }
+      } catch {
+        // GuardDuty might not be enabled — non-fatal
+      }
+
+      return {
+        iamRoles: rolesResult.success ? (rolesResult.data?.roles.length ?? 0) : 0,
+        securityFindings,
+        guardDutyFindings,
+        scannedAt: new Date().toISOString(),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Enrich discovered nodes with security metadata from SecurityManager.
+   * Attaches findings to matching nodes by resource ARN/ID.
+   */
+  async enrichWithSecurity(nodes: GraphNodeInput[]): Promise<void> {
+    const posture = await this.getSecurityPosture();
+    if (!posture) return;
+
+    // Attach security findings to matching nodes
+    for (const finding of posture.securityFindings) {
+      if (!finding.resourceId) continue;
+      for (const node of nodes) {
+        if (
+          finding.resourceId.includes(node.nativeId) ||
+          node.nativeId.includes(finding.resourceId)
+        ) {
+          const existing = (node.metadata["securityFindings"] as string[] | undefined) ?? [];
+          existing.push(`[${finding.severity}] ${finding.title}`);
+          node.metadata["securityFindings"] = existing;
+          node.metadata["hasSecurityIssues"] = true;
+        }
+      }
+    }
+  }
+
+  /**
+   * Clean up resources held by lazy-loaded managers.
+   * Call when the adapter is no longer needed.
+   */
+  async dispose(): Promise<void> {
+    if (this._clientPoolManager && typeof this._clientPoolManager === "object") {
+      try {
+        await (this._clientPoolManager as { destroy?: () => void }).destroy?.();
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    this._credentialsManager = undefined;
+    this._clientPoolManager = undefined;
+    this._discoveryManager = undefined;
+    this._costManager = undefined;
+    this._cloudTrailManager = undefined;
+    this._securityManager = undefined;
+  }
 }
 
 // =============================================================================
@@ -943,33 +1976,116 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
 // =============================================================================
 
 const EC2_COSTS: Record<string, number> = {
-  "t3.micro": 7.59, "t3.small": 15.18, "t3.medium": 30.37, "t3.large": 60.74, "t3.xlarge": 121.47,
-  "t3a.micro": 6.86, "t3a.small": 13.72, "t3a.medium": 27.45, "t3a.large": 54.90,
-  "m5.large": 70.08, "m5.xlarge": 140.16, "m5.2xlarge": 280.32, "m5.4xlarge": 560.64,
-  "m6i.large": 69.35, "m6i.xlarge": 138.70, "m6i.2xlarge": 277.40, "m6i.4xlarge": 554.80,
-  "m7i.large": 72.82, "m7i.xlarge": 145.64, "m7i.2xlarge": 291.28,
-  "c5.large": 62.05, "c5.xlarge": 124.10, "c5.2xlarge": 248.20,
-  "c6i.large": 61.32, "c6i.xlarge": 122.64, "c6i.2xlarge": 245.28,
-  "r5.large": 91.98, "r5.xlarge": 183.96, "r5.2xlarge": 367.92,
-  "r6i.large": 91.25, "r6i.xlarge": 182.50, "r6i.2xlarge": 365.00,
+  // General purpose — T family
+  "t3.nano": 3.80, "t3.micro": 7.59, "t3.small": 15.18, "t3.medium": 30.37, "t3.large": 60.74, "t3.xlarge": 121.47, "t3.2xlarge": 242.94,
+  "t3a.nano": 3.43, "t3a.micro": 6.86, "t3a.small": 13.72, "t3a.medium": 27.45, "t3a.large": 54.90, "t3a.xlarge": 109.79, "t3a.2xlarge": 219.58,
+  "t4g.nano": 3.07, "t4g.micro": 6.13, "t4g.small": 12.26, "t4g.medium": 24.53, "t4g.large": 49.06, "t4g.xlarge": 98.11,
+  // General purpose — M family
+  "m5.large": 70.08, "m5.xlarge": 140.16, "m5.2xlarge": 280.32, "m5.4xlarge": 560.64, "m5.8xlarge": 1121.28, "m5.12xlarge": 1681.92,
+  "m5a.large": 63.22, "m5a.xlarge": 126.44,
+  "m6i.large": 69.35, "m6i.xlarge": 138.70, "m6i.2xlarge": 277.40, "m6i.4xlarge": 554.80, "m6i.8xlarge": 1109.60,
+  "m6g.large": 56.21, "m6g.xlarge": 112.42, "m6g.2xlarge": 224.84,
+  "m7i.large": 72.82, "m7i.xlarge": 145.64, "m7i.2xlarge": 291.28, "m7i.4xlarge": 582.56,
+  "m7g.large": 59.57, "m7g.xlarge": 119.14,
+  // Compute-optimized — C family
+  "c5.large": 62.05, "c5.xlarge": 124.10, "c5.2xlarge": 248.20, "c5.4xlarge": 496.40, "c5.9xlarge": 1116.90,
+  "c6i.large": 61.32, "c6i.xlarge": 122.64, "c6i.2xlarge": 245.28, "c6i.4xlarge": 490.56,
+  "c6g.large": 49.06, "c6g.xlarge": 98.11, "c6g.2xlarge": 196.22,
+  "c7g.large": 52.34, "c7g.xlarge": 104.68,
+  // Memory-optimized — R family
+  "r5.large": 91.98, "r5.xlarge": 183.96, "r5.2xlarge": 367.92, "r5.4xlarge": 735.84,
+  "r6i.large": 91.25, "r6i.xlarge": 182.50, "r6i.2xlarge": 365.00, "r6i.4xlarge": 730.00,
+  "r6g.large": 73.00, "r6g.xlarge": 146.00,
+  "r7g.large": 77.38, "r7g.xlarge": 154.75,
+  // Storage-optimized
+  "i3.large": 114.61, "i3.xlarge": 229.22, "i3.2xlarge": 458.44,
+  "d3.xlarge": 363.05, "d3.2xlarge": 726.10,
   // GPU / AI instances
-  "p4d.24xlarge": 23689.44, "p5.48xlarge": 70560.00,
+  "p3.2xlarge": 2203.20, "p3.8xlarge": 8812.80, "p3.16xlarge": 17625.60,
+  "p4d.24xlarge": 23689.44, "p4de.24xlarge": 28675.20,
+  "p5.48xlarge": 70560.00,
+  "g4dn.xlarge": 381.24, "g4dn.2xlarge": 546.36, "g4dn.4xlarge": 876.00, "g4dn.8xlarge": 1580.76, "g4dn.12xlarge": 2838.24,
   "g5.xlarge": 766.44, "g5.2xlarge": 876.00, "g5.4xlarge": 1168.08, "g5.12xlarge": 4088.88, "g5.48xlarge": 11785.92,
+  "g6.xlarge": 488.76, "g6.2xlarge": 586.87, "g6.4xlarge": 878.40,
+  "inf1.xlarge": 268.66, "inf1.2xlarge": 426.32, "inf1.6xlarge": 1381.08, "inf1.24xlarge": 5524.32,
   "inf2.xlarge": 546.72, "inf2.8xlarge": 1433.52, "inf2.24xlarge": 4584.48, "inf2.48xlarge": 9168.96,
   "trn1.2xlarge": 965.81, "trn1.32xlarge": 15453.00,
+  "trn1n.32xlarge": 17496.00,
+  "dl1.24xlarge": 9661.92,
 };
 
 const RDS_COSTS: Record<string, number> = {
   "db.t3.micro": 11.68, "db.t3.small": 23.36, "db.t3.medium": 46.72, "db.t3.large": 93.44,
-  "db.r5.large": 124.10, "db.r5.xlarge": 248.20, "db.r5.2xlarge": 496.40,
-  "db.r6g.large": 118.26, "db.r6g.xlarge": 236.52, "db.r6g.2xlarge": 473.04,
-  "db.m5.large": 94.17, "db.m5.xlarge": 188.34, "db.m5.2xlarge": 376.68,
+  "db.t4g.micro": 11.83, "db.t4g.small": 23.65, "db.t4g.medium": 47.30,
+  "db.r5.large": 124.10, "db.r5.xlarge": 248.20, "db.r5.2xlarge": 496.40, "db.r5.4xlarge": 992.80,
+  "db.r6g.large": 118.26, "db.r6g.xlarge": 236.52, "db.r6g.2xlarge": 473.04, "db.r6g.4xlarge": 946.08,
+  "db.r6i.large": 124.10, "db.r6i.xlarge": 248.20, "db.r6i.2xlarge": 496.40,
+  "db.r7g.large": 125.56, "db.r7g.xlarge": 251.12,
+  "db.m5.large": 94.17, "db.m5.xlarge": 188.34, "db.m5.2xlarge": 376.68, "db.m5.4xlarge": 753.36,
+  "db.m6g.large": 86.58, "db.m6g.xlarge": 173.16, "db.m6g.2xlarge": 346.32,
+  "db.m6i.large": 94.17, "db.m6i.xlarge": 188.34,
+  "db.serverless": 0.12, // Aurora Serverless per-ACU-hour (placeholder)
 };
 
 const ELASTICACHE_COSTS_AWS: Record<string, number> = {
   "cache.t3.micro": 9.50, "cache.t3.small": 19.00, "cache.t3.medium": 38.00,
+  "cache.t4g.micro": 9.50, "cache.t4g.small": 19.00, "cache.t4g.medium": 38.00,
   "cache.r5.large": 120.72, "cache.r5.xlarge": 241.44, "cache.r5.2xlarge": 482.88,
-  "cache.m5.large": 109.50, "cache.m5.xlarge": 219.00,
+  "cache.r6g.large": 115.34, "cache.r6g.xlarge": 230.69, "cache.r6g.2xlarge": 461.38,
+  "cache.r7g.large": 121.91, "cache.r7g.xlarge": 243.82,
+  "cache.m5.large": 109.50, "cache.m5.xlarge": 219.00, "cache.m5.2xlarge": 438.00,
+  "cache.m6g.large": 104.40, "cache.m6g.xlarge": 208.80,
+};
+
+/**
+ * Static cost estimates for services not covered by instance-type lookups.
+ * Values are conservative monthly estimates in USD (us-east-1 pricing).
+ */
+const STORAGE_COSTS: Record<string, number> = {
+  // S3: assumes ~1 GB Standard storage + modest requests
+  "s3-standard": 0.02,
+  // SQS: first 1M requests free, then $0.40/1M
+  "sqs": 0.01,
+  // SNS: first 1M publishes free, then $0.50/1M
+  "sns": 0.01,
+  // API Gateway: ~$3.50/1M REST API calls, assume 100K calls/month
+  "api-gateway": 0.35,
+  // CloudFront: base pricing for a distribution with modest traffic (~10 GB)
+  "cloudfront": 0.85,
+  // Route 53: $0.50/hosted zone/month
+  "route53-zone": 0.50,
+  // Secrets Manager: $0.40/secret/month
+  "secrets-manager": 0.40,
+  // EKS: control plane = $0.10/hour
+  "eks-cluster": 73.00,
+  // ECS Fargate: minimal task (0.25 vCPU, 0.5 GB) running 24/7
+  "ecs-fargate-task": 9.15,
+};
+
+/**
+ * Maps AWS Cost Explorer service names to graph resource types.
+ * Used to distribute service-level costs to discovered nodes.
+ */
+const AWS_SERVICE_TO_RESOURCE_TYPE: Record<string, GraphResourceType[]> = {
+  "Amazon Elastic Compute Cloud - Compute": ["compute"],
+  "EC2 - Other": ["compute", "vpc", "subnet", "security-group", "nat-gateway"],
+  "Amazon Relational Database Service": ["database"],
+  "AWS Lambda": ["serverless-function"],
+  "Amazon Simple Storage Service": ["storage"],
+  "Amazon ElastiCache": ["cache"],
+  "Amazon Simple Queue Service": ["queue"],
+  "Amazon Simple Notification Service (SNS)": ["topic"],
+  "Amazon API Gateway": ["api-gateway"],
+  "Amazon CloudFront": ["cdn"],
+  "Amazon Route 53": ["dns"],
+  "AWS Secrets Manager": ["secret"],
+  "Amazon Elastic Container Service": ["container"],
+  "Amazon Elastic Kubernetes Service": ["cluster"],
+  "Amazon SageMaker": ["custom"],
+  "Amazon Bedrock": ["custom"],
+  "Elastic Load Balancing": ["load-balancer"],
+  "AWS Identity and Access Management": ["iam-role"],
+  "Amazon Virtual Private Cloud": ["vpc", "subnet", "security-group", "nat-gateway"],
 };
 
 /** Default regions to scan when region list can't be obtained dynamically. */
@@ -978,6 +2094,58 @@ const DEFAULT_REGIONS = [
   "eu-west-1", "eu-west-2", "eu-central-1",
   "ap-southeast-1", "ap-northeast-1",
 ];
+
+/**
+ * Maps adapter service names (e.g. "EC2") to AWSServiceName values
+ * used by the ClientPoolManager. Services not in this map are not
+ * supported by the pool and fall back to direct SDK creation.
+ */
+const AWS_SERVICE_TO_POOL_NAME: Record<string, string> = {
+  EC2: "ec2",
+  RDS: "rds",
+  Lambda: "lambda",
+  S3: "s3",
+  SQS: "sqs",
+  SNS: "sns",
+  ElastiCache: "elasticache",
+  ECS: "ecs",
+  EKS: "eks",
+  Route53: "route53",
+  IAM: "iam",
+  SecretsManager: "secretsmanager",
+  STS: "sts",
+  CloudFront: "cloudfront", // Not in pool — will fall through
+  // Note: ELBv2, APIGateway, SageMaker, Bedrock, CostExplorer are NOT in
+  // the ClientPoolManager's factory map, so they're omitted here and will
+  // fall back to direct SDK creation.
+};
+
+/**
+ * Shared map of AWS service names to SDK package names.
+ * Used by both `createClient()` and `buildCommand()` — consolidated
+ * to eliminate prior duplication.
+ */
+const AWS_SDK_PACKAGES: Record<string, string> = {
+  EC2: "@aws-sdk/client-ec2",
+  RDS: "@aws-sdk/client-rds",
+  Lambda: "@aws-sdk/client-lambda",
+  S3: "@aws-sdk/client-s3",
+  ELBv2: "@aws-sdk/client-elastic-load-balancing-v2",
+  SQS: "@aws-sdk/client-sqs",
+  SNS: "@aws-sdk/client-sns",
+  ElastiCache: "@aws-sdk/client-elasticache",
+  ECS: "@aws-sdk/client-ecs",
+  EKS: "@aws-sdk/client-eks",
+  APIGateway: "@aws-sdk/client-api-gateway",
+  CloudFront: "@aws-sdk/client-cloudfront",
+  Route53: "@aws-sdk/client-route-53",
+  IAM: "@aws-sdk/client-iam",
+  SecretsManager: "@aws-sdk/client-secrets-manager",
+  STS: "@aws-sdk/client-sts",
+  SageMaker: "@aws-sdk/client-sagemaker",
+  Bedrock: "@aws-sdk/client-bedrock",
+  CostExplorer: "@aws-sdk/client-cost-explorer",
+};
 
 // =============================================================================
 // Field Path Resolution Utilities
