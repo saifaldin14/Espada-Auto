@@ -26,5 +26,6 @@
   "dependencies": {
     "@urbit/aura": "^3.0.0",
     "@urbit/http-api": "^3.0.0"
-  }
+  },
+  "license": "MIT"
 }

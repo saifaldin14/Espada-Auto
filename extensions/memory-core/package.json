@@ -13,5 +13,6 @@
   },
   "devDependencies": {
     "espada": "workspace:*"
-  }
+  },
+  "license": "MIT"
 }

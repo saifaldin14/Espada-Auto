@@ -5,8 +5,14 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "import": "./dist/index.js", "types": "./dist/index.d.ts" },
-    "./types": { "import": "./dist/src/types.js", "types": "./dist/src/types.d.ts" }
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./types": {
+      "import": "./dist/src/types.js",
+      "types": "./dist/src/types.d.ts"
+    }
   },
   "scripts": {
     "build": "tsc",
@@ -16,7 +22,11 @@
     "lint": "oxlint .",
     "typecheck": "tsc --noEmit"
   },
-  "espada": { "extensions": ["index.ts"] },
+  "espada": {
+    "extensions": [
+      "index.ts"
+    ]
+  },
   "dependencies": {
     "better-sqlite3": "^11.10.0"
   },
@@ -28,5 +38,6 @@
   },
   "peerDependencies": {
     "espada": "*"
-  }
+  },
+  "license": "MIT"
 }

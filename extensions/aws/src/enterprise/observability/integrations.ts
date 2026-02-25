@@ -79,7 +79,7 @@ class DatadogClient implements ProviderClient {
     if (!this.config.apiKey) {
       return { success: false, error: 'API key not configured' };
     }
-    console.log(`[Datadog] Testing connection to ${this.config.site}`);
+    console.debug(`[Datadog] Testing connection to ${this.config.site}`);
     return { success: true };
   }
 
@@ -100,7 +100,7 @@ class DatadogClient implements ProviderClient {
       source_type_name: 'espada',
     };
 
-    console.log(`[Datadog] Sending deployment event:`, JSON.stringify(event, null, 2));
+    console.debug(`[Datadog] Sending deployment event:`, JSON.stringify(event, null, 2));
     return { success: true };
   }
 
@@ -119,7 +119,7 @@ class DatadogClient implements ProviderClient {
       source_type_name: 'espada',
     };
 
-    console.log(`[Datadog] Sending alert event:`, JSON.stringify(event, null, 2));
+    console.debug(`[Datadog] Sending alert event:`, JSON.stringify(event, null, 2));
     return { success: true };
   }
 }
@@ -131,7 +131,7 @@ class SplunkClient implements ProviderClient {
     if (!this.config.hecToken) {
       return { success: false, error: 'HEC token not configured' };
     }
-    console.log(`[Splunk] Testing connection to ${this.config.hecEndpoint}`);
+    console.debug(`[Splunk] Testing connection to ${this.config.hecEndpoint}`);
     return { success: true };
   }
 
@@ -153,7 +153,7 @@ class SplunkClient implements ProviderClient {
       },
     };
 
-    console.log(`[Splunk] Sending deployment event:`, JSON.stringify(event, null, 2));
+    console.debug(`[Splunk] Sending deployment event:`, JSON.stringify(event, null, 2));
     return { success: true };
   }
 
@@ -173,7 +173,7 @@ class SplunkClient implements ProviderClient {
       },
     };
 
-    console.log(`[Splunk] Sending alert event:`, JSON.stringify(event, null, 2));
+    console.debug(`[Splunk] Sending alert event:`, JSON.stringify(event, null, 2));
     return { success: true };
   }
 }
@@ -185,7 +185,7 @@ class NewRelicClient implements ProviderClient {
     if (!this.config.licenseKey) {
       return { success: false, error: 'License key not configured' };
     }
-    console.log(`[New Relic] Testing connection for account ${this.config.accountId}`);
+    console.debug(`[New Relic] Testing connection for account ${this.config.accountId}`);
     return { success: true };
   }
 
@@ -200,7 +200,7 @@ class NewRelicClient implements ProviderClient {
       },
     };
 
-    console.log(`[New Relic] Sending deployment marker:`, JSON.stringify(deploymentMarker, null, 2));
+    console.debug(`[New Relic] Sending deployment marker:`, JSON.stringify(deploymentMarker, null, 2));
     return { success: true };
   }
 
@@ -215,7 +215,7 @@ class NewRelicClient implements ProviderClient {
       ...incident.labels,
     };
 
-    console.log(`[New Relic] Sending custom event:`, JSON.stringify(event, null, 2));
+    console.debug(`[New Relic] Sending custom event:`, JSON.stringify(event, null, 2));
     return { success: true };
   }
 }

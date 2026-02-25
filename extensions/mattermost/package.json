@@ -21,5 +21,6 @@
       "localPath": "extensions/mattermost",
       "defaultChoice": "npm"
     }
-  }
+  },
+  "license": "MIT"
 }

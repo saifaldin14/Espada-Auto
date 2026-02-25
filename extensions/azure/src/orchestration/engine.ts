@@ -572,7 +572,7 @@ export class Orchestrator {
 
 function createStepLogger(stepId: string): StepLogger {
   return {
-    info: (msg: string) => console.log(`[IDIO:${stepId}] ${msg}`),
+    info: (msg: string) => console.debug(`[IDIO:${stepId}] ${msg}`),
     warn: (msg: string) => console.warn(`[IDIO:${stepId}] ⚠ ${msg}`),
     error: (msg: string) => console.error(`[IDIO:${stepId}] ✗ ${msg}`),
   };

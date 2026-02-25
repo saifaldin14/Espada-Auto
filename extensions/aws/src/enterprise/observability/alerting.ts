@@ -139,25 +139,25 @@ class DefaultNotificationSender implements NotificationSender {
     
     switch (channel.type) {
       case 'email':
-        console.log(`[Alert Email] To: ${channel.config.emails?.join(', ')}\n${message}`);
+        console.debug(`[Alert Email] To: ${channel.config.emails?.join(', ')}\n${message}`);
         break;
       case 'slack':
-        console.log(`[Alert Slack] Channel: ${channel.config.slackChannel}\n${message}`);
+        console.debug(`[Alert Slack] Channel: ${channel.config.slackChannel}\n${message}`);
         break;
       case 'pagerduty':
-        console.log(`[Alert PagerDuty] Service: ${channel.config.pagerdutyServiceId}\n${message}`);
+        console.debug(`[Alert PagerDuty] Service: ${channel.config.pagerdutyServiceId}\n${message}`);
         break;
       case 'opsgenie':
-        console.log(`[Alert OpsGenie]\n${message}`);
+        console.debug(`[Alert OpsGenie]\n${message}`);
         break;
       case 'webhook':
-        console.log(`[Alert Webhook] URL: ${channel.config.webhookUrl}\n${message}`);
+        console.debug(`[Alert Webhook] URL: ${channel.config.webhookUrl}\n${message}`);
         break;
       case 'teams':
-        console.log(`[Alert Teams]\n${message}`);
+        console.debug(`[Alert Teams]\n${message}`);
         break;
       case 'sns':
-        console.log(`[Alert SNS] Topic: ${channel.config.snsTopicArn}\n${message}`);
+        console.debug(`[Alert SNS] Topic: ${channel.config.snsTopicArn}\n${message}`);
         break;
     }
 

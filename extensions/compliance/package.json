@@ -10,5 +10,6 @@
   "peerDependencies": {
     "espada": "*"
   },
-  "dependencies": {}
+  "dependencies": {},
+  "license": "MIT"
 }

@@ -29,5 +29,6 @@
   "dependencies": {
     "espada": "workspace:*",
     "undici": "7.19.0"
-  }
+  },
+  "license": "MIT"
 }

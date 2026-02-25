@@ -15,5 +15,6 @@
   },
   "peerDependencies": {
     "espada": "*"
-  }
+  },
+  "license": "MIT"
 }

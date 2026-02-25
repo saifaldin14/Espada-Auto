@@ -26,5 +26,6 @@
       "localPath": "extensions/nextcloud-talk",
       "defaultChoice": "npm"
     }
-  }
+  },
+  "license": "MIT"
 }

@@ -1702,13 +1702,13 @@ export function createGuardrailsManager(config: GuardrailsManagerConfig = {}): G
                 break;
               case 'webhook':
                 // In production, use fetch to call webhook
-                console.log(`[Guardrails] Webhook notification to ${channel.endpoint}:`, payload);
+                console.debug(`[Guardrails] Webhook notification to ${channel.endpoint}:`, payload);
                 break;
               case 'slack':
               case 'teams':
               case 'email':
                 // These would need additional integrations
-                console.log(`[Guardrails] ${channel.type} notification:`, payload);
+                console.debug(`[Guardrails] ${channel.type} notification:`, payload);
                 break;
             }
           } catch (err) {

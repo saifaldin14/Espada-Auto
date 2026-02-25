@@ -29,5 +29,6 @@
       "localPath": "extensions/zalouser",
       "defaultChoice": "npm"
     }
-  }
+  },
+  "license": "MIT"
 }

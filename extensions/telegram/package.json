@@ -7,5 +7,6 @@
     "extensions": [
       "./index.ts"
     ]
-  }
+  },
+  "license": "MIT"
 }

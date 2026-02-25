@@ -35,5 +35,6 @@
   },
   "peerDependencies": {
     "espada": ">=2026.1.26"
-  }
+  },
+  "license": "MIT"
 }

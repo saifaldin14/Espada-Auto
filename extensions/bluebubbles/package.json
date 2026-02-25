@@ -29,5 +29,6 @@
       "localPath": "extensions/bluebubbles",
       "defaultChoice": "npm"
     }
-  }
+  },
+  "license": "MIT"
 }
