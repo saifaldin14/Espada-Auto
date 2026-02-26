@@ -7,15 +7,12 @@
  */
 
 import type {
-  AzureArcServer,
   AzureArcKubernetesCluster,
   AzureStackHCICluster,
   AzureCustomLocation,
-  AzureLocalDevice,
-  AzureArcListOptions,
-  AzureArcKubernetesListOptions,
   AzureHybridDiscoveryResult,
 } from "./types.js";
+import type { AzureHybridManager } from "./manager.js";
 
 // ── Local KG type mirrors (cross-extension rootDir pattern) ─────────────────
 
@@ -74,7 +71,7 @@ type HybridDiscoveryAdapter = {
 
 export class AzureArcDiscoveryAdapter implements HybridDiscoveryAdapter {
   constructor(
-    private subscriptionId: string,
+    private manager: AzureHybridManager,
     private options: {
       resourceGroup?: string;
       region?: string;
@@ -84,16 +81,28 @@ export class AzureArcDiscoveryAdapter implements HybridDiscoveryAdapter {
   // ── HybridDiscoveryAdapter interface ────────────────────────────────
 
   async discoverSites(): Promise<HybridSite[]> {
-    const hciClusters = await this.listHCIClusters();
-    const customLocations = await this.listCustomLocations();
+    const hciClusters = await this.manager.listHCIClusters(this.options.resourceGroup);
+    const customLocations = await this.manager.listCustomLocations(this.options.resourceGroup);
+
+    // Fetch Arc K8s clusters once (not per-HCI) to avoid N+1 API calls
+    const allArcClusters = await this.manager.listArcKubernetesClusters(
+      this.options.resourceGroup ? { resourceGroup: this.options.resourceGroup } : undefined,
+    );
+
+    // Index by resource group for fast lookup
+    const arcClustersByRG = new Map<string, AzureArcKubernetesCluster[]>();
+    for (const c of allArcClusters) {
+      const rg = c.resourceGroup.toLowerCase();
+      const list = arcClustersByRG.get(rg) ?? [];
+      list.push(c);
+      arcClustersByRG.set(rg, list);
+    }
 
     const sites: HybridSite[] = [];
 
     // Map HCI clusters to edge sites
     for (const hci of hciClusters) {
-      const arcClusters = await this.listArcKubernetesClusters({
-        resourceGroup: hci.resourceGroup,
-      });
+      const managedClusters = arcClustersByRG.get(hci.resourceGroup.toLowerCase()) ?? [];
 
       sites.push({
         id: hci.id,
@@ -104,10 +113,9 @@ export class AzureArcDiscoveryAdapter implements HybridDiscoveryAdapter {
         status: mapHCIStatus(hci.status),
         capabilities: inferHCICapabilities(hci),
         resourceCount: hci.nodeCount,
-        managedClusters: arcClusters.map((c) => c.id),
+        managedClusters: managedClusters.map((c) => c.id),
         metadata: {
           clusterVersion: hci.clusterVersion,
-          subscriptionId: this.subscriptionId,
           trialDaysRemaining: hci.trialDaysRemaining,
         },
       });
@@ -138,7 +146,9 @@ export class AzureArcDiscoveryAdapter implements HybridDiscoveryAdapter {
   }
 
   async discoverFleet(): Promise<FleetCluster[]> {
-    const arcClusters = await this.listArcKubernetesClusters();
+    const arcClusters = await this.manager.listArcKubernetesClusters(
+      this.options.resourceGroup ? { resourceGroup: this.options.resourceGroup } : undefined,
+    );
 
     return arcClusters.map((c) => ({
       id: c.id,
@@ -166,70 +176,22 @@ export class AzureArcDiscoveryAdapter implements HybridDiscoveryAdapter {
 
   async healthCheck(): Promise<boolean> {
     try {
-      // Lightweight probe: list a single Arc server
-      const servers = await this.listArcServers({ subscriptionId: this.subscriptionId });
-      return servers.length >= 0; // Even empty is fine
+      // Lightweight probe: list Arc servers
+      await this.manager.listArcServers(this.options.resourceGroup ? { resourceGroup: this.options.resourceGroup } : undefined);
+      return true;
     } catch {
       return false;
     }
   }
 
-  // ── Azure REST Stubs ──────────────────────────────────────────────────
-  //
-  // These call the Azure Resource Graph / ARM APIs. In production they
-  // would use the Azure SDK. For now they serve as typed contracts that
-  // the real SDK integration will fill in.
-
-  async listArcServers(opts?: AzureArcListOptions): Promise<AzureArcServer[]> {
-    void opts;
-    // TODO: implement via @azure/arm-hybridcompute
-    return [];
-  }
-
-  async listArcKubernetesClusters(
-    opts?: AzureArcKubernetesListOptions,
-  ): Promise<AzureArcKubernetesCluster[]> {
-    void opts;
-    // TODO: implement via @azure/arm-hybridkubernetes
-    return [];
-  }
-
-  async listHCIClusters(): Promise<AzureStackHCICluster[]> {
-    // TODO: implement via @azure/arm-azurestackhci
-    return [];
-  }
-
-  async listCustomLocations(): Promise<AzureCustomLocation[]> {
-    // TODO: implement via @azure/arm-extendedlocation
-    return [];
-  }
-
-  async listLocalDevices(): Promise<AzureLocalDevice[]> {
-    // TODO: implement via @azure/arm-databoxedge
-    return [];
-  }
-
   /**
-   * Full discovery: combines all Azure hybrid resource types.
+   * Full discovery: combines all Azure hybrid resource types via the manager.
    */
   async discoverAll(): Promise<AzureHybridDiscoveryResult> {
-    const [arcServers, arcClusters, hciClusters, customLocations, localDevices] =
-      await Promise.all([
-        this.listArcServers(),
-        this.listArcKubernetesClusters(),
-        this.listHCIClusters(),
-        this.listCustomLocations(),
-        this.listLocalDevices(),
-      ]);
-
+    const result = await this.manager.discoverAll(this.options.resourceGroup);
     return {
-      arcServers,
-      arcClusters,
-      hciClusters,
-      customLocations,
-      localDevices,
-      subscriptionId: this.subscriptionId,
-      discoveredAt: new Date().toISOString(),
+      ...result,
+      localDevices: [],
     };
   }
 }

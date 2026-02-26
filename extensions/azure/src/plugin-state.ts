@@ -42,6 +42,7 @@ import type { AzureSubscriptionManager } from "./subscriptions/index.js";
 import type { AzureGuardrailsManager } from "./guardrails/index.js";
 import type { AzureComplianceManager } from "./compliance/index.js";
 import type { AzureAutomationManager } from "./automation/index.js";
+import type { AzureHybridManager } from "./hybrid/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
@@ -88,6 +89,7 @@ export interface AzurePluginState {
   guardrailsManager: AzureGuardrailsManager | null;
   complianceManager: AzureComplianceManager | null;
   automationManager: AzureAutomationManager | null;
+  hybridManager: AzureHybridManager | null;
   orchestrator: Orchestrator | null;
 }
 
@@ -131,6 +133,7 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     guardrailsManager: null,
     complianceManager: null,
     automationManager: null,
+    hybridManager: null,
     orchestrator: null,
   };
 }
@@ -175,6 +178,7 @@ export function clearPluginState(state: AzurePluginState): void {
   state.guardrailsManager = null;
   state.complianceManager = null;
   state.automationManager = null;
+  state.hybridManager = null;
   state.orchestrator = null;
 }
 

@@ -708,4 +708,101 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       opts.respond(true, { data: { markdown } });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
+
+  // --- Hybrid / Arc ---
+  api.registerGatewayMethod("azure.hybrid.arcServers", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string; status?: string };
+      const servers = await state.hybridManager.listArcServers({
+        resourceGroup: params.resourceGroup,
+        status: params.status as "Connected" | "Disconnected" | "Error" | "Expired" | undefined,
+      });
+      opts.respond(true, { data: servers });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.arcServer", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; machineName: string };
+      const server = await state.hybridManager.getArcServer(params.resourceGroup, params.machineName);
+      opts.respond(true, { data: server });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.arcServerExtensions", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; machineName: string };
+      const extensions = await state.hybridManager.listArcServerExtensions(params.resourceGroup, params.machineName);
+      opts.respond(true, { data: extensions });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.arcKubernetes", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string; distribution?: string };
+      const clusters = await state.hybridManager.listArcKubernetesClusters({
+        resourceGroup: params.resourceGroup,
+        distribution: params.distribution,
+      });
+      opts.respond(true, { data: clusters });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.arcKubernetesCluster", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; clusterName: string };
+      const cluster = await state.hybridManager.getArcKubernetesCluster(params.resourceGroup, params.clusterName);
+      opts.respond(true, { data: cluster });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.hciClusters", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const clusters = await state.hybridManager.listHCIClusters(params.resourceGroup);
+      opts.respond(true, { data: clusters });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.hciCluster", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; clusterName: string };
+      const cluster = await state.hybridManager.getHCICluster(params.resourceGroup, params.clusterName);
+      opts.respond(true, { data: cluster });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.customLocations", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const locations = await state.hybridManager.listCustomLocations(params.resourceGroup);
+      opts.respond(true, { data: locations });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.customLocation", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const location = await state.hybridManager.getCustomLocation(params.resourceGroup, params.name);
+      opts.respond(true, { data: location });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.hybrid.discover", async (opts) => {
+    if (!state.hybridManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Hybrid manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const result = await state.hybridManager.discoverAll(params.resourceGroup);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
 }

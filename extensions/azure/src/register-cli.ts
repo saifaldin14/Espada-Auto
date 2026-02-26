@@ -1376,5 +1376,146 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
             console.error(theme.error(`Verify failed: ${formatErrorMessage(error)}`));
           }
         });
+
+      // --- Hybrid / Arc commands ---
+      const hybridCmd = az.command("hybrid").description("Azure Arc & hybrid infrastructure management");
+
+      hybridCmd
+        .command("arc-servers")
+        .description("List Azure Arc-enabled servers")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .option("--status <status>", "Filter by agent status (Connected, Disconnected, Error, Expired)")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string; status?: string };
+          if (!state.hybridManager) { console.error(theme.error("Hybrid manager not initialized")); return; }
+          try {
+            const servers = await state.hybridManager.listArcServers({
+              resourceGroup: options.resourceGroup,
+              status: options.status as "Connected" | "Disconnected" | "Error" | "Expired" | undefined,
+            });
+            if (servers.length === 0) { console.log("No Arc servers found"); return; }
+            console.log("\nAzure Arc Servers:\n");
+            for (const s of servers) {
+              console.log(`  ${s.name}`);
+              console.log(`    Status: ${s.status}`);
+              console.log(`    OS: ${s.osType} (${s.osSku})`);
+              console.log(`    Agent: ${s.agentVersion}`);
+              console.log(`    Location: ${s.location}`);
+              console.log(`    Resource Group: ${s.resourceGroup}`);
+              if (s.machineFqdn) console.log(`    FQDN: ${s.machineFqdn}`);
+              console.log();
+            }
+            console.log(theme.muted(`Total: ${servers.length} server(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Arc servers: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      hybridCmd
+        .command("arc-k8s")
+        .description("List Azure Arc-connected Kubernetes clusters")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .option("--distribution <dist>", "Filter by K8s distribution")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string; distribution?: string };
+          if (!state.hybridManager) { console.error(theme.error("Hybrid manager not initialized")); return; }
+          try {
+            const clusters = await state.hybridManager.listArcKubernetesClusters({
+              resourceGroup: options.resourceGroup,
+              distribution: options.distribution,
+            });
+            if (clusters.length === 0) { console.log("No Arc Kubernetes clusters found"); return; }
+            console.log("\nAzure Arc Kubernetes Clusters:\n");
+            for (const c of clusters) {
+              console.log(`  ${c.name}`);
+              console.log(`    K8s Version: ${c.kubernetesVersion}`);
+              console.log(`    Distribution: ${c.distribution}`);
+              console.log(`    Nodes: ${c.totalNodeCount} (${c.totalCoreCount} cores)`);
+              console.log(`    Connectivity: ${c.connectivityStatus}`);
+              console.log(`    Agent: ${c.agentVersion}`);
+              console.log(`    Location: ${c.location}`);
+              console.log();
+            }
+            console.log(theme.muted(`Total: ${clusters.length} cluster(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Arc K8s clusters: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      hybridCmd
+        .command("hci")
+        .description("List Azure Stack HCI clusters")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.hybridManager) { console.error(theme.error("Hybrid manager not initialized")); return; }
+          try {
+            const clusters = await state.hybridManager.listHCIClusters(options.resourceGroup);
+            if (clusters.length === 0) { console.log("No HCI clusters found"); return; }
+            console.log("\nAzure Stack HCI Clusters:\n");
+            for (const c of clusters) {
+              console.log(`  ${c.name}`);
+              console.log(`    Status: ${c.status}`);
+              console.log(`    Nodes: ${c.nodeCount}`);
+              console.log(`    Version: ${c.clusterVersion ?? "N/A"}`);
+              console.log(`    Location: ${c.location}`);
+              if (c.lastSyncTimestamp) console.log(`    Last Sync: ${c.lastSyncTimestamp}`);
+              if (c.trialDaysRemaining > 0) console.log(`    Trial Days: ${c.trialDaysRemaining}`);
+              console.log();
+            }
+            console.log(theme.muted(`Total: ${clusters.length} cluster(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list HCI clusters: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      hybridCmd
+        .command("custom-locations")
+        .description("List Azure Custom Locations")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.hybridManager) { console.error(theme.error("Hybrid manager not initialized")); return; }
+          try {
+            const locations = await state.hybridManager.listCustomLocations(options.resourceGroup);
+            if (locations.length === 0) { console.log("No custom locations found"); return; }
+            console.log("\nAzure Custom Locations:\n");
+            for (const cl of locations) {
+              console.log(`  ${cl.displayName ?? cl.name}`);
+              console.log(`    Host: ${cl.hostResourceId}`);
+              console.log(`    Host Type: ${cl.hostType}`);
+              console.log(`    Namespace: ${cl.namespace ?? "N/A"}`);
+              console.log(`    State: ${cl.provisioningState}`);
+              console.log(`    Extensions: ${cl.clusterExtensionIds?.length ?? 0}`);
+              console.log();
+            }
+            console.log(theme.muted(`Total: ${locations.length} location(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list custom locations: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      hybridCmd
+        .command("discover")
+        .description("Full hybrid infrastructure discovery (Arc servers + K8s + HCI + Custom Locations)")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.hybridManager) { console.error(theme.error("Hybrid manager not initialized")); return; }
+          try {
+            const result = await state.hybridManager.discoverAll(options.resourceGroup);
+            console.log("\nHybrid Infrastructure Discovery:\n");
+            console.log(`  Arc Servers:      ${result.arcServers.length}`);
+            console.log(`  Arc K8s Clusters: ${result.arcClusters.length}`);
+            console.log(`  HCI Clusters:     ${result.hciClusters.length}`);
+            console.log(`  Custom Locations: ${result.customLocations.length}`);
+            console.log(`\n  Subscription: ${result.subscriptionId}`);
+            console.log(`  Discovered At: ${result.discoveredAt}`);
+            const total = result.arcServers.length + result.arcClusters.length + result.hciClusters.length + result.customLocations.length;
+            console.log(theme.muted(`\nTotal: ${total} resource(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to discover hybrid resources: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 }

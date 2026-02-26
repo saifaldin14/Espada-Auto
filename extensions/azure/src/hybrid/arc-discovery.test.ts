@@ -3,17 +3,42 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AzureArcDiscoveryAdapter } from "./arc-discovery.js";
+import type { AzureHybridManager } from "./manager.js";
 import type {
   AzureArcKubernetesCluster,
   AzureStackHCICluster,
   AzureCustomLocation,
 } from "./types.js";
 
+function createMockManager(): AzureHybridManager {
+  return {
+    listArcServers: vi.fn().mockResolvedValue([]),
+    getArcServer: vi.fn().mockResolvedValue(null),
+    listArcServerExtensions: vi.fn().mockResolvedValue([]),
+    listArcKubernetesClusters: vi.fn().mockResolvedValue([]),
+    getArcKubernetesCluster: vi.fn().mockResolvedValue(null),
+    listHCIClusters: vi.fn().mockResolvedValue([]),
+    getHCICluster: vi.fn().mockResolvedValue(null),
+    listCustomLocations: vi.fn().mockResolvedValue([]),
+    getCustomLocation: vi.fn().mockResolvedValue(null),
+    discoverAll: vi.fn().mockResolvedValue({
+      arcServers: [],
+      arcClusters: [],
+      hciClusters: [],
+      customLocations: [],
+      subscriptionId: "sub-123",
+      discoveredAt: new Date().toISOString(),
+    }),
+  } as unknown as AzureHybridManager;
+}
+
 describe("AzureArcDiscoveryAdapter", () => {
+  let manager: AzureHybridManager;
   let adapter: AzureArcDiscoveryAdapter;
 
   beforeEach(() => {
-    adapter = new AzureArcDiscoveryAdapter("sub-123");
+    manager = createMockManager();
+    adapter = new AzureArcDiscoveryAdapter(manager);
   });
 
   describe("discoverSites", () => {
@@ -31,9 +56,7 @@ describe("AzureArcDiscoveryAdapter", () => {
         clusterVersion: "23H2",
       };
 
-      vi.spyOn(adapter, "listHCIClusters").mockResolvedValue([hci]);
-      vi.spyOn(adapter, "listCustomLocations").mockResolvedValue([]);
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([]);
+      vi.mocked(manager.listHCIClusters).mockResolvedValue([hci]);
 
       const sites = await adapter.discoverSites();
 
@@ -60,9 +83,7 @@ describe("AzureArcDiscoveryAdapter", () => {
         clusterExtensionIds: ["ext-1", "ext-2"],
       };
 
-      vi.spyOn(adapter, "listHCIClusters").mockResolvedValue([]);
-      vi.spyOn(adapter, "listCustomLocations").mockResolvedValue([customLoc]);
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([]);
+      vi.mocked(manager.listCustomLocations).mockResolvedValue([customLoc]);
 
       const sites = await adapter.discoverSites();
 
@@ -76,7 +97,7 @@ describe("AzureArcDiscoveryAdapter", () => {
     it("deduplicates HCI and custom location sites", async () => {
       const sharedId = "shared-id";
 
-      vi.spyOn(adapter, "listHCIClusters").mockResolvedValue([{
+      vi.mocked(manager.listHCIClusters).mockResolvedValue([{
         id: sharedId,
         name: "hci",
         type: "Microsoft.AzureStackHCI/clusters",
@@ -88,7 +109,7 @@ describe("AzureArcDiscoveryAdapter", () => {
         trialDaysRemaining: 0,
       }]);
 
-      vi.spyOn(adapter, "listCustomLocations").mockResolvedValue([{
+      vi.mocked(manager.listCustomLocations).mockResolvedValue([{
         id: sharedId,
         name: "custom-loc",
         type: "Microsoft.ExtendedLocation/customLocations",
@@ -100,14 +121,12 @@ describe("AzureArcDiscoveryAdapter", () => {
         provisioningState: "Succeeded",
       }]);
 
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([]);
-
       const sites = await adapter.discoverSites();
       expect(sites).toHaveLength(1);
     });
 
     it("maps disconnected HCI to disconnected status", async () => {
-      vi.spyOn(adapter, "listHCIClusters").mockResolvedValue([{
+      vi.mocked(manager.listHCIClusters).mockResolvedValue([{
         id: "hci-dc",
         name: "hci-dc",
         type: "Microsoft.AzureStackHCI/clusters",
@@ -118,8 +137,6 @@ describe("AzureArcDiscoveryAdapter", () => {
         nodeCount: 1,
         trialDaysRemaining: 0,
       }]);
-      vi.spyOn(adapter, "listCustomLocations").mockResolvedValue([]);
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([]);
 
       const sites = await adapter.discoverSites();
       expect(sites[0].status).toBe("disconnected");
@@ -146,7 +163,7 @@ describe("AzureArcDiscoveryAdapter", () => {
         provisioningState: "Succeeded",
       };
 
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([arcCluster]);
+      vi.mocked(manager.listArcKubernetesClusters).mockResolvedValue([arcCluster]);
 
       const clusters = await adapter.discoverFleet();
 
@@ -159,7 +176,7 @@ describe("AzureArcDiscoveryAdapter", () => {
     });
 
     it("maps offline cluster status correctly", async () => {
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([{
+      vi.mocked(manager.listArcKubernetesClusters).mockResolvedValue([{
         id: "c1",
         name: "c1",
         type: "Microsoft.Kubernetes/connectedClusters",
@@ -191,25 +208,27 @@ describe("AzureArcDiscoveryAdapter", () => {
 
   describe("healthCheck", () => {
     it("returns true when listArcServers succeeds", async () => {
-      vi.spyOn(adapter, "listArcServers").mockResolvedValue([]);
       const result = await adapter.healthCheck();
       expect(result).toBe(true);
     });
 
     it("returns false when listArcServers fails", async () => {
-      vi.spyOn(adapter, "listArcServers").mockRejectedValue(new Error("auth"));
+      vi.mocked(manager.listArcServers).mockRejectedValue(new Error("auth"));
       const result = await adapter.healthCheck();
       expect(result).toBe(false);
     });
   });
 
   describe("discoverAll", () => {
-    it("combines all resource types", async () => {
-      vi.spyOn(adapter, "listArcServers").mockResolvedValue([]);
-      vi.spyOn(adapter, "listArcKubernetesClusters").mockResolvedValue([]);
-      vi.spyOn(adapter, "listHCIClusters").mockResolvedValue([]);
-      vi.spyOn(adapter, "listCustomLocations").mockResolvedValue([]);
-      vi.spyOn(adapter, "listLocalDevices").mockResolvedValue([]);
+    it("combines all resource types via manager", async () => {
+      vi.mocked(manager.discoverAll).mockResolvedValue({
+        arcServers: [],
+        arcClusters: [],
+        hciClusters: [],
+        customLocations: [],
+        subscriptionId: "sub-123",
+        discoveredAt: "2024-01-15T12:00:00Z",
+      });
 
       const result = await adapter.discoverAll();
 
@@ -218,6 +237,7 @@ describe("AzureArcDiscoveryAdapter", () => {
       expect(result.arcServers).toEqual([]);
       expect(result.arcClusters).toEqual([]);
       expect(result.hciClusters).toEqual([]);
+      expect(result.localDevices).toEqual([]);
     });
   });
 });

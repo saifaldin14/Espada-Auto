@@ -95,6 +95,7 @@ export function getAzureManagers() {
     guardrails: s?.guardrailsManager ?? null,
     compliance: s?.complianceManager ?? null,
     automation: s?.automationManager ?? null,
+    hybrid: s?.hybridManager ?? null,
     orchestrator: s?.orchestrator ?? null,
   };
 }

@@ -1563,4 +1563,225 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       };
     },
   });
+
+  // =========================================================================
+  // Hybrid / Arc Tools
+  // =========================================================================
+
+  api.registerTool({
+    name: "azure_list_arc_servers",
+    label: "Azure List Arc Servers",
+    description: "List Azure Arc-enabled servers, optionally filtered by resource group or agent status",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        status: { type: "string", description: "Agent status filter (Connected, Disconnected, Error, Expired)" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const servers = await state.hybridManager.listArcServers({
+        resourceGroup: params.resourceGroup as string | undefined,
+        status: params.status as "Connected" | "Disconnected" | "Error" | "Expired" | undefined,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(servers, null, 2) }], details: { count: servers.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_arc_server",
+    label: "Azure Get Arc Server",
+    description: "Get details of a specific Azure Arc-enabled server",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        machineName: { type: "string", description: "Arc server machine name" },
+      },
+      required: ["resourceGroup", "machineName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const server = await state.hybridManager.getArcServer(
+        params.resourceGroup as string,
+        params.machineName as string,
+      );
+      if (!server) return { content: [{ type: "text" as const, text: "Arc server not found" }], details: { found: false } };
+      return { content: [{ type: "text" as const, text: JSON.stringify(server, null, 2) }], details: { found: true } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_arc_server_extensions",
+    label: "Azure List Arc Server Extensions",
+    description: "List extensions installed on an Azure Arc-enabled server",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        machineName: { type: "string", description: "Arc server machine name" },
+      },
+      required: ["resourceGroup", "machineName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const extensions = await state.hybridManager.listArcServerExtensions(
+        params.resourceGroup as string,
+        params.machineName as string,
+      );
+      return { content: [{ type: "text" as const, text: JSON.stringify(extensions, null, 2) }], details: { count: extensions.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_arc_kubernetes",
+    label: "Azure List Arc Kubernetes",
+    description: "List Azure Arc-connected Kubernetes clusters, optionally filtered by resource group or distribution",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        distribution: { type: "string", description: "K8s distribution filter (e.g. k3s, microk8s)" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const clusters = await state.hybridManager.listArcKubernetesClusters({
+        resourceGroup: params.resourceGroup as string | undefined,
+        distribution: params.distribution as string | undefined,
+      });
+      return { content: [{ type: "text" as const, text: JSON.stringify(clusters, null, 2) }], details: { count: clusters.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_arc_kubernetes",
+    label: "Azure Get Arc Kubernetes Cluster",
+    description: "Get details of a specific Azure Arc-connected Kubernetes cluster",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        clusterName: { type: "string", description: "Connected cluster name" },
+      },
+      required: ["resourceGroup", "clusterName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const cluster = await state.hybridManager.getArcKubernetesCluster(
+        params.resourceGroup as string,
+        params.clusterName as string,
+      );
+      if (!cluster) return { content: [{ type: "text" as const, text: "Arc Kubernetes cluster not found" }], details: { found: false } };
+      return { content: [{ type: "text" as const, text: JSON.stringify(cluster, null, 2) }], details: { found: true } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_hci_clusters",
+    label: "Azure List HCI Clusters",
+    description: "List Azure Stack HCI clusters, optionally filtered by resource group",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const clusters = await state.hybridManager.listHCIClusters(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(clusters, null, 2) }], details: { count: clusters.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_hci_cluster",
+    label: "Azure Get HCI Cluster",
+    description: "Get details of a specific Azure Stack HCI cluster",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        clusterName: { type: "string", description: "HCI cluster name" },
+      },
+      required: ["resourceGroup", "clusterName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const cluster = await state.hybridManager.getHCICluster(
+        params.resourceGroup as string,
+        params.clusterName as string,
+      );
+      if (!cluster) return { content: [{ type: "text" as const, text: "HCI cluster not found" }], details: { found: false } };
+      return { content: [{ type: "text" as const, text: JSON.stringify(cluster, null, 2) }], details: { found: true } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_custom_locations",
+    label: "Azure List Custom Locations",
+    description: "List Azure Custom Locations, optionally filtered by resource group",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const locations = await state.hybridManager.listCustomLocations(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(locations, null, 2) }], details: { count: locations.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_custom_location",
+    label: "Azure Get Custom Location",
+    description: "Get details of a specific Azure Custom Location",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Custom location name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const location = await state.hybridManager.getCustomLocation(
+        params.resourceGroup as string,
+        params.name as string,
+      );
+      if (!location) return { content: [{ type: "text" as const, text: "Custom location not found" }], details: { found: false } };
+      return { content: [{ type: "text" as const, text: JSON.stringify(location, null, 2) }], details: { found: true } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_hybrid_discover",
+    label: "Azure Hybrid Discovery",
+    description: "Full hybrid infrastructure discovery — discovers all Arc servers, Arc K8s clusters, HCI clusters, and Custom Locations in parallel",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Limit discovery to a specific resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.hybridManager) throw new Error("Hybrid manager not initialized");
+      const result = await state.hybridManager.discoverAll(params.resourceGroup as string | undefined);
+      const summary = {
+        arcServers: result.arcServers.length,
+        arcClusters: result.arcClusters.length,
+        hciClusters: result.hciClusters.length,
+        customLocations: result.customLocations.length,
+        total: result.arcServers.length + result.arcClusters.length + result.hciClusters.length + result.customLocations.length,
+      };
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        details: { summary, subscriptionId: result.subscriptionId, discoveredAt: result.discoveredAt },
+      };
+    },
+  });
 }

@@ -45,6 +45,7 @@ import { AzureSubscriptionManager } from "./subscriptions/index.js";
 import { createGuardrailsManager } from "./guardrails/index.js";
 import { AzureComplianceManager } from "./compliance/index.js";
 import { AzureAutomationManager } from "./automation/index.js";
+import { AzureHybridManager } from "./hybrid/index.js";
 
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
@@ -130,6 +131,9 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       // Governance
       state.guardrailsManager = createGuardrailsManager();
       state.complianceManager = new AzureComplianceManager(state.credentialsManager, subscriptionId, retryOpts);
+
+      // Hybrid / Arc
+      state.hybridManager = new AzureHybridManager(state.credentialsManager, subscriptionId, config.defaultRegion, retryOpts);
 
       // Orchestration (IDIO)
       clearStepRegistry();
