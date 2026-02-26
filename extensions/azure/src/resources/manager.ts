@@ -5,8 +5,9 @@
  */
 
 import type { AzureCredentialsManager } from "../credentials/manager.js";
-import type { AzureRetryOptions } from "../types.js";
+import type { AzureRetryOptions, AzurePaginationOptions, AzurePagedResult } from "../types.js";
 import { withAzureRetry } from "../retry.js";
+import { collectPaged, collectAll } from "../pagination.js";
 import type { ResourceGroup, ARMDeployment, DeploymentOperation, GenericResource } from "./types.js";
 
 export class AzureResourceManager {
@@ -30,21 +31,29 @@ export class AzureResourceManager {
     return new ResourceManagementClient(credential, this.subscriptionId);
   }
 
-  async listResourceGroups(): Promise<ResourceGroup[]> {
+  /**
+   * List resource groups with optional pagination.
+   */
+  async listResourceGroups(pagination: AzurePaginationOptions & { limit: number }): Promise<AzurePagedResult<ResourceGroup>>;
+  async listResourceGroups(pagination?: AzurePaginationOptions): Promise<ResourceGroup[]>;
+  async listResourceGroups(pagination?: AzurePaginationOptions): Promise<ResourceGroup[] | AzurePagedResult<ResourceGroup>> {
     return withAzureRetry(async () => {
       const client = await this.getClient();
-      const results: ResourceGroup[] = [];
-      for await (const rg of client.resourceGroups.list()) {
-        results.push({
-          id: rg.id ?? "",
-          name: rg.name ?? "",
-          location: rg.location ?? "",
-          tags: rg.tags,
-          provisioningState: rg.properties?.provisioningState,
-          managedBy: rg.managedBy,
-        });
+
+      const mapFn = (rg: any): ResourceGroup => ({
+        id: rg.id ?? "",
+        name: rg.name ?? "",
+        location: rg.location ?? "",
+        tags: rg.tags,
+        provisioningState: rg.properties?.provisioningState,
+        managedBy: rg.managedBy,
+      });
+
+      if (pagination?.limit !== undefined) {
+        return collectPaged(client.resourceGroups.list(), mapFn, undefined, pagination);
       }
-      return results;
+
+      return collectAll(client.resourceGroups.list(), mapFn);
     }, this.retryOptions);
   }
 
@@ -169,26 +178,34 @@ export class AzureResourceManager {
     }, this.retryOptions);
   }
 
-  async listResources(resourceGroup?: string): Promise<GenericResource[]> {
+  /**
+   * List resources with optional pagination.
+   */
+  async listResources(resourceGroup: string | undefined, pagination: AzurePaginationOptions & { limit: number }): Promise<AzurePagedResult<GenericResource>>;
+  async listResources(resourceGroup?: string, pagination?: AzurePaginationOptions): Promise<GenericResource[]>;
+  async listResources(resourceGroup?: string, pagination?: AzurePaginationOptions): Promise<GenericResource[] | AzurePagedResult<GenericResource>> {
     return withAzureRetry(async () => {
       const client = await this.getClient();
-      const results: GenericResource[] = [];
       const iter = resourceGroup
         ? client.resources.listByResourceGroup(resourceGroup)
         : client.resources.list();
-      for await (const r of iter) {
-        results.push({
-          id: r.id ?? "",
-          name: r.name ?? "",
-          type: r.type ?? "",
-          resourceGroup: r.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
-          location: r.location ?? "",
-          tags: r.tags,
-          kind: r.kind,
-          sku: r.sku ? { name: r.sku.name ?? "", tier: r.sku.tier, capacity: r.sku.capacity } : undefined,
-        });
+
+      const mapFn = (r: any): GenericResource => ({
+        id: r.id ?? "",
+        name: r.name ?? "",
+        type: r.type ?? "",
+        resourceGroup: r.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
+        location: r.location ?? "",
+        tags: r.tags,
+        kind: r.kind,
+        sku: r.sku ? { name: r.sku.name ?? "", tier: r.sku.tier, capacity: r.sku.capacity } : undefined,
+      });
+
+      if (pagination?.limit !== undefined) {
+        return collectPaged(iter, mapFn, undefined, pagination);
       }
-      return results;
+
+      return collectAll(iter, mapFn);
     }, this.retryOptions);
   }
 }

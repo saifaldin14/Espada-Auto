@@ -1,6 +1,8 @@
 import type { EspadaPluginApi, EspadaPluginCliContext } from "espada/plugin-sdk";
 import { formatErrorMessage } from "./retry.js";
 import { theme, type AzurePluginState } from "./plugin-state.js";
+import type { AzurePagedResult } from "./types.js";
+import { validatePagination } from "./pagination.js";
 import { Orchestrator } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, verify, formatReport } from "./advisor/index.js";
 
@@ -15,20 +17,39 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
         .command("list")
         .description("List virtual machines")
         .option("--resource-group <rg>", "Filter by resource group")
+        .option("--limit <n>", "Max items to return", parseInt)
+        .option("--offset <n>", "Items to skip", parseInt)
         .action(async (...args: unknown[]) => {
-          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string; limit?: number; offset?: number };
           if (!state.vmManager) { console.error(theme.error("VM manager not initialized")); return; }
           try {
-            const vms = await state.vmManager.listVMs(options.resourceGroup ? { resourceGroup: options.resourceGroup } : undefined);
-            if (vms.length === 0) { console.log("No VMs found"); return; }
-            console.log("\nVirtual Machines:\n");
-            for (const vm of vms) {
-              console.log(`  ${vm.id}`);
-              console.log(`    Name: ${vm.name}`);
-              console.log(`    Size: ${vm.vmSize}`);
-              console.log(`    State: ${vm.powerState}`);
-              console.log(`    Location: ${vm.location}`);
-              console.log();
+            validatePagination({ limit: options.limit, offset: options.offset });
+            const baseOpts = options.resourceGroup ? { resourceGroup: options.resourceGroup } : {};
+            if (options.limit !== undefined) {
+              const result = await state.vmManager.listVMs({ ...baseOpts, limit: options.limit, offset: options.offset }) as AzurePagedResult<import("./vms/types.js").VMInstance>;
+              if (result.items.length === 0) { console.log("No VMs found"); return; }
+              console.log("\nVirtual Machines:\n");
+              for (const vm of result.items) {
+                console.log(`  ${vm.id}`);
+                console.log(`    Name: ${vm.name}`);
+                console.log(`    Size: ${vm.vmSize}`);
+                console.log(`    State: ${vm.powerState}`);
+                console.log(`    Location: ${vm.location}`);
+                console.log();
+              }
+              if (result.hasMore) console.log(theme.muted(`  ... more results available (use --offset ${(options.offset ?? 0) + options.limit})`));
+            } else {
+              const vms = await state.vmManager.listVMs(options.resourceGroup ? { resourceGroup: options.resourceGroup } : undefined);
+              if (vms.length === 0) { console.log("No VMs found"); return; }
+              console.log("\nVirtual Machines:\n");
+              for (const vm of vms) {
+                console.log(`  ${vm.id}`);
+                console.log(`    Name: ${vm.name}`);
+                console.log(`    Size: ${vm.vmSize}`);
+                console.log(`    State: ${vm.powerState}`);
+                console.log(`    Location: ${vm.location}`);
+                console.log();
+              }
             }
           } catch (error) {
             console.error(theme.error(`Failed to list VMs: ${formatErrorMessage(error)}`));
@@ -81,19 +102,36 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
         .command("list")
         .description("List storage accounts")
         .option("--resource-group <rg>", "Filter by resource group")
+        .option("--limit <n>", "Max items to return", parseInt)
+        .option("--offset <n>", "Items to skip", parseInt)
         .action(async (...args: unknown[]) => {
-          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string; limit?: number; offset?: number };
           if (!state.storageManager) { console.error(theme.error("Storage manager not initialized")); return; }
           try {
-            const accounts = await state.storageManager.listStorageAccounts(options.resourceGroup);
-            if (accounts.length === 0) { console.log("No storage accounts found"); return; }
-            console.log("\nStorage Accounts:\n");
-            for (const sa of accounts) {
-              console.log(`  ${sa.name}`);
-              console.log(`    Kind: ${sa.kind}`);
-              console.log(`    SKU: ${sa.sku}`);
-              console.log(`    Location: ${sa.location}`);
-              console.log();
+            validatePagination({ limit: options.limit, offset: options.offset });
+            if (options.limit !== undefined) {
+              const result = await state.storageManager.listStorageAccounts(options.resourceGroup, { limit: options.limit, offset: options.offset }) as AzurePagedResult<import("./storage/types.js").StorageAccount>;
+              if (result.items.length === 0) { console.log("No storage accounts found"); return; }
+              console.log("\nStorage Accounts:\n");
+              for (const sa of result.items) {
+                console.log(`  ${sa.name}`);
+                console.log(`    Kind: ${sa.kind}`);
+                console.log(`    SKU: ${sa.sku}`);
+                console.log(`    Location: ${sa.location}`);
+                console.log();
+              }
+              if (result.hasMore) console.log(theme.muted(`  ... more results available (use --offset ${(options.offset ?? 0) + options.limit})`));
+            } else {
+              const accounts = await state.storageManager.listStorageAccounts(options.resourceGroup);
+              if (accounts.length === 0) { console.log("No storage accounts found"); return; }
+              console.log("\nStorage Accounts:\n");
+              for (const sa of accounts) {
+                console.log(`  ${sa.name}`);
+                console.log(`    Kind: ${sa.kind}`);
+                console.log(`    SKU: ${sa.sku}`);
+                console.log(`    Location: ${sa.location}`);
+                console.log();
+              }
             }
           } catch (error) {
             console.error(theme.error(`Failed to list storage accounts: ${formatErrorMessage(error)}`));
@@ -123,14 +161,28 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
       rgCmd
         .command("list")
         .description("List resource groups")
-        .action(async () => {
+        .option("--limit <n>", "Max items to return", parseInt)
+        .option("--offset <n>", "Items to skip", parseInt)
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { limit?: number; offset?: number };
           if (!state.resourceManager) { console.error(theme.error("Resource manager not initialized")); return; }
           try {
-            const groups = await state.resourceManager.listResourceGroups();
-            if (groups.length === 0) { console.log("No resource groups found"); return; }
-            console.log("\nResource Groups:\n");
-            for (const rg of groups) {
-              console.log(`  ${rg.name}  ${theme.muted(rg.location)}`);
+            validatePagination({ limit: options.limit, offset: options.offset });
+            if (options.limit !== undefined) {
+              const result = await state.resourceManager.listResourceGroups({ limit: options.limit, offset: options.offset }) as AzurePagedResult<import("./resources/types.js").ResourceGroup>;
+              if (result.items.length === 0) { console.log("No resource groups found"); return; }
+              console.log("\nResource Groups:\n");
+              for (const rg of result.items) {
+                console.log(`  ${rg.name}  ${theme.muted(rg.location)}`);
+              }
+              if (result.hasMore) console.log(theme.muted(`  ... more results available (use --offset ${(options.offset ?? 0) + options.limit})`));
+            } else {
+              const groups = await state.resourceManager.listResourceGroups();
+              if (groups.length === 0) { console.log("No resource groups found"); return; }
+              console.log("\nResource Groups:\n");
+              for (const rg of groups) {
+                console.log(`  ${rg.name}  ${theme.muted(rg.location)}`);
+              }
             }
           } catch (error) {
             console.error(theme.error(`Failed to list resource groups: ${formatErrorMessage(error)}`));

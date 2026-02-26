@@ -62,6 +62,41 @@ describe("AzureResourceManager", () => {
       expect(rgs).toHaveLength(1);
       expect(rgs[0].name).toBe("rg-1");
     });
+
+    it("paginates with limit", async () => {
+      mockResourceGroups.list.mockReturnValue(asyncIter([
+        { id: "rg-id-1", name: "rg-1", location: "eastus", properties: {} },
+        { id: "rg-id-2", name: "rg-2", location: "westus", properties: {} },
+        { id: "rg-id-3", name: "rg-3", location: "uksouth", properties: {} },
+      ]));
+      const result = await mgr.listResourceGroups({ limit: 2 });
+      expect(result).toHaveProperty("items");
+      expect(result).toHaveProperty("hasMore", true);
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(2);
+      expect(paged.items[0].name).toBe("rg-1");
+    });
+
+    it("paginates with limit and offset", async () => {
+      mockResourceGroups.list.mockReturnValue(asyncIter([
+        { id: "rg-id-1", name: "rg-1", location: "eastus", properties: {} },
+        { id: "rg-id-2", name: "rg-2", location: "westus", properties: {} },
+        { id: "rg-id-3", name: "rg-3", location: "uksouth", properties: {} },
+      ]));
+      const result = await mgr.listResourceGroups({ limit: 1, offset: 1 });
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(1);
+      expect(paged.items[0].name).toBe("rg-2");
+      expect(paged.hasMore).toBe(true);
+    });
+
+    it("returns flat array without pagination (backward compat)", async () => {
+      mockResourceGroups.list.mockReturnValue(asyncIter([
+        { id: "rg-id", name: "rg-1", location: "eastus", properties: {} },
+      ]));
+      const rgs = await mgr.listResourceGroups();
+      expect(Array.isArray(rgs)).toBe(true);
+    });
   });
 
   describe("getResourceGroup", () => {
@@ -128,6 +163,27 @@ describe("AzureResourceManager", () => {
       mockResources.listByResourceGroup.mockReturnValue(asyncIter([]));
       await mgr.listResources("rg-1");
       expect(mockResources.listByResourceGroup).toHaveBeenCalledWith("rg-1");
+    });
+
+    it("paginates resources with limit", async () => {
+      mockResources.list.mockReturnValue(asyncIter([
+        { id: "res-1", name: "r1", type: "Microsoft.Compute/virtualMachines", location: "eastus" },
+        { id: "res-2", name: "r2", type: "Microsoft.Storage/storageAccounts", location: "westus" },
+        { id: "res-3", name: "r3", type: "Microsoft.Network/virtualNetworks", location: "uksouth" },
+      ]));
+      const result = await mgr.listResources(undefined, { limit: 2 });
+      expect(result).toHaveProperty("items");
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(2);
+      expect(paged.hasMore).toBe(true);
+    });
+
+    it("returns flat array without pagination", async () => {
+      mockResources.list.mockReturnValue(asyncIter([
+        { id: "res-1", name: "r1", type: "t", location: "eastus" },
+      ]));
+      const resources = await mgr.listResources();
+      expect(Array.isArray(resources)).toBe(true);
     });
   });
 });

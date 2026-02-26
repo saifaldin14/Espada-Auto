@@ -130,6 +130,49 @@ describe("AzureVMManager", () => {
       expect(vms).toHaveLength(1);
       expect(vms[0].powerState).toBe("running");
     });
+
+    it("paginates with limit", async () => {
+      const vms = [makeSdkVM({ name: "vm-1" }), makeSdkVM({ name: "vm-2" }), makeSdkVM({ name: "vm-3" })];
+      mockVMs.listAll.mockReturnValue(asyncIter(vms));
+      const result = await mgr.listVMs({ limit: 2 });
+      expect(result).toHaveProperty("items");
+      expect(result).toHaveProperty("hasMore", true);
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(2);
+      expect(paged.items[0].name).toBe("vm-1");
+      expect(paged.items[1].name).toBe("vm-2");
+    });
+
+    it("paginates with limit and offset", async () => {
+      const vms = [makeSdkVM({ name: "vm-1" }), makeSdkVM({ name: "vm-2" }), makeSdkVM({ name: "vm-3" })];
+      mockVMs.listAll.mockReturnValue(asyncIter(vms));
+      const result = await mgr.listVMs({ limit: 1, offset: 1 });
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(1);
+      expect(paged.items[0].name).toBe("vm-2");
+      expect(paged.hasMore).toBe(true);
+    });
+
+    it("paginates with filter applied before limit", async () => {
+      const runningVM1 = makeSdkVM({ name: "vm-r1", instanceView: { statuses: [{ code: "PowerState/running" }] } });
+      const stoppedVM = makeSdkVM({ name: "vm-s1", instanceView: { statuses: [{ code: "PowerState/deallocated" }] } });
+      const runningVM2 = makeSdkVM({ name: "vm-r2", instanceView: { statuses: [{ code: "PowerState/running" }] } });
+      const runningVM3 = makeSdkVM({ name: "vm-r3", instanceView: { statuses: [{ code: "PowerState/running" }] } });
+      mockVMs.listAll.mockReturnValue(asyncIter([runningVM1, stoppedVM, runningVM2, runningVM3]));
+      const result = await mgr.listVMs({ powerState: "running", limit: 2 });
+      const paged = result as { items: any[]; hasMore: boolean };
+      expect(paged.items).toHaveLength(2);
+      expect(paged.items[0].name).toBe("vm-r1");
+      expect(paged.items[1].name).toBe("vm-r2");
+      expect(paged.hasMore).toBe(true);
+    });
+
+    it("returns flat array without limit (backward compat)", async () => {
+      mockVMs.listAll.mockReturnValue(asyncIter([makeSdkVM()]));
+      const vms = await mgr.listVMs();
+      expect(Array.isArray(vms)).toBe(true);
+      expect(vms).toHaveLength(1);
+    });
   });
 
   // --- getVM ---

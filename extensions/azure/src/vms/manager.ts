@@ -5,8 +5,9 @@
  */
 
 import type { AzureCredentialsManager } from "../credentials/manager.js";
-import type { AzureRetryOptions } from "../types.js";
+import type { AzureRetryOptions, AzurePagedResult } from "../types.js";
 import { withAzureRetry } from "../retry.js";
+import { collectPaged, collectAll } from "../pagination.js";
 import type {
   VMInstance,
   VMCreateOptions,
@@ -45,29 +46,42 @@ export class AzureVMManager {
   }
 
   /**
-   * List virtual machines.
+   * List virtual machines with optional pagination.
+   *
+   * When `limit` is provided, returns `AzurePagedResult<VMInstance>` with
+   * `hasMore` indicating whether more items exist. Otherwise returns a
+   * flat `VMInstance[]` for backward compatibility.
    */
-  async listVMs(options?: VMListOptions): Promise<VMInstance[]> {
+  async listVMs(options: VMListOptions & { limit: number }): Promise<AzurePagedResult<VMInstance>>;
+  async listVMs(options?: VMListOptions): Promise<VMInstance[]>;
+  async listVMs(options?: VMListOptions): Promise<VMInstance[] | AzurePagedResult<VMInstance>> {
     const client = await this.getComputeClient();
 
     return withAzureRetry(async () => {
-      const vms: VMInstance[] = [];
-
       const iterator = options?.resourceGroup
         ? client.virtualMachines.list(options.resourceGroup)
         : client.virtualMachines.listAll();
 
-      for await (const vm of iterator) {
-        const instance = this.mapToVMInstance(vm);
+      const filterFn = (instance: VMInstance): boolean => {
+        if (options?.location && instance.location !== options.location) return false;
+        if (options?.powerState && instance.powerState !== options.powerState) return false;
+        return true;
+      };
 
-        // Apply filters
-        if (options?.location && instance.location !== options.location) continue;
-        if (options?.powerState && instance.powerState !== options.powerState) continue;
-
-        vms.push(instance);
+      if (options?.limit !== undefined) {
+        return collectPaged(
+          iterator,
+          (vm) => this.mapToVMInstance(vm),
+          filterFn,
+          { limit: options.limit, offset: options.offset },
+        );
       }
 
-      return vms;
+      return collectAll(
+        iterator,
+        (vm) => this.mapToVMInstance(vm),
+        filterFn,
+      );
     }, this.retryOptions);
   }
 

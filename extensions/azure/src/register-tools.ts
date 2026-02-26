@@ -7,6 +7,8 @@
 
 import type { EspadaPluginApi } from "espada/plugin-sdk";
 import type { AzurePluginState } from "./plugin-state.js";
+import type { AzurePagedResult } from "./types.js";
+import { validatePagination } from "./pagination.js";
 import { Orchestrator, listBlueprints, getBlueprint, validatePlan } from "./orchestration/index.js";
 import type { OrchestrationOptions } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, verify, formatReport } from "./advisor/index.js";
@@ -19,11 +21,19 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
   api.registerTool({
     name: "azure_list_vms",
     label: "Azure List VMs",
-    description: "List Azure virtual machines, optionally filtered by resource group",
-    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    description: "List Azure virtual machines, optionally filtered by resource group. Supports pagination via limit/offset.",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" }, limit: { type: "number", description: "Max items to return" }, offset: { type: "number", description: "Items to skip" } } },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       if (!state.vmManager) throw new Error("VM manager not initialized");
       const rg = params.resourceGroup as string | undefined;
+      const limit = params.limit as number | undefined;
+      const offset = params.offset as number | undefined;
+      validatePagination({ limit, offset });
+      const opts = rg ? { resourceGroup: rg } : {};
+      if (limit !== undefined) {
+        const result = await state.vmManager.listVMs({ ...opts, limit, offset }) as AzurePagedResult<import("./vms/types.js").VMInstance>;
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { count: result.items.length, hasMore: result.hasMore } };
+      }
       const vms = await state.vmManager.listVMs(rg ? { resourceGroup: rg } : undefined);
       return { content: [{ type: "text" as const, text: JSON.stringify(vms, null, 2) }], details: { count: vms.length } };
     },
@@ -56,11 +66,19 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
   api.registerTool({
     name: "azure_list_storage_accounts",
     label: "Azure List Storage",
-    description: "List Azure Storage accounts",
-    parameters: { type: "object", properties: { resourceGroup: { type: "string" } } },
+    description: "List Azure Storage accounts. Supports pagination via limit/offset.",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string" }, limit: { type: "number", description: "Max items to return" }, offset: { type: "number", description: "Items to skip" } } },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       if (!state.storageManager) throw new Error("Storage manager not initialized");
-      const accounts = await state.storageManager.listStorageAccounts(params.resourceGroup as string | undefined);
+      const rg = params.resourceGroup as string | undefined;
+      const limit = params.limit as number | undefined;
+      const offset = params.offset as number | undefined;
+      validatePagination({ limit, offset });
+      if (limit !== undefined) {
+        const result = await state.storageManager.listStorageAccounts(rg, { limit, offset }) as AzurePagedResult<import("./storage/types.js").StorageAccount>;
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { count: result.items.length, hasMore: result.hasMore } };
+      }
+      const accounts = await state.storageManager.listStorageAccounts(rg);
       return { content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }], details: { count: accounts.length } };
     },
   });
@@ -80,10 +98,17 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
   api.registerTool({
     name: "azure_list_resource_groups",
     label: "Azure List Resource Groups",
-    description: "List Azure resource groups",
-    parameters: { type: "object", properties: {} },
-    async execute() {
+    description: "List Azure resource groups. Supports pagination via limit/offset.",
+    parameters: { type: "object", properties: { limit: { type: "number", description: "Max items to return" }, offset: { type: "number", description: "Items to skip" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
       if (!state.resourceManager) throw new Error("Resource manager not initialized");
+      const limit = params.limit as number | undefined;
+      const offset = params.offset as number | undefined;
+      validatePagination({ limit, offset });
+      if (limit !== undefined) {
+        const result = await state.resourceManager.listResourceGroups({ limit, offset }) as AzurePagedResult<import("./resources/types.js").ResourceGroup>;
+        return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { count: result.items.length, hasMore: result.hasMore } };
+      }
       const groups = await state.resourceManager.listResourceGroups();
       return { content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }], details: { count: groups.length } };
     },

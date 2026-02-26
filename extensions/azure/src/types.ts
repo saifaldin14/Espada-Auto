@@ -150,10 +150,24 @@ export type AzureResourceFilter = {
 // Pagination
 // =============================================================================
 
+/**
+ * Options for paginating list results.
+ * When `limit` is provided, iteration stops after collecting that many items.
+ * When `offset` is provided, that many items are skipped before collecting.
+ */
+export type AzurePaginationOptions = {
+  /** Maximum number of items to return. Omit for all results. */
+  limit?: number;
+  /** Number of items to skip before collecting. Default: 0. */
+  offset?: number;
+};
+
 export type AzurePagedResult<T> = {
   items: T[];
   nextLink?: string;
   totalCount?: number;
+  /** Whether more items exist beyond this page. */
+  hasMore?: boolean;
 };
 
 // =============================================================================

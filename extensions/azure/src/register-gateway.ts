@@ -17,9 +17,17 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
   api.registerGatewayMethod("azure.vm.list", async (opts) => {
     if (!state.vmManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "VM manager not initialized" }); return; }
     try {
-      const params = (opts.params ?? {}) as { resourceGroup?: string };
-      const vms = await state.vmManager.listVMs(params.resourceGroup ? { resourceGroup: params.resourceGroup } : undefined);
-      opts.respond(true, { data: vms });
+      const { validatePagination } = await import("./pagination.js");
+      const params = (opts.params ?? {}) as { resourceGroup?: string; limit?: number; offset?: number };
+      validatePagination({ limit: params.limit, offset: params.offset });
+      const baseOpts = params.resourceGroup ? { resourceGroup: params.resourceGroup } : {};
+      if (params.limit !== undefined) {
+        const result = await state.vmManager.listVMs({ ...baseOpts, limit: params.limit, offset: params.offset });
+        opts.respond(true, { data: result });
+      } else {
+        const vms = await state.vmManager.listVMs(params.resourceGroup ? { resourceGroup: params.resourceGroup } : undefined);
+        opts.respond(true, { data: vms });
+      }
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 
@@ -44,17 +52,32 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
   api.registerGatewayMethod("azure.storage.list", async (opts) => {
     if (!state.storageManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Storage manager not initialized" }); return; }
     try {
-      const params = (opts.params ?? {}) as { resourceGroup?: string };
-      const accounts = await state.storageManager.listStorageAccounts(params.resourceGroup);
-      opts.respond(true, { data: accounts });
+      const { validatePagination } = await import("./pagination.js");
+      const params = (opts.params ?? {}) as { resourceGroup?: string; limit?: number; offset?: number };
+      validatePagination({ limit: params.limit, offset: params.offset });
+      if (params.limit !== undefined) {
+        const result = await state.storageManager.listStorageAccounts(params.resourceGroup, { limit: params.limit, offset: params.offset });
+        opts.respond(true, { data: result });
+      } else {
+        const accounts = await state.storageManager.listStorageAccounts(params.resourceGroup);
+        opts.respond(true, { data: accounts });
+      }
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 
   api.registerGatewayMethod("azure.rg.list", async (opts) => {
     if (!state.resourceManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Resource manager not initialized" }); return; }
     try {
-      const groups = await state.resourceManager.listResourceGroups();
-      opts.respond(true, { data: groups });
+      const { validatePagination } = await import("./pagination.js");
+      const params = (opts.params ?? {}) as { limit?: number; offset?: number };
+      validatePagination({ limit: params.limit, offset: params.offset });
+      if (params.limit !== undefined) {
+        const result = await state.resourceManager.listResourceGroups({ limit: params.limit, offset: params.offset });
+        opts.respond(true, { data: result });
+      } else {
+        const groups = await state.resourceManager.listResourceGroups();
+        opts.respond(true, { data: groups });
+      }
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 

@@ -2,8 +2,9 @@
  * Azure Storage Manager
  */
 import type { AzureCredentialsManager } from "../credentials/manager.js";
-import type { AzureRetryOptions } from "../types.js";
+import type { AzureRetryOptions, AzurePaginationOptions, AzurePagedResult } from "../types.js";
 import { withAzureRetry } from "../retry.js";
+import { collectPaged, collectAll } from "../pagination.js";
 import type { StorageAccount, BlobContainer } from "./types.js";
 
 export class AzureStorageManager {
@@ -23,26 +24,34 @@ export class AzureStorageManager {
     return new StorageManagementClient(credential, this.subscriptionId);
   }
 
-  async listStorageAccounts(resourceGroup?: string): Promise<StorageAccount[]> {
+  /**
+   * List storage accounts with optional pagination.
+   */
+  async listStorageAccounts(resourceGroup: string | undefined, pagination: AzurePaginationOptions & { limit: number }): Promise<AzurePagedResult<StorageAccount>>;
+  async listStorageAccounts(resourceGroup?: string, pagination?: AzurePaginationOptions): Promise<StorageAccount[]>;
+  async listStorageAccounts(resourceGroup?: string, pagination?: AzurePaginationOptions): Promise<StorageAccount[] | AzurePagedResult<StorageAccount>> {
     const client = await this.getStorageClient();
     return withAzureRetry(async () => {
-      const accounts: StorageAccount[] = [];
       const iter = resourceGroup
         ? client.storageAccounts.listByResourceGroup(resourceGroup)
         : client.storageAccounts.list();
-      for await (const a of iter) {
-        accounts.push({
-          id: a.id ?? "", name: a.name ?? "",
-          resourceGroup: (a.id ?? "").match(/resourceGroups\/([^/]+)/i)?.[1] ?? "",
-          location: a.location ?? "", kind: (a.kind ?? "StorageV2") as StorageAccount["kind"],
-          sku: (a.sku?.name ?? "Standard_LRS") as StorageAccount["sku"],
-          provisioningState: a.provisioningState ?? "",
-          primaryEndpoints: a.primaryEndpoints as StorageAccount["primaryEndpoints"],
-          httpsOnly: a.enableHttpsTrafficOnly ?? true,
-          tags: a.tags as Record<string, string>,
-        });
+
+      const mapFn = (a: any): StorageAccount => ({
+        id: a.id ?? "", name: a.name ?? "",
+        resourceGroup: (a.id ?? "").match(/resourceGroups\/([^/]+)/i)?.[1] ?? "",
+        location: a.location ?? "", kind: (a.kind ?? "StorageV2") as StorageAccount["kind"],
+        sku: (a.sku?.name ?? "Standard_LRS") as StorageAccount["sku"],
+        provisioningState: a.provisioningState ?? "",
+        primaryEndpoints: a.primaryEndpoints as StorageAccount["primaryEndpoints"],
+        httpsOnly: a.enableHttpsTrafficOnly ?? true,
+        tags: a.tags as Record<string, string>,
+      });
+
+      if (pagination?.limit !== undefined) {
+        return collectPaged(iter, mapFn, undefined, pagination);
       }
-      return accounts;
+
+      return collectAll(iter, mapFn);
     }, this.retryOptions);
   }
 

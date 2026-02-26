@@ -72,6 +72,10 @@ export type VMListOptions = {
   location?: string;
   powerState?: VMPowerState;
   tags?: Record<string, string>;
+  /** Maximum number of VMs to return. Omit for all. */
+  limit?: number;
+  /** Number of VMs to skip before collecting. Default: 0. */
+  offset?: number;
 };
 
 export type VMOperationResult = {
