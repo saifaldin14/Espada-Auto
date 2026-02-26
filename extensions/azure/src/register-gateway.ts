@@ -1106,4 +1106,125 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       opts.respond(true, { data: domains });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
+
+  // --- Synapse Analytics gateway methods ---
+  api.registerGatewayMethod("azure.synapse.list", async (opts) => {
+    if (!state.synapseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Synapse manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const workspaces = await state.synapseManager.listWorkspaces(params.resourceGroup);
+      opts.respond(true, { data: workspaces });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.synapse.get", async (opts) => {
+    if (!state.synapseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Synapse manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const ws = await state.synapseManager.getWorkspace(params.resourceGroup, params.name);
+      opts.respond(true, { data: ws });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.synapse.sqlPools", async (opts) => {
+    if (!state.synapseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Synapse manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; workspaceName: string };
+      const pools = await state.synapseManager.listSqlPools(params.resourceGroup, params.workspaceName);
+      opts.respond(true, { data: pools });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.synapse.sparkPools", async (opts) => {
+    if (!state.synapseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Synapse manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; workspaceName: string };
+      const pools = await state.synapseManager.listSparkPools(params.resourceGroup, params.workspaceName);
+      opts.respond(true, { data: pools });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Data Factory gateway methods ---
+  api.registerGatewayMethod("azure.datafactory.list", async (opts) => {
+    if (!state.dataFactoryManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Data Factory manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const factories = await state.dataFactoryManager.listFactories(params.resourceGroup);
+      opts.respond(true, { data: factories });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.datafactory.get", async (opts) => {
+    if (!state.dataFactoryManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Data Factory manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const factory = await state.dataFactoryManager.getFactory(params.resourceGroup, params.name);
+      opts.respond(true, { data: factory });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.datafactory.pipelines", async (opts) => {
+    if (!state.dataFactoryManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Data Factory manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; factoryName: string };
+      const pipelines = await state.dataFactoryManager.listPipelines(params.resourceGroup, params.factoryName);
+      opts.respond(true, { data: pipelines });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.datafactory.datasets", async (opts) => {
+    if (!state.dataFactoryManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Data Factory manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; factoryName: string };
+      const datasets = await state.dataFactoryManager.listDatasets(params.resourceGroup, params.factoryName);
+      opts.respond(true, { data: datasets });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- SignalR Service gateway methods ---
+  api.registerGatewayMethod("azure.signalr.list", async (opts) => {
+    if (!state.signalRManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "SignalR manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const resources = await state.signalRManager.listSignalRResources(params.resourceGroup);
+      opts.respond(true, { data: resources });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.signalr.get", async (opts) => {
+    if (!state.signalRManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "SignalR manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const resource = await state.signalRManager.getSignalRResource(params.resourceGroup, params.name);
+      opts.respond(true, { data: resource });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Notification Hubs gateway methods ---
+  api.registerGatewayMethod("azure.notificationhubs.namespaces", async (opts) => {
+    if (!state.notificationHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Notification Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const namespaces = await state.notificationHubsManager.listNamespaces(params.resourceGroup);
+      opts.respond(true, { data: namespaces });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.notificationhubs.get", async (opts) => {
+    if (!state.notificationHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Notification Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string };
+      const ns = await state.notificationHubsManager.getNamespace(params.resourceGroup, params.namespaceName);
+      opts.respond(true, { data: ns });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.notificationhubs.hubs", async (opts) => {
+    if (!state.notificationHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Notification Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string };
+      const hubs = await state.notificationHubsManager.listNotificationHubs(params.resourceGroup, params.namespaceName);
+      opts.respond(true, { data: hubs });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
 }

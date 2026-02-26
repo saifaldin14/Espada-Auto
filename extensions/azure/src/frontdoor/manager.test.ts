@@ -131,6 +131,11 @@ describe("AzureFrontDoorManager", () => {
       await manager.deleteProfile("rg1", "fd1");
       expect(mockProfiles.beginDeleteAndWait).toHaveBeenCalledWith("rg1", "fd1");
     });
+
+    it("should propagate delete errors", async () => {
+      mockProfiles.beginDeleteAndWait.mockRejectedValue(new Error("Delete failed"));
+      await expect(manager.deleteProfile("rg1", "fd1")).rejects.toThrow("Delete failed");
+    });
   });
 
   describe("listEndpoints", () => {

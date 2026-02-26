@@ -2041,5 +2041,202 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
             console.error(theme.error(`Failed to list custom domains: ${formatErrorMessage(error)}`));
           }
         });
+
+    // --- Synapse Analytics commands ---
+    const synapseCmd = az.command("synapse").description("Azure Synapse Analytics management");
+
+    synapseCmd
+      .command("list")
+      .description("List Synapse workspaces")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.synapseManager) { console.error(theme.error("Synapse manager not initialized")); return; }
+        try {
+          const workspaces = await state.synapseManager.listWorkspaces(options.resourceGroup);
+          if (workspaces.length === 0) { console.log("No Synapse workspaces found"); return; }
+          console.log("\nSynapse Workspaces:\n");
+          for (const ws of workspaces) {
+            console.log(`  ${ws.name}  ${theme.muted(ws.location)}  ${ws.provisioningState ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${workspaces.length} workspace(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Synapse workspaces: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    synapseCmd
+      .command("sql-pools")
+      .description("List SQL pools in a Synapse workspace")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--workspace <name>", "Synapse workspace name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; workspace: string };
+        if (!state.synapseManager) { console.error(theme.error("Synapse manager not initialized")); return; }
+        try {
+          const pools = await state.synapseManager.listSqlPools(options.resourceGroup, options.workspace);
+          if (pools.length === 0) { console.log("No SQL pools found"); return; }
+          console.log("\nSynapse SQL Pools:\n");
+          for (const p of pools) {
+            console.log(`  ${p.name}  ${theme.muted(p.skuName ?? "")}  ${p.status ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${pools.length} pool(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list SQL pools: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    synapseCmd
+      .command("spark-pools")
+      .description("List Spark pools in a Synapse workspace")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--workspace <name>", "Synapse workspace name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; workspace: string };
+        if (!state.synapseManager) { console.error(theme.error("Synapse manager not initialized")); return; }
+        try {
+          const pools = await state.synapseManager.listSparkPools(options.resourceGroup, options.workspace);
+          if (pools.length === 0) { console.log("No Spark pools found"); return; }
+          console.log("\nSynapse Spark Pools:\n");
+          for (const p of pools) {
+            console.log(`  ${p.name}  ${theme.muted(p.nodeSize ?? "")}  nodes=${p.nodeCount ?? "N/A"}  ${p.provisioningState ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${pools.length} pool(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Spark pools: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Data Factory commands ---
+    const adfCmd = az.command("datafactory").description("Azure Data Factory management");
+
+    adfCmd
+      .command("list")
+      .description("List Data Factory instances")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.dataFactoryManager) { console.error(theme.error("Data Factory manager not initialized")); return; }
+        try {
+          const factories = await state.dataFactoryManager.listFactories(options.resourceGroup);
+          if (factories.length === 0) { console.log("No data factories found"); return; }
+          console.log("\nData Factories:\n");
+          for (const f of factories) {
+            console.log(`  ${f.name}  ${theme.muted(f.location)}  ${f.provisioningState ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${factories.length} factory(ies)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list data factories: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    adfCmd
+      .command("pipelines")
+      .description("List pipelines in a Data Factory")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--factory <name>", "Data factory name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; factory: string };
+        if (!state.dataFactoryManager) { console.error(theme.error("Data Factory manager not initialized")); return; }
+        try {
+          const pipelines = await state.dataFactoryManager.listPipelines(options.resourceGroup, options.factory);
+          if (pipelines.length === 0) { console.log("No pipelines found"); return; }
+          console.log("\nData Factory Pipelines:\n");
+          for (const p of pipelines) {
+            console.log(`  ${p.name}  activities=${p.activitiesCount ?? 0}  ${theme.muted(p.description ?? "")}`);
+          }
+          console.log(theme.muted(`\nTotal: ${pipelines.length} pipeline(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list pipelines: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    adfCmd
+      .command("datasets")
+      .description("List datasets in a Data Factory")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--factory <name>", "Data factory name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; factory: string };
+        if (!state.dataFactoryManager) { console.error(theme.error("Data Factory manager not initialized")); return; }
+        try {
+          const datasets = await state.dataFactoryManager.listDatasets(options.resourceGroup, options.factory);
+          if (datasets.length === 0) { console.log("No datasets found"); return; }
+          console.log("\nData Factory Datasets:\n");
+          for (const d of datasets) {
+            console.log(`  ${d.name}  ${theme.muted(d.type ?? "")}  ${d.description ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${datasets.length} dataset(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list datasets: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- SignalR Service commands ---
+    const signalrCmd = az.command("signalr").description("Azure SignalR Service management");
+
+    signalrCmd
+      .command("list")
+      .description("List SignalR resources")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.signalRManager) { console.error(theme.error("SignalR manager not initialized")); return; }
+        try {
+          const resources = await state.signalRManager.listSignalRResources(options.resourceGroup);
+          if (resources.length === 0) { console.log("No SignalR resources found"); return; }
+          console.log("\nSignalR Resources:\n");
+          for (const r of resources) {
+            console.log(`  ${r.name}  ${theme.muted(r.location)}  ${r.provisioningState ?? ""}  ${r.skuName ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${resources.length} resource(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list SignalR resources: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Notification Hubs commands ---
+    const nhCmd = az.command("notificationhubs").description("Azure Notification Hubs management");
+
+    nhCmd
+      .command("list")
+      .description("List Notification Hubs namespaces")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.notificationHubsManager) { console.error(theme.error("Notification Hubs manager not initialized")); return; }
+        try {
+          const namespaces = await state.notificationHubsManager.listNamespaces(options.resourceGroup);
+          if (namespaces.length === 0) { console.log("No Notification Hub namespaces found"); return; }
+          console.log("\nNotification Hub Namespaces:\n");
+          for (const ns of namespaces) {
+            console.log(`  ${ns.name}  ${theme.muted(ns.location)}  ${ns.provisioningState ?? ""}  ${ns.skuName ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${namespaces.length} namespace(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Notification Hub namespaces: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    nhCmd
+      .command("hubs")
+      .description("List notification hubs in a namespace")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--namespace <name>", "Namespace name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; namespace: string };
+        if (!state.notificationHubsManager) { console.error(theme.error("Notification Hubs manager not initialized")); return; }
+        try {
+          const hubs = await state.notificationHubsManager.listNotificationHubs(options.resourceGroup, options.namespace);
+          if (hubs.length === 0) { console.log("No notification hubs found"); return; }
+          console.log("\nNotification Hubs:\n");
+          for (const h of hubs) {
+            console.log(`  ${h.name}  ${theme.muted(h.location)}`);
+          }
+          console.log(theme.muted(`\nTotal: ${hubs.length} hub(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list notification hubs: ${formatErrorMessage(error)}`));
+        }
+      });
     });
 }

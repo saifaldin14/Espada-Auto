@@ -51,6 +51,10 @@ import type { AzureTrafficManagerManager } from "./trafficmanager/index.js";
 import type { AzureBastionManager } from "./bastion/index.js";
 import type { AzureFrontDoorManager } from "./frontdoor/index.js";
 import type { AzureStaticWebAppsManager } from "./staticwebapps/index.js";
+import type { AzureSynapseManager } from "./synapse/index.js";
+import type { AzureDataFactoryManager } from "./datafactory/index.js";
+import type { AzureSignalRManager } from "./signalr/index.js";
+import type { AzureNotificationHubsManager } from "./notificationhubs/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
@@ -106,6 +110,10 @@ export interface AzurePluginState {
   complianceManager: AzureComplianceManager | null;
   automationManager: AzureAutomationManager | null;
   hybridManager: AzureHybridManager | null;
+  synapseManager: AzureSynapseManager | null;
+  dataFactoryManager: AzureDataFactoryManager | null;
+  signalRManager: AzureSignalRManager | null;
+  notificationHubsManager: AzureNotificationHubsManager | null;
   orchestrator: Orchestrator | null;
 }
 
@@ -158,6 +166,10 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     complianceManager: null,
     automationManager: null,
     hybridManager: null,
+    synapseManager: null,
+    dataFactoryManager: null,
+    signalRManager: null,
+    notificationHubsManager: null,
     orchestrator: null,
   };
 }
@@ -211,6 +223,10 @@ export function clearPluginState(state: AzurePluginState): void {
   state.complianceManager = null;
   state.automationManager = null;
   state.hybridManager = null;
+  state.synapseManager = null;
+  state.dataFactoryManager = null;
+  state.signalRManager = null;
+  state.notificationHubsManager = null;
   state.orchestrator = null;
 }
 

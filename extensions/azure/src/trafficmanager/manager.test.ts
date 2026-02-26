@@ -102,6 +102,11 @@ describe("AzureTrafficManagerManager", () => {
       await manager.deleteProfile("rg1", "tm1");
       expect(mockProfiles.delete).toHaveBeenCalledWith("rg1", "tm1");
     });
+
+    it("should propagate delete errors", async () => {
+      mockProfiles.delete.mockRejectedValue(new Error("Delete failed"));
+      await expect(manager.deleteProfile("rg1", "tm1")).rejects.toThrow("Delete failed");
+    });
   });
 
   describe("listEndpoints", () => {
@@ -165,6 +170,11 @@ describe("AzureTrafficManagerManager", () => {
       mockEndpoints.delete.mockResolvedValue(undefined);
       await manager.deleteEndpoint("rg1", "tm1", "ExternalEndpoints", "ep1");
       expect(mockEndpoints.delete).toHaveBeenCalledWith("rg1", "tm1", "ExternalEndpoints", "ep1");
+    });
+
+    it("should propagate delete errors", async () => {
+      mockEndpoints.delete.mockRejectedValue(new Error("Delete endpoint failed"));
+      await expect(manager.deleteEndpoint("rg1", "tm1", "ExternalEndpoints", "ep1")).rejects.toThrow("Delete endpoint failed");
     });
   });
 });

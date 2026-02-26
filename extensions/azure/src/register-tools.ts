@@ -2353,4 +2353,298 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       };
     },
   });
+
+  // -------------------------------------------------------------------------
+  // Synapse Analytics tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_synapse_workspaces",
+    label: "Azure List Synapse Workspaces",
+    description: "List Azure Synapse Analytics workspaces",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.synapseManager) throw new Error("Synapse manager not initialized");
+      const workspaces = await state.synapseManager.listWorkspaces(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(workspaces, null, 2) }],
+        details: { count: workspaces.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_synapse_workspace",
+    label: "Azure Get Synapse Workspace",
+    description: "Get details of an Azure Synapse Analytics workspace",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Workspace name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.synapseManager) throw new Error("Synapse manager not initialized");
+      const ws = await state.synapseManager.getWorkspace(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(ws, null, 2) }],
+        details: ws,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_synapse_sql_pools",
+    label: "Azure List Synapse SQL Pools",
+    description: "List SQL pools in an Azure Synapse workspace",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        workspaceName: { type: "string", description: "Synapse workspace name" },
+      },
+      required: ["resourceGroup", "workspaceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.synapseManager) throw new Error("Synapse manager not initialized");
+      const pools = await state.synapseManager.listSqlPools(params.resourceGroup as string, params.workspaceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(pools, null, 2) }],
+        details: { count: pools.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_synapse_spark_pools",
+    label: "Azure List Synapse Spark Pools",
+    description: "List Apache Spark pools in an Azure Synapse workspace",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        workspaceName: { type: "string", description: "Synapse workspace name" },
+      },
+      required: ["resourceGroup", "workspaceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.synapseManager) throw new Error("Synapse manager not initialized");
+      const pools = await state.synapseManager.listSparkPools(params.resourceGroup as string, params.workspaceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(pools, null, 2) }],
+        details: { count: pools.length },
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // Data Factory tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_data_factories",
+    label: "Azure List Data Factories",
+    description: "List Azure Data Factory instances",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.dataFactoryManager) throw new Error("Data Factory manager not initialized");
+      const factories = await state.dataFactoryManager.listFactories(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(factories, null, 2) }],
+        details: { count: factories.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_data_factory",
+    label: "Azure Get Data Factory",
+    description: "Get details of an Azure Data Factory instance",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Data factory name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.dataFactoryManager) throw new Error("Data Factory manager not initialized");
+      const factory = await state.dataFactoryManager.getFactory(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(factory, null, 2) }],
+        details: factory,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_data_factory_pipelines",
+    label: "Azure List Data Factory Pipelines",
+    description: "List pipelines in an Azure Data Factory",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        factoryName: { type: "string", description: "Data factory name" },
+      },
+      required: ["resourceGroup", "factoryName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.dataFactoryManager) throw new Error("Data Factory manager not initialized");
+      const pipelines = await state.dataFactoryManager.listPipelines(params.resourceGroup as string, params.factoryName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(pipelines, null, 2) }],
+        details: { count: pipelines.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_data_factory_datasets",
+    label: "Azure List Data Factory Datasets",
+    description: "List datasets in an Azure Data Factory",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        factoryName: { type: "string", description: "Data factory name" },
+      },
+      required: ["resourceGroup", "factoryName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.dataFactoryManager) throw new Error("Data Factory manager not initialized");
+      const datasets = await state.dataFactoryManager.listDatasets(params.resourceGroup as string, params.factoryName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(datasets, null, 2) }],
+        details: { count: datasets.length },
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // SignalR Service tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_signalr_resources",
+    label: "Azure List SignalR Resources",
+    description: "List Azure SignalR Service resources",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.signalRManager) throw new Error("SignalR manager not initialized");
+      const resources = await state.signalRManager.listSignalRResources(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(resources, null, 2) }],
+        details: { count: resources.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_signalr_resource",
+    label: "Azure Get SignalR Resource",
+    description: "Get details of an Azure SignalR Service resource",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "SignalR resource name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.signalRManager) throw new Error("SignalR manager not initialized");
+      const resource = await state.signalRManager.getSignalRResource(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(resource, null, 2) }],
+        details: resource,
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // Notification Hubs tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_notification_hub_namespaces",
+    label: "Azure List Notification Hub Namespaces",
+    description: "List Azure Notification Hubs namespaces",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.notificationHubsManager) throw new Error("Notification Hubs manager not initialized");
+      const namespaces = await state.notificationHubsManager.listNamespaces(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(namespaces, null, 2) }],
+        details: { count: namespaces.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_notification_hub_namespace",
+    label: "Azure Get Notification Hub Namespace",
+    description: "Get details of an Azure Notification Hubs namespace",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Namespace name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.notificationHubsManager) throw new Error("Notification Hubs manager not initialized");
+      const ns = await state.notificationHubsManager.getNamespace(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(ns, null, 2) }],
+        details: ns,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_notification_hubs",
+    label: "Azure List Notification Hubs",
+    description: "List notification hubs in a namespace",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        namespaceName: { type: "string", description: "Notification Hubs namespace name" },
+      },
+      required: ["resourceGroup", "namespaceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.notificationHubsManager) throw new Error("Notification Hubs manager not initialized");
+      const hubs = await state.notificationHubsManager.listNotificationHubs(params.resourceGroup as string, params.namespaceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(hubs, null, 2) }],
+        details: { count: hubs.length },
+      };
+    },
+  });
 }

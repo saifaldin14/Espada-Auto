@@ -54,6 +54,10 @@ import { AzureTrafficManagerManager } from "./trafficmanager/index.js";
 import { AzureBastionManager } from "./bastion/index.js";
 import { AzureFrontDoorManager } from "./frontdoor/index.js";
 import { AzureStaticWebAppsManager } from "./staticwebapps/index.js";
+import { AzureSynapseManager } from "./synapse/index.js";
+import { AzureDataFactoryManager } from "./datafactory/index.js";
+import { AzureSignalRManager } from "./signalr/index.js";
+import { AzureNotificationHubsManager } from "./notificationhubs/index.js";
 
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
@@ -150,6 +154,12 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
 
       // Hybrid / Arc
       state.hybridManager = new AzureHybridManager(state.credentialsManager, subscriptionId, config.defaultRegion, retryOpts);
+
+      // Analytics & Integration
+      state.synapseManager = new AzureSynapseManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.dataFactoryManager = new AzureDataFactoryManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.signalRManager = new AzureSignalRManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.notificationHubsManager = new AzureNotificationHubsManager(state.credentialsManager, subscriptionId, retryOpts);
 
       // Orchestration (IDIO)
       clearStepRegistry();

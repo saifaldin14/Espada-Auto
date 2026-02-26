@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The Azure extension is a substantial plugin: **87 agent tools**, **74 gateway methods**, **92 CLI commands**, **31 service modules**, and **50 test files** (603 tests). It includes a novel IDIO orchestration engine, an Advisor module for project analysis, and DevOps PAT management with AES-256-GCM encryption.
+The Azure extension is a substantial plugin: **140 agent tools**, **127 gateway methods**, **102 CLI commands**, **51 service modules**, and **63 test files**. It includes a novel IDIO orchestration engine, an Advisor module for project analysis, and DevOps PAT management with AES-256-GCM encryption.
 
 This document outlines critical issues, missing services, missing features, and prioritized enhancement recommendations.
 
@@ -13,7 +13,7 @@ This document outlines critical issues, missing services, missing features, and 
 - **Advisor pipeline** — project analysis → service recommendations → parameter prompting → blueprint deployment → post-deploy verification. No equivalent exists in the AWS extension.
 - **IDIO orchestration** — DAG-based planner with 21 step types, 9 blueprints, rollback support, dry-run mode, and output references between steps.
 - **DevOps PAT management** — Full credential lifecycle with AES-256-GCM encryption, validation, rotation, and expiry tracking.
-- **Gateway surface area** — 74 methods vs AWS's 12. Azure is fully operable remotely via the gateway API.
+- **Gateway surface area** — 127 methods vs AWS's 12. Azure is fully operable remotely via the gateway API.
 - **Tool granularity** — 87 atomic tools are more LLM-friendly than AWS's 30 coarse-grained mega-tools.
 - **TypeBox config schema** — Runtime-validated + JSON Schema + TypeScript types in a single definition.
 - **Test density** — 50 test files for ~16k LOC source (higher test-to-code ratio than AWS).
@@ -67,21 +67,21 @@ This document outlines critical issues, missing services, missing features, and 
 
 ## Missing Azure Services
 
-| Service | Notes |
-|---------|-------|
-| **App Service (Web Apps)** | `@azure/arm-appservice` is in dependencies but only used for Functions — no Web App list/create/deploy |
-| **Static Web Apps** | Not present |
-| **Azure Front Door** | Not present |
-| **Application Gateway** | Type defined in `AzureResourceType` but no manager |
-| **Event Hubs** | Not present (distinct from Event Grid) |
-| **Azure Firewall** | Not present (NSGs are covered but Firewall is a separate service) |
-| **Azure Database for MySQL/PostgreSQL** | Orchestration steps reference these but no manager module exists |
-| **Azure Synapse Analytics** | Not present |
-| **Data Factory** | Not present |
-| **Traffic Manager** | Not present |
-| **Azure Bastion** | Not present |
-| **Notification Hubs** | Not present |
-| **Azure SignalR Service** | Not present |
+| Service | Status |
+|---------|--------|
+| **App Service (Web Apps)** | ✅ Implemented — `src/webapp/` (list, get, delete, restart, config, slots) |
+| **Static Web Apps** | ✅ Implemented — `src/staticwebapps/` (list, get, delete, builds, custom domains) |
+| **Azure Front Door** | ✅ Implemented — `src/frontdoor/` (profiles, endpoints, routes, origin groups) |
+| **Application Gateway** | ✅ Implemented — `src/appgateway/` (list, get, delete, start, stop, backend health) |
+| **Event Hubs** | ✅ Implemented — `src/eventhubs/` (namespaces, event hubs, consumer groups, schema groups) |
+| **Azure Firewall** | ✅ Implemented — `src/firewall/` (firewalls, policies, rule collection groups) |
+| **Traffic Manager** | ✅ Implemented — `src/trafficmanager/` (profiles, endpoints, geo hierarchies, heat maps) |
+| **Azure Bastion** | ✅ Implemented — `src/bastion/` (hosts, shareable links, sessions) |
+| **Azure Synapse Analytics** | ✅ Implemented — `src/synapse/` (workspaces, SQL pools, Spark pools) |
+| **Data Factory** | ✅ Implemented — `src/datafactory/` (factories, pipelines, pipeline runs, datasets, linked services) |
+| **Notification Hubs** | ✅ Implemented — `src/notificationhubs/` (namespaces, hubs, authorization rules) |
+| **Azure SignalR Service** | ✅ Implemented — `src/signalr/` (resources, custom domains, private endpoints, usages) |
+| **Azure Database for MySQL/PostgreSQL** | Not present — orchestration steps reference these but no manager module exists |
 | **Azure Spring Apps** | Not present |
 | **Microsoft Purview** | Not present |
 | **Azure Maps** | Not present |
