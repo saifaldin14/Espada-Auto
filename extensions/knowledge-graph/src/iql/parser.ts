@@ -39,6 +39,7 @@ import type {
   ComparisonOp,
   IQLValue,
   DiffTarget,
+  AggregateMetric,
 } from "./types.js";
 import { IQLLexer, IQLSyntaxError } from "./lexer.js";
 
@@ -153,13 +154,7 @@ export class IQLParser {
   private parseSummarizeQuery(): SummarizeQuery {
     this.consumeKeyword("SUMMARIZE");
 
-    const metricToken = this.consume("IDENTIFIER");
-    const metric = metricToken.value.toLowerCase();
-    if (metric !== "cost" && metric !== "count") {
-      throw this.error(
-        `Expected 'cost' or 'count' after SUMMARIZE, got '${metric}'`,
-      );
-    }
+    const metric = this.parseAggregateMetric();
 
     this.consumeKeyword("BY");
     const groupBy = this.parseGroupByList();
@@ -172,10 +167,49 @@ export class IQLParser {
 
     return {
       type: "summarize",
-      metric: metric as "cost" | "count",
+      metric,
       groupBy,
       where,
     };
+  }
+
+  /**
+   * Parse an aggregate metric. Supports:
+   *   - Bare keywords (backward compat): cost → sum(cost), count → count
+   *   - Function form: sum(field), avg(field), min(field), max(field), count
+   *   - COUNT keyword (no field argument)
+   */
+  private parseAggregateMetric(): AggregateMetric {
+    const kw = this.peekKeyword();
+
+    // Aggregation function keywords: SUM(field), AVG(field), MIN(field), MAX(field)
+    if (kw === "SUM" || kw === "AVG" || kw === "MIN" || kw === "MAX") {
+      this.pos++; // consume the keyword
+      this.consume("LPAREN");
+      const field = this.parseFieldName();
+      this.consume("RPAREN");
+      return { fn: kw.toLowerCase() as "sum" | "avg" | "min" | "max", field };
+    }
+
+    // COUNT keyword (no field argument needed)
+    if (kw === "COUNT") {
+      this.pos++;
+      return { fn: "count" };
+    }
+
+    // Backward compat: bare identifier (cost → sum(cost), count → count)
+    const metricToken = this.consume("IDENTIFIER");
+    const metric = metricToken.value.toLowerCase();
+    if (metric === "cost") {
+      return { fn: "sum", field: "cost" };
+    }
+    if (metric === "count") {
+      return { fn: "count" };
+    }
+
+    throw this.error(
+      `Expected aggregation function (SUM, AVG, MIN, MAX, COUNT) or 'cost'/'count' after SUMMARIZE, got '${metric}'`,
+    );
   }
 
   private parseGroupByList(): string[] {

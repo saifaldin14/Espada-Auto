@@ -30,6 +30,7 @@ export type {
   IQLQuery,
   FindQuery,
   SummarizeQuery,
+  AggregateMetric,
   FindTarget,
   Condition,
   FieldCondition,

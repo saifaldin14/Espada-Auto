@@ -245,10 +245,10 @@ default: break; // 3 relationship types not handled
 | 9 | **Azure/GCP incremental sync** | Full rescan every 15 min | Azure Activity Log + GCP Cloud Audit Logs for delta-based sync | 3–5 days each |
 | 10 | **Azure/GCP live cost data** | Static cost estimates | Azure Cost Management API + GCP Cloud Billing API integration | 3–5 days each |
 | 11 | **Real-time event streaming** | Pull-only on timer (15min/6hr) | Webhook receivers + EventBridge/CloudWatch Events/Azure Event Grid push | 5–8 days |
-| 12 | **Graph pagination** | All results returned in memory | Cursor-based pagination for `getNodes()`, `getEdges()`, `getChanges()` | 3–4 days |
+| 12 | **Graph pagination** | All results returned in memory | Cursor-based pagination for `getNodes()`, `getEdges()`, `getChanges()` | 3–4 days | ✅ Done |
 | 13 | **K8s Watch API integration** | Full rescan only | Use K8s Watch API for streaming updates to Deployments, Services, Pods | 2–3 days |
-| 14 | **IQL aggregation functions** | Only `count()` built-in | Add `sum()`, `avg()`, `min()`, `max()`, `group_by()` for cost analysis queries | 3–5 days |
-| 15 | **Monitoring mock mode** | Event sources require real cloud clients | Built-in mock event generators for local dev/testing | 2 days |
+| 14 | **IQL aggregation functions** | Only `count()` built-in | Add `sum()`, `avg()`, `min()`, `max()`, `group_by()` for cost analysis queries | 3–5 days | ✅ Done |
+| 15 | **Monitoring mock mode** | Event sources require real cloud clients | Built-in mock event generators for local dev/testing | 2 days | ✅ Done |
 
 ### P2 — Competitive Edge (Differentiation)
 

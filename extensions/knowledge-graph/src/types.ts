@@ -425,6 +425,31 @@ export type SyncRecord = {
 // Query Types
 // =============================================================================
 
+/**
+ * Pagination options for cursor-based pagination.
+ * The cursor is an opaque string encoding the position in the result set.
+ */
+export type PaginationOptions = {
+  /** Maximum number of items to return (default: 100). */
+  limit?: number;
+  /** Opaque cursor from a previous paginated result. Pass to get the next page. */
+  cursor?: string;
+};
+
+/**
+ * A paginated result set with cursor-based navigation.
+ */
+export type PaginatedResult<T> = {
+  /** Items in this page. */
+  items: T[];
+  /** Total count of matching items (across all pages). */
+  totalCount: number;
+  /** Cursor to pass for the next page, or null if this is the last page. */
+  nextCursor: string | null;
+  /** Whether there are more pages after this one. */
+  hasMore: boolean;
+};
+
 /** Filter for querying nodes. */
 export type NodeFilter = {
   provider?: CloudProvider;
@@ -534,6 +559,7 @@ export interface GraphStorage {
   getNode(id: string): Promise<GraphNode | null>;
   getNodeByNativeId(provider: CloudProvider, nativeId: string): Promise<GraphNode | null>;
   queryNodes(filter: NodeFilter): Promise<GraphNode[]>;
+  queryNodesPaginated(filter: NodeFilter, pagination?: PaginationOptions): Promise<PaginatedResult<GraphNode>>;
   deleteNode(id: string): Promise<void>;
   markNodesDisappeared(olderThan: string, provider?: CloudProvider): Promise<string[]>;
 
@@ -543,6 +569,7 @@ export interface GraphStorage {
   getEdge(id: string): Promise<GraphEdge | null>;
   getEdgesForNode(nodeId: string, direction: TraversalDirection, relationshipType?: GraphRelationshipType): Promise<GraphEdge[]>;
   queryEdges(filter: EdgeFilter): Promise<GraphEdge[]>;
+  queryEdgesPaginated(filter: EdgeFilter, pagination?: PaginationOptions): Promise<PaginatedResult<GraphEdge>>;
   deleteEdge(id: string): Promise<void>;
   deleteStaleEdges(olderThan: string): Promise<number>;
 
@@ -550,6 +577,7 @@ export interface GraphStorage {
   appendChange(change: GraphChange): Promise<void>;
   appendChanges(changes: GraphChange[]): Promise<void>;
   getChanges(filter: ChangeFilter): Promise<GraphChange[]>;
+  getChangesPaginated(filter: ChangeFilter, pagination?: PaginationOptions): Promise<PaginatedResult<GraphChange>>;
   getNodeTimeline(nodeId: string, limit?: number): Promise<GraphChange[]>;
 
   // -- Groups --

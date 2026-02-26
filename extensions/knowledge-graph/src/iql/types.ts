@@ -49,10 +49,18 @@ export type FindQuery = {
 /** SUMMARIZE query — aggregate and group resources. */
 export type SummarizeQuery = {
   type: "summarize";
-  metric: "cost" | "count";
+  metric: AggregateMetric;
   groupBy: string[];
   where: Condition | null;
 };
+
+/** Aggregation metric — what to compute per group. */
+export type AggregateMetric =
+  | { fn: "count" }
+  | { fn: "sum"; field: string }
+  | { fn: "avg"; field: string }
+  | { fn: "min"; field: string }
+  | { fn: "max"; field: string };
 
 /** Target of a FIND query. */
 export type FindTarget =

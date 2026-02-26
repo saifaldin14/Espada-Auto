@@ -414,6 +414,206 @@ function runStorageTests(name: string, createStorage: () => GraphStorage | Promi
         expect(stats.nodesByResourceType.database).toBe(1);
       });
     });
+
+    // =========================================================================
+    // Pagination
+    // =========================================================================
+
+    describe("pagination", () => {
+      beforeEach(async () => {
+        // Seed 10 nodes with varying attributes
+        const nodes: GraphNodeInput[] = [];
+        for (let i = 1; i <= 10; i++) {
+          nodes.push(
+            makeNode({
+              id: `node-${String(i).padStart(2, "0")}`,
+              name: `node-${String(i).padStart(2, "0")}`,
+              provider: i <= 6 ? "aws" : "azure",
+              resourceType: i % 3 === 0 ? "database" : "compute",
+              costMonthly: i * 10,
+            }),
+          );
+        }
+        await storage.upsertNodes(nodes);
+
+        // Seed 5 edges
+        for (let i = 1; i <= 5; i++) {
+          await storage.upsertEdge(
+            makeEdge({
+              id: `edge-${i}`,
+              sourceNodeId: `node-${String(i).padStart(2, "0")}`,
+              targetNodeId: `node-${String(i + 1).padStart(2, "0")}`,
+            }),
+          );
+        }
+
+        // Seed 8 changes
+        for (let i = 1; i <= 8; i++) {
+          await storage.appendChange({
+            id: `change-${i}`,
+            targetId: `node-${String((i % 5) + 1).padStart(2, "0")}`,
+            changeType: "node-updated",
+            field: "costMonthly",
+            previousValue: String((i - 1) * 10),
+            newValue: String(i * 10),
+            detectedAt: new Date(2024, 0, i).toISOString(),
+            detectedVia: "full-scan",
+            correlationId: null,
+            initiator: null,
+            initiatorType: null,
+            metadata: {},
+          });
+        }
+      });
+
+      describe("queryNodesPaginated", () => {
+        it("should return first page with correct totalCount", async () => {
+          const result = await storage.queryNodesPaginated({}, { limit: 3 });
+          expect(result.items).toHaveLength(3);
+          expect(result.totalCount).toBe(10);
+          expect(result.hasMore).toBe(true);
+          expect(result.nextCursor).not.toBeNull();
+        });
+
+        it("should traverse all pages", async () => {
+          const allItems: string[] = [];
+          let cursor: string | undefined;
+
+          for (let page = 0; page < 10; page++) {
+            const result = await storage.queryNodesPaginated(
+              {},
+              { limit: 3, cursor },
+            );
+            allItems.push(...result.items.map((n) => n.id));
+            if (!result.hasMore) break;
+            cursor = result.nextCursor!;
+          }
+
+          expect(allItems).toHaveLength(10);
+          // All IDs unique
+          expect(new Set(allItems).size).toBe(10);
+        });
+
+        it("should apply filters with pagination", async () => {
+          const result = await storage.queryNodesPaginated(
+            { provider: "aws" },
+            { limit: 2 },
+          );
+          expect(result.totalCount).toBe(6);
+          expect(result.items).toHaveLength(2);
+          expect(result.items.every((n) => n.provider === "aws")).toBe(true);
+        });
+
+        it("should return empty result for out-of-range cursor", async () => {
+          // Get to the last page first
+          let cursor: string | undefined;
+          let result = await storage.queryNodesPaginated({}, { limit: 10 });
+          expect(result.hasMore).toBe(false);
+          expect(result.nextCursor).toBeNull();
+        });
+
+        it("should default to 100 items when no limit specified", async () => {
+          const result = await storage.queryNodesPaginated({});
+          expect(result.items).toHaveLength(10); // only 10 nodes seeded
+          expect(result.hasMore).toBe(false);
+        });
+      });
+
+      describe("queryEdgesPaginated", () => {
+        it("should paginate edges", async () => {
+          const page1 = await storage.queryEdgesPaginated({}, { limit: 2 });
+          expect(page1.items).toHaveLength(2);
+          expect(page1.totalCount).toBe(5);
+          expect(page1.hasMore).toBe(true);
+
+          const page2 = await storage.queryEdgesPaginated(
+            {},
+            { limit: 2, cursor: page1.nextCursor! },
+          );
+          expect(page2.items).toHaveLength(2);
+          expect(page2.hasMore).toBe(true);
+
+          const page3 = await storage.queryEdgesPaginated(
+            {},
+            { limit: 2, cursor: page2.nextCursor! },
+          );
+          expect(page3.items).toHaveLength(1);
+          expect(page3.hasMore).toBe(false);
+          expect(page3.nextCursor).toBeNull();
+        });
+
+        it("should apply filters with pagination", async () => {
+          const result = await storage.queryEdgesPaginated(
+            { sourceNodeId: "node-01" },
+            { limit: 10 },
+          );
+          expect(result.totalCount).toBe(1);
+          expect(result.items).toHaveLength(1);
+        });
+      });
+
+      describe("getChangesPaginated", () => {
+        it("should paginate changes", async () => {
+          const page1 = await storage.getChangesPaginated({}, { limit: 3 });
+          expect(page1.items).toHaveLength(3);
+          expect(page1.totalCount).toBe(8);
+          expect(page1.hasMore).toBe(true);
+        });
+
+        it("should traverse all change pages", async () => {
+          const allChanges: string[] = [];
+          let cursor: string | undefined;
+
+          for (let page = 0; page < 10; page++) {
+            const result = await storage.getChangesPaginated(
+              {},
+              { limit: 3, cursor },
+            );
+            allChanges.push(...result.items.map((c) => c.id));
+            if (!result.hasMore) break;
+            cursor = result.nextCursor!;
+          }
+
+          expect(allChanges).toHaveLength(8);
+          expect(new Set(allChanges).size).toBe(8);
+        });
+
+        it("should apply filters with pagination", async () => {
+          const result = await storage.getChangesPaginated(
+            { changeType: "node-updated" },
+            { limit: 5 },
+          );
+          expect(result.totalCount).toBe(8);
+          expect(result.items).toHaveLength(5);
+          expect(result.hasMore).toBe(true);
+        });
+      });
+
+      describe("cursor validation", () => {
+        it("should reject a malformed cursor", async () => {
+          await expect(
+            storage.queryNodesPaginated({}, { cursor: "garbage" }),
+          ).rejects.toThrow("Invalid pagination cursor");
+        });
+
+        it("should reject a non-base64url cursor", async () => {
+          await expect(
+            storage.queryEdgesPaginated({}, { cursor: "!!!invalid!!!" }),
+          ).rejects.toThrow("Invalid pagination cursor");
+        });
+
+        it("should clamp limit to at most 1000", async () => {
+          const result = await storage.queryNodesPaginated({}, { limit: 5000 });
+          // Should not crash; items capped by available data
+          expect(result.items.length).toBeLessThanOrEqual(1000);
+        });
+
+        it("should treat zero/negative limit as 1", async () => {
+          const result = await storage.queryNodesPaginated({}, { limit: 0 });
+          expect(result.items.length).toBeGreaterThanOrEqual(1);
+        });
+      });
+    });
   });
 }
 

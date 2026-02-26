@@ -356,14 +356,14 @@ describe("IQLParser", () => {
       const ast = parseIQL("SUMMARIZE cost BY provider");
       expect(ast.type).toBe("summarize");
       const summ = ast as SummarizeQuery;
-      expect(summ.metric).toBe("cost");
+      expect(summ.metric).toEqual({ fn: "sum", field: "cost" });
       expect(summ.groupBy).toEqual(["provider"]);
     });
 
     it("should parse SUMMARIZE count BY resourceType, provider", () => {
       const ast = parseIQL("SUMMARIZE count BY resourceType, provider");
       const summ = ast as SummarizeQuery;
-      expect(summ.metric).toBe("count");
+      expect(summ.metric).toEqual({ fn: "count" });
       expect(summ.groupBy).toEqual(["resourceType", "provider"]);
     });
 
@@ -372,7 +372,7 @@ describe("IQLParser", () => {
         "SUMMARIZE cost BY provider, resourceType WHERE region IN ('us-east-1', 'eu-west-1')",
       );
       const summ = ast as SummarizeQuery;
-      expect(summ.metric).toBe("cost");
+      expect(summ.metric).toEqual({ fn: "sum", field: "cost" });
       expect(summ.where).not.toBeNull();
     });
   });
@@ -674,6 +674,115 @@ describe("IQL Executor", () => {
       const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
       // aws=880 should be first
       expect(result.groups[0].key.provider).toBe("aws");
+    });
+  });
+
+  describe("SUMMARIZE aggregation functions", () => {
+    it("should parse and execute SUM(cost) BY provider", async () => {
+      const ast = parseIQL("SUMMARIZE SUM(cost) BY provider");
+      expect(ast.type).toBe("summarize");
+      const summ = ast as SummarizeQuery;
+      expect(summ.metric).toEqual({ fn: "sum", field: "cost" });
+
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const awsGroup = result.groups.find((g) => g.key.provider === "aws");
+      expect(awsGroup?.value).toBe(880);
+      expect(result.total).toBe(1380); // 880+200+300
+    });
+
+    it("should parse and execute AVG(cost) BY provider", async () => {
+      const ast = parseIQL("SUMMARIZE AVG(cost) BY provider");
+      const summ = ast as SummarizeQuery;
+      expect(summ.metric).toEqual({ fn: "avg", field: "cost" });
+
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const awsGroup = result.groups.find((g) => g.key.provider === "aws");
+      expect(awsGroup?.value).toBe(220); // (150+150+500+80)/4 = 220
+      const azureGroup = result.groups.find((g) => g.key.provider === "azure");
+      expect(azureGroup?.value).toBe(200);
+      const gcpGroup = result.groups.find((g) => g.key.provider === "gcp");
+      expect(gcpGroup?.value).toBe(300);
+    });
+
+    it("should parse and execute MIN(cost) BY provider", async () => {
+      const ast = parseIQL("SUMMARIZE MIN(cost) BY provider");
+      const summ = ast as SummarizeQuery;
+      expect(summ.metric).toEqual({ fn: "min", field: "cost" });
+
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const awsGroup = result.groups.find((g) => g.key.provider === "aws");
+      expect(awsGroup?.value).toBe(80); // eu-worker
+      const azureGroup = result.groups.find((g) => g.key.provider === "azure");
+      expect(azureGroup?.value).toBe(200);
+      expect(result.total).toBe(80); // global min
+    });
+
+    it("should parse and execute MAX(cost) BY provider", async () => {
+      const ast = parseIQL("SUMMARIZE MAX(cost) BY provider");
+      const summ = ast as SummarizeQuery;
+      expect(summ.metric).toEqual({ fn: "max", field: "cost" });
+
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const awsGroup = result.groups.find((g) => g.key.provider === "aws");
+      expect(awsGroup?.value).toBe(500); // prod-db
+      const gcpGroup = result.groups.find((g) => g.key.provider === "gcp");
+      expect(gcpGroup?.value).toBe(300);
+      expect(result.total).toBe(500); // global max
+    });
+
+    it("should parse and execute COUNT BY resourceType", async () => {
+      const ast = parseIQL("SUMMARIZE COUNT BY resourceType");
+      const summ = ast as SummarizeQuery;
+      expect(summ.metric).toEqual({ fn: "count" });
+
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const computeGroup = result.groups.find(
+        (g) => g.key.resourceType === "compute",
+      );
+      expect(computeGroup?.value).toBe(4);
+      expect(result.total).toBe(6);
+    });
+
+    it("should apply AVG(cost) with WHERE filter", async () => {
+      const ast = parseIQL(
+        "SUMMARIZE AVG(cost) BY resourceType WHERE provider = 'aws'",
+      );
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      const computeGroup = result.groups.find(
+        (g) => g.key.resourceType === "compute",
+      );
+      // AWS compute: (150+150+80)/3 ≈ 126.67
+      expect(computeGroup?.value).toBeCloseTo(126.67, 1);
+      const dbGroup = result.groups.find(
+        (g) => g.key.resourceType === "database",
+      );
+      expect(dbGroup?.value).toBe(500);
+    });
+
+    it("should compute correct total for AVG (weighted mean across all nodes)", async () => {
+      const ast = parseIQL("SUMMARIZE AVG(cost) BY provider");
+      const result = (await executeQuery(ast, opts)) as IQLSummarizeResult;
+      // AWS: 150+150+500+80=880 (4 nodes), Azure: 200 (1), GCP: 300 (1)
+      // Correct weighted average: (880+200+300)/6 = 230
+      expect(result.total).toBeCloseTo(230, 1);
+    });
+
+    it("backward compat: bare 'cost' maps to SUM(cost)", async () => {
+      const ast1 = parseIQL("SUMMARIZE cost BY provider");
+      const ast2 = parseIQL("SUMMARIZE SUM(cost) BY provider");
+      const r1 = (await executeQuery(ast1, opts)) as IQLSummarizeResult;
+      const r2 = (await executeQuery(ast2, opts)) as IQLSummarizeResult;
+      expect(r1.total).toBe(r2.total);
+      expect(r1.groups.length).toBe(r2.groups.length);
+    });
+
+    it("backward compat: bare 'count' maps to COUNT", async () => {
+      const ast1 = parseIQL("SUMMARIZE count BY provider");
+      const ast2 = parseIQL("SUMMARIZE COUNT BY provider");
+      const r1 = (await executeQuery(ast1, opts)) as IQLSummarizeResult;
+      const r2 = (await executeQuery(ast2, opts)) as IQLSummarizeResult;
+      expect(r1.total).toBe(r2.total);
+      expect(r1.groups.length).toBe(r2.groups.length);
     });
   });
 

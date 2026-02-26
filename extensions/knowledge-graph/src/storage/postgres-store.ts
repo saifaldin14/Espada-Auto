@@ -27,6 +27,8 @@ import type {
   NodeFilter,
   EdgeFilter,
   ChangeFilter,
+  PaginationOptions,
+  PaginatedResult,
   SyncRecord,
   TraversalDirection,
   GraphRelationshipType,
@@ -481,6 +483,55 @@ export class PostgresGraphStorage implements GraphStorage {
     return result.rows.map(rowToNode);
   }
 
+  async queryNodesPaginated(
+    filter: NodeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphNode>> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (filter.provider) { clauses.push(`provider = $${paramIdx++}`); params.push(filter.provider); }
+    if (filter.resourceType) {
+      if (Array.isArray(filter.resourceType)) { clauses.push(`resource_type = ANY($${paramIdx++})`); params.push(filter.resourceType); }
+      else { clauses.push(`resource_type = $${paramIdx++}`); params.push(filter.resourceType); }
+    }
+    if (filter.region) { clauses.push(`region = $${paramIdx++}`); params.push(filter.region); }
+    if (filter.account) { clauses.push(`account = $${paramIdx++}`); params.push(filter.account); }
+    if (filter.status) {
+      if (Array.isArray(filter.status)) { clauses.push(`status = ANY($${paramIdx++})`); params.push(filter.status); }
+      else { clauses.push(`status = $${paramIdx++}`); params.push(filter.status); }
+    }
+    if (filter.namePattern) { clauses.push(`name ILIKE $${paramIdx++}`); params.push(`%${filter.namePattern}%`); }
+    if (filter.owner) { clauses.push(`owner = $${paramIdx++}`); params.push(filter.owner); }
+    if (filter.minCost != null) { clauses.push(`cost_monthly >= $${paramIdx++}`); params.push(filter.minCost); }
+    if (filter.maxCost != null) { clauses.push(`cost_monthly <= $${paramIdx++}`); params.push(filter.maxCost); }
+    if (filter.tags) { clauses.push(`tags @> $${paramIdx++}::jsonb`); params.push(JSON.stringify(filter.tags)); }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorPg(pagination.cursor) : 0;
+
+    const countResult = await this.db.query(
+      `SELECT COUNT(*)::int as cnt FROM ${this.schema}.nodes ${where}`,
+      params,
+    );
+    const totalCount = Number(countResult.rows[0].cnt);
+
+    const result = await this.db.query(
+      `SELECT * FROM ${this.schema}.nodes ${where} ORDER BY name LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+      [...params, limit, offset],
+    );
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: result.rows.map(rowToNode),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorPg(offset + limit) : null,
+      hasMore,
+    };
+  }
+
   async deleteNode(id: string): Promise<void> {
     await this.db.query(`DELETE FROM ${this.schema}.nodes WHERE id = $1`, [id]);
   }
@@ -630,6 +681,47 @@ export class PostgresGraphStorage implements GraphStorage {
     return result.rows.map(rowToEdge);
   }
 
+  async queryEdgesPaginated(
+    filter: EdgeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphEdge>> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (filter.sourceNodeId) { clauses.push(`source_node_id = $${paramIdx++}`); params.push(filter.sourceNodeId); }
+    if (filter.targetNodeId) { clauses.push(`target_node_id = $${paramIdx++}`); params.push(filter.targetNodeId); }
+    if (filter.relationshipType) {
+      if (Array.isArray(filter.relationshipType)) { clauses.push(`relationship_type = ANY($${paramIdx++})`); params.push(filter.relationshipType); }
+      else { clauses.push(`relationship_type = $${paramIdx++}`); params.push(filter.relationshipType); }
+    }
+    if (filter.minConfidence != null) { clauses.push(`confidence >= $${paramIdx++}`); params.push(filter.minConfidence); }
+    if (filter.discoveredVia) { clauses.push(`discovered_via = $${paramIdx++}`); params.push(filter.discoveredVia); }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorPg(pagination.cursor) : 0;
+
+    const countResult = await this.db.query(
+      `SELECT COUNT(*)::int as cnt FROM ${this.schema}.edges ${where}`,
+      params,
+    );
+    const totalCount = Number(countResult.rows[0].cnt);
+
+    const result = await this.db.query(
+      `SELECT * FROM ${this.schema}.edges ${where} ORDER BY id LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+      [...params, limit, offset],
+    );
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: result.rows.map(rowToEdge),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorPg(offset + limit) : null,
+      hasMore,
+    };
+  }
+
   async deleteEdge(id: string): Promise<void> {
     await this.db.query(`DELETE FROM ${this.schema}.edges WHERE id = $1`, [id]);
   }
@@ -736,6 +828,50 @@ export class PostgresGraphStorage implements GraphStorage {
       params,
     );
     return result.rows.map(rowToChange);
+  }
+
+  async getChangesPaginated(
+    filter: ChangeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphChange>> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (filter.targetId) { clauses.push(`target_id = $${paramIdx++}`); params.push(filter.targetId); }
+    if (filter.changeType) {
+      if (Array.isArray(filter.changeType)) { clauses.push(`change_type = ANY($${paramIdx++})`); params.push(filter.changeType); }
+      else { clauses.push(`change_type = $${paramIdx++}`); params.push(filter.changeType); }
+    }
+    if (filter.since) { clauses.push(`detected_at >= $${paramIdx++}`); params.push(filter.since); }
+    if (filter.until) { clauses.push(`detected_at <= $${paramIdx++}`); params.push(filter.until); }
+    if (filter.detectedVia) { clauses.push(`detected_via = $${paramIdx++}`); params.push(filter.detectedVia); }
+    if (filter.correlationId) { clauses.push(`correlation_id = $${paramIdx++}`); params.push(filter.correlationId); }
+    if (filter.initiator) { clauses.push(`initiator = $${paramIdx++}`); params.push(filter.initiator); }
+    if (filter.initiatorType) { clauses.push(`initiator_type = $${paramIdx++}`); params.push(filter.initiatorType); }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorPg(pagination.cursor) : 0;
+
+    const countResult = await this.db.query(
+      `SELECT COUNT(*)::int as cnt FROM ${this.schema}.changes ${where}`,
+      params,
+    );
+    const totalCount = Number(countResult.rows[0].cnt);
+
+    const result = await this.db.query(
+      `SELECT * FROM ${this.schema}.changes ${where} ORDER BY detected_at DESC LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+      [...params, limit, offset],
+    );
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: result.rows.map(rowToChange),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorPg(offset + limit) : null,
+      hasMore,
+    };
   }
 
   async getNodeTimeline(nodeId: string, limit = 100): Promise<GraphChange[]> {
@@ -1176,6 +1312,25 @@ function rowToSync(row: Record<string, unknown>): SyncRecord {
     errors,
     durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
   };
+}
+
+// =============================================================================
+// Pagination cursor helpers
+// =============================================================================
+
+function encodeCursorPg(offset: number): string {
+  return Buffer.from(`off:${offset}`).toString("base64url");
+}
+
+function decodeCursorPg(cursor: string): number {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  const match = decoded.match(/^off:(\d+)$/);
+  if (!match) throw new Error(`Invalid pagination cursor: ${cursor}`);
+  const offset = Number.parseInt(match[1], 10);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error(`Invalid pagination cursor offset: ${offset}`);
+  }
+  return offset;
 }
 
 export { generateId, now };

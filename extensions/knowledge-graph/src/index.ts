@@ -22,6 +22,8 @@ export type {
   NodeFilter,
   EdgeFilter,
   ChangeFilter,
+  PaginationOptions,
+  PaginatedResult,
   CloudProvider,
   GraphResourceType,
   GraphRelationshipType,
@@ -36,6 +38,7 @@ export type { GraphEngineConfig } from "./engine.js";
 // Storage
 export { InMemoryGraphStorage } from "./storage/index.js";
 export { SQLiteGraphStorage } from "./storage/index.js";
+export { SQLiteTemporalStorage } from "./storage/index.js";
 export { PostgresGraphStorage } from "./storage/index.js";
 export type { PostgresConfig } from "./storage/index.js";
 
@@ -160,3 +163,64 @@ export type {
   CrossAccountConfig,
   CrossAccountRelType,
 } from "./tenant.js";
+
+// Monitoring
+export {
+  InfraMonitor,
+  BUILTIN_ALERT_RULES,
+  SCHEDULE_PRESETS,
+  orphanAlertRule,
+  spofAlertRule,
+  costAnomalyAlertRule,
+  unauthorizedChangeAlertRule,
+  disappearedAlertRule,
+  getTimelineSummary,
+  getGraphDiff,
+  getCostTrend,
+  defaultMonitorConfig,
+  CloudTrailEventSource,
+  AzureActivityLogEventSource,
+  GcpAuditLogEventSource,
+} from "./monitoring.js";
+export type {
+  MonitorConfig,
+  MonitorSchedule,
+  AlertRule,
+  AlertInstance,
+  AlertSeverity,
+  AlertCategory,
+  AlertDestination,
+  AlertDestinationType,
+  AlertEvaluationContext,
+  EventSourceAdapter,
+  EventSourceType,
+  EventSourceConfig,
+  CloudEvent,
+  SyncCycleResult,
+  MonitorStatus,
+  TimelineSummary,
+  GraphDiff,
+  CostTrendPoint,
+} from "./monitoring.js";
+
+// Monitoring Mock Mode (testing/demos)
+export {
+  MockEventSourceAdapter,
+  MockAlertCollector,
+  mockCloudEvent,
+  generateEventBatch,
+  createMockMonitor,
+  orphanScenario,
+  spofScenario,
+  costSpikeScenario,
+  driftScenario,
+  disappearanceScenario,
+  multiCloudScenario,
+  ALL_SCENARIOS,
+} from "./monitoring-mock.js";
+export type {
+  MockEventGeneratorConfig,
+  MockScenario,
+  MockMonitorOptions,
+  MockMonitorResult,
+} from "./monitoring-mock.js";

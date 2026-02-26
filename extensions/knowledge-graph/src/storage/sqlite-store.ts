@@ -28,6 +28,8 @@ import type {
   NodeFilter,
   EdgeFilter,
   ChangeFilter,
+  PaginationOptions,
+  PaginatedResult,
   SyncRecord,
   TraversalDirection,
   GraphRelationshipType,
@@ -383,6 +385,10 @@ export class SQLiteGraphStorage implements GraphStorage {
     if (filter.tags) {
       // JSON-based tag filtering: each tag key=value must match
       for (const [key, value] of Object.entries(filter.tags)) {
+        // Validate tag key to prevent SQL injection via json_extract path
+        if (!/^[a-zA-Z0-9_.-]+$/.test(key)) {
+          throw new Error(`Invalid tag key: ${key}`);
+        }
         const paramKey = `tag_${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
         clauses.push(`json_extract(tags, '$.${key}') = @${paramKey}`);
         params[paramKey] = value;
@@ -392,6 +398,69 @@ export class SQLiteGraphStorage implements GraphStorage {
     const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
     const rows = this.db.prepare(`SELECT * FROM nodes ${where} ORDER BY name`).all(params) as RawNodeRow[];
     return rows.map(rowToNode);
+  }
+
+  async queryNodesPaginated(
+    filter: NodeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphNode>> {
+    const clauses: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    // Reuse the same filter-building logic
+    if (filter.provider) { clauses.push("provider = @provider"); params.provider = filter.provider; }
+    if (filter.resourceType) {
+      if (Array.isArray(filter.resourceType)) {
+        const ph = filter.resourceType.map((_, i) => `@rt${i}`);
+        clauses.push(`resource_type IN (${ph.join(", ")})`);
+        filter.resourceType.forEach((rt, i) => { params[`rt${i}`] = rt; });
+      } else { clauses.push("resource_type = @resourceType"); params.resourceType = filter.resourceType; }
+    }
+    if (filter.region) { clauses.push("region = @region"); params.region = filter.region; }
+    if (filter.account) { clauses.push("account = @account"); params.account = filter.account; }
+    if (filter.status) {
+      if (Array.isArray(filter.status)) {
+        const ph = filter.status.map((_, i) => `@st${i}`);
+        clauses.push(`status IN (${ph.join(", ")})`);
+        filter.status.forEach((s, i) => { params[`st${i}`] = s; });
+      } else { clauses.push("status = @status"); params.status = filter.status; }
+    }
+    if (filter.namePattern) { clauses.push("name LIKE @namePattern"); params.namePattern = `%${filter.namePattern}%`; }
+    if (filter.owner) { clauses.push("owner = @owner"); params.owner = filter.owner; }
+    if (filter.minCost != null) { clauses.push("cost_monthly >= @minCost"); params.minCost = filter.minCost; }
+    if (filter.maxCost != null) { clauses.push("cost_monthly <= @maxCost"); params.maxCost = filter.maxCost; }
+    if (filter.tags) {
+      for (const [key, value] of Object.entries(filter.tags)) {
+        // Validate tag key to prevent SQL injection via json_extract path
+        if (!/^[a-zA-Z0-9_.-]+$/.test(key)) {
+          throw new Error(`Invalid tag key: ${key}`);
+        }
+        const paramKey = `tag_${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
+        clauses.push(`json_extract(tags, '$.${key}') = @${paramKey}`);
+        params[paramKey] = value;
+      }
+    }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorSqlite(pagination.cursor) : 0;
+
+    const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM nodes ${where}`).get(params) as { cnt: number };
+    const totalCount = countRow.cnt;
+
+    params._limit = limit;
+    params._offset = offset;
+    const rows = this.db
+      .prepare(`SELECT * FROM nodes ${where} ORDER BY name LIMIT @_limit OFFSET @_offset`)
+      .all(params) as RawNodeRow[];
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: rows.map(rowToNode),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorSqlite(offset + limit) : null,
+      hasMore,
+    };
   }
 
   async deleteNode(id: string): Promise<void> {
@@ -539,6 +608,47 @@ export class SQLiteGraphStorage implements GraphStorage {
     return rows.map(rowToEdge);
   }
 
+  async queryEdgesPaginated(
+    filter: EdgeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphEdge>> {
+    const clauses: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    if (filter.sourceNodeId) { clauses.push("source_node_id = @sourceNodeId"); params.sourceNodeId = filter.sourceNodeId; }
+    if (filter.targetNodeId) { clauses.push("target_node_id = @targetNodeId"); params.targetNodeId = filter.targetNodeId; }
+    if (filter.relationshipType) {
+      if (Array.isArray(filter.relationshipType)) {
+        const ph = filter.relationshipType.map((_, i) => `@rt${i}`);
+        clauses.push(`relationship_type IN (${ph.join(", ")})`);
+        filter.relationshipType.forEach((rt, i) => { params[`rt${i}`] = rt; });
+      } else { clauses.push("relationship_type = @relType"); params.relType = filter.relationshipType; }
+    }
+    if (filter.minConfidence != null) { clauses.push("confidence >= @minConfidence"); params.minConfidence = filter.minConfidence; }
+    if (filter.discoveredVia) { clauses.push("discovered_via = @discoveredVia"); params.discoveredVia = filter.discoveredVia; }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorSqlite(pagination.cursor) : 0;
+
+    const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM edges ${where}`).get(params) as { cnt: number };
+    const totalCount = countRow.cnt;
+
+    params._limit = limit;
+    params._offset = offset;
+    const rows = this.db
+      .prepare(`SELECT * FROM edges ${where} ORDER BY id LIMIT @_limit OFFSET @_offset`)
+      .all(params) as RawEdgeRow[];
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: rows.map(rowToEdge),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorSqlite(offset + limit) : null,
+      hasMore,
+    };
+  }
+
   async deleteEdge(id: string): Promise<void> {
     this.db.prepare("DELETE FROM edges WHERE id = ?").run(id);
   }
@@ -650,6 +760,50 @@ export class SQLiteGraphStorage implements GraphStorage {
       .prepare(`SELECT * FROM changes ${where} ORDER BY detected_at DESC`)
       .all(params) as RawChangeRow[];
     return rows.map(rowToChange);
+  }
+
+  async getChangesPaginated(
+    filter: ChangeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphChange>> {
+    const clauses: string[] = [];
+    const params: Record<string, unknown> = {};
+
+    if (filter.targetId) { clauses.push("target_id = @targetId"); params.targetId = filter.targetId; }
+    if (filter.changeType) {
+      if (Array.isArray(filter.changeType)) {
+        const ph = filter.changeType.map((_, i) => `@ct${i}`);
+        clauses.push(`change_type IN (${ph.join(", ")})`);
+        filter.changeType.forEach((ct, i) => { params[`ct${i}`] = ct; });
+      } else { clauses.push("change_type = @changeType"); params.changeType = filter.changeType; }
+    }
+    if (filter.since) { clauses.push("detected_at >= @since"); params.since = filter.since; }
+    if (filter.until) { clauses.push("detected_at <= @until"); params.until = filter.until; }
+    if (filter.detectedVia) { clauses.push("detected_via = @detectedVia"); params.detectedVia = filter.detectedVia; }
+    if (filter.correlationId) { clauses.push("correlation_id = @correlationId"); params.correlationId = filter.correlationId; }
+    if (filter.initiator) { clauses.push("initiator = @initiator"); params.initiator = filter.initiator; }
+    if (filter.initiatorType) { clauses.push("initiator_type = @initiatorType"); params.initiatorType = filter.initiatorType; }
+
+    const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+    const limit = Math.max(1, Math.min(pagination.limit ?? 100, 1000));
+    const offset = pagination.cursor ? decodeCursorSqlite(pagination.cursor) : 0;
+
+    const countRow = this.db.prepare(`SELECT COUNT(*) as cnt FROM changes ${where}`).get(params) as { cnt: number };
+    const totalCount = countRow.cnt;
+
+    params._limit = limit;
+    params._offset = offset;
+    const rows = this.db
+      .prepare(`SELECT * FROM changes ${where} ORDER BY detected_at DESC LIMIT @_limit OFFSET @_offset`)
+      .all(params) as RawChangeRow[];
+
+    const hasMore = offset + limit < totalCount;
+    return {
+      items: rows.map(rowToChange),
+      totalCount,
+      nextCursor: hasMore ? encodeCursorSqlite(offset + limit) : null,
+      hasMore,
+    };
   }
 
   async getNodeTimeline(nodeId: string, limit = 100): Promise<GraphChange[]> {
@@ -1084,6 +1238,27 @@ function rowToSync(row: RawSyncRow): SyncRecord {
     errors: jsonParse(row.errors, []),
     durationMs: row.duration_ms,
   };
+}
+
+// =============================================================================
+// Pagination cursor helpers
+// =============================================================================
+
+/** Encode an offset-based cursor as a base64url string. */
+function encodeCursorSqlite(offset: number): string {
+  return Buffer.from(`off:${offset}`).toString("base64url");
+}
+
+/** Decode a base64url cursor back to a numeric offset. */
+function decodeCursorSqlite(cursor: string): number {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  const match = decoded.match(/^off:(\d+)$/);
+  if (!match) throw new Error(`Invalid pagination cursor: ${cursor}`);
+  const offset = Number.parseInt(match[1], 10);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error(`Invalid pagination cursor offset: ${offset}`);
+  }
+  return offset;
 }
 
 export { generateId, now };

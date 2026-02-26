@@ -206,11 +206,15 @@ async function executeSummarizeQuery(
     nodes = await filterNodes(nodes, query.where, ctx);
   }
 
-  // Group and aggregate
+  const { metric } = query;
+
+  // Group nodes by groupBy fields — track raw values for correct overall totals
   const groups = new Map<
     string,
-    { key: Record<string, string>; value: number }
+    { key: Record<string, string>; values: number[] }
   >();
+  // Track all raw values for correct overall AVG (mean of group means is wrong for uneven groups)
+  const allValues: number[] = [];
 
   for (const node of nodes) {
     const groupKey: Record<string, string> = {};
@@ -220,23 +224,87 @@ async function executeSummarizeQuery(
     const keyStr = JSON.stringify(groupKey);
     const existing = groups.get(keyStr);
 
+    const numValue =
+      metric.fn === "count"
+        ? 1
+        : resolveNumericField(node, metric.field);
+
+    allValues.push(numValue);
     if (existing) {
-      existing.value +=
-        query.metric === "cost" ? (node.costMonthly ?? 0) : 1;
+      existing.values.push(numValue);
     } else {
-      groups.set(keyStr, {
-        key: groupKey,
-        value: query.metric === "cost" ? (node.costMonthly ?? 0) : 1,
-      });
+      groups.set(keyStr, { key: groupKey, values: [numValue] });
     }
   }
 
-  const groupArray = Array.from(groups.values()).sort(
-    (a, b) => b.value - a.value,
-  );
-  const total = groupArray.reduce((sum, g) => sum + g.value, 0);
+  // Apply aggregation function to each group
+  const groupArray = Array.from(groups.values())
+    .map((g) => ({
+      key: g.key,
+      value: aggregateValues(g.values, metric.fn),
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const total = computeTotal(allValues, groupArray.map((g) => g.value), metric.fn);
 
   return { type: "summarize", groups: groupArray, total };
+}
+
+/**
+ * Resolve a numeric field value from a node for aggregation.
+ */
+function resolveNumericField(node: GraphNode, field: string): number {
+  const val = getFieldValue(node, field);
+  if (val == null) return 0;
+  const n = Number(val);
+  return Number.isNaN(n) ? 0 : n;
+}
+
+/**
+ * Apply an aggregation function to an array of values.
+ */
+function aggregateValues(values: number[], fn: string): number {
+  if (values.length === 0) return 0;
+
+  switch (fn) {
+    case "count":
+    case "sum":
+      return values.reduce((a, b) => a + b, 0);
+    case "avg":
+      return values.reduce((a, b) => a + b, 0) / values.length;
+    case "min":
+      return Math.min(...values);
+    case "max":
+      return Math.max(...values);
+    default:
+      throw new Error(`Unknown aggregation function: ${fn}`);
+  }
+}
+
+/**
+ * Compute the overall total across all group values.
+ * For avg, we use the raw values to compute a correct weighted average
+ * (mean-of-group-means is incorrect for groups of different sizes).
+ * For min/max, we report the global min/max across groups.
+ */
+function computeTotal(allRawValues: number[], groupValues: number[], fn: string): number {
+  if (groupValues.length === 0) return 0;
+
+  switch (fn) {
+    case "min":
+      return Math.min(...groupValues);
+    case "max":
+      return Math.max(...groupValues);
+    case "avg":
+      // Correct overall average from raw values (not mean-of-means)
+      if (allRawValues.length === 0) return 0;
+      return allRawValues.reduce((a, b) => a + b, 0) / allRawValues.length;
+    case "count":
+    case "sum":
+      return groupValues.reduce((a, b) => a + b, 0);
+    default:
+      throw new Error(`Unknown aggregation function: ${fn}`);
+  }
 }
 
 // =============================================================================

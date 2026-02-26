@@ -33,6 +33,11 @@ const KEYWORDS = new Set([
   "UPSTREAM",
   "TRUE",
   "FALSE",
+  "SUM",
+  "AVG",
+  "MIN",
+  "MAX",
+  "COUNT",
 ]);
 
 /**

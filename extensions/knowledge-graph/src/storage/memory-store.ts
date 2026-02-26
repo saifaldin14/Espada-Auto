@@ -18,6 +18,8 @@ import type {
   NodeFilter,
   EdgeFilter,
   ChangeFilter,
+  PaginationOptions,
+  PaginatedResult,
   SyncRecord,
   TraversalDirection,
   GraphRelationshipType,
@@ -127,6 +129,14 @@ export class InMemoryGraphStorage implements GraphStorage {
     return results.sort((a, b) => a.name.localeCompare(b.name));
   }
 
+  async queryNodesPaginated(
+    filter: NodeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphNode>> {
+    const all = await this.queryNodes(filter);
+    return paginateArray(all, pagination, (node) => node.id);
+  }
+
   async deleteNode(id: string): Promise<void> {
     this.nodes.delete(id);
     // Cascade edges
@@ -209,6 +219,14 @@ export class InMemoryGraphStorage implements GraphStorage {
     return results;
   }
 
+  async queryEdgesPaginated(
+    filter: EdgeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphEdge>> {
+    const all = await this.queryEdges(filter);
+    return paginateArray(all, pagination, (edge) => edge.id);
+  }
+
   async deleteEdge(id: string): Promise<void> {
     this.edges.delete(id);
   }
@@ -250,6 +268,14 @@ export class InMemoryGraphStorage implements GraphStorage {
     if (filter.initiatorType) results = results.filter((c) => c.initiatorType === filter.initiatorType);
 
     return results.sort((a, b) => b.detectedAt.localeCompare(a.detectedAt));
+  }
+
+  async getChangesPaginated(
+    filter: ChangeFilter,
+    pagination: PaginationOptions = {},
+  ): Promise<PaginatedResult<GraphChange>> {
+    const all = await this.getChanges(filter);
+    return paginateArray(all, pagination, (change) => change.id);
   }
 
   async getNodeTimeline(nodeId: string, limit = 100): Promise<GraphChange[]> {
@@ -426,4 +452,52 @@ export class InMemoryGraphStorage implements GraphStorage {
       newestChange: sorted[sorted.length - 1]?.detectedAt ?? null,
     };
   }
+}
+
+// =============================================================================
+// Pagination helpers
+// =============================================================================
+
+const DEFAULT_PAGE_SIZE = 100;
+const MAX_PAGE_SIZE = 1000;
+
+/** Encode an offset-based cursor as a base64 string. */
+function encodeCursor(offset: number): string {
+  return Buffer.from(`off:${offset}`).toString("base64url");
+}
+
+/** Decode a base64url cursor back to a numeric offset. */
+function decodeCursor(cursor: string): number {
+  const decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  const match = decoded.match(/^off:(\d+)$/);
+  if (!match) throw new Error(`Invalid pagination cursor: ${cursor}`);
+  const offset = Number.parseInt(match[1], 10);
+  if (!Number.isSafeInteger(offset) || offset < 0) {
+    throw new Error(`Invalid pagination cursor offset: ${offset}`);
+  }
+  return offset;
+}
+
+/**
+ * Apply cursor-based pagination to a pre-sorted in-memory array.
+ * `idFn` extracts the unique ID from each item (used for type safety but the
+ * cursor is offset-based for simplicity in the in-memory implementation).
+ */
+function paginateArray<T>(
+  all: T[],
+  pagination: PaginationOptions,
+  _idFn: (item: T) => string,
+): PaginatedResult<T> {
+  const limit = Math.max(1, Math.min(pagination.limit ?? DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE));
+  const offset = pagination.cursor ? decodeCursor(pagination.cursor) : 0;
+
+  const items = all.slice(offset, offset + limit);
+  const hasMore = offset + limit < all.length;
+
+  return {
+    items,
+    totalCount: all.length,
+    nextCursor: hasMore ? encodeCursor(offset + limit) : null,
+    hasMore,
+  };
 }
