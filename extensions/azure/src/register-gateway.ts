@@ -985,4 +985,125 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       opts.respond(true, { data: result });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
+
+  // --- Traffic Manager gateway methods ---
+  api.registerGatewayMethod("azure.trafficmanager.list", async (opts) => {
+    if (!state.trafficManagerManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Traffic Manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const profiles = await state.trafficManagerManager.listProfiles(params.resourceGroup);
+      opts.respond(true, { data: profiles });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.trafficmanager.get", async (opts) => {
+    if (!state.trafficManagerManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Traffic Manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const profile = await state.trafficManagerManager.getProfile(params.resourceGroup, params.name);
+      opts.respond(true, { data: profile });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.trafficmanager.endpoints", async (opts) => {
+    if (!state.trafficManagerManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Traffic Manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; profileName: string };
+      const endpoints = await state.trafficManagerManager.listEndpoints(params.resourceGroup, params.profileName);
+      opts.respond(true, { data: endpoints });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Bastion gateway methods ---
+  api.registerGatewayMethod("azure.bastion.list", async (opts) => {
+    if (!state.bastionManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Bastion manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const hosts = await state.bastionManager.listBastionHosts(params.resourceGroup);
+      opts.respond(true, { data: hosts });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.bastion.get", async (opts) => {
+    if (!state.bastionManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Bastion manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const host = await state.bastionManager.getBastionHost(params.resourceGroup, params.name);
+      opts.respond(true, { data: host });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Front Door gateway methods ---
+  api.registerGatewayMethod("azure.frontdoor.list", async (opts) => {
+    if (!state.frontDoorManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Front Door manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const profiles = await state.frontDoorManager.listProfiles(params.resourceGroup);
+      opts.respond(true, { data: profiles });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.frontdoor.get", async (opts) => {
+    if (!state.frontDoorManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Front Door manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const profile = await state.frontDoorManager.getProfile(params.resourceGroup, params.name);
+      opts.respond(true, { data: profile });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.frontdoor.endpoints", async (opts) => {
+    if (!state.frontDoorManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Front Door manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; profileName: string };
+      const endpoints = await state.frontDoorManager.listEndpoints(params.resourceGroup, params.profileName);
+      opts.respond(true, { data: endpoints });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.frontdoor.origingroups", async (opts) => {
+    if (!state.frontDoorManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Front Door manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; profileName: string };
+      const groups = await state.frontDoorManager.listOriginGroups(params.resourceGroup, params.profileName);
+      opts.respond(true, { data: groups });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Static Web Apps gateway methods ---
+  api.registerGatewayMethod("azure.staticwebapp.list", async (opts) => {
+    if (!state.staticWebAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Static Web Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const apps = await state.staticWebAppsManager.listStaticApps(params.resourceGroup);
+      opts.respond(true, { data: apps });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.staticwebapp.get", async (opts) => {
+    if (!state.staticWebAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Static Web Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const app = await state.staticWebAppsManager.getStaticApp(params.resourceGroup, params.name);
+      opts.respond(true, { data: app });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.staticwebapp.builds", async (opts) => {
+    if (!state.staticWebAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Static Web Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; appName: string };
+      const builds = await state.staticWebAppsManager.listBuilds(params.resourceGroup, params.appName);
+      opts.respond(true, { data: builds });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.staticwebapp.domains", async (opts) => {
+    if (!state.staticWebAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Static Web Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; appName: string };
+      const domains = await state.staticWebAppsManager.listCustomDomains(params.resourceGroup, params.appName);
+      opts.respond(true, { data: domains });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
 }

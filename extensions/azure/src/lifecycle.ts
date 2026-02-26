@@ -50,6 +50,10 @@ import { AzureWebAppManager } from "./webapp/index.js";
 import { AzureFirewallManager } from "./firewall/index.js";
 import { AzureEventHubsManager } from "./eventhubs/index.js";
 import { AzureAppGatewayManager } from "./appgateway/index.js";
+import { AzureTrafficManagerManager } from "./trafficmanager/index.js";
+import { AzureBastionManager } from "./bastion/index.js";
+import { AzureFrontDoorManager } from "./frontdoor/index.js";
+import { AzureStaticWebAppsManager } from "./staticwebapps/index.js";
 
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
@@ -86,6 +90,7 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.vmManager = new AzureVMManager(state.credentialsManager, subscriptionId, config.defaultRegion, retryOpts);
       state.functionsManager = new AzureFunctionsManager(state.credentialsManager, subscriptionId, retryOpts);
       state.webAppManager = new AzureWebAppManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.staticWebAppsManager = new AzureStaticWebAppsManager(state.credentialsManager, subscriptionId, retryOpts);
       state.containerManager = new AzureContainerManager(state.credentialsManager, subscriptionId, retryOpts);
 
       // Data
@@ -98,6 +103,9 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.networkManager = new AzureNetworkManager(state.credentialsManager, subscriptionId, retryOpts);
       state.firewallManager = new AzureFirewallManager(state.credentialsManager, subscriptionId, retryOpts);
       state.appGatewayManager = new AzureAppGatewayManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.trafficManagerManager = new AzureTrafficManagerManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.bastionManager = new AzureBastionManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.frontDoorManager = new AzureFrontDoorManager(state.credentialsManager, subscriptionId, retryOpts);
       state.dnsManager = new AzureDNSManager(state.credentialsManager, subscriptionId, retryOpts);
       state.cdnManager = new AzureCDNManager(state.credentialsManager, subscriptionId, retryOpts);
 

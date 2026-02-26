@@ -217,6 +217,7 @@
     "@azure/arm-servicebus": "^6.1.0",
     "@azure/arm-sql": "^10.0.0",
     "@azure/arm-storage": "^18.3.0",
+    "@azure/arm-trafficmanager": "^6.0.0",
     "@azure/arm-subscriptions": "^5.1.0",
     "@azure/identity": "^4.6.0",
     "@azure/keyvault-keys": "^4.9.0",

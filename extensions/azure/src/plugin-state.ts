@@ -47,6 +47,10 @@ import type { AzureWebAppManager } from "./webapp/index.js";
 import type { AzureFirewallManager } from "./firewall/index.js";
 import type { AzureEventHubsManager } from "./eventhubs/index.js";
 import type { AzureAppGatewayManager } from "./appgateway/index.js";
+import type { AzureTrafficManagerManager } from "./trafficmanager/index.js";
+import type { AzureBastionManager } from "./bastion/index.js";
+import type { AzureFrontDoorManager } from "./frontdoor/index.js";
+import type { AzureStaticWebAppsManager } from "./staticwebapps/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
@@ -74,6 +78,9 @@ export interface AzurePluginState {
   networkManager: AzureNetworkManager | null;
   firewallManager: AzureFirewallManager | null;
   appGatewayManager: AzureAppGatewayManager | null;
+  trafficManagerManager: AzureTrafficManagerManager | null;
+  bastionManager: AzureBastionManager | null;
+  frontDoorManager: AzureFrontDoorManager | null;
   keyVaultManager: AzureKeyVaultManager | null;
   monitorManager: AzureMonitorManager | null;
   iamManager: AzureIAMManager | null;
@@ -81,6 +88,7 @@ export interface AzurePluginState {
   serviceBusManager: AzureServiceBusManager | null;
   eventGridManager: AzureEventGridManager | null;
   eventHubsManager: AzureEventHubsManager | null;
+  staticWebAppsManager: AzureStaticWebAppsManager | null;
   dnsManager: AzureDNSManager | null;
   redisManager: AzureRedisManager | null;
   cdnManager: AzureCDNManager | null;
@@ -122,6 +130,9 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     networkManager: null,
     firewallManager: null,
     appGatewayManager: null,
+    trafficManagerManager: null,
+    bastionManager: null,
+    frontDoorManager: null,
     keyVaultManager: null,
     monitorManager: null,
     iamManager: null,
@@ -129,6 +140,7 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     serviceBusManager: null,
     eventGridManager: null,
     eventHubsManager: null,
+    staticWebAppsManager: null,
     dnsManager: null,
     redisManager: null,
     cdnManager: null,
@@ -171,6 +183,9 @@ export function clearPluginState(state: AzurePluginState): void {
   state.networkManager = null;
   state.firewallManager = null;
   state.appGatewayManager = null;
+  state.trafficManagerManager = null;
+  state.bastionManager = null;
+  state.frontDoorManager = null;
   state.keyVaultManager = null;
   state.monitorManager = null;
   state.iamManager = null;
@@ -178,6 +193,7 @@ export function clearPluginState(state: AzurePluginState): void {
   state.serviceBusManager = null;
   state.eventGridManager = null;
   state.eventHubsManager = null;
+  state.staticWebAppsManager = null;
   state.dnsManager = null;
   state.redisManager = null;
   state.cdnManager = null;

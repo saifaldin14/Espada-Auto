@@ -2059,4 +2059,298 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       };
     },
   });
+
+  // -------------------------------------------------------------------------
+  // Traffic Manager tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_traffic_manager_profiles",
+    label: "Azure List Traffic Manager Profiles",
+    description: "List Azure Traffic Manager profiles",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const profiles = await state.trafficManagerManager.listProfiles(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(profiles, null, 2) }],
+        details: { count: profiles.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_traffic_manager_profile",
+    label: "Azure Get Traffic Manager Profile",
+    description: "Get a specific Traffic Manager profile with endpoint details",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Profile name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const profile = await state.trafficManagerManager.getProfile(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(profile, null, 2) }],
+        details: profile,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_traffic_manager_endpoints",
+    label: "Azure List Traffic Manager Endpoints",
+    description: "List endpoints for a Traffic Manager profile",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        profileName: { type: "string", description: "Traffic Manager profile name" },
+      },
+      required: ["resourceGroup", "profileName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const endpoints = await state.trafficManagerManager.listEndpoints(params.resourceGroup as string, params.profileName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(endpoints, null, 2) }],
+        details: { count: endpoints.length },
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // Bastion tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_bastion_hosts",
+    label: "Azure List Bastion Hosts",
+    description: "List Azure Bastion hosts for secure VM connectivity",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.bastionManager) throw new Error("Bastion manager not initialized");
+      const hosts = await state.bastionManager.listBastionHosts(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(hosts, null, 2) }],
+        details: { count: hosts.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_bastion_host",
+    label: "Azure Get Bastion Host",
+    description: "Get details for an Azure Bastion host",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Bastion host name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.bastionManager) throw new Error("Bastion manager not initialized");
+      const host = await state.bastionManager.getBastionHost(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(host, null, 2) }],
+        details: host,
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // Front Door tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_frontdoor_profiles",
+    label: "Azure List Front Door Profiles",
+    description: "List Azure Front Door profiles (AFD Standard/Premium)",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.frontDoorManager) throw new Error("Front Door manager not initialized");
+      const profiles = await state.frontDoorManager.listProfiles(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(profiles, null, 2) }],
+        details: { count: profiles.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_frontdoor_profile",
+    label: "Azure Get Front Door Profile",
+    description: "Get a specific Azure Front Door profile",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Front Door profile name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.frontDoorManager) throw new Error("Front Door manager not initialized");
+      const profile = await state.frontDoorManager.getProfile(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(profile, null, 2) }],
+        details: profile,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_frontdoor_endpoints",
+    label: "Azure List Front Door Endpoints",
+    description: "List endpoints for an Azure Front Door profile",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        profileName: { type: "string", description: "Front Door profile name" },
+      },
+      required: ["resourceGroup", "profileName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.frontDoorManager) throw new Error("Front Door manager not initialized");
+      const endpoints = await state.frontDoorManager.listEndpoints(params.resourceGroup as string, params.profileName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(endpoints, null, 2) }],
+        details: { count: endpoints.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_frontdoor_origin_groups",
+    label: "Azure List Front Door Origin Groups",
+    description: "List origin groups for an Azure Front Door profile",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        profileName: { type: "string", description: "Front Door profile name" },
+      },
+      required: ["resourceGroup", "profileName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.frontDoorManager) throw new Error("Front Door manager not initialized");
+      const groups = await state.frontDoorManager.listOriginGroups(params.resourceGroup as string, params.profileName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }],
+        details: { count: groups.length },
+      };
+    },
+  });
+
+  // -------------------------------------------------------------------------
+  // Static Web Apps tools
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_static_web_apps",
+    label: "Azure List Static Web Apps",
+    description: "List Azure Static Web Apps",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Filter by resource group" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.staticWebAppsManager) throw new Error("Static Web Apps manager not initialized");
+      const apps = await state.staticWebAppsManager.listStaticApps(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(apps, null, 2) }],
+        details: { count: apps.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_static_web_app",
+    label: "Azure Get Static Web App",
+    description: "Get details for a specific Azure Static Web App",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Static Web App name" },
+      },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.staticWebAppsManager) throw new Error("Static Web Apps manager not initialized");
+      const app = await state.staticWebAppsManager.getStaticApp(params.resourceGroup as string, params.name as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(app, null, 2) }],
+        details: app,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_static_web_app_builds",
+    label: "Azure List Static Web App Builds",
+    description: "List builds for an Azure Static Web App",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Static Web App name" },
+      },
+      required: ["resourceGroup", "appName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.staticWebAppsManager) throw new Error("Static Web Apps manager not initialized");
+      const builds = await state.staticWebAppsManager.listBuilds(params.resourceGroup as string, params.appName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(builds, null, 2) }],
+        details: { count: builds.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_static_web_app_custom_domains",
+    label: "Azure List Static Web App Custom Domains",
+    description: "List custom domains for an Azure Static Web App",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Static Web App name" },
+      },
+      required: ["resourceGroup", "appName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.staticWebAppsManager) throw new Error("Static Web Apps manager not initialized");
+      const domains = await state.staticWebAppsManager.listCustomDomains(params.resourceGroup as string, params.appName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(domains, null, 2) }],
+        details: { count: domains.length },
+      };
+    },
+  });
 }

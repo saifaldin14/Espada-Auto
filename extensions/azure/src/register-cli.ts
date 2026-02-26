@@ -1842,5 +1842,204 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
             console.error(theme.error(`Failed to discover hybrid resources: ${formatErrorMessage(error)}`));
           }
         });
+
+      // --- Traffic Manager commands ---
+      const tmCmd = az.command("trafficmanager").description("Azure Traffic Manager management");
+
+      tmCmd
+        .command("list")
+        .description("List Traffic Manager profiles")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.trafficManagerManager) { console.error(theme.error("Traffic Manager not initialized")); return; }
+          try {
+            const profiles = await state.trafficManagerManager.listProfiles(options.resourceGroup);
+            if (profiles.length === 0) { console.log("No Traffic Manager profiles found"); return; }
+            console.log("\nTraffic Manager Profiles:\n");
+            for (const p of profiles) {
+              console.log(`  ${p.name}  ${theme.muted(p.trafficRoutingMethod ?? "")}  ${p.profileStatus ?? ""}`);
+              if (p.dnsConfig?.fqdn) console.log(`    DNS: ${theme.muted(p.dnsConfig.fqdn)}`);
+            }
+            console.log(theme.muted(`\nTotal: ${profiles.length} profile(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Traffic Manager profiles: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      tmCmd
+        .command("endpoints")
+        .description("List endpoints for a Traffic Manager profile")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--profile <name>", "Traffic Manager profile name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; profile: string };
+          if (!state.trafficManagerManager) { console.error(theme.error("Traffic Manager not initialized")); return; }
+          try {
+            const endpoints = await state.trafficManagerManager.listEndpoints(options.resourceGroup, options.profile);
+            if (endpoints.length === 0) { console.log("No endpoints found"); return; }
+            console.log("\nTraffic Manager Endpoints:\n");
+            for (const ep of endpoints) {
+              console.log(`  ${ep.name}  ${theme.muted(ep.type)}  ${ep.endpointStatus ?? ""}  target=${ep.target ?? "N/A"}`);
+            }
+            console.log(theme.muted(`\nTotal: ${endpoints.length} endpoint(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list endpoints: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Bastion commands ---
+      const bastionCmd = az.command("bastion").description("Azure Bastion management");
+
+      bastionCmd
+        .command("list")
+        .description("List Azure Bastion hosts")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.bastionManager) { console.error(theme.error("Bastion manager not initialized")); return; }
+          try {
+            const hosts = await state.bastionManager.listBastionHosts(options.resourceGroup);
+            if (hosts.length === 0) { console.log("No Bastion hosts found"); return; }
+            console.log("\nAzure Bastion Hosts:\n");
+            for (const bh of hosts) {
+              console.log(`  ${bh.name}  ${theme.muted(bh.skuName ?? "")}  ${bh.provisioningState ?? ""}  scale=${bh.scaleUnits ?? "N/A"}`);
+            }
+            console.log(theme.muted(`\nTotal: ${hosts.length} host(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Bastion hosts: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Front Door commands ---
+      const fdCmd = az.command("frontdoor").description("Azure Front Door management");
+
+      fdCmd
+        .command("list")
+        .description("List Azure Front Door profiles")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.frontDoorManager) { console.error(theme.error("Front Door manager not initialized")); return; }
+          try {
+            const profiles = await state.frontDoorManager.listProfiles(options.resourceGroup);
+            if (profiles.length === 0) { console.log("No Front Door profiles found"); return; }
+            console.log("\nAzure Front Door Profiles:\n");
+            for (const p of profiles) {
+              console.log(`  ${p.name}  ${theme.muted(p.skuName ?? "")}  ${p.resourceState ?? ""}`);
+            }
+            console.log(theme.muted(`\nTotal: ${profiles.length} profile(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Front Door profiles: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      fdCmd
+        .command("endpoints")
+        .description("List endpoints for a Front Door profile")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--profile <name>", "Front Door profile name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; profile: string };
+          if (!state.frontDoorManager) { console.error(theme.error("Front Door manager not initialized")); return; }
+          try {
+            const endpoints = await state.frontDoorManager.listEndpoints(options.resourceGroup, options.profile);
+            if (endpoints.length === 0) { console.log("No Front Door endpoints found"); return; }
+            console.log("\nFront Door Endpoints:\n");
+            for (const ep of endpoints) {
+              console.log(`  ${ep.name}  ${theme.muted(ep.hostName ?? "")}  ${ep.enabledState ?? ""}`);
+            }
+            console.log(theme.muted(`\nTotal: ${endpoints.length} endpoint(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Front Door endpoints: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      fdCmd
+        .command("origins")
+        .description("List origin groups for a Front Door profile")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--profile <name>", "Front Door profile name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; profile: string };
+          if (!state.frontDoorManager) { console.error(theme.error("Front Door manager not initialized")); return; }
+          try {
+            const groups = await state.frontDoorManager.listOriginGroups(options.resourceGroup, options.profile);
+            if (groups.length === 0) { console.log("No origin groups found"); return; }
+            console.log("\nFront Door Origin Groups:\n");
+            for (const og of groups) {
+              console.log(`  ${og.name}  ${og.deploymentStatus ?? ""}  affinity=${og.sessionAffinityState ?? "N/A"}`);
+            }
+            console.log(theme.muted(`\nTotal: ${groups.length} origin group(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list origin groups: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Static Web Apps commands ---
+      const swaCmd = az.command("staticwebapp").description("Azure Static Web Apps management");
+
+      swaCmd
+        .command("list")
+        .description("List Azure Static Web Apps")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.staticWebAppsManager) { console.error(theme.error("Static Web Apps manager not initialized")); return; }
+          try {
+            const apps = await state.staticWebAppsManager.listStaticApps(options.resourceGroup);
+            if (apps.length === 0) { console.log("No Static Web Apps found"); return; }
+            console.log("\nAzure Static Web Apps:\n");
+            for (const app of apps) {
+              console.log(`  ${app.name}  ${theme.muted(app.skuName ?? "")}  ${app.defaultHostname ?? ""}`);
+              if (app.repositoryUrl) console.log(`    Repo: ${theme.muted(app.repositoryUrl)}`);
+            }
+            console.log(theme.muted(`\nTotal: ${apps.length} app(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list Static Web Apps: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      swaCmd
+        .command("builds")
+        .description("List builds for a Static Web App")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--app <name>", "Static Web App name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; app: string };
+          if (!state.staticWebAppsManager) { console.error(theme.error("Static Web Apps manager not initialized")); return; }
+          try {
+            const builds = await state.staticWebAppsManager.listBuilds(options.resourceGroup, options.app);
+            if (builds.length === 0) { console.log("No builds found"); return; }
+            console.log("\nStatic Web App Builds:\n");
+            for (const b of builds) {
+              console.log(`  ${b.name}  ${theme.muted(b.status ?? "")}  branch=${b.sourceBranch ?? "N/A"}`);
+            }
+            console.log(theme.muted(`\nTotal: ${builds.length} build(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list builds: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      swaCmd
+        .command("domains")
+        .description("List custom domains for a Static Web App")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--app <name>", "Static Web App name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; app: string };
+          if (!state.staticWebAppsManager) { console.error(theme.error("Static Web Apps manager not initialized")); return; }
+          try {
+            const domains = await state.staticWebAppsManager.listCustomDomains(options.resourceGroup, options.app);
+            if (domains.length === 0) { console.log("No custom domains found"); return; }
+            console.log("\nStatic Web App Custom Domains:\n");
+            for (const d of domains) {
+              console.log(`  ${d.domainName ?? d.name}  ${theme.muted(d.status ?? "")}  ${d.provisioningState ?? ""}`);
+            }
+            console.log(theme.muted(`\nTotal: ${domains.length} domain(s)`));
+          } catch (error) {
+            console.error(theme.error(`Failed to list custom domains: ${formatErrorMessage(error)}`));
+          }
+        });
     });
 }
