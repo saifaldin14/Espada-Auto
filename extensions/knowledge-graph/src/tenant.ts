@@ -14,6 +14,7 @@ import type {
   NodeFilter,
   GraphNode,
   GraphStats,
+  GraphResourceType,
 } from "./types.js";
 
 // =============================================================================
@@ -582,8 +583,70 @@ export async function discoverCrossAccountRelationships(
         }
         break;
 
-      // Other types follow similar patterns
-      default:
+      case "transit-gateway":
+        // Transit Gateways can be shared across accounts via RAM (Resource Access Manager).
+        // Attachments reference VPCs/VPNs in other accounts via ResourceOwnerId metadata.
+        for (const node of sourceNodes) {
+          if (node.resourceType !== ("transit-gateway" as GraphResourceType)) continue;
+          const attachments = node.metadata.TransitGatewayAttachments as
+            | Array<{ ResourceId?: string; ResourceOwnerId?: string }>
+            | undefined;
+          if (!attachments) continue;
+          for (const attachment of attachments) {
+            if (attachment.ResourceOwnerId === config.targetAccountId && attachment.ResourceId) {
+              const target = targetByNativeId.get(attachment.ResourceId);
+              if (target) {
+                results.push({ sourceNodeId: node.id, targetNodeId: target.id, type: "transit-gateway" });
+              }
+            }
+          }
+        }
+        break;
+
+      case "dns-resolution":
+        // Cross-account DNS resolution via Route 53 Resolver rules or shared Private Hosted Zones.
+        // Resolver rules forward DNS queries to target accounts; shared hosted zones associate
+        // with VPCs in other accounts via metadata.sharedWithAccountId / associatedAccountId.
+        for (const node of sourceNodes) {
+          const sharedWith = (node.metadata.sharedWithAccountId ?? node.metadata.associatedAccountId) as
+            | string
+            | undefined;
+          if (sharedWith !== config.targetAccountId) continue;
+          const targetResourceId = node.metadata.targetResourceId as string | undefined;
+          if (targetResourceId) {
+            const target = targetByNativeId.get(targetResourceId);
+            if (target) {
+              results.push({ sourceNodeId: node.id, targetNodeId: target.id, type: "dns-resolution" });
+            }
+          } else {
+            // Shared hosted zone — match by name to target VPCs
+            const matchingTargets = targetByName.get(node.name) ?? [];
+            for (const target of matchingTargets) {
+              if (target.resourceType === "vpc") {
+                results.push({ sourceNodeId: node.id, targetNodeId: target.id, type: "dns-resolution" });
+              }
+            }
+          }
+        }
+        break;
+
+      case "event-routing":
+        // EventBridge cross-account event routing. Rules with targets in another account
+        // store the target account in metadata.targetAccountId and the target resource ARN
+        // in metadata.crossAccountTargetArn.
+        for (const node of sourceNodes) {
+          const subtype = node.metadata.resourceSubtype as string | undefined;
+          if (subtype !== "eventbridge-rule") continue;
+          const eventTargetAccount = node.metadata.targetAccountId as string | undefined;
+          if (eventTargetAccount !== config.targetAccountId) continue;
+          const targetArn = node.metadata.crossAccountTargetArn as string | undefined;
+          if (targetArn) {
+            const target = targetByNativeId.get(targetArn);
+            if (target) {
+              results.push({ sourceNodeId: node.id, targetNodeId: target.id, type: "event-routing" });
+            }
+          }
+        }
         break;
     }
   }

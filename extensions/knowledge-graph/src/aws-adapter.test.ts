@@ -27,11 +27,88 @@ import type {
   AwsIncrementalChanges,
   AwsSecurityPosture,
 } from "./adapters/aws.js";
-import type { GraphNodeInput } from "./adapters/types.js";
+import type { GraphNodeInput, GraphEdgeInput } from "./adapters/types.js";
 
 // =============================================================================
-// resolveFieldPath
+// Test helper: typed access to private members (eliminates `as any`)
 // =============================================================================
+
+/**
+ * Exposes private members of AwsDiscoveryAdapter for testing.
+ * This avoids scattering `(adapter as any)` throughout the test suite
+ * while keeping type safety on the test-side API surface.
+ */
+interface AwsAdapterTestable extends AwsDiscoveryAdapter {
+  // Lazy-init manager getters
+  ensureSdkAvailable(): Promise<boolean>;
+  getCredentialsManager(): Promise<unknown | null>;
+  getClientPoolManager(): Promise<unknown | null>;
+  getCostManagerInstance(): Promise<unknown | null>;
+  getSecurityManager(): Promise<unknown | null>;
+  getCloudTrailManager(): Promise<unknown | null>;
+  getTaggingManager(): Promise<unknown | null>;
+  getLambdaManager(): Promise<unknown | null>;
+  getObservabilityManager(): Promise<unknown | null>;
+  getS3Manager(): Promise<unknown | null>;
+  getElastiCacheManager(): Promise<unknown | null>;
+  getOrganizationManager(): Promise<unknown | null>;
+  getBackupManager(): Promise<unknown | null>;
+  getComplianceManager(): Promise<unknown | null>;
+  getAutomationManager(): Promise<unknown | null>;
+  getEC2Manager(): Promise<unknown | null>;
+  getRDSManager(): Promise<unknown | null>;
+  getCICDManager(): Promise<unknown | null>;
+  getCognitoManager(): Promise<unknown | null>;
+
+  // Private backing fields (undefined after dispose())
+  _credentialsManager: unknown | undefined;
+  _clientPoolManager: unknown | undefined;
+  _costManager: unknown | undefined;
+  _securityManager: unknown | undefined;
+  _taggingManager: unknown | undefined;
+  _lambdaManager: unknown | undefined;
+  _observabilityManager: unknown | undefined;
+  _s3Manager: unknown | undefined;
+  _elastiCacheManager: unknown | undefined;
+  _organizationManager: unknown | undefined;
+  _backupManager: unknown | undefined;
+  _complianceManager: unknown | undefined;
+  _automationManager: unknown | undefined;
+  _ec2Manager: unknown | undefined;
+  _rdsManager: unknown | undefined;
+  _cicdManager: unknown | undefined;
+  _cognitoManager: unknown | undefined;
+
+  // Enrichment methods (nodes only)
+  enrichWithTags(nodes: GraphNodeInput[]): Promise<void>;
+  enrichWithCompliance(nodes: GraphNodeInput[]): Promise<void>;
+
+  // Enrichment methods (nodes + edges)
+  enrichWithEventSources(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  enrichWithObservability(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  enrichWithDeeperDiscovery(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  enrichWithCostExplorer(nodes: GraphNodeInput[]): Promise<void>;
+
+  // Discovery methods (nodes + edges)
+  discoverElastiCache(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverOrganization(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverBackupResources(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverAutomation(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverEC2Deeper(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverRDSDeeper(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverCICD(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+  discoverCognito(nodes: GraphNodeInput[], edges: GraphEdgeInput[]): Promise<void>;
+
+  // Cost methods
+  estimateCostStatic(resourceType: string, metadata: Record<string, unknown>): number;
+  queryServiceCosts(nodes: GraphNodeInput[]): Promise<Record<string, number> | null>;
+  queryResourceCosts(nodes: GraphNodeInput[]): Promise<Map<string, number> | null>;
+}
+
+/** Cast adapter to the testable interface (single typed cast replaces scattered `as any`). */
+function testable(adapter: AwsDiscoveryAdapter): AwsAdapterTestable {
+  return adapter as unknown as AwsAdapterTestable;
+}
 
 describe("resolveFieldPath", () => {
   it("should resolve a simple field", () => {
@@ -623,7 +700,7 @@ describe("AwsDiscoveryAdapter without SDK", () => {
     });
 
     // Force SDK unavailable to simulate missing @aws-sdk packages
-    vi.spyOn(adapter as any, "ensureSdkAvailable").mockResolvedValue(false);
+    vi.spyOn(testable(adapter), "ensureSdkAvailable").mockResolvedValue(false);
 
     const result = await adapter.discover({ resourceTypes: ["compute"] });
     // Without the real AWS SDK, should get an error
@@ -819,10 +896,10 @@ describe("Cost Explorer enrichment", () => {
     });
 
     // Mock Cost Explorer methods
-    vi.spyOn(adapter as any, "queryServiceCosts").mockResolvedValue(
+    vi.spyOn(testable(adapter), "queryServiceCosts").mockResolvedValue(
       new Map([["AWS Lambda", 42.50]]),
     );
-    vi.spyOn(adapter as any, "queryResourceCosts").mockResolvedValue(
+    vi.spyOn(testable(adapter), "queryResourceCosts").mockResolvedValue(
       new Map([["arn:aws:lambda:us-east-1:123456789:function:data-processor", 42.50]]),
     );
 
@@ -851,10 +928,10 @@ describe("Cost Explorer enrichment", () => {
     });
 
     // Service-level costs only, no resource-level
-    vi.spyOn(adapter as any, "queryServiceCosts").mockResolvedValue(
+    vi.spyOn(testable(adapter), "queryServiceCosts").mockResolvedValue(
       new Map([["Amazon Simple Storage Service", 10.00]]),
     );
-    vi.spyOn(adapter as any, "queryResourceCosts").mockResolvedValue(null);
+    vi.spyOn(testable(adapter), "queryResourceCosts").mockResolvedValue(null);
 
     const result = await adapter.discover({ resourceTypes: ["storage"] });
     expect(result.nodes).toHaveLength(2);
@@ -889,7 +966,7 @@ describe("Cost Explorer enrichment", () => {
     });
 
     // CE fails completely
-    vi.spyOn(adapter as any, "enrichWithCostExplorer").mockRejectedValue(
+    vi.spyOn(testable(adapter), "enrichWithCostExplorer").mockRejectedValue(
       new Error("AccessDenied"),
     );
 
@@ -924,7 +1001,7 @@ describe("Cost Explorer enrichment", () => {
       }),
     });
 
-    const enrichSpy = vi.spyOn(adapter as any, "enrichWithCostExplorer");
+    const enrichSpy = vi.spyOn(testable(adapter), "enrichWithCostExplorer");
 
     const result = await adapter.discover({ resourceTypes: ["serverless-function"] });
     expect(enrichSpy).not.toHaveBeenCalled();
@@ -1001,7 +1078,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         clientFactory: createMockClientFactory({}),
       });
       // Spy on the private getter to return null
-      vi.spyOn(adapter as any, "getCostManagerInstance").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getCostManagerInstance").mockResolvedValue(null);
 
       const result = await adapter.forecastCosts();
       expect(result).toBeNull();
@@ -1085,7 +1162,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         accountId: "123456789",
         clientFactory: createMockClientFactory({}),
       });
-      vi.spyOn(adapter as any, "getCostManagerInstance").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getCostManagerInstance").mockResolvedValue(null);
 
       expect(await adapter.getOptimizationRecommendations()).toBeNull();
     });
@@ -1261,7 +1338,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         managers: { cloudtrail: null },
       });
       // Override clientFactory check by using managers injection
-      vi.spyOn(adapter as any, "getCloudTrailManager").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getCloudTrailManager").mockResolvedValue(null);
 
       const result = await adapter.getIncrementalChanges(new Date("2025-01-01"));
       expect(result).toBeNull();
@@ -1488,20 +1565,20 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       // Force lazy load of managers
-      await (adapter as any).getCredentialsManager();
-      await (adapter as any).getClientPoolManager();
-      await (adapter as any).getCostManagerInstance();
-      await (adapter as any).getSecurityManager();
+      await testable(adapter).getCredentialsManager();
+      await testable(adapter).getClientPoolManager();
+      await testable(adapter).getCostManagerInstance();
+      await testable(adapter).getSecurityManager();
 
       await adapter.dispose();
 
       expect(destroyFn).toHaveBeenCalledOnce();
 
       // After dispose, managers should be reset to undefined
-      expect((adapter as any)._credentialsManager).toBeUndefined();
-      expect((adapter as any)._clientPoolManager).toBeUndefined();
-      expect((adapter as any)._costManager).toBeUndefined();
-      expect((adapter as any)._securityManager).toBeUndefined();
+      expect(testable(adapter)._credentialsManager).toBeUndefined();
+      expect(testable(adapter)._clientPoolManager).toBeUndefined();
+      expect(testable(adapter)._costManager).toBeUndefined();
+      expect(testable(adapter)._securityManager).toBeUndefined();
     });
 
     it("should handle dispose when no managers were loaded", async () => {
@@ -1525,7 +1602,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       const raw = { VpcId: "vpc-net1" };
       const edges = adapter.extractRelationships(
         "aws:123456789:us-east-1:route-table:rtb-1",
-        "route-table" as any,
+        "route-table",
         raw,
         "123456789",
         "us-east-1",
@@ -1545,7 +1622,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       };
       const edges = adapter.extractRelationships(
         "aws:123456789:us-east-1:route-table:rtb-1",
-        "route-table" as any,
+        "route-table",
         raw,
         "123456789",
         "us-east-1",
@@ -1561,7 +1638,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       };
       const edges = adapter.extractRelationships(
         "aws:123456789:us-east-1:internet-gateway:igw-1",
-        "internet-gateway" as any,
+        "internet-gateway",
         raw,
         "123456789",
         "us-east-1",
@@ -1596,7 +1673,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       };
       const edges = adapter.extractRelationships(
         "aws:123456789:us-east-1:vpc-endpoint:vpce-1",
-        "vpc-endpoint" as any,
+        "vpc-endpoint",
         raw,
         "123456789",
         "us-east-1",
@@ -1616,7 +1693,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       };
       const edges = adapter.extractRelationships(
         "aws:123456789:us-east-1:transit-gateway:tgw-1",
-        "transit-gateway" as any,
+        "transit-gateway",
         raw,
         "123456789",
         "us-east-1",
@@ -1676,9 +1753,9 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         clientFactory: createMockClientFactory(responses),
       });
 
-      const result = await adapter.discover({ resourceTypes: ["route-table" as any, "internet-gateway" as any, "nat-gateway"] });
-      const rtNodes = result.nodes.filter((n) => n.resourceType === ("route-table" as any));
-      const igwNodes = result.nodes.filter((n) => n.resourceType === ("internet-gateway" as any));
+      const result = await adapter.discover({ resourceTypes: ["route-table", "internet-gateway", "nat-gateway"] });
+      const rtNodes = result.nodes.filter((n) => n.resourceType === ("route-table"));
+      const igwNodes = result.nodes.filter((n) => n.resourceType === ("internet-gateway"));
       const natNodes = result.nodes.filter((n) => n.resourceType === "nat-gateway");
 
       expect(rtNodes).toHaveLength(1);
@@ -1753,7 +1830,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       // Call private method
-      await (adapter as any).enrichWithTags(nodes);
+      await testable(adapter).enrichWithTags(nodes);
 
       expect(nodes[0].tags["Environment"]).toBe("production");
       expect(nodes[0].tags["CostCenter"]).toBe("eng-123");
@@ -1771,7 +1848,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         accountId: "123456789",
         managers: { tagging: null },
       });
-      vi.spyOn(adapter as any, "getTaggingManager").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getTaggingManager").mockResolvedValue(null);
 
       const nodes: GraphNodeInput[] = [
         {
@@ -1791,7 +1868,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
 
-      await (adapter as any).enrichWithTags(nodes);
+      await testable(adapter).enrichWithTags(nodes);
       expect(nodes[0].metadata["tagSource"]).toBeUndefined();
     });
   });
@@ -1853,7 +1930,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithEventSources(nodes, edges);
+      await testable(adapter).enrichWithEventSources(nodes, edges);
 
       expect(edges).toHaveLength(1);
       expect(edges[0].relationshipType).toBe("triggers");
@@ -1869,10 +1946,10 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         accountId: "123456789",
         managers: { lambda: null },
       });
-      vi.spyOn(adapter as any, "getLambdaManager").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getLambdaManager").mockResolvedValue(null);
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithEventSources([], edges);
+      await testable(adapter).enrichWithEventSources([], edges);
       expect(edges).toHaveLength(0);
     });
   });
@@ -1959,7 +2036,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithObservability(nodes, edges);
+      await testable(adapter).enrichWithObservability(nodes, edges);
 
       expect(edges.length).toBeGreaterThanOrEqual(2);
       const apiToFunc = edges.find((e: any) => e.sourceNodeId.includes("api-gateway:api-1") && e.targetNodeId.includes("my-func"));
@@ -2036,7 +2113,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithObservability(nodes, edges);
+      await testable(adapter).enrichWithObservability(nodes, edges);
 
       expect(nodes[0].metadata["hasActiveAlarm"]).toBe(true);
       expect(nodes[0].metadata["monitoredByCloudWatch"]).toBe(true);
@@ -2051,10 +2128,10 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         accountId: "123456789",
         managers: { observability: null },
       });
-      vi.spyOn(adapter as any, "getObservabilityManager").mockResolvedValue(null);
+      vi.spyOn(testable(adapter), "getObservabilityManager").mockResolvedValue(null);
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithObservability([], edges);
+      await testable(adapter).enrichWithObservability([], edges);
       expect(edges).toHaveLength(0);
     });
   });
@@ -2109,7 +2186,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithDeeperDiscovery(nodes, edges);
+      await testable(adapter).enrichWithDeeperDiscovery(nodes, edges);
 
       expect(nodes[0].metadata["versioning"]).toBe("Enabled");
       expect(nodes[0].metadata["encryptionType"]).toBe("AES256");
@@ -2155,7 +2232,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       ];
 
       const edges: any[] = [];
-      await (adapter as any).enrichWithDeeperDiscovery(nodes, edges);
+      await testable(adapter).enrichWithDeeperDiscovery(nodes, edges);
 
       expect(nodes[0].metadata["publicAccessBlocked"]).toBe(false);
       expect(nodes[0].metadata["hasSecurityIssues"]).toBe(true);
@@ -2225,7 +2302,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverElastiCache(nodes, edges);
+      await testable(adapter).discoverElastiCache(nodes, edges);
 
       expect(nodes).toHaveLength(1);
       expect(nodes[0].resourceType).toBe("cache");
@@ -2274,7 +2351,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverElastiCache(nodes, edges);
+      await testable(adapter).discoverElastiCache(nodes, edges);
 
       const cacheNodes = nodes.filter((n) => n.resourceType === "cache");
       expect(cacheNodes).toHaveLength(1);
@@ -2301,18 +2378,18 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverElastiCache(nodes, []);
+      await testable(adapter).discoverElastiCache(nodes, []);
       expect(nodes).toHaveLength(0);
     });
 
     it("should handle null manager gracefully", async () => {
       const adapter = new AwsDiscoveryAdapter({
         accountId: "123456789",
-        managers: { elasticache: null as any },
+        managers: { elasticache: null! },
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverElastiCache(nodes, []);
+      await testable(adapter).discoverElastiCache(nodes, []);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -2358,7 +2435,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverOrganization(nodes, edges);
+      await testable(adapter).discoverOrganization(nodes, edges);
 
       // Should have 2 account nodes (identity) + 1 OU node (custom) + 1 SCP node (policy)
       expect(nodes).toHaveLength(4);
@@ -2394,7 +2471,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverOrganization(nodes, edges);
+      await testable(adapter).discoverOrganization(nodes, edges);
       expect(nodes).toHaveLength(0);
       expect(edges).toHaveLength(0);
     });
@@ -2402,11 +2479,11 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
     it("should handle null manager gracefully", async () => {
       const adapter = new AwsDiscoveryAdapter({
         accountId: "123456789",
-        managers: { organization: null as any },
+        managers: { organization: null! },
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverOrganization(nodes, []);
+      await testable(adapter).discoverOrganization(nodes, []);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -2459,7 +2536,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverBackupResources(nodes, edges);
+      await testable(adapter).discoverBackupResources(nodes, edges);
 
       // Should have vault + plan nodes
       const vaultNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "backup-vault");
@@ -2495,18 +2572,18 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverBackupResources(nodes, edges);
+      await testable(adapter).discoverBackupResources(nodes, edges);
       expect(nodes).toHaveLength(0);
     });
 
     it("should handle null manager gracefully", async () => {
       const adapter = new AwsDiscoveryAdapter({
         accountId: "123456789",
-        managers: { backup: null as any },
+        managers: { backup: null! },
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverBackupResources(nodes, []);
+      await testable(adapter).discoverBackupResources(nodes, []);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -2557,10 +2634,10 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
 
-      await (adapter as any).enrichWithCompliance(nodes);
+      await testable(adapter).enrichWithCompliance(nodes);
 
       // First node should have violation
-      const compliance1 = nodes[0].metadata["compliance"] as any;
+      const compliance1 = nodes[0].metadata["compliance"] as Record<string, unknown>;
       expect(compliance1).toBeDefined();
       expect(compliance1.violationCount).toBe(1);
       expect(compliance1.violations).toHaveLength(1);
@@ -2568,7 +2645,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       expect(compliance1.violations[0].status).toBe("NON_COMPLIANT");
 
       // Second node should have compliant rule
-      const compliance2 = nodes[1].metadata["compliance"] as any;
+      const compliance2 = nodes[1].metadata["compliance"] as Record<string, unknown>;
       expect(compliance2).toBeDefined();
       expect(compliance2.compliantRules).toBe(1);
       expect(compliance2.violationCount).toBe(0);
@@ -2593,18 +2670,18 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
 
-      await (adapter as any).enrichWithCompliance(nodes);
+      await testable(adapter).enrichWithCompliance(nodes);
       expect(nodes[0].metadata["compliance"]).toBeUndefined();
     });
 
     it("should handle null manager gracefully", async () => {
       const adapter = new AwsDiscoveryAdapter({
         accountId: "123456789",
-        managers: { compliance: null as any },
+        managers: { compliance: null! },
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).enrichWithCompliance(nodes);
+      await testable(adapter).enrichWithCompliance(nodes);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -2646,7 +2723,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverAutomation(nodes, edges);
+      await testable(adapter).discoverAutomation(nodes, edges);
 
       // Should have EventBridge rule node
       const ruleNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "eventbridge-rule");
@@ -2705,7 +2782,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverAutomation(nodes, edges);
+      await testable(adapter).discoverAutomation(nodes, edges);
 
       // Should have Step Function node
       const sfNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "step-function");
@@ -2737,7 +2814,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverAutomation(nodes, []);
+      await testable(adapter).discoverAutomation(nodes, []);
 
       const ruleNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "eventbridge-rule");
       expect(ruleNodes).toHaveLength(1);
@@ -2747,11 +2824,11 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
     it("should handle null manager gracefully", async () => {
       const adapter = new AwsDiscoveryAdapter({
         accountId: "123456789",
-        managers: { automation: null as any },
+        managers: { automation: null! },
       });
 
       const nodes: GraphNodeInput[] = [];
-      await (adapter as any).discoverAutomation(nodes, []);
+      await testable(adapter).discoverAutomation(nodes, []);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -2774,26 +2851,26 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       // Force lazy load all new managers
-      await (adapter as any).getElastiCacheManager();
-      await (adapter as any).getOrganizationManager();
-      await (adapter as any).getBackupManager();
-      await (adapter as any).getComplianceManager();
-      await (adapter as any).getAutomationManager();
+      await testable(adapter).getElastiCacheManager();
+      await testable(adapter).getOrganizationManager();
+      await testable(adapter).getBackupManager();
+      await testable(adapter).getComplianceManager();
+      await testable(adapter).getAutomationManager();
 
       // Verify they are loaded
-      expect((adapter as any)._elastiCacheManager).toBeDefined();
-      expect((adapter as any)._organizationManager).toBeDefined();
-      expect((adapter as any)._backupManager).toBeDefined();
-      expect((adapter as any)._complianceManager).toBeDefined();
-      expect((adapter as any)._automationManager).toBeDefined();
+      expect(testable(adapter)._elastiCacheManager).toBeDefined();
+      expect(testable(adapter)._organizationManager).toBeDefined();
+      expect(testable(adapter)._backupManager).toBeDefined();
+      expect(testable(adapter)._complianceManager).toBeDefined();
+      expect(testable(adapter)._automationManager).toBeDefined();
 
       await adapter.dispose();
 
-      expect((adapter as any)._elastiCacheManager).toBeUndefined();
-      expect((adapter as any)._organizationManager).toBeUndefined();
-      expect((adapter as any)._backupManager).toBeUndefined();
-      expect((adapter as any)._complianceManager).toBeUndefined();
-      expect((adapter as any)._automationManager).toBeUndefined();
+      expect(testable(adapter)._elastiCacheManager).toBeUndefined();
+      expect(testable(adapter)._organizationManager).toBeUndefined();
+      expect(testable(adapter)._backupManager).toBeUndefined();
+      expect(testable(adapter)._complianceManager).toBeUndefined();
+      expect(testable(adapter)._automationManager).toBeUndefined();
     });
   });
 
@@ -2804,9 +2881,9 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
   describe("cost estimation — cache, identity, custom types", () => {
     it("should return $15 for cache, $0 for identity and custom", () => {
       const adapter = new AwsDiscoveryAdapter({ accountId: "123" });
-      expect((adapter as any).estimateCostStatic("cache", {})).toBe(15);
-      expect((adapter as any).estimateCostStatic("identity", {})).toBe(0);
-      expect((adapter as any).estimateCostStatic("custom", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("cache", {})).toBe(15);
+      expect(testable(adapter).estimateCostStatic("identity", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("custom", {})).toBe(0);
     });
   });
 
@@ -2832,17 +2909,17 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       // Force lazy load
-      await (adapter as any).getTaggingManager();
-      await (adapter as any).getLambdaManager();
-      await (adapter as any).getObservabilityManager();
-      await (adapter as any).getS3Manager();
+      await testable(adapter).getTaggingManager();
+      await testable(adapter).getLambdaManager();
+      await testable(adapter).getObservabilityManager();
+      await testable(adapter).getS3Manager();
 
       await adapter.dispose();
 
-      expect((adapter as any)._taggingManager).toBeUndefined();
-      expect((adapter as any)._lambdaManager).toBeUndefined();
-      expect((adapter as any)._observabilityManager).toBeUndefined();
-      expect((adapter as any)._s3Manager).toBeUndefined();
+      expect(testable(adapter)._taggingManager).toBeUndefined();
+      expect(testable(adapter)._lambdaManager).toBeUndefined();
+      expect(testable(adapter)._observabilityManager).toBeUndefined();
+      expect(testable(adapter)._s3Manager).toBeUndefined();
     });
   });
 
@@ -2853,10 +2930,10 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
   describe("cost estimation — new resource types", () => {
     it("should return $0 for route-table, internet-gateway, vpc-endpoint, transit-gateway", () => {
       const adapter = new AwsDiscoveryAdapter({ accountId: "123" });
-      expect((adapter as any).estimateCostStatic("route-table", {})).toBe(0);
-      expect((adapter as any).estimateCostStatic("internet-gateway", {})).toBe(0);
-      expect((adapter as any).estimateCostStatic("vpc-endpoint", {})).toBe(0);
-      expect((adapter as any).estimateCostStatic("transit-gateway", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("route-table", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("internet-gateway", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("vpc-endpoint", {})).toBe(0);
+      expect(testable(adapter).estimateCostStatic("transit-gateway", {})).toBe(0);
     });
   });
 
@@ -2902,7 +2979,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverEC2Deeper(nodes, edges);
+      await testable(adapter).discoverEC2Deeper(nodes, edges);
 
       // Should create ASG node
       const asgNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "auto-scaling-group");
@@ -2944,7 +3021,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverEC2Deeper(nodes, edges);
+      await testable(adapter).discoverEC2Deeper(nodes, edges);
 
       // Should create new LB node
       const lbNodes = nodes.filter((n) => n.resourceType === "load-balancer");
@@ -2991,7 +3068,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverEC2Deeper(nodes, edges);
+      await testable(adapter).discoverEC2Deeper(nodes, edges);
 
       // Should create target group node
       const tgNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "target-group");
@@ -3014,7 +3091,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverEC2Deeper(nodes, edges);
+      await testable(adapter).discoverEC2Deeper(nodes, edges);
 
       // Should not add any nodes
       expect(nodes).toHaveLength(0);
@@ -3058,7 +3135,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverRDSDeeper(nodes, edges);
+      await testable(adapter).discoverRDSDeeper(nodes, edges);
 
       // Should add replica node
       const replicaNodes = nodes.filter((n) => n.metadata["isReadReplica"] === true);
@@ -3112,7 +3189,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverRDSDeeper(nodes, edges);
+      await testable(adapter).discoverRDSDeeper(nodes, edges);
 
       // Should add snapshot node
       const snapNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "rds-snapshot");
@@ -3136,7 +3213,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverRDSDeeper(nodes, edges);
+      await testable(adapter).discoverRDSDeeper(nodes, edges);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -3239,7 +3316,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverCICD(nodes, edges);
+      await testable(adapter).discoverCICD(nodes, edges);
 
       // Should create pipeline node
       const pipelineNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "codepipeline");
@@ -3285,7 +3362,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverCICD(nodes, edges);
+      await testable(adapter).discoverCICD(nodes, edges);
 
       expect(nodes).toHaveLength(0);
       expect(edges).toHaveLength(0);
@@ -3299,7 +3376,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverCICD(nodes, edges);
+      await testable(adapter).discoverCICD(nodes, edges);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -3355,7 +3432,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
         },
       ];
       const edges: any[] = [];
-      await (adapter as any).discoverCognito(nodes, edges);
+      await testable(adapter).discoverCognito(nodes, edges);
 
       // Should create user pool node
       const poolNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-user-pool");
@@ -3405,7 +3482,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverCognito(nodes, edges);
+      await testable(adapter).discoverCognito(nodes, edges);
 
       const poolNodes = nodes.filter((n) => n.metadata["resourceSubtype"] === "cognito-user-pool");
       expect(poolNodes).toHaveLength(1);
@@ -3421,7 +3498,7 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
 
       const nodes: GraphNodeInput[] = [];
       const edges: any[] = [];
-      await (adapter as any).discoverCognito(nodes, edges);
+      await testable(adapter).discoverCognito(nodes, edges);
       expect(nodes).toHaveLength(0);
     });
   });
@@ -3443,17 +3520,17 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       });
 
       // Force lazy load
-      await (adapter as any).getEC2Manager();
-      await (adapter as any).getRDSManager();
-      await (adapter as any).getCICDManager();
-      await (adapter as any).getCognitoManager();
+      await testable(adapter).getEC2Manager();
+      await testable(adapter).getRDSManager();
+      await testable(adapter).getCICDManager();
+      await testable(adapter).getCognitoManager();
 
       await adapter.dispose();
 
-      expect((adapter as any)._ec2Manager).toBeUndefined();
-      expect((adapter as any)._rdsManager).toBeUndefined();
-      expect((adapter as any)._cicdManager).toBeUndefined();
-      expect((adapter as any)._cognitoManager).toBeUndefined();
+      expect(testable(adapter)._ec2Manager).toBeUndefined();
+      expect(testable(adapter)._rdsManager).toBeUndefined();
+      expect(testable(adapter)._cicdManager).toBeUndefined();
+      expect(testable(adapter)._cognitoManager).toBeUndefined();
     });
   });
 });

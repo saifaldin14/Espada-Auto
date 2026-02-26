@@ -115,7 +115,6 @@ import {
 
 import {
   ElastiCacheManager,
-  type ElastiCacheManagerConfig,
 } from "./src/elasticache/index.js";
 
 import {
@@ -179,7 +178,6 @@ import {
 import {
   createIDIOOrchestrator,
   IDIOOrchestrator,
-  type IDIOResult,
 } from "./src/idio/index.js";
 import {
   IDIOToolHandler,

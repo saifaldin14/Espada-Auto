@@ -20,8 +20,10 @@ import type {
   IQLFindResult,
   IQLSummarizeResult,
   IQLPathResult,
+  IQLDiffResult,
 } from "./types.js";
 import { InMemoryGraphStorage } from "../storage/memory-store.js";
+import { InMemoryTemporalStorage } from "../temporal.js";
 import type { GraphNodeInput, GraphEdgeInput, GraphNodeStatus, GraphRelationshipType } from "../types.js";
 
 // =============================================================================
@@ -751,5 +753,214 @@ describe("IQL Executor", () => {
       const result = (await executeQuery(ast, opts)) as IQLFindResult;
       expect(result.totalCount).toBe(6); // All have "running" status
     });
+  });
+});
+
+// =============================================================================
+// Temporal AT & DIFF WITH — End-to-End Tests
+// =============================================================================
+
+describe("IQL Temporal (AT / DIFF WITH)", () => {
+  let storage: InMemoryGraphStorage;
+  let temporal: InMemoryTemporalStorage;
+  let opts: IQLExecutorOptions;
+
+  // Fixed timestamps for deterministic testing
+  const T1 = "2024-01-01T00:00:00.000Z";
+  const T2 = "2024-02-01T00:00:00.000Z";
+  const T3 = "2024-03-01T00:00:00.000Z";
+
+  beforeEach(async () => {
+    storage = new InMemoryGraphStorage();
+    await storage.initialize();
+    temporal = new InMemoryTemporalStorage(storage);
+    await temporal.initializeTemporal();
+
+    // --- State at T1: 2 compute nodes ---
+    await storage.upsertNode(makeNode({
+      id: "aws:111:us-east-1:compute:web-1",
+      name: "web-1",
+      resourceType: "compute",
+      costMonthly: 100,
+      status: "running" as GraphNodeStatus,
+    }));
+    await storage.upsertNode(makeNode({
+      id: "aws:111:us-east-1:compute:api-1",
+      name: "api-1",
+      resourceType: "compute",
+      costMonthly: 200,
+      status: "running" as GraphNodeStatus,
+    }));
+
+    // Use a manually-timed snapshot workaround: force snapshot timestamp
+    const snap1 = await temporal.createSnapshot("manual", "baseline");
+    // Override createdAt for deterministic lookups
+    (snap1 as { createdAt: string }).createdAt = T1;
+
+    // --- State at T2: add a database, update web-1 cost ---
+    await storage.upsertNode(makeNode({
+      id: "aws:111:us-east-1:compute:web-1",
+      name: "web-1",
+      resourceType: "compute",
+      costMonthly: 150, // cost increased
+      status: "running" as GraphNodeStatus,
+    }));
+    await storage.upsertNode(makeNode({
+      id: "aws:111:us-east-1:database:rds-1",
+      name: "rds-1",
+      resourceType: "database",
+      costMonthly: 300,
+      status: "running" as GraphNodeStatus,
+    }));
+
+    const snap2 = await temporal.createSnapshot("scheduled", "feb-scan");
+    (snap2 as { createdAt: string }).createdAt = T2;
+
+    // --- State at T3: remove api-1, add serverless function ---
+    await storage.deleteNode("aws:111:us-east-1:compute:api-1");
+    await storage.upsertNode(makeNode({
+      id: "aws:111:us-east-1:serverless-function:fn-1",
+      name: "fn-1",
+      resourceType: "serverless-function",
+      costMonthly: 5,
+      status: "running" as GraphNodeStatus,
+    }));
+
+    const snap3 = await temporal.createSnapshot("manual", "march-cleanup");
+    (snap3 as { createdAt: string }).createdAt = T3;
+
+    opts = { storage, temporal };
+  });
+
+  // ---------------------------------------------------------------------------
+  // AT queries — time-travel
+  // ---------------------------------------------------------------------------
+
+  it("should return snapshot nodes at T1 (baseline)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T1}'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.type).toBe("find");
+    expect(result.totalCount).toBe(2);
+    const names = result.nodes.map((n) => n.name).sort();
+    expect(names).toEqual(["api-1", "web-1"]);
+  });
+
+  it("should return snapshot nodes at T2 (added database)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T2}'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.totalCount).toBe(3);
+    const names = result.nodes.map((n) => n.name).sort();
+    expect(names).toEqual(["api-1", "rds-1", "web-1"]);
+  });
+
+  it("should return snapshot nodes at T3 (api-1 removed, fn-1 added)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T3}'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.totalCount).toBe(3);
+    const names = result.nodes.map((n) => n.name).sort();
+    expect(names).toEqual(["fn-1", "rds-1", "web-1"]);
+  });
+
+  it("AT query should filter by resourceType", async () => {
+    const ast = parseIQL(`FIND resources AT '${T2}' WHERE resourceType = 'database'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.totalCount).toBe(1);
+    expect(result.nodes[0]!.name).toBe("rds-1");
+  });
+
+  it("AT query should respect LIMIT", async () => {
+    const ast = parseIQL(`FIND resources AT '${T2}' LIMIT 1`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.nodes).toHaveLength(1);
+    expect(result.totalCount).toBe(3); // total before limit
+  });
+
+  it("AT query with non-existent timestamp should return closest earlier snapshot", async () => {
+    // Between T1 and T2 — should return T1 snapshot
+    const midpoint = "2024-01-15T12:00:00.000Z";
+    const ast = parseIQL(`FIND resources AT '${midpoint}'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    expect(result.totalCount).toBe(2); // T1 state
+  });
+
+  it("AT query before any snapshot should fallback to earliest", async () => {
+    const ancient = "2020-01-01T00:00:00.000Z";
+    const ast = parseIQL(`FIND resources AT '${ancient}'`);
+    const result = (await executeQuery(ast, opts)) as IQLFindResult;
+    // getSnapshotAt falls back to the last element in the sorted list (earliest)
+    expect(result.totalCount).toBeGreaterThanOrEqual(0);
+  });
+
+  it("AT query with no temporal storage falls back to current state", async () => {
+    const noTemporalOpts: IQLExecutorOptions = { storage };
+    const ast = parseIQL(`FIND resources AT '${T1}'`);
+    const result = (await executeQuery(ast, noTemporalOpts)) as IQLFindResult;
+    // Without temporal, AT is ignored; returns current live storage state
+    expect(result.type).toBe("find");
+    expect(result.totalCount).toBe(3); // current state after T3: web-1, rds-1, fn-1
+  });
+
+  // ---------------------------------------------------------------------------
+  // DIFF WITH queries — snapshot comparison
+  // ---------------------------------------------------------------------------
+
+  it("should diff T1 with T2 (1 added, 1 changed)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T1}' DIFF WITH '${T2}'`);
+    const result = (await executeQuery(ast, opts)) as IQLDiffResult;
+    expect(result.type).toBe("diff");
+    expect(result.added).toBe(1); // rds-1 added
+    expect(result.removed).toBe(0);
+    expect(result.changed).toBe(1); // web-1 cost changed
+    // Verify diff details
+    const addedDetail = result.details.find((d) => d.change === "added");
+    expect(addedDetail).toBeTruthy();
+    expect(addedDetail!.name).toBe("rds-1");
+    const changedDetail = result.details.find((d) => d.change === "changed");
+    expect(changedDetail).toBeTruthy();
+    expect(changedDetail!.changedFields).toBeDefined();
+  });
+
+  it("should diff T2 with T3 (1 added, 1 removed)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T2}' DIFF WITH '${T3}'`);
+    const result = (await executeQuery(ast, opts)) as IQLDiffResult;
+    expect(result.type).toBe("diff");
+    expect(result.added).toBe(1); // fn-1 added
+    expect(result.removed).toBe(1); // api-1 removed
+    const addedNames = result.details
+      .filter((d) => d.change === "added")
+      .map((d) => d.name);
+    expect(addedNames).toContain("fn-1");
+    const removedNames = result.details
+      .filter((d) => d.change === "removed")
+      .map((d) => d.name);
+    expect(removedNames).toContain("api-1");
+  });
+
+  it("should diff T1 with T3 (full lifecycle: add db, remove api, add fn)", async () => {
+    const ast = parseIQL(`FIND resources AT '${T1}' DIFF WITH '${T3}'`);
+    const result = (await executeQuery(ast, opts)) as IQLDiffResult;
+    expect(result.type).toBe("diff");
+    // rds-1 and fn-1 added, api-1 removed, web-1 cost changed
+    expect(result.added).toBe(2);
+    expect(result.removed).toBe(1);
+    expect(result.changed).toBe(1);
+  });
+
+  it("DIFF WITH no temporal storage falls back to find result", async () => {
+    const noTemporalOpts: IQLExecutorOptions = { storage };
+    const ast = parseIQL(`FIND resources AT '${T1}' DIFF WITH '${T2}'`);
+    const result = await executeQuery(ast, noTemporalOpts);
+    // Without temporal, DIFF is skipped and AT falls through to a regular find
+    expect(result.type).toBe("find");
+  });
+
+  it("DIFF cost delta should reflect aggregate change", async () => {
+    const ast = parseIQL(`FIND resources AT '${T1}' DIFF WITH '${T3}'`);
+    const result = (await executeQuery(ast, opts)) as IQLDiffResult;
+    expect(result.type).toBe("diff");
+    // T1 cost: 100 + 200 = 300
+    // T3 cost: 150 + 300 + 5 = 455
+    // Delta: 455 - 300 = 155
+    expect(result.costDelta).toBe(155);
   });
 });

@@ -1,11 +1,14 @@
 /**
  * Infrastructure Knowledge Graph — Storage Tests
  *
- * Tests both InMemoryGraphStorage and SQLiteGraphStorage against the
- * same GraphStorage interface contract.
+ * Tests InMemoryGraphStorage, SQLiteGraphStorage, and PostgresGraphStorage
+ * against the same GraphStorage interface contract.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { InMemoryGraphStorage } from "./storage/memory-store.js";
 import type {
   GraphStorage,
@@ -51,13 +54,19 @@ function makeEdge(overrides: Partial<GraphEdgeInput> & { id: string; sourceNodeI
 // Run tests for each storage implementation
 // =============================================================================
 
-function runStorageTests(name: string, createStorage: () => GraphStorage) {
+function runStorageTests(name: string, createStorage: () => GraphStorage | Promise<GraphStorage>, cleanup?: () => void | Promise<void>) {
   describe(`${name}: GraphStorage`, () => {
     let storage: GraphStorage;
 
-    beforeEach(() => {
-      storage = createStorage();
+    beforeEach(async () => {
+      storage = await createStorage();
     });
+
+    if (cleanup) {
+      afterAll(async () => {
+        await cleanup();
+      });
+    }
 
     // =========================================================================
     // Nodes
@@ -411,6 +420,101 @@ function runStorageTests(name: string, createStorage: () => GraphStorage) {
 // Run for InMemory
 runStorageTests("InMemory", () => new InMemoryGraphStorage());
 
-// SQLite tests require better-sqlite3 which may not be installed in CI.
-// We test it conditionally and document how to run it.
-// For now the core contract is validated via InMemory.
+// =============================================================================
+// SQLite storage tests (skipped when better-sqlite3 native module unavailable)
+// =============================================================================
+
+let hasSQLite = false;
+let SQLiteGraphStorageClass: typeof import("./storage/sqlite-store.js")["SQLiteGraphStorage"] | undefined;
+
+try {
+  const mod = await import("./storage/sqlite-store.js");
+  // Probe native module by instantiating with :memory:
+  const probe = new mod.SQLiteGraphStorage(":memory:");
+  await probe.initialize();
+  probe.close();
+  SQLiteGraphStorageClass = mod.SQLiteGraphStorage;
+  hasSQLite = true;
+} catch {
+  // better-sqlite3 native module unavailable
+}
+
+if (hasSQLite && SQLiteGraphStorageClass) {
+  const SQLiteStorage = SQLiteGraphStorageClass;
+  const SQLITE_TEST_DIR = join(tmpdir(), "espada-kg-test-sqlite");
+
+  // Ensure clean test directory
+  if (existsSync(SQLITE_TEST_DIR)) {
+    rmSync(SQLITE_TEST_DIR, { recursive: true, force: true });
+  }
+  mkdirSync(SQLITE_TEST_DIR, { recursive: true });
+
+  let sqliteTestCounter = 0;
+
+  runStorageTests(
+    "SQLite",
+    async () => {
+      // Each test gets a fresh database file to avoid cross-test pollution
+      const dbPath = join(SQLITE_TEST_DIR, `test-${++sqliteTestCounter}.db`);
+      const store = new SQLiteStorage(dbPath);
+      await store.initialize();
+      return store;
+    },
+    () => {
+      // Clean up all test databases after all SQLite tests complete
+      if (existsSync(SQLITE_TEST_DIR)) {
+        rmSync(SQLITE_TEST_DIR, { recursive: true, force: true });
+      }
+    },
+  );
+} else {
+  describe("SQLite: GraphStorage", () => {
+    it.skip("better-sqlite3 native module not available", () => {});
+  });
+}
+
+// =============================================================================
+// PostgreSQL storage tests
+// =============================================================================
+
+// PostgreSQL tests require a running PostgreSQL instance.
+// Set POSTGRES_TEST_URL to enable them:
+//   POSTGRES_TEST_URL="postgresql://user:pass@localhost:5432/kg_test" pnpm test
+//
+// In CI, use testcontainers or a PostgreSQL service container.
+// Skipped by default when no connection string is provided.
+
+const POSTGRES_URL = process.env.POSTGRES_TEST_URL;
+
+if (POSTGRES_URL) {
+  // Dynamically import to avoid failing when pg is not installed
+  const loadPostgres = async () => {
+    const { PostgresGraphStorage } = await import("./storage/postgres-store.js");
+    return PostgresGraphStorage;
+  };
+
+  let pgInstance: GraphStorage | null = null;
+
+  runStorageTests(
+    "PostgreSQL",
+    async () => {
+      const PostgresGraphStorage = await loadPostgres();
+      const store = new PostgresGraphStorage({
+        connectionString: POSTGRES_URL,
+        schema: `kg_test_${Date.now()}`,
+      });
+      await store.initialize();
+      pgInstance = store;
+      return store;
+    },
+    async () => {
+      if (pgInstance && "close" in pgInstance) {
+        await (pgInstance as { close: () => Promise<void> }).close();
+      }
+    },
+  );
+} else {
+  describe("PostgreSQL: GraphStorage", () => {
+    it.skip("skipped — set POSTGRES_TEST_URL to enable", () => {});
+  });
+}
