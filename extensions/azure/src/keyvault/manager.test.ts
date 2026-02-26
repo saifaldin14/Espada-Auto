@@ -39,14 +39,14 @@ const mockSecretClient = {
 };
 
 vi.mock("@azure/arm-keyvault", () => ({
-  KeyVaultManagementClient: vi.fn().mockImplementation(() => ({
+  KeyVaultManagementClient: vi.fn().mockImplementation(function() { return {
     vaults: mockVaults,
     keys: mockKeys,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/keyvault-secrets", () => ({
-  SecretClient: vi.fn().mockImplementation(() => mockSecretClient),
+  SecretClient: vi.fn().mockImplementation(function() { return mockSecretClient; }),
 }));
 
 const mockCredentialsManager = {

@@ -58,10 +58,10 @@ const mockVMs = {
 const mockSizes = { list: vi.fn() };
 
 vi.mock("@azure/arm-compute", () => ({
-  ComputeManagementClient: vi.fn().mockImplementation(() => ({
+  ComputeManagementClient: vi.fn().mockImplementation(function() { return {
     virtualMachines: mockVMs,
     virtualMachineSizes: mockSizes,
-  })),
+  }; }),
 }));
 
 // ---------------------------------------------------------------------------

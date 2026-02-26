@@ -29,9 +29,9 @@ const mockManagementGroups = {
 };
 
 vi.mock("@azure/arm-managementgroups", () => ({
-  ManagementGroupsAPI: vi.fn().mockImplementation(() => ({
+  ManagementGroupsAPI: vi.fn().mockImplementation(function() { return {
     managementGroups: mockManagementGroups,
-  })),
+  }; }),
 }));
 
 const mockTenants = {
@@ -43,10 +43,10 @@ const mockSubscriptions = {
 };
 
 vi.mock("@azure/arm-subscriptions", () => ({
-  SubscriptionClient: vi.fn().mockImplementation(() => ({
+  SubscriptionClient: vi.fn().mockImplementation(function() { return {
     tenants: mockTenants,
     subscriptions: mockSubscriptions,
-  })),
+  }; }),
 }));
 
 const mockArmResources = {
@@ -54,9 +54,9 @@ const mockArmResources = {
 };
 
 vi.mock("@azure/arm-resources", () => ({
-  ResourceManagementClient: vi.fn().mockImplementation(() => ({
+  ResourceManagementClient: vi.fn().mockImplementation(function() { return {
     resources: mockArmResources,
-  })),
+  }; }),
 }));
 
 const mockBillingAccounts = {
@@ -64,9 +64,9 @@ const mockBillingAccounts = {
 };
 
 vi.mock("@azure/arm-billing", () => ({
-  BillingManagementClient: vi.fn().mockImplementation(() => ({
+  BillingManagementClient: vi.fn().mockImplementation(function() { return {
     billingAccounts: mockBillingAccounts,
-  })),
+  }; }),
 }));
 
 const mockCredential = { getToken: vi.fn().mockResolvedValue({ token: "t", expiresOnTimestamp: Date.now() + 3600000 }) };

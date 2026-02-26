@@ -34,11 +34,11 @@ const mockResources = {
 };
 
 vi.mock("@azure/arm-resources", () => ({
-  ResourceManagementClient: vi.fn().mockImplementation(() => ({
+  ResourceManagementClient: vi.fn().mockImplementation(function() { return {
     resourceGroups: mockResourceGroups,
     deployments: mockDeployments,
     resources: mockResources,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

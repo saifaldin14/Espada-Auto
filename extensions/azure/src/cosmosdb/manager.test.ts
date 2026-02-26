@@ -19,19 +19,28 @@ const mockDatabaseAccounts = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
   get: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
+  listKeys: vi.fn(),
 };
 
 const mockSqlResources = {
   listSqlDatabases: vi.fn(),
   listSqlContainers: vi.fn(),
   getSqlDatabaseThroughput: vi.fn(),
+  beginCreateUpdateSqlDatabaseAndWait: vi.fn(),
+  beginDeleteSqlDatabaseAndWait: vi.fn(),
+  beginCreateUpdateSqlContainerAndWait: vi.fn(),
+  beginDeleteSqlContainerAndWait: vi.fn(),
+  beginUpdateSqlDatabaseThroughputAndWait: vi.fn(),
+  beginUpdateSqlContainerThroughputAndWait: vi.fn(),
 };
 
 vi.mock("@azure/arm-cosmosdb", () => ({
-  CosmosDBManagementClient: vi.fn().mockImplementation(() => ({
+  CosmosDBManagementClient: vi.fn().mockImplementation(function() { return {
     databaseAccounts: mockDatabaseAccounts,
     sqlResources: mockSqlResources,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -114,6 +123,89 @@ describe("AzureCosmosDBManager", () => {
     it("returns null on 404", async () => {
       mockSqlResources.getSqlDatabaseThroughput.mockRejectedValue({ statusCode: 404 });
       expect(await mgr.getThroughput("rg-1", "cosmos-1", "no-db")).toBeNull();
+    });
+  });
+
+  describe("createAccount", () => {
+    it("creates a new account", async () => {
+      mockDatabaseAccounts.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.DocumentDB/databaseAccounts/new-cosmos",
+        name: "new-cosmos", location: "eastus", provisioningState: "Succeeded",
+      });
+      const account = await mgr.createAccount({ name: "new-cosmos", resourceGroup: "rg-1", location: "eastus" });
+      expect(account.name).toBe("new-cosmos");
+      expect(mockDatabaseAccounts.beginCreateOrUpdateAndWait).toHaveBeenCalledWith("rg-1", "new-cosmos", expect.any(Object));
+    });
+  });
+
+  describe("deleteAccount", () => {
+    it("deletes an account", async () => {
+      mockDatabaseAccounts.beginDeleteAndWait.mockResolvedValue(undefined);
+      await mgr.deleteAccount("rg-1", "cosmos-1");
+      expect(mockDatabaseAccounts.beginDeleteAndWait).toHaveBeenCalledWith("rg-1", "cosmos-1");
+    });
+  });
+
+  describe("listKeys", () => {
+    it("lists account keys", async () => {
+      mockDatabaseAccounts.listKeys.mockResolvedValue({
+        primaryMasterKey: "pk", secondaryMasterKey: "sk",
+        primaryReadonlyMasterKey: "prk", secondaryReadonlyMasterKey: "srk",
+      });
+      const keys = await mgr.listKeys("rg-1", "cosmos-1");
+      expect(keys.primaryMasterKey).toBe("pk");
+    });
+  });
+
+  describe("createDatabase", () => {
+    it("creates a SQL database", async () => {
+      mockSqlResources.beginCreateUpdateSqlDatabaseAndWait.mockResolvedValue({
+        id: "db-id", name: "new-db",
+      });
+      const db = await mgr.createDatabase("rg-1", "cosmos-1", "new-db");
+      expect(db.name).toBe("new-db");
+    });
+  });
+
+  describe("deleteDatabase", () => {
+    it("deletes a SQL database", async () => {
+      mockSqlResources.beginDeleteSqlDatabaseAndWait.mockResolvedValue(undefined);
+      await mgr.deleteDatabase("rg-1", "cosmos-1", "my-db");
+      expect(mockSqlResources.beginDeleteSqlDatabaseAndWait).toHaveBeenCalledWith("rg-1", "cosmos-1", "my-db");
+    });
+  });
+
+  describe("createContainer", () => {
+    it("creates a SQL container", async () => {
+      mockSqlResources.beginCreateUpdateSqlContainerAndWait.mockResolvedValue({
+        id: "c-id", name: "new-container",
+      });
+      const container = await mgr.createContainer("rg-1", "cosmos-1", "my-db", "new-container", "/pk");
+      expect(container.name).toBe("new-container");
+    });
+  });
+
+  describe("deleteContainer", () => {
+    it("deletes a SQL container", async () => {
+      mockSqlResources.beginDeleteSqlContainerAndWait.mockResolvedValue(undefined);
+      await mgr.deleteContainer("rg-1", "cosmos-1", "my-db", "my-container");
+      expect(mockSqlResources.beginDeleteSqlContainerAndWait).toHaveBeenCalledWith("rg-1", "cosmos-1", "my-db", "my-container");
+    });
+  });
+
+  describe("updateDatabaseThroughput", () => {
+    it("updates database throughput", async () => {
+      mockSqlResources.beginUpdateSqlDatabaseThroughputAndWait.mockResolvedValue(undefined);
+      await mgr.updateDatabaseThroughput("rg-1", "cosmos-1", "my-db", 800);
+      expect(mockSqlResources.beginUpdateSqlDatabaseThroughputAndWait).toHaveBeenCalled();
+    });
+  });
+
+  describe("updateContainerThroughput", () => {
+    it("updates container throughput", async () => {
+      mockSqlResources.beginUpdateSqlContainerThroughputAndWait.mockResolvedValue(undefined);
+      await mgr.updateContainerThroughput("rg-1", "cosmos-1", "my-db", "my-container", 1200);
+      expect(mockSqlResources.beginUpdateSqlContainerThroughputAndWait).toHaveBeenCalled();
     });
   });
 });

@@ -20,16 +20,16 @@ const mockForecast = { usage: vi.fn() };
 const mockBudgets = { list: vi.fn() };
 
 vi.mock("@azure/arm-costmanagement", () => ({
-  CostManagementClient: vi.fn().mockImplementation(() => ({
+  CostManagementClient: vi.fn().mockImplementation(function() { return {
     query: mockQuery,
     forecast: mockForecast,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/arm-consumption", () => ({
-  ConsumptionManagementClient: vi.fn().mockImplementation(() => ({
+  ConsumptionManagementClient: vi.fn().mockImplementation(function() { return {
     budgets: mockBudgets,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

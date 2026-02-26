@@ -28,9 +28,9 @@ const mockPolicyStates = {
 };
 
 vi.mock("@azure/arm-policyinsights", () => ({
-  PolicyInsightsClient: vi.fn().mockImplementation(() => ({
+  PolicyInsightsClient: vi.fn().mockImplementation(function() { return {
     policyStates: mockPolicyStates,
-  })),
+  }; }),
 }));
 
 const mockCredential = { getToken: vi.fn().mockResolvedValue({ token: "t", expiresOnTimestamp: Date.now() + 3600000 }) };

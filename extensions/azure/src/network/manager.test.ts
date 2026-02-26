@@ -36,14 +36,14 @@ const mockLBs = { listAll: vi.fn(), list: vi.fn() };
 const mockPublicIPs = { listAll: vi.fn(), list: vi.fn() };
 
 vi.mock("@azure/arm-network", () => ({
-  NetworkManagementClient: vi.fn().mockImplementation(() => ({
+  NetworkManagementClient: vi.fn().mockImplementation(function() { return {
     virtualNetworks: mockVirtualNetworks,
     subnets: mockSubnets,
     networkSecurityGroups: mockNSGs,
     securityRules: mockSecurityRules,
     loadBalancers: mockLBs,
     publicIPAddresses: mockPublicIPs,
-  })),
+  }; }),
 }));
 
 const mockCredentialsManager = {

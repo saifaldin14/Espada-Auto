@@ -44,13 +44,13 @@ export class AzureDevOpsManager {
     return withAzureRetry(async () => {
       const data = await this.fetchDevOps<{ value: Record<string, unknown>[] }>("_apis/projects?api-version=7.1");
       return (data.value ?? []).map((p) => ({
-        id: p.id ?? "",
-        name: p.name ?? "",
-        description: p.description,
-        url: p.url ?? "",
-        state: p.state ?? "",
-        visibility: p.visibility ?? "",
-        lastUpdateTime: p.lastUpdateTime,
+        id: (p.id as string) ?? "",
+        name: (p.name as string) ?? "",
+        description: p.description as string | undefined,
+        url: (p.url as string) ?? "",
+        state: (p.state as string) ?? "",
+        visibility: (p.visibility as string) ?? "",
+        lastUpdateTime: p.lastUpdateTime as string | undefined,
       }));
     }, this.retryOptions);
   }
@@ -61,12 +61,12 @@ export class AzureDevOpsManager {
         `${projectName}/_apis/pipelines?api-version=7.1`
       );
       return (data.value ?? []).map((p) => ({
-        id: p.id ?? 0,
-        name: p.name ?? "",
+        id: (p.id as number) ?? 0,
+        name: (p.name as string) ?? "",
         projectId: projectName,
-        folder: p.folder ?? "",
-        url: p.url ?? "",
-        revision: p.revision,
+        folder: (p.folder as string) ?? "",
+        url: (p.url as string) ?? "",
+        revision: p.revision as number | undefined,
       }));
     }, this.retryOptions);
   }
@@ -77,15 +77,15 @@ export class AzureDevOpsManager {
         `${projectName}/_apis/pipelines/${pipelineId}/runs?api-version=7.1`
       );
       return (data.value ?? []).map((r) => ({
-        id: r.id ?? 0,
-        name: r.name ?? "",
+        id: (r.id as number) ?? 0,
+        name: (r.name as string) ?? "",
         pipelineId,
-        state: r.state ?? "",
-        result: r.result,
-        createdDate: r.createdDate,
-        finishedDate: r.finishedDate,
-        url: r.url ?? "",
-        templateParameters: r.templateParameters,
+        state: (r.state as string) ?? "",
+        result: r.result as string | undefined,
+        createdDate: r.createdDate as string | undefined,
+        finishedDate: r.finishedDate as string | undefined,
+        url: (r.url as string) ?? "",
+        templateParameters: r.templateParameters as Record<string, string> | undefined,
       }));
     }, this.retryOptions);
   }
@@ -132,15 +132,15 @@ export class AzureDevOpsManager {
         `${projectName}/_apis/git/repositories?api-version=7.1`
       );
       return (data.value ?? []).map((r) => ({
-        id: r.id ?? "",
-        name: r.name ?? "",
+        id: (r.id as string) ?? "",
+        name: (r.name as string) ?? "",
         projectId: projectName,
-        url: r.url ?? "",
-        defaultBranch: r.defaultBranch,
-        size: r.size,
-        remoteUrl: r.remoteUrl,
-        sshUrl: r.sshUrl,
-        webUrl: r.webUrl,
+        url: (r.url as string) ?? "",
+        defaultBranch: r.defaultBranch as string | undefined,
+        size: r.size as number | undefined,
+        remoteUrl: r.remoteUrl as string | undefined,
+        sshUrl: r.sshUrl as string | undefined,
+        webUrl: r.webUrl as string | undefined,
       }));
     }, this.retryOptions);
   }

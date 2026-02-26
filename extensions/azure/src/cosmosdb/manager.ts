@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { CosmosDBAccount, CosmosDBDatabase, CosmosDBContainer, CosmosDBThroughput } from "./types.js";
+import type { CosmosDBAccount, CosmosDBDatabase, CosmosDBContainer, CosmosDBThroughput, CosmosDBAccountCreateOptions, CosmosDBAccountKeys } from "./types.js";
 
 // =============================================================================
 // AzureCosmosDBManager
@@ -82,6 +82,65 @@ export class AzureCosmosDBManager {
   }
 
   /**
+   * Create or update a Cosmos DB account.
+   */
+  async createAccount(options: CosmosDBAccountCreateOptions): Promise<CosmosDBAccount> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const a = await client.databaseAccounts.beginCreateOrUpdateAndWait(
+        options.resourceGroup, options.name,
+        {
+          location: options.location,
+          kind: options.kind ?? "GlobalDocumentDB",
+          databaseAccountOfferType: "Standard",
+          locations: [{ locationName: options.location, failoverPriority: 0 }],
+          consistencyPolicy: {
+            defaultConsistencyLevel: options.consistencyLevel ?? "Session",
+          },
+          enableAutomaticFailover: options.enableAutomaticFailover ?? false,
+          enableMultipleWriteLocations: options.enableMultipleWriteLocations ?? false,
+          capabilities: options.capabilities?.map(c => ({ name: c })),
+          tags: options.tags,
+        },
+      );
+      return {
+        id: a.id ?? "", name: a.name ?? "", resourceGroup: options.resourceGroup,
+        location: a.location ?? "", kind: a.kind, documentEndpoint: a.documentEndpoint,
+        provisioningState: a.provisioningState,
+        enableAutomaticFailover: a.enableAutomaticFailover,
+        enableMultipleWriteLocations: a.enableMultipleWriteLocations,
+        tags: a.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a Cosmos DB account.
+   */
+  async deleteAccount(resourceGroup: string, accountName: string): Promise<void> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      await client.databaseAccounts.beginDeleteAndWait(resourceGroup, accountName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * List keys for a Cosmos DB account.
+   */
+  async listKeys(resourceGroup: string, accountName: string): Promise<CosmosDBAccountKeys> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const keys = await client.databaseAccounts.listKeys(resourceGroup, accountName);
+      return {
+        primaryMasterKey: keys.primaryMasterKey,
+        secondaryMasterKey: keys.secondaryMasterKey,
+        primaryReadonlyMasterKey: keys.primaryReadonlyMasterKey,
+        secondaryReadonlyMasterKey: keys.secondaryReadonlyMasterKey,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
    * List SQL databases in a Cosmos DB account.
    */
   async listDatabases(resourceGroup: string, accountName: string): Promise<CosmosDBDatabase[]> {
@@ -137,6 +196,105 @@ export class AzureCosmosDBManager {
           isAutoscale,
         };
       } catch (e) { if ((e as { statusCode?: number }).statusCode === 404) return null; throw e; }
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create a SQL database.
+   */
+  async createDatabase(
+    resourceGroup: string, accountName: string, databaseName: string, throughput?: number,
+  ): Promise<CosmosDBDatabase> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const params: Record<string, unknown> = { resource: { id: databaseName } };
+      if (throughput) params.options = { throughput };
+      const db = await client.sqlResources.beginCreateUpdateSqlDatabaseAndWait(
+        resourceGroup, accountName, databaseName, params as any,
+      );
+      return { id: db.id ?? "", name: db.name ?? "", accountName, resourceGroup };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a SQL database.
+   */
+  async deleteDatabase(resourceGroup: string, accountName: string, databaseName: string): Promise<void> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      await client.sqlResources.beginDeleteSqlDatabaseAndWait(resourceGroup, accountName, databaseName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create a SQL container.
+   */
+  async createContainer(
+    resourceGroup: string, accountName: string, databaseName: string,
+    containerName: string, partitionKeyPath: string,
+    options?: { throughput?: number; defaultTtl?: number; partitionKeyKind?: string },
+  ): Promise<CosmosDBContainer> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const params: Record<string, unknown> = {
+        resource: {
+          id: containerName,
+          partitionKey: { paths: [partitionKeyPath], kind: options?.partitionKeyKind ?? "Hash" },
+          defaultTtl: options?.defaultTtl,
+        },
+      };
+      if (options?.throughput) params.options = { throughput: options.throughput };
+      const c = await client.sqlResources.beginCreateUpdateSqlContainerAndWait(
+        resourceGroup, accountName, databaseName, containerName, params as any,
+      );
+      return {
+        id: c.id ?? "", name: c.name ?? "", databaseName,
+        partitionKeyPath, defaultTtl: options?.defaultTtl,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a SQL container.
+   */
+  async deleteContainer(
+    resourceGroup: string, accountName: string, databaseName: string, containerName: string,
+  ): Promise<void> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      await client.sqlResources.beginDeleteSqlContainerAndWait(
+        resourceGroup, accountName, databaseName, containerName,
+      );
+    }, this.retryOptions);
+  }
+
+  /**
+   * Update throughput on a SQL database.
+   */
+  async updateDatabaseThroughput(
+    resourceGroup: string, accountName: string, databaseName: string, throughput: number,
+  ): Promise<void> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      await client.sqlResources.beginUpdateSqlDatabaseThroughputAndWait(
+        resourceGroup, accountName, databaseName, { resource: { throughput } },
+      );
+    }, this.retryOptions);
+  }
+
+  /**
+   * Update throughput on a SQL container.
+   */
+  async updateContainerThroughput(
+    resourceGroup: string, accountName: string, databaseName: string,
+    containerName: string, throughput: number,
+  ): Promise<void> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      await client.sqlResources.beginUpdateSqlContainerThroughputAndWait(
+        resourceGroup, accountName, databaseName, containerName,
+        { resource: { throughput } },
+      );
     }, this.retryOptions);
   }
 }

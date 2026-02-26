@@ -23,10 +23,10 @@ const mockSubscriptions = {
 const mockTenants = { list: vi.fn() };
 
 vi.mock("@azure/arm-subscriptions", () => ({
-  SubscriptionClient: vi.fn().mockImplementation(() => ({
+  SubscriptionClient: vi.fn().mockImplementation(function() { return {
     subscriptions: mockSubscriptions,
     tenants: mockTenants,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

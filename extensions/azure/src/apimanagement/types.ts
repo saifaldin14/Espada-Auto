@@ -61,3 +61,27 @@ export type APIMPolicy = {
   value: string;
   format?: string;
 };
+
+// =============================================================================
+// Write Operation Types
+// =============================================================================
+
+export type APIMServiceCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  publisherEmail: string;
+  publisherName: string;
+  skuName?: APIMSkuName;
+  skuCapacity?: number;
+  tags?: Record<string, string>;
+};
+
+export type APIMApiCreateOptions = {
+  name: string;
+  displayName: string;
+  path: string;
+  serviceUrl?: string;
+  protocols?: string[];
+  subscriptionRequired?: boolean;
+};

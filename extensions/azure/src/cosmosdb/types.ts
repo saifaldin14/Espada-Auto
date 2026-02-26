@@ -63,3 +63,26 @@ export type CosmosDBThroughput = {
   minimumThroughput?: number;
   isAutoscale: boolean;
 };
+
+// =============================================================================
+// Write Operation Types
+// =============================================================================
+
+export type CosmosDBAccountCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  kind?: "GlobalDocumentDB" | "MongoDB" | "Parse";
+  consistencyLevel?: CosmosDBConsistencyLevel;
+  enableAutomaticFailover?: boolean;
+  enableMultipleWriteLocations?: boolean;
+  capabilities?: string[];
+  tags?: Record<string, string>;
+};
+
+export type CosmosDBAccountKeys = {
+  primaryMasterKey?: string;
+  secondaryMasterKey?: string;
+  primaryReadonlyMasterKey?: string;
+  secondaryReadonlyMasterKey?: string;
+};

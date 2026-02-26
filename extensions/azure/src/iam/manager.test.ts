@@ -24,10 +24,10 @@ const mockRoleAssignments = {
 };
 
 vi.mock("@azure/arm-authorization", () => ({
-  AuthorizationManagementClient: vi.fn().mockImplementation(() => ({
+  AuthorizationManagementClient: vi.fn().mockImplementation(function() { return {
     roleDefinitions: mockRoleDefinitions,
     roleAssignments: mockRoleAssignments,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

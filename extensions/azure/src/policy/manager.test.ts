@@ -28,16 +28,16 @@ const mockPolicyStates = {
 };
 
 vi.mock("@azure/arm-policy", () => ({
-  PolicyClient: vi.fn().mockImplementation(() => ({
+  PolicyClient: vi.fn().mockImplementation(function() { return {
     policyDefinitions: mockPolicyDefinitions,
     policyAssignments: mockPolicyAssignments,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/arm-policyinsights", () => ({
-  PolicyInsightsClient: vi.fn().mockImplementation(() => ({
+  PolicyInsightsClient: vi.fn().mockImplementation(function() { return {
     policyStates: mockPolicyStates,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

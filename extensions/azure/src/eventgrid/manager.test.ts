@@ -33,12 +33,12 @@ const mockSystemTopics = {
 };
 
 vi.mock("@azure/arm-eventgrid", () => ({
-  EventGridManagementClient: vi.fn().mockImplementation(() => ({
+  EventGridManagementClient: vi.fn().mockImplementation(function() { return {
     topics: mockTopics,
     eventSubscriptions: mockEventSubscriptions,
     domains: mockDomains,
     systemTopics: mockSystemTopics,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

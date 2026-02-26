@@ -18,9 +18,9 @@ function asyncIter<T>(items: T[]): AsyncIterable<T> {
 const mockActivityLogs = { list: vi.fn() };
 
 vi.mock("@azure/arm-monitor", () => ({
-  MonitorClient: vi.fn().mockImplementation(() => ({
+  MonitorClient: vi.fn().mockImplementation(function() { return {
     activityLogs: mockActivityLogs,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

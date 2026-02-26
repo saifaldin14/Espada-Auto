@@ -16,11 +16,11 @@ vi.mock("@azure/identity", () => {
   });
 
   return {
-    DefaultAzureCredential: vi.fn().mockImplementation(() => ({ getToken: mockGetToken })),
-    AzureCliCredential: vi.fn().mockImplementation(() => ({ getToken: mockGetToken })),
-    ClientSecretCredential: vi.fn().mockImplementation(() => ({ getToken: mockGetToken })),
-    ManagedIdentityCredential: vi.fn().mockImplementation(() => ({ getToken: mockGetToken })),
-    InteractiveBrowserCredential: vi.fn().mockImplementation(() => ({ getToken: mockGetToken })),
+    DefaultAzureCredential: vi.fn().mockImplementation(function() { return { getToken: mockGetToken }; }),
+    AzureCliCredential: vi.fn().mockImplementation(function() { return { getToken: mockGetToken }; }),
+    ClientSecretCredential: vi.fn().mockImplementation(function() { return { getToken: mockGetToken }; }),
+    ManagedIdentityCredential: vi.fn().mockImplementation(function() { return { getToken: mockGetToken }; }),
+    InteractiveBrowserCredential: vi.fn().mockImplementation(function() { return { getToken: mockGetToken }; }),
   };
 });
 

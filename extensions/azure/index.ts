@@ -26,7 +26,7 @@ const plugin = {
   id: "azure",
   name: "Azure Core Services",
   description: "Comprehensive Azure infrastructure management with VMs, Storage, KeyVault, and more",
-  version: "1.0.0",
+  version: "2026.2.16-beta.1",
   configSchema,
 
   uiHints: {

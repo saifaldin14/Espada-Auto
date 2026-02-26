@@ -39,11 +39,11 @@ const mockModels = {
 };
 
 vi.mock("@azure/arm-cognitiveservices", () => ({
-  CognitiveServicesManagementClient: vi.fn().mockImplementation(() => ({
+  CognitiveServicesManagementClient: vi.fn().mockImplementation(function() { return {
     accounts: mockAccounts,
     deployments: mockDeployments,
     models: mockModels,
-  })),
+  }; }),
 }));
 
 const mockCredential = { getToken: vi.fn().mockResolvedValue({ token: "t", expiresOnTimestamp: Date.now() + 3600000 }) };

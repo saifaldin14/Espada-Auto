@@ -30,12 +30,12 @@ const mockJob = {
 const mockSchedule = { listByAutomationAccount: vi.fn() };
 
 vi.mock("@azure/arm-automation", () => ({
-  AutomationClient: vi.fn().mockImplementation(() => ({
+  AutomationClient: vi.fn().mockImplementation(function() { return {
     automationAccount: mockAutomationAccount,
     runbook: mockRunbook,
     job: mockJob,
     schedule: mockSchedule,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

@@ -18,18 +18,33 @@ function asyncIter<T>(items: T[]): AsyncIterable<T> {
 const mockService = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
+  get: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
-const mockApi = { listByService: vi.fn() };
-const mockProduct = { listByService: vi.fn() };
+const mockApi = {
+  listByService: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  delete: vi.fn(),
+};
+const mockProduct = {
+  listByService: vi.fn(),
+  createOrUpdate: vi.fn(),
+};
 const mockSubscription = { list: vi.fn() };
+const mockApiPolicy = {
+  get: vi.fn(),
+  createOrUpdate: vi.fn(),
+};
 
 vi.mock("@azure/arm-apimanagement", () => ({
-  ApiManagementClient: vi.fn().mockImplementation(() => ({
+  ApiManagementClient: vi.fn().mockImplementation(function() { return {
     apiManagementService: mockService,
     api: mockApi,
     product: mockProduct,
     subscription: mockSubscription,
-  })),
+    apiPolicy: mockApiPolicy,
+  }; }),
 }));
 
 const mockCreds = {
@@ -88,6 +103,102 @@ describe("AzureAPIManagementManager", () => {
       ]));
       const subs = await mgr.listSubscriptions("rg-1", "apim-1");
       expect(subs).toHaveLength(1);
+    });
+  });
+
+  describe("getService", () => {
+    it("returns a service", async () => {
+      mockService.get.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/apim-1",
+        name: "apim-1", location: "eastus",
+        sku: { name: "Developer", capacity: 1 }, provisioningState: "Succeeded",
+      });
+      const svc = await mgr.getService("rg-1", "apim-1");
+      expect(svc).not.toBeNull();
+      expect(svc!.name).toBe("apim-1");
+    });
+
+    it("returns null on 404", async () => {
+      mockService.get.mockRejectedValue({ statusCode: 404 });
+      expect(await mgr.getService("rg-1", "gone")).toBeNull();
+    });
+  });
+
+  describe("createService", () => {
+    it("creates a service", async () => {
+      mockService.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ApiManagement/service/new-apim",
+        name: "new-apim", location: "eastus", sku: { name: "Consumption", capacity: 0 },
+      });
+      const svc = await mgr.createService({
+        name: "new-apim", resourceGroup: "rg-1", location: "eastus",
+        publisherEmail: "admin@example.com", publisherName: "Admin",
+      });
+      expect(svc.name).toBe("new-apim");
+    });
+  });
+
+  describe("deleteService", () => {
+    it("deletes a service", async () => {
+      mockService.beginDeleteAndWait.mockResolvedValue(undefined);
+      await mgr.deleteService("rg-1", "apim-1");
+      expect(mockService.beginDeleteAndWait).toHaveBeenCalledWith("rg-1", "apim-1");
+    });
+  });
+
+  describe("createApi", () => {
+    it("creates an API", async () => {
+      mockApi.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "api-id", name: "new-api", displayName: "New API", path: "/new", protocols: ["https"],
+      });
+      const api = await mgr.createApi("rg-1", "apim-1", {
+        name: "new-api", displayName: "New API", path: "/new",
+      });
+      expect(api.name).toBe("new-api");
+    });
+  });
+
+  describe("deleteApi", () => {
+    it("deletes an API", async () => {
+      mockApi.delete.mockResolvedValue(undefined);
+      await mgr.deleteApi("rg-1", "apim-1", "my-api");
+      expect(mockApi.delete).toHaveBeenCalledWith("rg-1", "apim-1", "my-api", "*");
+    });
+  });
+
+  describe("createProduct", () => {
+    it("creates a product", async () => {
+      mockProduct.createOrUpdate.mockResolvedValue({
+        id: "prod-id", name: "new-prod", displayName: "New Product", state: "notPublished",
+      });
+      const prod = await mgr.createProduct("rg-1", "apim-1", "new-prod", "New Product");
+      expect(prod.name).toBe("new-prod");
+    });
+  });
+
+  describe("getApiPolicy", () => {
+    it("returns a policy", async () => {
+      mockApiPolicy.get.mockResolvedValue({
+        id: "policy-id", name: "policy", value: "<policies/>", format: "xml",
+      });
+      const policy = await mgr.getApiPolicy("rg-1", "apim-1", "my-api");
+      expect(policy).not.toBeNull();
+      expect(policy!.value).toBe("<policies/>");
+    });
+
+    it("returns null on 404", async () => {
+      mockApiPolicy.get.mockRejectedValue({ statusCode: 404 });
+      expect(await mgr.getApiPolicy("rg-1", "apim-1", "no-api")).toBeNull();
+    });
+  });
+
+  describe("setApiPolicy", () => {
+    it("sets a policy", async () => {
+      mockApiPolicy.createOrUpdate.mockResolvedValue({
+        id: "policy-id", name: "policy", value: "<policies><inbound/></policies>", format: "xml",
+      });
+      const policy = await mgr.setApiPolicy("rg-1", "apim-1", "my-api", "<policies><inbound/></policies>");
+      expect(policy.value).toContain("<inbound/>");
     });
   });
 });

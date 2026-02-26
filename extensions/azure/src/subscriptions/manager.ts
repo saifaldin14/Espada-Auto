@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { AzureSubscription, TenantInfo, AzureLocation } from "./types.js";
+import type { AzureSubscription, TenantInfo, AzureLocation, SubscriptionState } from "./types.js";
 
 export class AzureSubscriptionManager {
   private credentialsManager: AzureCredentialsManager;
@@ -32,7 +32,7 @@ export class AzureSubscriptionManager {
         results.push({
           subscriptionId: s.subscriptionId ?? "",
           displayName: s.displayName ?? "",
-          state: (s.state as unknown as string) ?? "Enabled",
+          state: ((s.state as unknown as string) ?? "Enabled") as SubscriptionState,
           tenantId: s.tenantId ?? "",
           subscriptionPolicies: s.subscriptionPolicies
             ? {
@@ -55,7 +55,7 @@ export class AzureSubscriptionManager {
       return {
         subscriptionId: s.subscriptionId ?? "",
         displayName: s.displayName ?? "",
-        state: (s.state as unknown as string) ?? "Enabled",
+        state: ((s.state as unknown as string) ?? "Enabled") as SubscriptionState,
         tenantId: s.tenantId ?? "",
         subscriptionPolicies: s.subscriptionPolicies
           ? {
@@ -92,16 +92,17 @@ export class AzureSubscriptionManager {
       const client = await this.getClient();
       const results: AzureLocation[] = [];
       for await (const loc of client.subscriptions.listLocations(subscriptionId)) {
-        const meta = (loc as Record<string, unknown>).metadata as Record<string, unknown> ?? {};
+        const meta = ((loc as Record<string, unknown>).metadata ?? {}) as Record<string, unknown>;
+        const pairedRegions = meta.pairedRegion as Array<Record<string, unknown>> | undefined;
         results.push({
           name: loc.name ?? "",
           displayName: loc.displayName ?? "",
           regionalDisplayName: (loc as Record<string, unknown>).regionalDisplayName as string | undefined,
           type: (loc as Record<string, unknown>).type as string | undefined,
-          latitude: meta.latitude,
-          longitude: meta.longitude,
-          physicalLocation: meta.physicalLocation,
-          pairedRegion: meta.pairedRegion?.map((r: Record<string, unknown>) => String(r.name ?? "")),
+          latitude: meta.latitude as string | undefined,
+          longitude: meta.longitude as string | undefined,
+          physicalLocation: meta.physicalLocation as string | undefined,
+          pairedRegion: pairedRegions?.map((r) => String(r.name ?? "")),
         });
       }
       return results;

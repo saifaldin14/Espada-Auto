@@ -32,10 +32,10 @@ const mockResourceGroups = {
 };
 
 vi.mock("@azure/arm-resources", () => ({
-  ResourceManagementClient: vi.fn().mockImplementation(() => ({
+  ResourceManagementClient: vi.fn().mockImplementation(function() { return {
     resources: mockResources,
     resourceGroups: mockResourceGroups,
-  })),
+  }; }),
 }));
 
 const mockCredential = { getToken: vi.fn().mockResolvedValue({ token: "t", expiresOnTimestamp: Date.now() + 3600000 }) };

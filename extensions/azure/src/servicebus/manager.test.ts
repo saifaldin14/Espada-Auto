@@ -30,12 +30,12 @@ const mockTopics = { listByNamespace: vi.fn() };
 const mockSubscriptions = { listByTopic: vi.fn() };
 
 vi.mock("@azure/arm-servicebus", () => ({
-  ServiceBusManagementClient: vi.fn().mockImplementation(() => ({
+  ServiceBusManagementClient: vi.fn().mockImplementation(function() { return {
     namespaces: mockNamespaces,
     queues: mockQueues,
     topics: mockTopics,
     subscriptions: mockSubscriptions,
-  })),
+  }; }),
 }));
 
 const mockCreds = {

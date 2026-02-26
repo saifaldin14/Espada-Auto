@@ -8,7 +8,7 @@ import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions, AzurePaginationOptions, AzurePagedResult } from "../types.js";
 import { withAzureRetry } from "../retry.js";
 import { collectPaged, collectAll } from "../pagination.js";
-import type { ResourceGroup, ARMDeployment, DeploymentOperation, GenericResource } from "./types.js";
+import type { ResourceGroup, ARMDeployment, DeploymentOperation, GenericResource, ProvisioningState } from "./types.js";
 
 export class AzureResourceManager {
   private credentialsManager: AzureCredentialsManager;
@@ -106,7 +106,7 @@ export class AzureResourceManager {
           id: d.id ?? "",
           name: d.name ?? "",
           resourceGroup,
-          provisioningState: (d.properties?.provisioningState ?? "Succeeded") as string,
+          provisioningState: (d.properties?.provisioningState ?? "Succeeded") as ProvisioningState,
           timestamp: d.properties?.timestamp?.toISOString(),
           duration: d.properties?.duration,
           mode: d.properties?.mode,
@@ -146,7 +146,7 @@ export class AzureResourceManager {
         name: result.name ?? "",
         resourceGroup,
         provisioningState:
-          (result.properties?.provisioningState ?? "Succeeded") as string,
+          (result.properties?.provisioningState ?? "Succeeded") as ProvisioningState,
         timestamp: result.properties?.timestamp?.toISOString(),
         duration: result.properties?.duration,
         outputs: result.properties?.outputs as Record<string, unknown>,

@@ -13,9 +13,9 @@ const mockTagsOperations = {
 };
 
 vi.mock("@azure/arm-resources", () => ({
-  ResourceManagementClient: vi.fn().mockImplementation(() => ({
+  ResourceManagementClient: vi.fn().mockImplementation(function() { return {
     tagsOperations: mockTagsOperations,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
