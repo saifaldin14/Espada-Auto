@@ -2647,4 +2647,364 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       };
     },
   });
+
+  // ---------------------------------------------------------------------------
+  // Database (MySQL / PostgreSQL Flexible Server) tools
+  // ---------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_mysql_servers",
+    label: "Azure MySQL Servers",
+    description: "List Azure Database for MySQL Flexible Servers. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const servers = await state.databaseManager.listMySqlServers(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(servers, null, 2) }],
+        details: { count: servers.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_mysql_server",
+    label: "Azure MySQL Server",
+    description: "Get details of a specific Azure Database for MySQL Flexible Server.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serverName: { type: "string", description: "MySQL server name" },
+      },
+      required: ["resourceGroup", "serverName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const server = await state.databaseManager.getMySqlServer(params.resourceGroup as string, params.serverName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(server, null, 2) }],
+        details: { found: server !== null },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_mysql_databases",
+    label: "Azure MySQL Databases",
+    description: "List databases in a MySQL Flexible Server.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serverName: { type: "string", description: "MySQL server name" },
+      },
+      required: ["resourceGroup", "serverName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const dbs = await state.databaseManager.listMySqlDatabases(params.resourceGroup as string, params.serverName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(dbs, null, 2) }],
+        details: { count: dbs.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_pg_servers",
+    label: "Azure PostgreSQL Servers",
+    description: "List Azure Database for PostgreSQL Flexible Servers. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const servers = await state.databaseManager.listPgServers(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(servers, null, 2) }],
+        details: { count: servers.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_pg_server",
+    label: "Azure PostgreSQL Server",
+    description: "Get details of a specific Azure Database for PostgreSQL Flexible Server.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serverName: { type: "string", description: "PostgreSQL server name" },
+      },
+      required: ["resourceGroup", "serverName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const server = await state.databaseManager.getPgServer(params.resourceGroup as string, params.serverName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(server, null, 2) }],
+        details: { found: server !== null },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_pg_databases",
+    label: "Azure PostgreSQL Databases",
+    description: "List databases in a PostgreSQL Flexible Server.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serverName: { type: "string", description: "PostgreSQL server name" },
+      },
+      required: ["resourceGroup", "serverName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.databaseManager) throw new Error("Database manager not initialized");
+      const dbs = await state.databaseManager.listPgDatabases(params.resourceGroup as string, params.serverName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(dbs, null, 2) }],
+        details: { count: dbs.length },
+      };
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Spring Apps tools
+  // ---------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_spring_services",
+    label: "Azure Spring Services",
+    description: "List Azure Spring Apps services. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.springAppsManager) throw new Error("Spring Apps manager not initialized");
+      const services = await state.springAppsManager.listServices(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(services, null, 2) }],
+        details: { count: services.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_spring_service",
+    label: "Azure Spring Service",
+    description: "Get details of a specific Azure Spring Apps service.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serviceName: { type: "string", description: "Spring Apps service name" },
+      },
+      required: ["resourceGroup", "serviceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.springAppsManager) throw new Error("Spring Apps manager not initialized");
+      const svc = await state.springAppsManager.getService(params.resourceGroup as string, params.serviceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(svc, null, 2) }],
+        details: { found: svc !== null },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_spring_apps",
+    label: "Azure Spring Apps",
+    description: "List apps in an Azure Spring Apps service.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        serviceName: { type: "string", description: "Spring Apps service name" },
+      },
+      required: ["resourceGroup", "serviceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.springAppsManager) throw new Error("Spring Apps manager not initialized");
+      const apps = await state.springAppsManager.listApps(params.resourceGroup as string, params.serviceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(apps, null, 2) }],
+        details: { count: apps.length },
+      };
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Purview tools
+  // ---------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_purview_accounts",
+    label: "Azure Purview Accounts",
+    description: "List Microsoft Purview accounts. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.purviewManager) throw new Error("Purview manager not initialized");
+      const accounts = await state.purviewManager.listAccounts(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }],
+        details: { count: accounts.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_purview_account",
+    label: "Azure Purview Account",
+    description: "Get details of a specific Microsoft Purview account.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        accountName: { type: "string", description: "Purview account name" },
+      },
+      required: ["resourceGroup", "accountName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.purviewManager) throw new Error("Purview manager not initialized");
+      const acct = await state.purviewManager.getAccount(params.resourceGroup as string, params.accountName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(acct, null, 2) }],
+        details: { found: acct !== null },
+      };
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Maps tools
+  // ---------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_maps_accounts",
+    label: "Azure Maps Accounts",
+    description: "List Azure Maps accounts. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.mapsManager) throw new Error("Maps manager not initialized");
+      const accounts = await state.mapsManager.listAccounts(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(accounts, null, 2) }],
+        details: { count: accounts.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_maps_account",
+    label: "Azure Maps Account",
+    description: "Get details of a specific Azure Maps account.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        accountName: { type: "string", description: "Maps account name" },
+      },
+      required: ["resourceGroup", "accountName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.mapsManager) throw new Error("Maps manager not initialized");
+      const acct = await state.mapsManager.getAccount(params.resourceGroup as string, params.accountName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(acct, null, 2) }],
+        details: { found: acct !== null },
+      };
+    },
+  });
+
+  // ---------------------------------------------------------------------------
+  // Digital Twins tools
+  // ---------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_list_digital_twins",
+    label: "Azure Digital Twins",
+    description: "List Azure Digital Twins instances. Optionally filter by resource group.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Optional resource group filter" },
+      },
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.digitalTwinsManager) throw new Error("Digital Twins manager not initialized");
+      const instances = await state.digitalTwinsManager.listInstances(params.resourceGroup as string | undefined);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(instances, null, 2) }],
+        details: { count: instances.length },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_digital_twin",
+    label: "Azure Digital Twin",
+    description: "Get details of a specific Azure Digital Twins instance.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        instanceName: { type: "string", description: "Digital Twins instance name" },
+      },
+      required: ["resourceGroup", "instanceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.digitalTwinsManager) throw new Error("Digital Twins manager not initialized");
+      const dt = await state.digitalTwinsManager.getInstance(params.resourceGroup as string, params.instanceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(dt, null, 2) }],
+        details: { found: dt !== null },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_digital_twin_endpoints",
+    label: "Azure DT Endpoints",
+    description: "List endpoints for an Azure Digital Twins instance.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        instanceName: { type: "string", description: "Digital Twins instance name" },
+      },
+      required: ["resourceGroup", "instanceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.digitalTwinsManager) throw new Error("Digital Twins manager not initialized");
+      const endpoints = await state.digitalTwinsManager.listEndpoints(params.resourceGroup as string, params.instanceName as string);
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify(endpoints, null, 2) }],
+        details: { count: endpoints.length },
+      };
+    },
+  });
 }

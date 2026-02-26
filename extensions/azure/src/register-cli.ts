@@ -2238,5 +2238,329 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
           console.error(theme.error(`Failed to list notification hubs: ${formatErrorMessage(error)}`));
         }
       });
+
+    // --- Database (MySQL / PostgreSQL) commands ---
+    const mysqlCmd = az.command("mysql").description("Azure Database for MySQL management");
+
+    mysqlCmd
+      .command("list")
+      .description("List MySQL Flexible Servers")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const servers = await state.databaseManager.listMySqlServers(options.resourceGroup);
+          if (servers.length === 0) { console.log("No MySQL servers found"); return; }
+          console.log("\nMySQL Flexible Servers:\n");
+          for (const s of servers) {
+            console.log(`  ${s.name}  ${theme.muted(s.location)}  ${s.state ?? ""}  ${theme.muted(s.version ?? "")}`);
+          }
+          console.log(theme.muted(`\nTotal: ${servers.length} server(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list MySQL servers: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    mysqlCmd
+      .command("get")
+      .description("Get a MySQL Flexible Server")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Server name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const server = await state.databaseManager.getMySqlServer(options.resourceGroup, options.name);
+          if (!server) { console.log("MySQL server not found"); return; }
+          console.log(JSON.stringify(server, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get MySQL server: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    mysqlCmd
+      .command("databases")
+      .description("List databases in a MySQL Flexible Server")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--server <name>", "Server name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; server: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const dbs = await state.databaseManager.listMySqlDatabases(options.resourceGroup, options.server);
+          if (dbs.length === 0) { console.log("No databases found"); return; }
+          console.log("\nMySQL Databases:\n");
+          for (const db of dbs) {
+            console.log(`  ${db.name}  ${theme.muted(db.charset ?? "")}  ${db.collation ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${dbs.length} database(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list MySQL databases: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    const pgCmd = az.command("postgresql").description("Azure Database for PostgreSQL management");
+
+    pgCmd
+      .command("list")
+      .description("List PostgreSQL Flexible Servers")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const servers = await state.databaseManager.listPgServers(options.resourceGroup);
+          if (servers.length === 0) { console.log("No PostgreSQL servers found"); return; }
+          console.log("\nPostgreSQL Flexible Servers:\n");
+          for (const s of servers) {
+            console.log(`  ${s.name}  ${theme.muted(s.location)}  ${s.state ?? ""}  ${theme.muted(s.version ?? "")}`);
+          }
+          console.log(theme.muted(`\nTotal: ${servers.length} server(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list PostgreSQL servers: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    pgCmd
+      .command("get")
+      .description("Get a PostgreSQL Flexible Server")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Server name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const server = await state.databaseManager.getPgServer(options.resourceGroup, options.name);
+          if (!server) { console.log("PostgreSQL server not found"); return; }
+          console.log(JSON.stringify(server, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get PostgreSQL server: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    pgCmd
+      .command("databases")
+      .description("List databases in a PostgreSQL Flexible Server")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--server <name>", "Server name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; server: string };
+        if (!state.databaseManager) { console.error(theme.error("Database manager not initialized")); return; }
+        try {
+          const dbs = await state.databaseManager.listPgDatabases(options.resourceGroup, options.server);
+          if (dbs.length === 0) { console.log("No databases found"); return; }
+          console.log("\nPostgreSQL Databases:\n");
+          for (const db of dbs) {
+            console.log(`  ${db.name}  ${theme.muted(db.charset ?? "")}  ${db.collation ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${dbs.length} database(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list PostgreSQL databases: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Spring Apps commands ---
+    const springCmd = az.command("spring").description("Azure Spring Apps management");
+
+    springCmd
+      .command("list")
+      .description("List Azure Spring Apps services")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.springAppsManager) { console.error(theme.error("Spring Apps manager not initialized")); return; }
+        try {
+          const services = await state.springAppsManager.listServices(options.resourceGroup);
+          if (services.length === 0) { console.log("No Spring Apps services found"); return; }
+          console.log("\nAzure Spring Apps Services:\n");
+          for (const s of services) {
+            console.log(`  ${s.name}  ${theme.muted(s.location)}  ${s.provisioningState ?? ""}  ${theme.muted(s.skuTier ?? "")}`);
+          }
+          console.log(theme.muted(`\nTotal: ${services.length} service(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Spring Apps services: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    springCmd
+      .command("get")
+      .description("Get a Spring Apps service")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Service name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.springAppsManager) { console.error(theme.error("Spring Apps manager not initialized")); return; }
+        try {
+          const svc = await state.springAppsManager.getService(options.resourceGroup, options.name);
+          if (!svc) { console.log("Spring Apps service not found"); return; }
+          console.log(JSON.stringify(svc, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get Spring Apps service: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    springCmd
+      .command("apps")
+      .description("List apps in a Spring Apps service")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--service <name>", "Service name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; service: string };
+        if (!state.springAppsManager) { console.error(theme.error("Spring Apps manager not initialized")); return; }
+        try {
+          const apps = await state.springAppsManager.listApps(options.resourceGroup, options.service);
+          if (apps.length === 0) { console.log("No apps found"); return; }
+          console.log("\nSpring Apps:\n");
+          for (const a of apps) {
+            console.log(`  ${a.name}  ${theme.muted(a.provisioningState ?? "")}  public=${a.isPublic ?? false}`);
+          }
+          console.log(theme.muted(`\nTotal: ${apps.length} app(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Spring apps: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Purview commands ---
+    const purviewCmd = az.command("purview").description("Microsoft Purview management");
+
+    purviewCmd
+      .command("list")
+      .description("List Purview accounts")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.purviewManager) { console.error(theme.error("Purview manager not initialized")); return; }
+        try {
+          const accounts = await state.purviewManager.listAccounts(options.resourceGroup);
+          if (accounts.length === 0) { console.log("No Purview accounts found"); return; }
+          console.log("\nPurview Accounts:\n");
+          for (const a of accounts) {
+            console.log(`  ${a.name}  ${theme.muted(a.location)}  ${a.provisioningState ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${accounts.length} account(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Purview accounts: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    purviewCmd
+      .command("get")
+      .description("Get a Purview account")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Account name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.purviewManager) { console.error(theme.error("Purview manager not initialized")); return; }
+        try {
+          const acct = await state.purviewManager.getAccount(options.resourceGroup, options.name);
+          if (!acct) { console.log("Purview account not found"); return; }
+          console.log(JSON.stringify(acct, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get Purview account: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Maps commands ---
+    const mapsCmd = az.command("maps").description("Azure Maps management");
+
+    mapsCmd
+      .command("list")
+      .description("List Azure Maps accounts")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.mapsManager) { console.error(theme.error("Maps manager not initialized")); return; }
+        try {
+          const accounts = await state.mapsManager.listAccounts(options.resourceGroup);
+          if (accounts.length === 0) { console.log("No Maps accounts found"); return; }
+          console.log("\nAzure Maps Accounts:\n");
+          for (const a of accounts) {
+            console.log(`  ${a.name}  ${theme.muted(a.location)}  ${a.skuName ?? ""}  ${theme.muted(a.kind ?? "")}`);
+          }
+          console.log(theme.muted(`\nTotal: ${accounts.length} account(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Maps accounts: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    mapsCmd
+      .command("get")
+      .description("Get an Azure Maps account")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Maps account name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.mapsManager) { console.error(theme.error("Maps manager not initialized")); return; }
+        try {
+          const acct = await state.mapsManager.getAccount(options.resourceGroup, options.name);
+          if (!acct) { console.log("Maps account not found"); return; }
+          console.log(JSON.stringify(acct, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get Maps account: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // --- Digital Twins commands ---
+    const dtCmd = az.command("digitaltwins").description("Azure Digital Twins management");
+
+    dtCmd
+      .command("list")
+      .description("List Azure Digital Twins instances")
+      .option("--resource-group <rg>", "Filter by resource group")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+        if (!state.digitalTwinsManager) { console.error(theme.error("Digital Twins manager not initialized")); return; }
+        try {
+          const instances = await state.digitalTwinsManager.listInstances(options.resourceGroup);
+          if (instances.length === 0) { console.log("No Digital Twins instances found"); return; }
+          console.log("\nAzure Digital Twins Instances:\n");
+          for (const dt of instances) {
+            console.log(`  ${dt.name}  ${theme.muted(dt.location)}  ${dt.provisioningState ?? ""}`);
+            if (dt.hostName) console.log(`    Host: ${theme.muted(dt.hostName)}`);
+          }
+          console.log(theme.muted(`\nTotal: ${instances.length} instance(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Digital Twins instances: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    dtCmd
+      .command("get")
+      .description("Get an Azure Digital Twins instance")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--name <name>", "Instance name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+        if (!state.digitalTwinsManager) { console.error(theme.error("Digital Twins manager not initialized")); return; }
+        try {
+          const dt = await state.digitalTwinsManager.getInstance(options.resourceGroup, options.name);
+          if (!dt) { console.log("Digital Twins instance not found"); return; }
+          console.log(JSON.stringify(dt, null, 2));
+        } catch (error) {
+          console.error(theme.error(`Failed to get Digital Twins instance: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    dtCmd
+      .command("endpoints")
+      .description("List endpoints for a Digital Twins instance")
+      .requiredOption("--resource-group <rg>", "Resource group name")
+      .requiredOption("--instance <name>", "Instance name")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; instance: string };
+        if (!state.digitalTwinsManager) { console.error(theme.error("Digital Twins manager not initialized")); return; }
+        try {
+          const endpoints = await state.digitalTwinsManager.listEndpoints(options.resourceGroup, options.instance);
+          if (endpoints.length === 0) { console.log("No endpoints found"); return; }
+          console.log("\nDigital Twins Endpoints:\n");
+          for (const ep of endpoints) {
+            console.log(`  ${ep.name}  ${theme.muted(ep.endpointType ?? "")}  ${ep.provisioningState ?? ""}`);
+          }
+          console.log(theme.muted(`\nTotal: ${endpoints.length} endpoint(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list Digital Twins endpoints: ${formatErrorMessage(error)}`));
+        }
+      });
     });
 }

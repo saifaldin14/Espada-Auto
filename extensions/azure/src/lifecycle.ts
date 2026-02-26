@@ -58,6 +58,11 @@ import { AzureSynapseManager } from "./synapse/index.js";
 import { AzureDataFactoryManager } from "./datafactory/index.js";
 import { AzureSignalRManager } from "./signalr/index.js";
 import { AzureNotificationHubsManager } from "./notificationhubs/index.js";
+import { AzureDatabaseManager } from "./database/index.js";
+import { AzureSpringAppsManager } from "./springapps/index.js";
+import { AzurePurviewManager } from "./purview/index.js";
+import { AzureMapsManager } from "./maps/index.js";
+import { AzureDigitalTwinsManager } from "./digitaltwins/index.js";
 
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
@@ -160,6 +165,13 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.dataFactoryManager = new AzureDataFactoryManager(state.credentialsManager, subscriptionId, retryOpts);
       state.signalRManager = new AzureSignalRManager(state.credentialsManager, subscriptionId, retryOpts);
       state.notificationHubsManager = new AzureNotificationHubsManager(state.credentialsManager, subscriptionId, retryOpts);
+
+      // Database, Platform & IoT
+      state.databaseManager = new AzureDatabaseManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.springAppsManager = new AzureSpringAppsManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.purviewManager = new AzurePurviewManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.mapsManager = new AzureMapsManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.digitalTwinsManager = new AzureDigitalTwinsManager(state.credentialsManager, subscriptionId, retryOpts);
 
       // Orchestration (IDIO)
       clearStepRegistry();

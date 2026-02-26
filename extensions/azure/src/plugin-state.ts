@@ -55,6 +55,11 @@ import type { AzureSynapseManager } from "./synapse/index.js";
 import type { AzureDataFactoryManager } from "./datafactory/index.js";
 import type { AzureSignalRManager } from "./signalr/index.js";
 import type { AzureNotificationHubsManager } from "./notificationhubs/index.js";
+import type { AzureDatabaseManager } from "./database/index.js";
+import type { AzureSpringAppsManager } from "./springapps/index.js";
+import type { AzurePurviewManager } from "./purview/index.js";
+import type { AzureMapsManager } from "./maps/index.js";
+import type { AzureDigitalTwinsManager } from "./digitaltwins/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
@@ -114,6 +119,11 @@ export interface AzurePluginState {
   dataFactoryManager: AzureDataFactoryManager | null;
   signalRManager: AzureSignalRManager | null;
   notificationHubsManager: AzureNotificationHubsManager | null;
+  databaseManager: AzureDatabaseManager | null;
+  springAppsManager: AzureSpringAppsManager | null;
+  purviewManager: AzurePurviewManager | null;
+  mapsManager: AzureMapsManager | null;
+  digitalTwinsManager: AzureDigitalTwinsManager | null;
   orchestrator: Orchestrator | null;
 }
 
@@ -170,6 +180,11 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     dataFactoryManager: null,
     signalRManager: null,
     notificationHubsManager: null,
+    databaseManager: null,
+    springAppsManager: null,
+    purviewManager: null,
+    mapsManager: null,
+    digitalTwinsManager: null,
     orchestrator: null,
   };
 }
@@ -227,6 +242,11 @@ export function clearPluginState(state: AzurePluginState): void {
   state.dataFactoryManager = null;
   state.signalRManager = null;
   state.notificationHubsManager = null;
+  state.databaseManager = null;
+  state.springAppsManager = null;
+  state.purviewManager = null;
+  state.mapsManager = null;
+  state.digitalTwinsManager = null;
   state.orchestrator = null;
 }
 

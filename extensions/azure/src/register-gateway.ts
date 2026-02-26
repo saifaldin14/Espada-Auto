@@ -1227,4 +1227,153 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       opts.respond(true, { data: hubs });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
+
+  // ── Azure Database (MySQL / PostgreSQL Flexible Server) ─────────────────
+  api.registerGatewayMethod("azure.mysql.list", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const servers = await state.databaseManager.listMySqlServers(params.resourceGroup);
+      opts.respond(true, { data: servers });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.mysql.get", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serverName: string };
+      const server = await state.databaseManager.getMySqlServer(params.resourceGroup, params.serverName);
+      opts.respond(true, { data: server });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.mysql.databases", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serverName: string };
+      const dbs = await state.databaseManager.listMySqlDatabases(params.resourceGroup, params.serverName);
+      opts.respond(true, { data: dbs });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.postgresql.list", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const servers = await state.databaseManager.listPgServers(params.resourceGroup);
+      opts.respond(true, { data: servers });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.postgresql.get", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serverName: string };
+      const server = await state.databaseManager.getPgServer(params.resourceGroup, params.serverName);
+      opts.respond(true, { data: server });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.postgresql.databases", async (opts) => {
+    if (!state.databaseManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Database manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serverName: string };
+      const dbs = await state.databaseManager.listPgDatabases(params.resourceGroup, params.serverName);
+      opts.respond(true, { data: dbs });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ── Azure Spring Apps ───────────────────────────────────────────────────
+  api.registerGatewayMethod("azure.spring.list", async (opts) => {
+    if (!state.springAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Spring Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const services = await state.springAppsManager.listServices(params.resourceGroup);
+      opts.respond(true, { data: services });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.spring.get", async (opts) => {
+    if (!state.springAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Spring Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serviceName: string };
+      const svc = await state.springAppsManager.getService(params.resourceGroup, params.serviceName);
+      opts.respond(true, { data: svc });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.spring.apps", async (opts) => {
+    if (!state.springAppsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Spring Apps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; serviceName: string };
+      const apps = await state.springAppsManager.listApps(params.resourceGroup, params.serviceName);
+      opts.respond(true, { data: apps });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ── Microsoft Purview ───────────────────────────────────────────────────
+  api.registerGatewayMethod("azure.purview.list", async (opts) => {
+    if (!state.purviewManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Purview manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const accounts = await state.purviewManager.listAccounts(params.resourceGroup);
+      opts.respond(true, { data: accounts });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.purview.get", async (opts) => {
+    if (!state.purviewManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Purview manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+      const account = await state.purviewManager.getAccount(params.resourceGroup, params.accountName);
+      opts.respond(true, { data: account });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ── Azure Maps ──────────────────────────────────────────────────────────
+  api.registerGatewayMethod("azure.maps.list", async (opts) => {
+    if (!state.mapsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Maps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const accounts = await state.mapsManager.listAccounts(params.resourceGroup);
+      opts.respond(true, { data: accounts });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.maps.get", async (opts) => {
+    if (!state.mapsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Maps manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; accountName: string };
+      const account = await state.mapsManager.getAccount(params.resourceGroup, params.accountName);
+      opts.respond(true, { data: account });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ── Azure Digital Twins ─────────────────────────────────────────────────
+  api.registerGatewayMethod("azure.digitaltwins.list", async (opts) => {
+    if (!state.digitalTwinsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Digital Twins manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const instances = await state.digitalTwinsManager.listInstances(params.resourceGroup);
+      opts.respond(true, { data: instances });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.digitaltwins.get", async (opts) => {
+    if (!state.digitalTwinsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Digital Twins manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; instanceName: string };
+      const instance = await state.digitalTwinsManager.getInstance(params.resourceGroup, params.instanceName);
+      opts.respond(true, { data: instance });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.digitaltwins.endpoints", async (opts) => {
+    if (!state.digitalTwinsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Digital Twins manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; instanceName: string };
+      const endpoints = await state.digitalTwinsManager.listEndpoints(params.resourceGroup, params.instanceName);
+      opts.respond(true, { data: endpoints });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
 }
