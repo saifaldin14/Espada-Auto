@@ -13,6 +13,7 @@ import type {
   CostAnomaly,
   RemediationAction,
   PlannedResource,
+  PolicyViolation,
 } from '../intent/types.js';
 import type { PolicyEngine } from '../policy/engine.js';
 
@@ -320,7 +321,7 @@ export class ReconciliationEngine {
    */
   private async generateRemediationActions(
     drifts: ResourceDrift[],
-    violations: any[],
+    violations: PolicyViolation[],
     anomalies: CostAnomaly[],
     context: ReconciliationContext,
   ): Promise<RemediationAction[]> {
@@ -372,7 +373,7 @@ export class ReconciliationEngine {
   /**
    * Generate compliance remediation actions
    */
-  private generateComplianceRemediationActions(violations: any[]): RemediationAction[] {
+  private generateComplianceRemediationActions(violations: PolicyViolation[]): RemediationAction[] {
     return violations
       .filter(v => v.autoFixable)
       .map(violation => ({
@@ -802,7 +803,7 @@ export class ReconciliationEngine {
           // Unsupported type — return empty config so we can still compare keys
           return {};
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       // "Not found" errors mean the resource was deleted
       const code: string = err.name ?? '';
       const notFoundCodes = [
@@ -915,7 +916,7 @@ export class ReconciliationEngine {
         }
       }
       return costMap;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Cost Explorer may not be enabled, or the account may lack permissions.
       // Return empty so drift detection still works; cost anomalies just won't fire.
       console.warn(`Cost Explorer query failed (costs will be skipped): ${err.message ?? err}`);
@@ -958,7 +959,7 @@ export class ReconciliationEngine {
    */
   private async sendAlerts(
     drifts: ResourceDrift[],
-    violations: any[],
+    violations: PolicyViolation[],
     anomalies: CostAnomaly[],
     context: ReconciliationContext,
   ): Promise<void> {
@@ -985,7 +986,7 @@ export class ReconciliationEngine {
    */
   private formatAlertMessage(
     drifts: ResourceDrift[],
-    violations: any[],
+    violations: PolicyViolation[],
     anomalies: CostAnomaly[],
     context: ReconciliationContext,
   ): string {

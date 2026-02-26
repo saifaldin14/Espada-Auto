@@ -66,7 +66,7 @@ export class Orchestrator {
     let sortedSteps;
     try {
       sortedSteps = topologicalSort(plan);
-    } catch (err: any) {
+    } catch (err: unknown) {
       return {
         planId: plan.id,
         planName: plan.name,
@@ -129,7 +129,7 @@ export class Orchestrator {
       let resolvedParams: Record<string, unknown>;
       try {
         resolvedParams = resolveStepParams(step.params, allOutputs);
-      } catch (err: any) {
+      } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         const failed: StepResult = {
           stepId: step.id,
@@ -201,7 +201,7 @@ export class Orchestrator {
         stepResults.push(result);
         resultMap.set(step.id, result);
         opts.onStepComplete(step.id, result);
-      } catch (err: any) {
+      } catch (err: unknown) {
         const durationMs = Date.now() - stepStart;
         const errMsg = err instanceof Error ? err.message : String(err);
 
@@ -288,7 +288,7 @@ export class Orchestrator {
       try {
         await handler.rollback(ctx, allOutputs[stepId] ?? {});
         logger.info(`Rolled back step "${step.name}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         logger.warn(`Rollback failed for step "${step.name}": ${err instanceof Error ? err.message : String(err)}`);
       }
     }

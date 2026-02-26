@@ -1578,12 +1578,12 @@ export class AWSConversationalManager implements ConversationalManager {
   /**
    * Check for overly permissive security groups
    */
-  private async checkOpenSecurityGroups(check: InsightCheckConfig): Promise<ProactiveInsight[]> {
-    const insights: ProactiveInsight[] = [];
+private async checkOpenSecurityGroups(check: InsightCheckConfig): Promise<ProactiveInsight[]> {
+  const insights: ProactiveInsight[] = [];
 
-    try {
-      const response = await this.ec2Client.send(new DescribeSecurityGroupsCommand({}));
-      const openGroups: { group: any; rules: string[] }[] = [];
+  try {
+    const response = await this.ec2Client.send(new DescribeSecurityGroupsCommand({}));
+    const openGroups: { group: any; rules: string[] }[] = [];
 
       for (const sg of response.SecurityGroups || []) {
         const dangerousRules: string[] = [];
@@ -1612,7 +1612,10 @@ export class AWSConversationalManager implements ConversationalManager {
         }
 
         if (dangerousRules.length > 0) {
-          openGroups.push({ group: sg, rules: dangerousRules });
+          openGroups.push({
+            group: sg, rules: dangerousRules,
+            y: undefined
+          });
         }
       }
 

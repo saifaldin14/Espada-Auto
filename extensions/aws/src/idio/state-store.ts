@@ -342,7 +342,7 @@ export class IDIOStateStore {
       
       try {
         await this.client.send(new DescribeTableCommand({ TableName: tableName }));
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (error.name === 'ResourceNotFoundException') {
           await this.createTable(tableName, definition);
         } else {

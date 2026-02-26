@@ -298,7 +298,7 @@ const BUILT_IN_POLICY_RULES: PolicyRule[] = [
       
       if (resource.type === 'application_load_balancer') {
         encrypted = Array.isArray(resource.properties.listeners) 
-          && (resource.properties.listeners as any[]).some((l: any) => l.protocol === 'HTTPS');
+          && (resource.properties.listeners as Record<string, unknown>[]).some((l) => l.protocol === 'HTTPS');
       } else if (resource.type === 'elasticache_cluster') {
         encrypted = resource.properties.transitEncryptionEnabled === true;
       } else if (resource.type === 'rds_instance') {
@@ -576,7 +576,7 @@ const BUILT_IN_POLICY_RULES: PolicyRule[] = [
     frameworks: ['pci-dss', 'fedramp'],
     resourceTypes: ['security_group'],
     evaluate: (resource) => {
-      const egressRules = resource.properties.egressRules as any[] || [];
+      const egressRules = (resource.properties.egressRules as Record<string, unknown>[] | undefined) ?? [];
       const allowsAllEgress = egressRules.some(rule => 
         rule.cidr === '0.0.0.0/0' && rule.protocol === '-1'
       );

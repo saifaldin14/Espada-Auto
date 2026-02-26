@@ -29,30 +29,30 @@ import { DEFAULT_USAGE_METRICS, DEFAULT_PRICING_PLANS } from './types.js';
 
 interface StripeClient {
   customers: {
-    create: (params: any) => Promise<{ id: string }>;
-    retrieve: (id: string) => Promise<any>;
-    update: (id: string, params: any) => Promise<any>;
+    create: (params: Record<string, unknown>) => Promise<{ id: string }>;
+    retrieve: (id: string) => Promise<Record<string, unknown>>;
+    update: (id: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
   };
   subscriptions: {
-    create: (params: any) => Promise<any>;
-    retrieve: (id: string) => Promise<any>;
-    update: (id: string, params: any) => Promise<any>;
-    cancel: (id: string) => Promise<any>;
+    create: (params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    retrieve: (id: string) => Promise<Record<string, unknown>>;
+    update: (id: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    cancel: (id: string) => Promise<Record<string, unknown>>;
   };
   invoices: {
-    list: (params: any) => Promise<{ data: any[] }>;
-    retrieve: (id: string) => Promise<any>;
+    list: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown>[] }>;
+    retrieve: (id: string) => Promise<Record<string, unknown>>;
   };
   paymentMethods: {
-    list: (params: any) => Promise<{ data: any[] }>;
-    attach: (id: string, params: any) => Promise<any>;
-    detach: (id: string) => Promise<any>;
+    list: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown>[] }>;
+    attach: (id: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
+    detach: (id: string) => Promise<Record<string, unknown>>;
   };
   prices: {
-    list: (params: any) => Promise<{ data: any[] }>;
+    list: (params: Record<string, unknown>) => Promise<{ data: Record<string, unknown>[] }>;
   };
   usageRecords: {
-    create: (subscriptionItemId: string, params: any) => Promise<any>;
+    create: (subscriptionItemId: string, params: Record<string, unknown>) => Promise<Record<string, unknown>>;
   };
 }
 
@@ -776,17 +776,17 @@ export class BillingService {
     }
   }
 
-  private async handleSubscriptionUpdate(_stripeSubscription: any): Promise<void> {
+  private async handleSubscriptionUpdate(_stripeSubscription: Record<string, unknown>): Promise<void> {
     // Update local subscription record
   }
 
-  private async handleSubscriptionCanceled(_stripeSubscription: any): Promise<void> {
+  private async handleSubscriptionCanceled(_stripeSubscription: Record<string, unknown>): Promise<void> {
     // Update local subscription record and tenant status
   }
 
-  private async handleInvoicePaid(stripeInvoice: any): Promise<void> {
+  private async handleInvoicePaid(stripeInvoice: Record<string, unknown>): Promise<void> {
     // Create local invoice record
-    const tenantId = stripeInvoice.metadata?.tenantId;
+    const tenantId = (stripeInvoice.metadata as Record<string, unknown> | undefined)?.tenantId;
     if (tenantId) {
       await this.emitEvent('invoice.paid', tenantId, {
         invoiceId: stripeInvoice.id,
@@ -795,8 +795,8 @@ export class BillingService {
     }
   }
 
-  private async handleInvoicePaymentFailed(stripeInvoice: any): Promise<void> {
-    const tenantId = stripeInvoice.metadata?.tenantId;
+  private async handleInvoicePaymentFailed(stripeInvoice: Record<string, unknown>): Promise<void> {
+    const tenantId = (stripeInvoice.metadata as Record<string, unknown> | undefined)?.tenantId;
     if (tenantId) {
       await this.emitEvent('invoice.payment_failed', tenantId, {
         invoiceId: stripeInvoice.id,

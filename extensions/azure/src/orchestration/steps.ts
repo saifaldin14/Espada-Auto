@@ -65,8 +65,9 @@ function createResourceGroupHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteResourceGroup(name);
         ctx.log.info(`Rolled back: deleted resource group "${name}"`);
-      } catch (err: any) {
-        ctx.log.warn(`Rollback warning: could not delete resource group "${name}": ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        ctx.log.warn(`Rollback warning: could not delete resource group "${name}": ${message}`);
       }
     },
   };
@@ -289,8 +290,9 @@ function createStorageAccountHandler(getResourceManager: () => any, getStorageMa
         const mgr = getStorageManager();
         await mgr.deleteStorageAccount(resourceGroup, name);
         ctx.log.info(`Rolled back: deleted storage account "${name}"`);
-      } catch (err: any) {
-        ctx.log.warn(`Rollback warning: could not delete storage account "${name}": ${err.message}`);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        ctx.log.warn(`Rollback warning: could not delete storage account "${name}": ${message}`);
       }
     },
   };

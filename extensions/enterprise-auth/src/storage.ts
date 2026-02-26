@@ -238,12 +238,12 @@ export class SQLiteAuthStorage implements AuthStorage {
       .run(role.id, role.name, role.description, JSON.stringify(role.permissions), role.builtIn ? 1 : 0, role.createdAt, role.updatedAt);
   }
   async getRole(id: string): Promise<Role | null> {
-    const row = this.db!.prepare("SELECT * FROM roles WHERE id = ?").get(id) as any;
-    return row ? { ...row, permissions: JSON.parse(row.permissions), builtIn: row.built_in === 1, createdAt: row.created_at, updatedAt: row.updated_at } : null;
+    const row = this.db!.prepare("SELECT * FROM roles WHERE id = ?").get(id) as Record<string, unknown> | undefined;
+    return row ? { ...row, permissions: JSON.parse(row.permissions as string), builtIn: row.built_in === 1, createdAt: row.created_at, updatedAt: row.updated_at } as unknown as Role : null;
   }
   async listRoles(): Promise<Role[]> {
-    const rows = this.db!.prepare("SELECT * FROM roles ORDER BY name").all() as any[];
-    return rows.map((r) => ({ ...r, permissions: JSON.parse(r.permissions), builtIn: r.built_in === 1, createdAt: r.created_at, updatedAt: r.updated_at }));
+    const rows = this.db!.prepare("SELECT * FROM roles ORDER BY name").all() as Record<string, unknown>[];
+    return rows.map((r) => ({ ...r, permissions: JSON.parse(r.permissions as string), builtIn: r.built_in === 1, createdAt: r.created_at, updatedAt: r.updated_at }) as unknown as Role);
   }
   async deleteRole(id: string): Promise<boolean> {
     return this.db!.prepare("DELETE FROM roles WHERE id = ? AND built_in = 0").run(id).changes > 0;
@@ -255,15 +255,15 @@ export class SQLiteAuthStorage implements AuthStorage {
       .run(user.id, user.email, user.name, JSON.stringify(user.roles), user.ssoProviderId ?? null, user.externalId ?? null, user.mfaEnabled ? 1 : 0, user.mfaSecret ?? null, user.lastLoginAt ?? null, user.disabled ? 1 : 0, user.createdAt, user.updatedAt);
   }
   async getUser(id: string): Promise<User | null> {
-    const row = this.db!.prepare("SELECT * FROM users WHERE id = ?").get(id) as any;
+    const row = this.db!.prepare("SELECT * FROM users WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? rowToUser(row) : null;
   }
   async getUserByEmail(email: string): Promise<User | null> {
-    const row = this.db!.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
+    const row = this.db!.prepare("SELECT * FROM users WHERE email = ?").get(email) as Record<string, unknown> | undefined;
     return row ? rowToUser(row) : null;
   }
   async getUserByExternalId(providerId: string, externalId: string): Promise<User | null> {
-    const row = this.db!.prepare("SELECT * FROM users WHERE sso_provider_id = ? AND external_id = ?").get(providerId, externalId) as any;
+    const row = this.db!.prepare("SELECT * FROM users WHERE sso_provider_id = ? AND external_id = ?").get(providerId, externalId) as Record<string, unknown> | undefined;
     return row ? rowToUser(row) : null;
   }
   async listUsers(filters?: { role?: string; disabled?: boolean }): Promise<User[]> {
@@ -273,8 +273,8 @@ export class SQLiteAuthStorage implements AuthStorage {
     if (filters?.disabled !== undefined) { clauses.push("disabled = ?"); params.push(filters.disabled ? 1 : 0); }
     if (clauses.length) sql += ` WHERE ${clauses.join(" AND ")}`;
     sql += " ORDER BY name";
-    let rows = this.db!.prepare(sql).all(...params) as any[];
-    if (filters?.role) rows = rows.filter((r: any) => JSON.parse(r.roles).includes(filters.role));
+    let rows = this.db!.prepare(sql).all(...params) as Record<string, unknown>[];
+    if (filters?.role) rows = rows.filter((r) => JSON.parse(r.roles as string).includes(filters.role));
     return rows.map(rowToUser);
   }
   async deleteUser(id: string): Promise<boolean> {
@@ -287,7 +287,7 @@ export class SQLiteAuthStorage implements AuthStorage {
       .run(session.id, session.userId, session.tokenHash, session.expiresAt, session.createdAt, session.lastActiveAt, session.ipAddress ?? null, session.userAgent ?? null);
   }
   async getSession(id: string): Promise<Session | null> {
-    const row = this.db!.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as any;
+    const row = this.db!.prepare("SELECT * FROM sessions WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? rowToSession(row) : null;
   }
   async deleteSession(id: string): Promise<boolean> {
@@ -306,15 +306,15 @@ export class SQLiteAuthStorage implements AuthStorage {
       .run(apiKey.id, apiKey.name, apiKey.keyHash, apiKey.keyPrefix, apiKey.userId, JSON.stringify(apiKey.permissions), apiKey.expiresAt ?? null, apiKey.lastUsedAt ?? null, apiKey.disabled ? 1 : 0, apiKey.createdAt);
   }
   async getApiKey(id: string): Promise<ApiKey | null> {
-    const row = this.db!.prepare("SELECT * FROM api_keys WHERE id = ?").get(id) as any;
+    const row = this.db!.prepare("SELECT * FROM api_keys WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? rowToApiKey(row) : null;
   }
   async getApiKeyByHash(keyHash: string): Promise<ApiKey | null> {
-    const row = this.db!.prepare("SELECT * FROM api_keys WHERE key_hash = ?").get(keyHash) as any;
+    const row = this.db!.prepare("SELECT * FROM api_keys WHERE key_hash = ?").get(keyHash) as Record<string, unknown> | undefined;
     return row ? rowToApiKey(row) : null;
   }
   async listApiKeys(userId: string): Promise<ApiKey[]> {
-    return (this.db!.prepare("SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC").all(userId) as any[]).map(rowToApiKey);
+    return (this.db!.prepare("SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC").all(userId) as Record<string, unknown>[]).map(rowToApiKey);
   }
   async deleteApiKey(id: string): Promise<boolean> {
     return this.db!.prepare("DELETE FROM api_keys WHERE id = ?").run(id).changes > 0;
@@ -326,11 +326,11 @@ export class SQLiteAuthStorage implements AuthStorage {
       .run(config.id, config.name, config.issuerUrl, config.clientId, config.clientSecret, JSON.stringify(config.scopes), config.callbackUrl, JSON.stringify(config.roleMappings), config.enabled ? 1 : 0, config.createdAt, config.updatedAt);
   }
   async getOidcProvider(id: string): Promise<OidcProviderConfig | null> {
-    const row = this.db!.prepare("SELECT * FROM oidc_providers WHERE id = ?").get(id) as any;
+    const row = this.db!.prepare("SELECT * FROM oidc_providers WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? rowToOidc(row) : null;
   }
   async listOidcProviders(): Promise<OidcProviderConfig[]> {
-    return (this.db!.prepare("SELECT * FROM oidc_providers ORDER BY name").all() as any[]).map(rowToOidc);
+    return (this.db!.prepare("SELECT * FROM oidc_providers ORDER BY name").all() as Record<string, unknown>[]).map(rowToOidc);
   }
   async deleteOidcProvider(id: string): Promise<boolean> {
     return this.db!.prepare("DELETE FROM oidc_providers WHERE id = ?").run(id).changes > 0;
@@ -344,49 +344,49 @@ export class SQLiteAuthStorage implements AuthStorage {
 
 // ── Row Mappers ─────────────────────────────────────────────────
 
-function rowToUser(r: any): User {
+function rowToUser(r: Record<string, unknown>): User {
   return {
-    id: r.id, email: r.email, name: r.name,
-    roles: JSON.parse(r.roles),
-    ssoProviderId: r.sso_provider_id ?? undefined,
-    externalId: r.external_id ?? undefined,
+    id: r.id as string, email: r.email as string, name: r.name as string,
+    roles: JSON.parse(r.roles as string),
+    ssoProviderId: (r.sso_provider_id as string) ?? undefined,
+    externalId: (r.external_id as string) ?? undefined,
     mfaEnabled: r.mfa_enabled === 1,
-    mfaSecret: r.mfa_secret ?? undefined,
-    lastLoginAt: r.last_login_at ?? undefined,
+    mfaSecret: (r.mfa_secret as string) ?? undefined,
+    lastLoginAt: (r.last_login_at as string) ?? undefined,
     disabled: r.disabled === 1,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
   };
 }
 
-function rowToSession(r: any): Session {
+function rowToSession(r: Record<string, unknown>): Session {
   return {
-    id: r.id, userId: r.user_id, tokenHash: r.token_hash,
-    expiresAt: r.expires_at, createdAt: r.created_at,
-    lastActiveAt: r.last_active_at,
-    ipAddress: r.ip_address ?? undefined,
-    userAgent: r.user_agent ?? undefined,
+    id: r.id as string, userId: r.user_id as string, tokenHash: r.token_hash as string,
+    expiresAt: r.expires_at as string, createdAt: r.created_at as string,
+    lastActiveAt: r.last_active_at as string,
+    ipAddress: (r.ip_address as string) ?? undefined,
+    userAgent: (r.user_agent as string) ?? undefined,
   };
 }
 
-function rowToApiKey(r: any): ApiKey {
+function rowToApiKey(r: Record<string, unknown>): ApiKey {
   return {
-    id: r.id, name: r.name, keyHash: r.key_hash,
-    keyPrefix: r.key_prefix, userId: r.user_id,
-    permissions: JSON.parse(r.permissions),
-    expiresAt: r.expires_at ?? undefined,
-    lastUsedAt: r.last_used_at ?? undefined,
+    id: r.id as string, name: r.name as string, keyHash: r.key_hash as string,
+    keyPrefix: r.key_prefix as string, userId: r.user_id as string,
+    permissions: JSON.parse(r.permissions as string),
+    expiresAt: (r.expires_at as string) ?? undefined,
+    lastUsedAt: (r.last_used_at as string) ?? undefined,
     disabled: r.disabled === 1,
-    createdAt: r.created_at,
+    createdAt: r.created_at as string,
   };
 }
 
-function rowToOidc(r: any): OidcProviderConfig {
+function rowToOidc(r: Record<string, unknown>): OidcProviderConfig {
   return {
-    id: r.id, name: r.name, issuerUrl: r.issuer_url,
-    clientId: r.client_id, clientSecret: r.client_secret,
-    scopes: JSON.parse(r.scopes), callbackUrl: r.callback_url,
-    roleMappings: JSON.parse(r.role_mappings),
+    id: r.id as string, name: r.name as string, issuerUrl: r.issuer_url as string,
+    clientId: r.client_id as string, clientSecret: r.client_secret as string,
+    scopes: JSON.parse(r.scopes as string), callbackUrl: r.callback_url as string,
+    roleMappings: JSON.parse(r.role_mappings as string),
     enabled: r.enabled === 1,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
   };
 }

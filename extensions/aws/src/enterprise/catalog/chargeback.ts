@@ -13,6 +13,13 @@ import type {
   CatalogResult,
 } from './types.js';
 
+/** Recursive tree node for cost center hierarchy */
+interface CostCenterTreeNode {
+  code: string;
+  name: string;
+  children: CostCenterTreeNode[];
+}
+
 // =============================================================================
 // Storage Interface
 // =============================================================================
@@ -266,11 +273,11 @@ export class ChargebackService {
   async getCostCenterHierarchy(tenantId: string): Promise<CatalogResult<{
     code: string;
     name: string;
-    children: any[];
+    children: CostCenterTreeNode[];
   }[]>> {
     const all = await this.storage.listCostCenters(tenantId, { active: true });
     
-    const buildTree = (parentCode?: string): any[] => {
+    const buildTree = (parentCode?: string): CostCenterTreeNode[] => {
       return all
         .filter(c => c.parentCode === parentCode)
         .map(c => ({

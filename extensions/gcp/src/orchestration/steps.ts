@@ -229,7 +229,7 @@ function createProjectHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteProject(ctx.params.projectId as string);
         ctx.logger.info(`Rolled back: deleted project "${ctx.params.projectId}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete project "${ctx.params.projectId}": ${err.message}`);
       }
     },
@@ -255,7 +255,7 @@ function createVpcNetworkHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteNetwork(ctx.params.project as string, ctx.params.networkName as string);
         ctx.logger.info(`Rolled back: deleted VPC network "${ctx.params.networkName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete network "${ctx.params.networkName}": ${err.message}`);
       }
     },
@@ -281,7 +281,7 @@ function createFirewallRuleHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteFirewallRule(ctx.params.project as string, ctx.params.ruleName as string);
         ctx.logger.info(`Rolled back: deleted firewall rule "${ctx.params.ruleName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete firewall rule "${ctx.params.ruleName}": ${err.message}`);
       }
     },
@@ -307,7 +307,7 @@ function createGcsBucketHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteBucket(ctx.params.bucketName as string);
         ctx.logger.info(`Rolled back: deleted GCS bucket "${ctx.params.bucketName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete bucket "${ctx.params.bucketName}": ${err.message}`);
       }
     },
@@ -338,7 +338,7 @@ function createCloudSqlHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteInstance(ctx.params.project as string, ctx.params.instanceName as string);
         ctx.logger.info(`Rolled back: deleted Cloud SQL instance "${ctx.params.instanceName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete SQL instance "${ctx.params.instanceName}": ${err.message}`);
       }
     },
@@ -386,7 +386,7 @@ function createRedisInstanceHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteInstance(ctx.params.project as string, ctx.params.region as string, ctx.params.instanceId as string);
         ctx.logger.info(`Rolled back: deleted Redis instance "${ctx.params.instanceId}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete Redis instance "${ctx.params.instanceId}": ${err.message}`);
       }
     },
@@ -417,7 +417,7 @@ function createGkeClusterHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteCluster(ctx.params.project as string, ctx.params.zone as string, ctx.params.clusterName as string);
         ctx.logger.info(`Rolled back: deleted GKE cluster "${ctx.params.clusterName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete GKE cluster "${ctx.params.clusterName}": ${err.message}`);
       }
     },
@@ -448,7 +448,7 @@ function createCloudRunServiceHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteService(ctx.params.project as string, ctx.params.region as string, ctx.params.serviceName as string);
         ctx.logger.info(`Rolled back: deleted Cloud Run service "${ctx.params.serviceName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete Cloud Run service "${ctx.params.serviceName}": ${err.message}`);
       }
     },
@@ -479,7 +479,7 @@ function createCloudFunctionHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteFunction(ctx.params.project as string, ctx.params.region as string, ctx.params.functionName as string);
         ctx.logger.info(`Rolled back: deleted Cloud Function "${ctx.params.functionName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete Cloud Function "${ctx.params.functionName}": ${err.message}`);
       }
     },
@@ -529,7 +529,7 @@ function createPubsubTopicHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteTopic(ctx.params.project as string, ctx.params.topicName as string);
         ctx.logger.info(`Rolled back: deleted Pub/Sub topic "${ctx.params.topicName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete Pub/Sub topic "${ctx.params.topicName}": ${err.message}`);
       }
     },
@@ -558,7 +558,7 @@ function createMonitoringAlertHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteAlertPolicy(outputs.alertPolicyId as string);
         ctx.logger.info(`Rolled back: deleted alert policy "${outputs.alertPolicyName}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete alert policy: ${err.message}`);
       }
     },
@@ -587,7 +587,7 @@ function createSecretHandler(getManager: () => any): StepHandler {
       try {
         await mgr.deleteSecret(ctx.params.project as string, ctx.params.secretId as string);
         ctx.logger.info(`Rolled back: deleted secret "${ctx.params.secretId}"`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         ctx.logger.warn(`Rollback warning: could not delete secret "${ctx.params.secretId}": ${err.message}`);
       }
     },

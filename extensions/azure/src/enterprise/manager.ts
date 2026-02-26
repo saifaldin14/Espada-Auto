@@ -59,7 +59,7 @@ export class AzureEnterpriseManager {
         name: group.name ?? "",
         displayName: group.displayName ?? group.name ?? "",
         type: group.type ?? "Microsoft.Management/managementGroups",
-        children: (group.children ?? []).map((c: any) => ({
+        children: (group.children ?? []).map((c) => ({
           id: c.id ?? "",
           name: c.name ?? "",
           displayName: c.displayName ?? c.name ?? "",
@@ -134,7 +134,7 @@ export class AzureEnterpriseManager {
           managedSubscriptionId: this.subscriptionId,
           principalId: "",
           roleDefinitionId: "",
-          status: (resource as any).provisioningState ?? "Unknown",
+          status: (resource as Record<string, unknown>).provisioningState as string ?? "Unknown",
         });
       }
       return delegations;

@@ -32,7 +32,7 @@ export class AzureSubscriptionManager {
         results.push({
           subscriptionId: s.subscriptionId ?? "",
           displayName: s.displayName ?? "",
-          state: (s.state as any) ?? "Enabled",
+          state: (s.state as unknown as string) ?? "Enabled",
           tenantId: s.tenantId ?? "",
           subscriptionPolicies: s.subscriptionPolicies
             ? {
@@ -55,7 +55,7 @@ export class AzureSubscriptionManager {
       return {
         subscriptionId: s.subscriptionId ?? "",
         displayName: s.displayName ?? "",
-        state: (s.state as any) ?? "Enabled",
+        state: (s.state as unknown as string) ?? "Enabled",
         tenantId: s.tenantId ?? "",
         subscriptionPolicies: s.subscriptionPolicies
           ? {
@@ -92,16 +92,16 @@ export class AzureSubscriptionManager {
       const client = await this.getClient();
       const results: AzureLocation[] = [];
       for await (const loc of client.subscriptions.listLocations(subscriptionId)) {
-        const meta = (loc as any).metadata ?? {};
+        const meta = (loc as Record<string, unknown>).metadata as Record<string, unknown> ?? {};
         results.push({
           name: loc.name ?? "",
           displayName: loc.displayName ?? "",
-          regionalDisplayName: (loc as any).regionalDisplayName,
-          type: (loc as any).type,
+          regionalDisplayName: (loc as Record<string, unknown>).regionalDisplayName as string | undefined,
+          type: (loc as Record<string, unknown>).type as string | undefined,
           latitude: meta.latitude,
           longitude: meta.longitude,
           physicalLocation: meta.physicalLocation,
-          pairedRegion: meta.pairedRegion?.map((r: any) => r.name ?? ""),
+          pairedRegion: meta.pairedRegion?.map((r: Record<string, unknown>) => String(r.name ?? "")),
         });
       }
       return results;

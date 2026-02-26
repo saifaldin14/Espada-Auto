@@ -488,7 +488,7 @@ export class AWSExecutionEngine {
       if (!identity.Account) {
         errors.push(createExecutionError('validation', 'STS GetCallerIdentity returned no account — credentials may be invalid'));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       errors.push(createExecutionError(
         'validation',
         `Credential check failed: ${err.message ?? err}`,
@@ -500,7 +500,7 @@ export class AWSExecutionEngine {
     // 2. EC2 permission probe — DescribeAccountAttributes exercises ec2:Describe*
     try {
       await this.ec2.send(new DescribeAccountAttributesCommand({}));
-    } catch (err: any) {
+    } catch (err: unknown) {
       errors.push(createExecutionError(
         'validation',
         `EC2 permission check failed (DescribeAccountAttributes): ${err.message ?? err}`,
@@ -522,7 +522,7 @@ export class AWSExecutionEngine {
             `VPC quota concern: ${existingCount} existing + ${newCount} planned = ${existingCount + newCount} (default limit 5). Request a limit increase or reduce plan.`,
           ));
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         errors.push(createExecutionError(
           'validation',
           `VPC quota check failed: ${err.message ?? err}`,
@@ -540,8 +540,9 @@ export class AWSExecutionEngine {
       probePromises.push(
         this.rds.send(new (await import('@aws-sdk/client-rds')).DescribeDBInstancesCommand({ MaxRecords: 20 }))
           .then(() => {})
-          .catch((err: any) => {
-            errors.push(createExecutionError('validation', `RDS permission check failed: ${err.message ?? err}`, undefined, err.name));
+          .catch((err: unknown) => {
+            const e = err as Record<string, unknown>;
+            errors.push(createExecutionError('validation', `RDS permission check failed: ${(e.message as string) ?? err}`, undefined, e.name as string));
           })
       );
     }
@@ -550,8 +551,9 @@ export class AWSExecutionEngine {
       probePromises.push(
         this.s3.send(new (await import('@aws-sdk/client-s3')).ListBucketsCommand({}))
           .then(() => {})
-          .catch((err: any) => {
-            errors.push(createExecutionError('validation', `S3 permission check failed: ${err.message ?? err}`, undefined, err.name));
+          .catch((err: unknown) => {
+            const e = err as Record<string, unknown>;
+            errors.push(createExecutionError('validation', `S3 permission check failed: ${(e.message as string) ?? err}`, undefined, e.name as string));
           })
       );
     }
@@ -593,7 +595,7 @@ export class AWSExecutionEngine {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         return await fn();
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const code: string = err.name ?? err.Code ?? '';
         // Non-retryable errors — fail immediately

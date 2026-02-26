@@ -1000,7 +1000,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
       lastObservedAt: finding.LastObservedAt ? new Date(finding.LastObservedAt) : undefined,
       createdAt: new Date(finding.CreatedAt!),
       updatedAt: new Date(finding.UpdatedAt!),
-      resources: (finding.Resources || []).map((r: any) => ({
+      resources: (finding.Resources || []).map((r) => ({
         type: r.Type!,
         id: r.Id!,
         partition: r.Partition!,
@@ -1053,17 +1053,17 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           availabilityZone: finding.Resource.InstanceDetails.AvailabilityZone,
           imageId: finding.Resource.InstanceDetails.ImageId,
           imageDescription: finding.Resource.InstanceDetails.ImageDescription,
-          networkInterfaces: finding.Resource.InstanceDetails.NetworkInterfaces?.map((ni: any) => ({
+          networkInterfaces: finding.Resource.InstanceDetails.NetworkInterfaces?.map((ni) => ({
             networkInterfaceId: ni.NetworkInterfaceId,
             privateDnsName: ni.PrivateDnsName,
             privateIpAddress: ni.PrivateIpAddress,
             publicDnsName: ni.PublicDnsName,
             publicIp: ni.PublicIp,
-            securityGroups: ni.SecurityGroups?.map((sg: any) => ({ groupId: sg.GroupId, groupName: sg.GroupName })),
+            securityGroups: ni.SecurityGroups?.map((sg) => ({ groupId: sg.GroupId, groupName: sg.GroupName })),
             subnetId: ni.SubnetId,
             vpcId: ni.VpcId,
           })),
-          tags: finding.Resource.InstanceDetails.Tags?.map((t: any) => ({ key: t.Key!, value: t.Value! })),
+          tags: finding.Resource.InstanceDetails.Tags?.map((t) => ({ key: t.Key!, value: t.Value! })),
         } : undefined,
         accessKeyDetails: finding.Resource?.AccessKeyDetails ? {
           accessKeyId: finding.Resource.AccessKeyDetails.AccessKeyId,
@@ -1071,13 +1071,13 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           userName: finding.Resource.AccessKeyDetails.UserName,
           userType: finding.Resource.AccessKeyDetails.UserType,
         } : undefined,
-        s3BucketDetails: finding.Resource?.S3BucketDetails?.map((s3: any) => ({
+        s3BucketDetails: finding.Resource?.S3BucketDetails?.map((s3) => ({
           arn: s3.Arn,
           name: s3.Name,
           type: s3.Type,
           createdAt: s3.CreatedAt ? new Date(s3.CreatedAt) : undefined,
           owner: s3.Owner ? { id: s3.Owner.Id } : undefined,
-          tags: s3.Tags?.map((t: any) => ({ key: t.Key!, value: t.Value! })),
+          tags: s3.Tags?.map((t) => ({ key: t.Key!, value: t.Value! })),
           publicAccess: s3.PublicAccess ? {
             permissionConfiguration: s3.PublicAccess.PermissionConfiguration,
             effectivePermission: s3.PublicAccess.EffectivePermission,
@@ -1133,7 +1133,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           } : undefined,
         } : undefined,
         evidence: finding.Service?.Evidence ? {
-          threatIntelligenceDetails: finding.Service.Evidence.ThreatIntelligenceDetails?.map((ti: any) => ({
+          threatIntelligenceDetails: finding.Service.Evidence.ThreatIntelligenceDetails?.map((ti) => ({
             threatListName: ti.ThreatListName,
             threatNames: ti.ThreatNames,
           })),
@@ -1173,7 +1173,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
     if (includeAliases) {
       try {
         const aliasResp = await kmsClient.send(new ListAliasesCommand({ KeyId: keyId }));
-        aliases = (aliasResp.Aliases || []).map((a: any) => a.AliasName!);
+        aliases = (aliasResp.Aliases || []).map((a) => a.AliasName!);
       } catch {
         // Ignore errors
       }
@@ -1182,7 +1182,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
     if (includeTags) {
       try {
         const tagsResp = await kmsClient.send(new ListResourceTagsCommand({ KeyId: keyId }));
-        tags = (tagsResp.Tags || []).reduce((acc: Record<string, string>, t: any) => {
+        tags = (tagsResp.Tags || []).reduce((acc: Record<string, string>, t) => {
           if (t.TagKey && t.TagValue) acc[t.TagKey] = t.TagValue;
           return acc;
         }, {} as Record<string, string>);
@@ -1230,7 +1230,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           arn: metadata.MultiRegionConfiguration.PrimaryKey.Arn!,
           region: metadata.MultiRegionConfiguration.PrimaryKey.Region!,
         } : undefined,
-        replicaKeys: metadata.MultiRegionConfiguration.ReplicaKeys?.map((r: any) => ({
+        replicaKeys: metadata.MultiRegionConfiguration.ReplicaKeys?.map((r) => ({
           arn: r.Arn!,
           region: r.Region!,
         })),
@@ -1264,7 +1264,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
       deletedDate: secret.DeletedDate,
       createdDate: secret.CreatedDate!,
       primaryRegion: secret.PrimaryRegion,
-      tags: (secret.Tags || []).reduce((acc: Record<string, string>, t: any) => {
+      tags: (secret.Tags || []).reduce((acc: Record<string, string>, t) => {
         if (t.Key && t.Value) acc[t.Key] = t.Value;
         return acc;
       }, {} as Record<string, string>),
@@ -1306,7 +1306,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
       action: finding.action,
       condition: finding.condition as AccessAnalyzerFinding['condition'],
       error: finding.error,
-      sources: finding.sources?.map((s: any) => ({
+      sources: finding.sources?.map((s) => ({
         type: s.type as 'POLICY' | 'BUCKET_ACL' | 'S3_ACCESS_POINT' | 'S3_ACCESS_POINT_ACCOUNT',
         detail: s.detail ? {
           accessPointArn: s.detail.accessPointArn,
@@ -1881,7 +1881,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           MaxResults: options.maxResults || 100,
         }));
 
-        const findings = (response.Findings || []).map((f: any) => securityHubFindingToInfo(f, region));
+        const findings = (response.Findings || []).map((f) => securityHubFindingToInfo(f, region));
 
         return {
           success: true,
@@ -1968,9 +1968,9 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
         
         // Get enabled standards
         const enabledResp = await client.send(new GetEnabledStandardsCommand({}));
-        const enabledArns = new Set((enabledResp.StandardsSubscriptions || []).map((s: any) => s.StandardsArn));
+        const enabledArns = new Set((enabledResp.StandardsSubscriptions || []).map((s) => s.StandardsArn));
 
-        const standards: SecurityStandard[] = (standardsResp.Standards || []).map((s: any) => ({
+        const standards: SecurityStandard[] = (standardsResp.Standards || []).map((s) => ({
           standardsArn: s.StandardsArn!,
           name: s.Name!,
           description: s.Description,
@@ -2072,7 +2072,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           FindingIds: listResp.FindingIds,
         }));
 
-        const findings = (findingsResp.Findings || []).map((f: any) => guardDutyFindingToInfo(f, region));
+        const findings = (findingsResp.Findings || []).map((f) => guardDutyFindingToInfo(f, region));
 
         return {
           success: true,
@@ -2391,7 +2391,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           SortOrder: options.sortOrder,
         }));
 
-        const secrets = (response.SecretList || []).map((s: any) => secretToInfo(s, region));
+        const secrets = (response.SecretList || []).map((s) => secretToInfo(s, region));
 
         return {
           success: true,
@@ -2433,14 +2433,14 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           deletedDate: response.DeletedDate,
           createdDate: response.CreatedDate!,
           primaryRegion: response.PrimaryRegion,
-          replicationStatus: response.ReplicationStatus?.map((r: any) => ({
+          replicationStatus: response.ReplicationStatus?.map((r) => ({
             region: r.Region!,
             kmsKeyId: r.KmsKeyId,
             status: r.Status as 'InSync' | 'Failed' | 'InProgress',
             statusMessage: r.StatusMessage,
             lastAccessedDate: r.LastAccessedDate,
           })),
-          tags: (response.Tags || []).reduce((acc: Record<string, string>, t: any) => {
+          tags: (response.Tags || []).reduce((acc: Record<string, string>, t) => {
             if (t.Key && t.Value) acc[t.Key] = t.Value;
             return acc;
           }, {} as Record<string, string>),
@@ -2623,7 +2623,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
         const client = createAccessAnalyzerClient(targetRegion);
 
         const response = await client.send(new ListAnalyzersCommand({}));
-        const analyzers = (response.analyzers || []).map((a: any) => analyzerToInfo(a, targetRegion));
+        const analyzers = (response.analyzers || []).map((a) => analyzerToInfo(a, targetRegion));
 
         return {
           success: true,
@@ -2676,7 +2676,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           } : undefined,
         }));
 
-        const findings = (response.findings || []).map((f: any) => accessAnalyzerFindingToInfo(f, region, analyzerArn));
+        const findings = (response.findings || []).map((f) => accessAnalyzerFindingToInfo(f, region, analyzerArn));
 
         return {
           success: true,

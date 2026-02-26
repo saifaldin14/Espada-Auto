@@ -109,7 +109,7 @@ export interface PaginateOptions<TOutput> {
  * const pages = await paginate(ec2, DescribeInstancesCommand, { Filters: [] }, { tokenField: "NextToken" });
  */
 export async function paginate<
-  TClient extends { send: (cmd: any) => Promise<any> },
+  TClient extends { send: (cmd: unknown) => Promise<unknown> },
   TInput extends Record<string, unknown>,
   TOutput extends Record<string, unknown>,
 >(

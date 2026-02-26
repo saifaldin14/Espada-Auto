@@ -102,7 +102,7 @@ export class Orchestrator {
     let layers: PlanStep[][];
     try {
       layers = topologicalSort(plan.steps);
-    } catch (err: any) {
+    } catch (err: unknown) {
       const now = new Date().toISOString();
       return {
         planId: plan.id,
@@ -348,7 +348,7 @@ export class Orchestrator {
         }
       }
       resolvedParams = resolveStepParams(step, outputsMap, plan.globalParams ?? {});
-    } catch (err: any) {
+    } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       stepState.status = "failed";
       stepState.completedAt = new Date().toISOString();
@@ -433,7 +433,7 @@ export class Orchestrator {
           outputs,
         });
         return { stepId: step.id, stepName: step.name, stepType: step.type, status: "succeeded", durationMs: duration, outputs };
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastError = err instanceof Error ? err : new Error(String(err));
         stepState.retryCount = attempt;
 
@@ -548,7 +548,7 @@ export class Orchestrator {
           timestamp: new Date().toISOString(),
           message: `Successfully rolled back step "${step.name}"`,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
         const ses = state.steps.get(step.id);
         if (ses) ses.rollbackError = errMsg;

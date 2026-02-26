@@ -947,9 +947,9 @@ export interface NotificationPayload {
  * Guardrails policy
  */
 export interface GuardrailsPolicy {
-  success: any;
-  error: any;
-  data: any;
+  success: unknown;
+  error: unknown;
+  data: unknown;
   /** Policy ID */
   id: string;
   /** Policy name */

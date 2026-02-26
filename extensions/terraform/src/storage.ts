@@ -117,12 +117,12 @@ export class SQLiteTerraformStorage implements TerraformStorage {
   }
 
   async getWorkspace(id: string): Promise<TerraformWorkspace | null> {
-    const row = this.db!.prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as any;
+    const row = this.db!.prepare("SELECT * FROM workspaces WHERE id = ?").get(id) as Record<string, unknown> | undefined;
     return row ? rowToWorkspace(row) : null;
   }
 
   async listWorkspaces(): Promise<TerraformWorkspace[]> {
-    return (this.db!.prepare("SELECT * FROM workspaces ORDER BY name").all() as any[]).map(rowToWorkspace);
+    return (this.db!.prepare("SELECT * FROM workspaces ORDER BY name").all() as Record<string, unknown>[]).map(rowToWorkspace);
   }
 
   async deleteWorkspace(id: string): Promise<boolean> {
@@ -135,8 +135,8 @@ export class SQLiteTerraformStorage implements TerraformStorage {
   }
 
   async getDriftHistory(stateId: string, limit = 10): Promise<DriftResult[]> {
-    const rows = this.db!.prepare("SELECT * FROM drift_results WHERE state_id = ? ORDER BY detected_at DESC LIMIT ?").all(stateId, limit) as any[];
-    return rows.map((r) => JSON.parse(r.result_json));
+    const rows = this.db!.prepare("SELECT * FROM drift_results WHERE state_id = ? ORDER BY detected_at DESC LIMIT ?").all(stateId, limit) as Record<string, unknown>[];
+    return rows.map((r) => JSON.parse(r.result_json as string));
   }
 
   async acquireLock(lock: StateLock): Promise<boolean> {
@@ -154,9 +154,9 @@ export class SQLiteTerraformStorage implements TerraformStorage {
   }
 
   async getLock(stateId: string): Promise<StateLock | null> {
-    const row = this.db!.prepare("SELECT * FROM state_locks WHERE state_id = ?").get(stateId) as any;
+    const row = this.db!.prepare("SELECT * FROM state_locks WHERE state_id = ?").get(stateId) as Record<string, unknown> | undefined;
     if (!row) return null;
-    return { id: row.lock_id, stateId: row.state_id, operation: row.operation, lockedBy: row.locked_by, lockedAt: row.locked_at, info: row.info ?? undefined };
+    return { id: row.lock_id as string, stateId: row.state_id as string, operation: row.operation as string, lockedBy: row.locked_by as string, lockedAt: row.locked_at as string, info: (row.info as string) ?? undefined };
   }
 
   async close(): Promise<void> {
@@ -167,15 +167,15 @@ export class SQLiteTerraformStorage implements TerraformStorage {
 
 // ── Helpers ─────────────────────────────────────────────────────
 
-function rowToWorkspace(r: any): TerraformWorkspace {
+function rowToWorkspace(r: Record<string, unknown>): TerraformWorkspace {
   return {
-    id: r.id, name: r.name, statePath: r.state_path,
-    backend: r.backend, environment: r.environment,
-    lastPlanAt: r.last_plan_at ?? undefined,
-    lastApplyAt: r.last_apply_at ?? undefined,
-    lastDriftCheckAt: r.last_drift_check_at ?? undefined,
-    resourceCount: r.resource_count,
-    createdAt: r.created_at, updatedAt: r.updated_at,
+    id: r.id as string, name: r.name as string, statePath: r.state_path as string,
+    backend: r.backend as string, environment: r.environment as string,
+    lastPlanAt: (r.last_plan_at as string) ?? undefined,
+    lastApplyAt: (r.last_apply_at as string) ?? undefined,
+    lastDriftCheckAt: (r.last_drift_check_at as string) ?? undefined,
+    resourceCount: r.resource_count as number,
+    createdAt: r.created_at as string, updatedAt: r.updated_at as string,
   };
 }
 

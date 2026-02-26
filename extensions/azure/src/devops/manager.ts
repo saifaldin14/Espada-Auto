@@ -42,7 +42,7 @@ export class AzureDevOpsManager {
 
   async listProjects(): Promise<DevOpsProject[]> {
     return withAzureRetry(async () => {
-      const data = await this.fetchDevOps<{ value: any[] }>("_apis/projects?api-version=7.1");
+      const data = await this.fetchDevOps<{ value: Record<string, unknown>[] }>("_apis/projects?api-version=7.1");
       return (data.value ?? []).map((p) => ({
         id: p.id ?? "",
         name: p.name ?? "",
@@ -57,7 +57,7 @@ export class AzureDevOpsManager {
 
   async listPipelines(projectName: string): Promise<Pipeline[]> {
     return withAzureRetry(async () => {
-      const data = await this.fetchDevOps<{ value: any[] }>(
+      const data = await this.fetchDevOps<{ value: Record<string, unknown>[] }>(
         `${projectName}/_apis/pipelines?api-version=7.1`
       );
       return (data.value ?? []).map((p) => ({
@@ -73,7 +73,7 @@ export class AzureDevOpsManager {
 
   async listRuns(projectName: string, pipelineId: number): Promise<PipelineRun[]> {
     return withAzureRetry(async () => {
-      const data = await this.fetchDevOps<{ value: any[] }>(
+      const data = await this.fetchDevOps<{ value: Record<string, unknown>[] }>(
         `${projectName}/_apis/pipelines/${pipelineId}/runs?api-version=7.1`
       );
       return (data.value ?? []).map((r) => ({
@@ -113,22 +113,22 @@ export class AzureDevOpsManager {
     if (!response.ok) {
       throw new Error(`DevOps API error: ${response.status} ${response.statusText}`);
     }
-    const r = (await response.json()) as any;
+    const r = (await response.json()) as Record<string, unknown>;
     return {
-      id: r.id ?? 0,
-      name: r.name ?? "",
+      id: (r.id as number) ?? 0,
+      name: (r.name as string) ?? "",
       pipelineId,
-      state: r.state ?? "",
-      result: r.result,
-      createdDate: r.createdDate,
-      url: r.url ?? "",
-      templateParameters: r.templateParameters,
+      state: (r.state as string) ?? "",
+      result: r.result as string | undefined,
+      createdDate: r.createdDate as string | undefined,
+      url: (r.url as string) ?? "",
+      templateParameters: r.templateParameters as Record<string, string> | undefined,
     };
   }
 
   async listRepositories(projectName: string): Promise<Repository[]> {
     return withAzureRetry(async () => {
-      const data = await this.fetchDevOps<{ value: any[] }>(
+      const data = await this.fetchDevOps<{ value: Record<string, unknown>[] }>(
         `${projectName}/_apis/git/repositories?api-version=7.1`
       );
       return (data.value ?? []).map((r) => ({
