@@ -40,12 +40,12 @@ export class AzureCostManager {
       }));
       const result = await client.query.usage(scope, {
         type: "ActualCost",
-        timeframe: (options?.timeframe as any) ?? "MonthToDate",
+        timeframe: (options?.timeframe ?? "MonthToDate") as string,
         timePeriod: options?.timePeriod
           ? { from: new Date(options.timePeriod.from), to: new Date(options.timePeriod.to) }
           : undefined,
         dataset: {
-          granularity: (options?.granularity as any) ?? "None",
+          granularity: (options?.granularity ?? "None") as string,
           aggregation: { totalCost: { name: "Cost", function: "Sum" } },
           grouping: grouping.length > 0 ? grouping : undefined,
         },
@@ -66,10 +66,10 @@ export class AzureCostManager {
       const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
       const result = await client.forecast.usage(scope, {
         type: "ActualCost",
-        timeframe: (options?.timeframe as any) ?? "MonthToDate",
+        timeframe: (options?.timeframe ?? "MonthToDate") as string,
         timePeriod: { from: now, to: endDate },
         dataset: {
-          granularity: "Daily" as any,
+          granularity: "Daily" as string,
           aggregation: { totalCost: { name: "Cost", function: "Sum" } },
         },
       });
@@ -96,7 +96,7 @@ export class AzureCostManager {
           name: b.name ?? "",
           amount: b.amount ?? 0,
           currency: "USD",
-          timeGrain: (b.timeGrain as any) ?? "Monthly",
+          timeGrain: (b.timeGrain as Budget["timeGrain"] | undefined) ?? "Monthly",
           currentSpend: b.currentSpend?.amount ?? 0,
           notifications: Object.values(b.notifications ?? {}).map((n) => ({
             threshold: n.threshold ?? 0,

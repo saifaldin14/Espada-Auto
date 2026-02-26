@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { SecureScore, SecurityAssessment, SecurityAlert, SecurityRecommendation } from "./types.js";
+import type { SecureScore, SecurityAssessment, SecurityAlert, SecurityRecommendation, SecuritySeverity } from "./types.js";
 
 export class AzureSecurityManager {
   private credentialsManager: AzureCredentialsManager;
@@ -35,14 +35,14 @@ export class AzureSecurityManager {
       const client = await this.getClient();
       const results: SecureScore[] = [];
       for await (const s of client.secureScores.list()) {
-        const score = (s as any).score ?? (s as any).scoreDetails ?? {};
+        const score = (s as any).score ?? (s as any).scoreDetails ?? {}; // SDK typing gap: score shape varies across SDK versions
         results.push({
           id: s.id ?? "",
           displayName: s.displayName ?? "",
-          currentScore: score.current ?? (s as any).current ?? 0,
-          maxScore: score.max ?? (s as any).max ?? 0,
+          currentScore: score.current ?? (s as any).current ?? 0, // SDK typing gap
+          maxScore: score.max ?? (s as any).max ?? 0, // SDK typing gap
           percentage: score.percentage ?? 0,
-          weight: (s as any).weight ?? 0,
+          weight: (s as any).weight ?? 0, // SDK typing gap
         });
       }
       return results;
@@ -60,8 +60,8 @@ export class AzureSecurityManager {
           name: a.name ?? "",
           displayName: a.displayName ?? "",
           status: a.status?.code ?? "",
-          severity: (a.metadata?.severity as any) ?? "Medium",
-          resourceId: a.resourceDetails ? (a.resourceDetails as any).id : undefined,
+          severity: ((a.metadata?.severity ?? "Medium") as string as SecuritySeverity),
+          resourceId: a.resourceDetails ? (a.resourceDetails as { id?: string }).id : undefined,
           description: a.metadata?.description,
           remediation: a.metadata?.remediationDescription,
           categories: a.metadata?.categories,
@@ -84,7 +84,7 @@ export class AzureSecurityManager {
           name: alert.name ?? "",
           alertDisplayName: alert.alertDisplayName ?? "",
           alertType: alert.alertType ?? "",
-          severity: (alert.severity as any) ?? "Medium",
+          severity: ((alert.severity ?? "Medium") as string as SecuritySeverity),
           status: alert.status ?? "",
           startTimeUtc: alert.startTimeUtc?.toISOString(),
           endTimeUtc: alert.endTimeUtc?.toISOString(),
@@ -107,7 +107,7 @@ export class AzureSecurityManager {
             id: a.id ?? "",
             name: a.name ?? "",
             displayName: a.displayName ?? a.metadata.displayName ?? "",
-            severity: (a.metadata.severity as any) ?? "Medium",
+            severity: ((a.metadata.severity ?? "Medium") as string as SecuritySeverity),
             status: a.status?.code ?? "",
             description: a.metadata.description,
             remediationDescription: a.metadata.remediationDescription,

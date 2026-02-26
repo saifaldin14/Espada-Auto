@@ -2,7 +2,7 @@ import type { EspadaPluginApi } from "espada/plugin-sdk";
 import type { AzurePluginState } from "./plugin-state.js";
 import { Orchestrator, listBlueprints, getBlueprint, validatePlan } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, verify, formatReport } from "./advisor/index.js";
-import type { PromptSession, PromptAnswers } from "./advisor/index.js";
+import type { PromptSession, PromptAnswers, AdvisorOptions } from "./advisor/index.js";
 
 export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginState): void {
   // =========================================================================
@@ -665,7 +665,7 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown> };
       if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
       const analysis = analyzeProject(params.projectPath);
-      const recommendation = recommend(analysis, params.options as any);
+      const recommendation = recommend(analysis, params.options as AdvisorOptions | undefined);
       opts.respond(true, { data: recommendation });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
@@ -675,7 +675,7 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
     try {
       const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown>; dryRun?: boolean };
       if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
-      const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as any);
+      const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as AdvisorOptions | undefined);
       if (!plan) {
         opts.respond(true, { data: { recommendation, plan: null, validationIssues, executed: false } });
         return;
@@ -691,7 +691,7 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown> };
       if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
       const analysis = analyzeProject(params.projectPath);
-      const rec = recommend(analysis, params.options as any);
+      const rec = recommend(analysis, params.options as AdvisorOptions | undefined);
       const session = createPromptSession(rec);
       opts.respond(true, { data: session });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
@@ -711,7 +711,7 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
     try {
       const params = (opts.params ?? {}) as { projectPath: string; options?: Record<string, unknown>; dryRun?: boolean; skipProbes?: boolean };
       if (!params.projectPath) { opts.respond(false, undefined, { code: "INVALID_PARAMS", message: "projectPath is required" }); return; }
-      const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as any);
+      const { recommendation, plan, validationIssues } = recommendAndPlan(analyzeProject(params.projectPath), params.options as AdvisorOptions | undefined);
       if (!plan) {
         opts.respond(true, { data: { recommendation, plan: null, validationIssues, verified: false } });
         return;

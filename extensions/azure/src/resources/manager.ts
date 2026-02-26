@@ -106,7 +106,7 @@ export class AzureResourceManager {
           id: d.id ?? "",
           name: d.name ?? "",
           resourceGroup,
-          provisioningState: (d.properties?.provisioningState as any) ?? "Succeeded",
+          provisioningState: (d.properties?.provisioningState ?? "Succeeded") as string,
           timestamp: d.properties?.timestamp?.toISOString(),
           duration: d.properties?.duration,
           mode: d.properties?.mode,
@@ -146,7 +146,7 @@ export class AzureResourceManager {
         name: result.name ?? "",
         resourceGroup,
         provisioningState:
-          (result.properties?.provisioningState as any) ?? "Succeeded",
+          (result.properties?.provisioningState ?? "Succeeded") as string,
         timestamp: result.properties?.timestamp?.toISOString(),
         duration: result.properties?.duration,
         outputs: result.properties?.outputs as Record<string, unknown>,

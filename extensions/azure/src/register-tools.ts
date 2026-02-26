@@ -10,7 +10,7 @@ import type { AzurePluginState } from "./plugin-state.js";
 import type { AzurePagedResult } from "./types.js";
 import { validatePagination } from "./pagination.js";
 import { Orchestrator, listBlueprints, getBlueprint, validatePlan } from "./orchestration/index.js";
-import type { OrchestrationOptions } from "./orchestration/index.js";
+import type { OrchestrationOptions, ExecutionPlan } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, verify, formatReport } from "./advisor/index.js";
 import type { PromptSession, PromptAnswers } from "./advisor/index.js";
 
@@ -938,7 +938,7 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
         token: params.token as string,
         label: params.label as string,
         organization: params.organization as string | undefined,
-        scopes: params.scopes as any,
+        scopes: params.scopes as string[] | undefined,
         expiresAt: params.expiresAt as string | undefined,
         validate: params.validate as boolean | undefined,
       });
@@ -1236,7 +1236,7 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       required: ["plan"],
     },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
-      const validation = validatePlan(params.plan as any);
+      const validation = validatePlan(params.plan as ExecutionPlan);
       return {
         content: [{ type: "text" as const, text: JSON.stringify(validation, null, 2) }],
         details: validation,
@@ -1263,7 +1263,7 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       if (params.dryRun !== undefined) opts.dryRun = Boolean(params.dryRun);
       if (params.maxConcurrency !== undefined) opts.maxConcurrency = Number(params.maxConcurrency);
       const runner = new Orchestrator({ ...state.orchestrator["options"], ...opts });
-      const result = await runner.execute(params.plan as any);
+      const result = await runner.execute(params.plan as ExecutionPlan);
       return {
         content: [{ type: "text" as const, text: JSON.stringify({ status: result.status, totalDurationMs: result.totalDurationMs, stepCount: result.steps.length, steps: result.steps.map((s) => ({ stepId: s.stepId, status: s.status, durationMs: s.durationMs, error: s.error })), errors: result.errors }, null, 2) }],
         details: result,

@@ -170,10 +170,11 @@ export class AzureKeyVaultManager {
     return withAzureRetry(async () => {
       const keys: KeyVaultKey[] = [];
       for await (const k of client.keys.list(resourceGroup, vaultName)) {
+        const keyProps = k as { properties?: { kty?: string; keyOps?: string[] } };
         keys.push({
           id: k.id ?? "", name: k.name ?? "",
-          keyType: (k as any).properties?.kty,
-          keyOps: (k as any).properties?.keyOps,
+          keyType: keyProps.properties?.kty,
+          keyOps: keyProps.properties?.keyOps,
           tags: k.tags as Record<string, string>,
         });
       }

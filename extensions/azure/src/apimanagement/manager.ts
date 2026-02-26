@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { APIMService, APIProduct, APIDefinition, APIMSubscription } from "./types.js";
+import type { APIMService, APIProduct, APIDefinition, APIMSubscription, APIMSkuName } from "./types.js";
 
 export class AzureAPIManagementManager {
   private credentialsManager: AzureCredentialsManager;
@@ -44,7 +44,7 @@ export class AzureAPIManagementManager {
           resourceGroup: s.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
           location: s.location ?? "",
           sku: {
-            name: (s.sku?.name as any) ?? "Developer",
+            name: ((s.sku?.name ?? "Developer") as string as APIMSkuName),
             capacity: s.sku?.capacity ?? 0,
           },
           gatewayUrl: s.gatewayUrl,

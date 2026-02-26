@@ -68,7 +68,7 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.credentialsManager = createCredentialsManager({
         defaultSubscription: subscriptionId,
         defaultTenantId: config.defaultTenantId,
-        credentialMethod: (config.credentialMethod as any) ?? "default",
+        credentialMethod: (config.credentialMethod ?? "default") as "default" | "cli" | "service-principal" | "managed-identity" | "browser",
       });
       await state.credentialsManager.initialize();
 

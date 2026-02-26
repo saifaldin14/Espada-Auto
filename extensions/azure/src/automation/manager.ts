@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { AutomationAccount, Runbook, RunbookJob, Schedule } from "./types.js";
+import type { AutomationAccount, AutomationAccountState, Runbook, RunbookJob, Schedule } from "./types.js";
 
 export class AzureAutomationManager {
   private credentialsManager: AzureCredentialsManager;
@@ -37,14 +37,14 @@ export class AzureAutomationManager {
       const results: AutomationAccount[] = [];
       const iter = resourceGroup
         ? client.automationAccount.listByResourceGroup(resourceGroup)
-        : (client.automationAccount as any).list();
+        : (client.automationAccount as any).list(); // SDK typing gap: .list() not in typings
       for await (const a of iter) {
         results.push({
           id: a.id ?? "",
           name: a.name ?? "",
           resourceGroup: a.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
           location: a.location ?? "",
-          state: a.state as any,
+          state: (a.state as string as AutomationAccountState | undefined) ?? "Ok",
           sku: a.sku?.name,
           createdTime: a.creationTime?.toISOString(),
           lastModifiedTime: a.lastModifiedTime?.toISOString(),
@@ -58,7 +58,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: Runbook[] = [];
-      const iter = (client.runbook as any).listByAutomationAccount(resourceGroup, accountName);
+      const iter = (client.runbook as any).listByAutomationAccount(resourceGroup, accountName); // SDK typing gap
       for await (const rb of iter) {
         results.push({
           id: rb.id ?? "",
@@ -127,7 +127,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: RunbookJob[] = [];
-      for await (const job of (client.job as any).listByAutomationAccount(
+      for await (const job of (client.job as any).listByAutomationAccount( // SDK typing gap
         resourceGroup,
         accountName
       )) {
@@ -151,7 +151,7 @@ export class AzureAutomationManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const results: Schedule[] = [];
-      for await (const s of (client.schedule as any).listByAutomationAccount(
+      for await (const s of (client.schedule as any).listByAutomationAccount( // SDK typing gap
         resourceGroup,
         accountName
       )) {

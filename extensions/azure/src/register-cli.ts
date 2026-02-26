@@ -1143,7 +1143,7 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
               token: opts.token,
               label: opts.label,
               organization: opts.org,
-              scopes: opts.scopes?.split(",").map(s => s.trim()) as any,
+              scopes: opts.scopes?.split(",").map(s => s.trim()) as string[] | undefined,
               expiresAt: opts.expires,
               validate: opts.validate,
             });

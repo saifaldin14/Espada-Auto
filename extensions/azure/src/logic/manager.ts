@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { LogicAppWorkflow, LogicAppRun, LogicAppTrigger } from "./types.js";
+import type { LogicAppWorkflow, LogicAppRun, LogicAppTrigger, LogicAppState } from "./types.js";
 
 export class AzureLogicAppsManager {
   private credentialsManager: AzureCredentialsManager;
@@ -43,7 +43,7 @@ export class AzureLogicAppsManager {
           name: w.name ?? "",
           resourceGroup: w.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
           location: w.location ?? "",
-          state: (w.state as any) ?? "Enabled",
+          state: ((w.state ?? "Enabled") as string as LogicAppState),
           version: w.version,
           accessEndpoint: w.accessEndpoint,
           provisioningState: w.provisioningState,
@@ -65,7 +65,7 @@ export class AzureLogicAppsManager {
         name: w.name ?? "",
         resourceGroup,
         location: w.location ?? "",
-        state: (w.state as any) ?? "Enabled",
+        state: ((w.state ?? "Enabled") as string as LogicAppState),
         version: w.version,
         accessEndpoint: w.accessEndpoint,
         provisioningState: w.provisioningState,
@@ -116,7 +116,7 @@ export class AzureLogicAppsManager {
           name: t.name ?? "",
           workflowName,
           type: t.type ?? "",
-          state: (t.state as any) ?? "Enabled",
+          state: ((t.state ?? "Enabled") as string),
           provisioningState: t.provisioningState,
           createdTime: t.createdTime?.toISOString(),
           changedTime: t.changedTime?.toISOString(),

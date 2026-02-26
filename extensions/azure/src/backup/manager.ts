@@ -78,7 +78,7 @@ export class AzureBackupManager {
           id: p.id ?? "",
           name: p.name ?? "",
           vaultName,
-          backupManagementType: (p.properties as any)?.backupManagementType,
+          backupManagementType: (p.properties as { backupManagementType?: string } | undefined)?.backupManagementType,
         });
       }
       return results;
@@ -95,7 +95,7 @@ export class AzureBackupManager {
       const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
       const results: BackupItem[] = [];
       for await (const item of client.backupProtectedItems.list(vaultName, resourceGroup)) {
-        const props = item.properties as any;
+        const props = item.properties as { sourceResourceId?: string; workloadType?: string; protectionStatus?: string; protectionState?: string; lastBackupTime?: Date; policyId?: string } | undefined;
         results.push({
           id: item.id ?? "",
           name: item.name ?? "",
@@ -122,7 +122,7 @@ export class AzureBackupManager {
       const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
       const results: BackupJob[] = [];
       for await (const job of client.backupJobs.list(vaultName, resourceGroup)) {
-        const props = job.properties as any;
+        const props = job.properties as { operation?: string; status?: string; startTime?: Date; endTime?: Date; entityFriendlyName?: string; backupManagementType?: string; duration?: string } | undefined;
         results.push({
           id: job.id ?? "",
           name: job.name ?? "",

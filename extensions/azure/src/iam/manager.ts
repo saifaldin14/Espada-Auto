@@ -87,7 +87,7 @@ export class AzureIAMManager {
       const result = await client.roleAssignments.create(options.scope, assignmentName, {
         principalId: options.principalId,
         roleDefinitionId: options.roleDefinitionId,
-        principalType: options.principalType as any,
+        principalType: options.principalType as "User" | "Group" | "ServicePrincipal" | "ForeignGroup" | undefined,
       });
       return {
         id: result.id ?? "",

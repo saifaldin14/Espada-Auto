@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { CDNProfile, CDNEndpoint, CDNCustomDomain } from "./types.js";
+import type { CDNProfile, CDNEndpoint, CDNCustomDomain, CDNSkuName } from "./types.js";
 
 export class AzureCDNManager {
   private credentialsManager: AzureCredentialsManager;
@@ -43,7 +43,7 @@ export class AzureCDNManager {
           name: p.name ?? "",
           resourceGroup: p.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
           location: p.location ?? "",
-          sku: (p.sku?.name as any) ?? "Standard_Microsoft",
+          sku: ((p.sku?.name ?? "Standard_Microsoft") as string as CDNSkuName),
           provisioningState: p.provisioningState,
           resourceState: p.resourceState,
           frontDoorId: p.frontDoorId,

@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { RedisCache, RedisFirewallRule, RedisAccessKeys } from "./types.js";
+import type { RedisCache, RedisFirewallRule, RedisAccessKeys, RedisSkuName } from "./types.js";
 
 export class AzureRedisManager {
   private credentialsManager: AzureCredentialsManager;
@@ -47,7 +47,7 @@ export class AzureRedisManager {
           port: r.port,
           sslPort: r.sslPort,
           sku: {
-            name: (r.sku?.name as any) ?? "Standard",
+            name: ((r.sku?.name ?? "Standard") as string as RedisSkuName),
             family: r.sku?.family ?? "",
             capacity: r.sku?.capacity ?? 0,
           },
@@ -74,7 +74,7 @@ export class AzureRedisManager {
         port: r.port,
         sslPort: r.sslPort,
         sku: {
-          name: (r.sku?.name as any) ?? "Standard",
+          name: ((r.sku?.name ?? "Standard") as string as RedisSkuName),
           family: r.sku?.family ?? "",
           capacity: r.sku?.capacity ?? 0,
         },
@@ -124,7 +124,7 @@ export class AzureRedisManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       const keys = await client.redis.regenerateKey(resourceGroup, cacheName, {
-        keyType: keyType as any,
+        keyType: keyType as "Primary" | "Secondary",
       });
       return {
         primaryKey: keys.primaryKey ?? "",

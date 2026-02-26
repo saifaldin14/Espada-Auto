@@ -12,6 +12,7 @@ import type {
   PolicyAssignment,
   PolicyComplianceState,
   PolicyRemediationTask,
+  PolicyType,
 } from "./types.js";
 
 export class AzurePolicyManager {
@@ -45,7 +46,7 @@ export class AzurePolicyManager {
           name: pd.name ?? "",
           displayName: pd.displayName,
           description: pd.description,
-          policyType: (pd.policyType as any) ?? "NotSpecified",
+          policyType: ((pd.policyType ?? "NotSpecified") as string as PolicyType),
           mode: pd.mode ?? "",
           metadata: pd.metadata as Record<string, unknown>,
           parameters: pd.parameters as Record<string, unknown>,
@@ -101,7 +102,7 @@ export class AzurePolicyManager {
         policyDefinitionId: options.policyDefinitionId,
         displayName: options.displayName,
         description: options.description,
-        parameters: options.parameters as any,
+        parameters: options.parameters as Record<string, { value: unknown }> | undefined,
       });
       return {
         id: result.id ?? "",
@@ -135,7 +136,7 @@ export class AzurePolicyManager {
       )) {
         results.push({
           policyAssignmentId: state.policyAssignmentId ?? "",
-          complianceState: (state.complianceState as any) ?? "Unknown",
+          complianceState: ((state.complianceState ?? "Unknown") as string as PolicyComplianceState["complianceState"]),
           resourceCount: 1,
           nonCompliantResources: state.complianceState === "NonCompliant" ? 1 : 0,
           nonCompliantPolicies: 0,

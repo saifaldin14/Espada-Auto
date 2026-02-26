@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { CognitiveServicesAccount, CognitiveServicesDeployment, AIModel } from "./types.js";
+import type { CognitiveServicesAccount, CognitiveServicesDeployment, AIModel, CognitiveServicesKind } from "./types.js";
 
 export class AzureAIManager {
   private credentialsManager: AzureCredentialsManager;
@@ -44,7 +44,7 @@ export class AzureAIManager {
           name: a.name ?? "",
           resourceGroup: a.id?.split("/resourceGroups/")[1]?.split("/")[0] ?? "",
           location: a.location ?? "",
-          kind: (a.kind as any) ?? "CognitiveServices",
+          kind: ((a.kind ?? "CognitiveServices") as string as CognitiveServicesKind),
           sku: a.sku?.name,
           endpoint: a.properties?.endpoint,
           provisioningState: a.properties?.provisioningState,
@@ -65,7 +65,7 @@ export class AzureAIManager {
         name: a.name ?? "",
         resourceGroup,
         location: a.location ?? "",
-        kind: (a.kind as any) ?? "CognitiveServices",
+        kind: ((a.kind ?? "CognitiveServices") as string as CognitiveServicesKind),
         sku: a.sku?.name,
         endpoint: a.properties?.endpoint,
         provisioningState: a.properties?.provisioningState,
