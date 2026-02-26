@@ -5,6 +5,7 @@ import type { AzurePagedResult } from "./types.js";
 import { validatePagination } from "./pagination.js";
 import { Orchestrator } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, verify, formatReport } from "./advisor/index.js";
+import type { TemplateCategory } from "./catalog/templates.js";
 
 export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState): void {
     api.registerCli((ctx: EspadaPluginCliContext) => {
@@ -2560,6 +2561,423 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
           console.log(theme.muted(`\nTotal: ${endpoints.length} endpoint(s)`));
         } catch (error) {
           console.error(theme.error(`Failed to list Digital Twins endpoints: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // =======================================================================
+    // Intent-Driven Infrastructure Orchestration (IDIO)
+    // =======================================================================
+    const idioCmd = az.command("idio").description("Intent-driven infrastructure orchestration");
+
+    idioCmd
+      .command("compile")
+      .description("Compile an application intent into an infrastructure plan")
+      .requiredOption("--file <path>", "Path to intent JSON file")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { file: string };
+        if (!state.intentCompiler) { console.error(theme.error("Intent compiler not initialized")); return; }
+        try {
+          const { readFileSync } = await import("fs");
+          const intent = JSON.parse(readFileSync(options.file, "utf-8"));
+          const plan = state.intentCompiler.compile(intent);
+          console.log("\nInfrastructure Plan:\n");
+          console.log(`  Resources: ${plan.resources.length}`);
+          console.log(`  Estimated Cost: $${plan.estimatedMonthlyCostUsd}/month`);
+          if (plan.policyValidation.violations.length > 0) {
+            console.log(theme.warn(`  Policy Violations: ${plan.policyValidation.violations.length}`));
+          }
+          console.log(`  Execution Order: ${plan.executionOrder.length} layers`);
+          console.log(`\n${JSON.stringify(plan, null, 2)}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to compile intent: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    idioCmd
+      .command("validate")
+      .description("Validate an application intent")
+      .requiredOption("--file <path>", "Path to intent JSON file")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { file: string };
+        if (!state.intentCompiler) { console.error(theme.error("Intent compiler not initialized")); return; }
+        try {
+          const { readFileSync } = await import("fs");
+          const intent = JSON.parse(readFileSync(options.file, "utf-8"));
+          const result = state.intentCompiler.validateIntent(intent);
+          console.log(result.valid ? theme.success("\n✓ Intent is valid\n") : theme.error("\n✗ Intent has errors\n"));
+          for (const err of result.errors) console.log(theme.error(`  • ${err}`));
+        } catch (error) {
+          console.error(theme.error(`Failed to validate intent: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    idioCmd
+      .command("estimate")
+      .description("Estimate cost for an application intent")
+      .requiredOption("--file <path>", "Path to intent JSON file")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { file: string };
+        if (!state.intentCompiler) { console.error(theme.error("Intent compiler not initialized")); return; }
+        try {
+          const { readFileSync } = await import("fs");
+          const intent = JSON.parse(readFileSync(options.file, "utf-8"));
+          const estimate = state.intentCompiler.estimateCost(intent);
+          console.log("\nCost Estimate:\n");
+          console.log(`  Total: $${estimate.estimatedMonthlyCostUsd}/month`);
+          for (const item of estimate.breakdown) {
+            console.log(`  ${item.resourceName}: $${item.monthlyCostUsd}/month ${theme.muted(`(${item.pricingTier})`)}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Failed to estimate cost: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // =======================================================================
+    // Conversational Assistant
+    // =======================================================================
+    const assistantCmd = az.command("assistant").description("Conversational infrastructure assistant");
+
+    assistantCmd
+      .command("query")
+      .description("Query infrastructure with natural language")
+      .requiredOption("--text <query>", "Natural language query")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { text: string };
+        if (!state.conversationalManager) { console.error(theme.error("Conversational manager not initialized")); return; }
+        try {
+          const result = state.conversationalManager.query(options.text);
+          console.log(`\nCategory: ${result.query.category}`);
+          console.log(`Answer: ${result.answer}`);
+          if (result.suggestions.length > 0) {
+            console.log("\nSuggestions:");
+            for (const s of result.suggestions) console.log(`  • ${s}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Query failed: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    assistantCmd
+      .command("insights")
+      .description("Get proactive infrastructure insights")
+      .action(async () => {
+        if (!state.conversationalManager) { console.error(theme.error("Conversational manager not initialized")); return; }
+        try {
+          const insights = state.conversationalManager.getInsights();
+          if (insights.length === 0) { console.log("No insights available"); return; }
+          console.log("\nInfrastructure Insights:\n");
+          for (const i of insights) {
+            const sev = i.severity === "critical" ? theme.error(i.severity) : i.severity === "warning" ? theme.warn(i.severity) : theme.info(i.severity);
+            console.log(`  [${sev}] ${i.title}`);
+            console.log(`    ${i.description}`);
+            if (i.recommendation) console.log(`    → ${i.recommendation}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Failed to get insights: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    assistantCmd
+      .command("summary")
+      .description("Get infrastructure summary")
+      .action(async () => {
+        if (!state.conversationalManager) { console.error(theme.error("Conversational manager not initialized")); return; }
+        try {
+          const summary = state.conversationalManager.getSummary();
+          console.log("\nInfrastructure Summary:\n");
+          console.log(`  Total Resources: ${summary.totalResources}`);
+          console.log(`  Healthy: ${theme.success(String(summary.healthStatus.healthy))}`);
+          console.log(`  Warning: ${theme.warn(String(summary.healthStatus.degraded))}`);
+          console.log(`  Critical: ${theme.error(String(summary.healthStatus.unhealthy))}`);
+          console.log(`  Regions: ${Object.keys(summary.byRegion).join(", ")}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to get summary: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    assistantCmd
+      .command("wizards")
+      .description("List available creation wizards")
+      .action(async () => {
+        if (!state.conversationalManager) { console.error(theme.error("Conversational manager not initialized")); return; }
+        const wizards = state.conversationalManager.listWizards();
+        console.log("\nAvailable Wizards:\n");
+        for (const w of wizards) {
+          console.log(`  ${theme.info(w.id)}  ${w.name}`);
+          console.log(`    ${theme.muted(w.description)}`);
+        }
+      });
+
+    // =======================================================================
+    // Infrastructure Catalog
+    // =======================================================================
+    const catalogCmd = az.command("catalog").description("Infrastructure template catalog");
+
+    catalogCmd
+      .command("list")
+      .description("List available infrastructure templates")
+      .option("--category <cat>", "Filter by category")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { category?: string };
+        try {
+          const { listTemplates } = await import("./catalog/index.js");
+          const templates = listTemplates(options.category as TemplateCategory | undefined);
+          if (templates.length === 0) { console.log("No templates found"); return; }
+          console.log("\nInfrastructure Templates:\n");
+          for (const t of templates) {
+            console.log(`  ${theme.info(t.id)}  ${t.name}  ${theme.muted(`[${t.category}]`)}`);
+            console.log(`    ${t.description}`);
+            console.log(`    Cost: $${t.costRangeUsd.min}-$${t.costRangeUsd.max}/month  Complexity: ${t.complexity}`);
+          }
+          console.log(theme.muted(`\nTotal: ${templates.length} template(s)`));
+        } catch (error) {
+          console.error(theme.error(`Failed to list templates: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    catalogCmd
+      .command("search")
+      .description("Search templates by query")
+      .requiredOption("--query <q>", "Search query")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { query: string };
+        try {
+          const { searchTemplates } = await import("./catalog/index.js");
+          const results = searchTemplates(options.query);
+          if (results.length === 0) { console.log("No matching templates found"); return; }
+          console.log("\nSearch Results:\n");
+          for (const t of results) {
+            console.log(`  ${theme.info(t.id)}  ${t.name}`);
+            console.log(`    ${t.description}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Search failed: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    catalogCmd
+      .command("get")
+      .description("Get details of a specific template")
+      .requiredOption("--id <templateId>", "Template ID")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { id: string };
+        try {
+          const { getTemplate } = await import("./catalog/index.js");
+          const tmpl = getTemplate(options.id);
+          if (!tmpl) { console.error(theme.error(`Template not found: ${options.id}`)); return; }
+          console.log(`\n${tmpl.name}\n`);
+          console.log(`  ID: ${tmpl.id}`);
+          console.log(`  Category: ${tmpl.category}`);
+          console.log(`  Complexity: ${tmpl.complexity}`);
+          console.log(`  Cost Range: $${tmpl.costRangeUsd.min}-$${tmpl.costRangeUsd.max}/month`);
+          console.log(`  Tags: ${tmpl.tags.join(", ")}`);
+          console.log(`  Required Parameters: ${tmpl.requiredParameters.join(", ")}`);
+          console.log(`\n${JSON.stringify(tmpl.intentTemplate, null, 2)}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to get template: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    catalogCmd
+      .command("categories")
+      .description("List template categories")
+      .action(async () => {
+        try {
+          const { getCategories } = await import("./catalog/index.js");
+          const cats = getCategories();
+          console.log("\nTemplate Categories:\n");
+          for (const c of cats) console.log(`  • ${c}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to list categories: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // =======================================================================
+    // IaC Generation
+    // =======================================================================
+    const iacCmd = az.command("iac").description("Infrastructure as Code generation");
+
+    iacCmd
+      .command("generate")
+      .description("Generate IaC from an infrastructure plan")
+      .requiredOption("--file <path>", "Path to infrastructure plan JSON")
+      .option("--format <fmt>", "Output format: terraform | bicep | arm", "terraform")
+      .option("--output <path>", "Output file path (defaults to stdout)")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { file: string; format: string; output?: string };
+        if (!state.iacManager) { console.error(theme.error("IaC manager not initialized")); return; }
+        try {
+          const { readFileSync, writeFileSync } = await import("fs");
+          const plan = JSON.parse(readFileSync(options.file, "utf-8"));
+          const result = state.iacManager.generate(plan, { format: options.format as never });
+          if (options.output) {
+            writeFileSync(options.output, result.content);
+            console.log(theme.success(`Generated ${result.format} written to ${options.output}`));
+          } else {
+            console.log(result.content);
+          }
+          console.log(theme.muted(`\nFormat: ${result.format}, Resources: ${result.resourceCount}`));
+        } catch (error) {
+          console.error(theme.error(`Failed to generate IaC: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    iacCmd
+      .command("drift")
+      .description("Detect drift between desired and actual resource state")
+      .requiredOption("--desired <path>", "Path to desired state JSON")
+      .requiredOption("--actual <path>", "Path to actual state JSON")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { desired: string; actual: string };
+        if (!state.iacManager) { console.error(theme.error("IaC manager not initialized")); return; }
+        try {
+          const { readFileSync } = await import("fs");
+          const desired = JSON.parse(readFileSync(options.desired, "utf-8"));
+          const actual = JSON.parse(readFileSync(options.actual, "utf-8"));
+          const drift = state.iacManager.detectDrift(desired, actual);
+          if (!drift.driftDetected) { console.log(theme.success("\n✓ No drift detected\n")); return; }
+          console.log(theme.warn(`\n⚠ Drift detected: ${drift.changes.length} change(s)\n`));
+          for (const c of drift.changes) {
+            console.log(`  ${c.property}: ${c.severity}`);
+            if (c.expectedValue !== undefined) console.log(`    Expected: ${JSON.stringify(c.expectedValue)}`);
+            if (c.actualValue !== undefined) console.log(`    Actual:   ${JSON.stringify(c.actualValue)}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Failed to detect drift: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // =======================================================================
+    // Enterprise Services
+    // =======================================================================
+    const enterpriseCmd = az.command("enterprise").description("Enterprise features");
+
+    const tenantCmd = enterpriseCmd.command("tenant").description("Multi-tenancy management");
+    tenantCmd
+      .command("list")
+      .description("List registered tenants")
+      .action(async () => {
+        if (!state.enterpriseServices) { console.error(theme.error("Enterprise services not initialized")); return; }
+        try {
+          const tenants = state.enterpriseServices.tenantManager.listTenants();
+          if (tenants.length === 0) { console.log("No tenants registered"); return; }
+          console.log("\nTenants:\n");
+          for (const t of tenants) {
+            console.log(`  ${theme.info(t.tenantId)}  ${t.displayName}  ${theme.muted(t.isolationLevel)}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Failed to list tenants: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    tenantCmd
+      .command("switch")
+      .description("Switch active tenant")
+      .requiredOption("--tenant-id <id>", "Tenant ID to switch to")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { tenantId: string };
+        if (!state.enterpriseServices) { console.error(theme.error("Enterprise services not initialized")); return; }
+        try {
+          const result = state.enterpriseServices.tenantManager.switchTenant(options.tenantId);
+          if (!result) { console.error(theme.error(`Tenant not found: ${options.tenantId}. Register it first.`)); return; }
+          console.log(theme.success(`\n✓ Switched to tenant: ${result.activeTenantId}`));
+        } catch (error) {
+          console.error(theme.error(`Failed to switch tenant: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    const billingCmd = enterpriseCmd.command("billing").description("Billing and cost management");
+    billingCmd
+      .command("account")
+      .description("Get billing account info")
+      .action(async () => {
+        if (!state.enterpriseServices) { console.error(theme.error("Enterprise services not initialized")); return; }
+        try {
+          const account = await state.enterpriseServices.billingService.getBillingAccount("default");
+          console.log(`\n${account.displayName}\n`);
+          console.log(`  ID: ${account.id}`);
+          console.log(`  Type: ${account.accountType}`);
+          console.log(`  Agreement: ${account.agreementType}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to get billing account: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    billingCmd
+      .command("budgets")
+      .description("List budgets")
+      .action(async () => {
+        if (!state.enterpriseServices) { console.error(theme.error("Enterprise services not initialized")); return; }
+        try {
+          const budgets = state.enterpriseServices.billingService.listBudgets();
+          if (budgets.length === 0) { console.log("No budgets configured"); return; }
+          console.log("\nBudgets:\n");
+          for (const b of budgets) {
+            console.log(`  ${theme.info(b.name)}  $${b.amount}/${b.timeGrain}`);
+          }
+        } catch (error) {
+          console.error(theme.error(`Failed to list budgets: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    billingCmd
+      .command("forecast")
+      .description("Get cost forecast")
+      .option("--months <n>", "Number of months to forecast", parseInt, 3)
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { months: number };
+        if (!state.enterpriseServices) { console.error(theme.error("Enterprise services not initialized")); return; }
+        try {
+          const forecast = await state.enterpriseServices.billingService.getCostForecast("default");
+          console.log(`\nCost Forecast:\n`);
+          console.log(`  Current Monthly: $${forecast.currentMonthSpend}`);
+          console.log(`  Forecasted End: $${forecast.forecastedMonthEnd}`);
+          console.log(`  Confidence: ${forecast.confidence}`);
+        } catch (error) {
+          console.error(theme.error(`Failed to get forecast: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    // =======================================================================
+    // Reconciliation
+    // =======================================================================
+    const reconCmd = az.command("reconciliation").description("Infrastructure reconciliation");
+
+    reconCmd
+      .command("run")
+      .description("Run reconciliation between desired and actual state")
+      .requiredOption("--desired <path>", "Path to desired state JSON")
+      .requiredOption("--actual <path>", "Path to actual state JSON")
+      .option("--auto-remediate", "Auto-remediate safe actions")
+      .action(async (...args: unknown[]) => {
+        const options = (args[args.length - 1] ?? {}) as { desired: string; actual: string; autoRemediate?: boolean };
+        if (!state.reconciliationEngine) { console.error(theme.error("Reconciliation engine not initialized")); return; }
+        try {
+          const { readFileSync } = await import("fs");
+          const desired = JSON.parse(readFileSync(options.desired, "utf-8"));
+          const actual = JSON.parse(readFileSync(options.actual, "utf-8"));
+          const config = { subscriptionId: "default", enableDriftDetection: true, enableComplianceCheck: true, enableCostAnomalyDetection: true, autoRemediate: options.autoRemediate ?? false, dryRun: false };
+          const result = state.reconciliationEngine.reconcile(config, desired, actual);
+          console.log("\nReconciliation Result:\n");
+          console.log(`  Drift:       ${result.summary.driftsDetected > 0 ? theme.warn(String(result.summary.driftsDetected)) : theme.success("0")} resource(s)`);
+          console.log(`  Compliance:  ${result.summary.complianceIssuesFound > 0 ? theme.warn(String(result.summary.complianceIssuesFound)) : theme.success("0")} issue(s)`);
+          console.log(`  Cost:        ${result.summary.costAnomaliesFound > 0 ? theme.warn(String(result.summary.costAnomaliesFound)) : theme.success("0")} anomaly(ies)`);
+          console.log(`  Remediation: ${result.summary.remediationsPlanned} action(s)`);
+        } catch (error) {
+          console.error(theme.error(`Reconciliation failed: ${formatErrorMessage(error)}`));
+        }
+      });
+
+    reconCmd
+      .command("schedules")
+      .description("List reconciliation schedules")
+      .action(async () => {
+        if (!state.reconciliationEngine) { console.error(theme.error("Reconciliation engine not initialized")); return; }
+        const schedules = state.reconciliationEngine.listSchedules();
+        if (schedules.length === 0) { console.log("No schedules configured"); return; }
+        console.log("\nReconciliation Schedules:\n");
+        for (const s of schedules) {
+          console.log(`  ${theme.info(s.id)}  ${s.name}  cron: ${s.cronExpression}  ${s.enabled ? theme.success("enabled") : theme.muted("disabled")}`);
         }
       });
     });

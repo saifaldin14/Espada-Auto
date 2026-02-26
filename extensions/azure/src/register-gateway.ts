@@ -3,6 +3,7 @@ import type { AzurePluginState } from "./plugin-state.js";
 import { Orchestrator, listBlueprints, getBlueprint, validatePlan } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, verify, formatReport } from "./advisor/index.js";
 import type { PromptSession, PromptAnswers, AdvisorOptions } from "./advisor/index.js";
+import type { TemplateCategory } from "./catalog/templates.js";
 
 export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginState): void {
   // =========================================================================
@@ -1374,6 +1375,331 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       const params = (opts.params ?? {}) as { resourceGroup: string; instanceName: string };
       const endpoints = await state.digitalTwinsManager.listEndpoints(params.resourceGroup, params.instanceName);
       opts.respond(true, { data: endpoints });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // Intent-Driven Infrastructure Orchestration (IDIO)
+  // ===========================================================================
+  api.registerGatewayMethod("azure.idio.compile", async (opts) => {
+    if (!state.intentCompiler) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Intent compiler not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { intent: Record<string, unknown> };
+      const plan = state.intentCompiler.compile(params.intent as never);
+      opts.respond(true, { data: plan });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.idio.validate", async (opts) => {
+    if (!state.intentCompiler) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Intent compiler not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { intent: Record<string, unknown> };
+      const result = state.intentCompiler.validateIntent(params.intent as never);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.idio.estimateCost", async (opts) => {
+    if (!state.intentCompiler) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Intent compiler not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { intent: Record<string, unknown> };
+      const estimate = state.intentCompiler.estimateCost(params.intent as never);
+      opts.respond(true, { data: estimate });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // Conversational Assistant
+  // ===========================================================================
+  api.registerGatewayMethod("azure.assistant.query", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { naturalLanguage: string };
+      const result = state.conversationalManager.query(params.naturalLanguage);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.context", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const ctx = state.conversationalManager.getContext();
+      opts.respond(true, { data: ctx });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.trackResource", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { id: string; type: string; name: string; region: string; status: string; tags: Record<string, string>; resourceGroup?: string };
+      state.conversationalManager.trackResource({ ...params, resourceGroup: params.resourceGroup ?? "default", properties: {}, trackedAt: new Date().toISOString() });
+      opts.respond(true, { data: { tracked: params.id } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.untrackResource", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceId: string };
+      state.conversationalManager.untrackResource(params.resourceId);
+      opts.respond(true, { data: { untracked: params.resourceId } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.insights", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const insights = state.conversationalManager.getInsights();
+      opts.respond(true, { data: insights });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.summary", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const summary = state.conversationalManager.getSummary();
+      opts.respond(true, { data: summary });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.listWizards", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const wizards = state.conversationalManager.listWizards();
+      opts.respond(true, { data: wizards });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.startWizard", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { wizardId: string };
+      const wsState = state.conversationalManager.startWizard(params.wizardId);
+      opts.respond(true, { data: wsState });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.assistant.wizardNext", async (opts) => {
+    if (!state.conversationalManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Conversational manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { wizardId: string; answers: Record<string, unknown> };
+      const wsState = state.conversationalManager.wizardNext(params.wizardId, params.answers);
+      opts.respond(true, { data: wsState });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // Infrastructure Catalog
+  // ===========================================================================
+  api.registerGatewayMethod("azure.catalog.list", async (opts) => {
+    try {
+      const { listTemplates } = await import("./catalog/index.js");
+      const params = (opts.params ?? {}) as { category?: string };
+      const templates = listTemplates(params.category as TemplateCategory | undefined);
+      opts.respond(true, { data: templates });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.catalog.search", async (opts) => {
+    try {
+      const { searchTemplates } = await import("./catalog/index.js");
+      const params = (opts.params ?? {}) as { query: string };
+      const results = searchTemplates(params.query);
+      opts.respond(true, { data: results });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.catalog.get", async (opts) => {
+    try {
+      const { getTemplate } = await import("./catalog/index.js");
+      const params = (opts.params ?? {}) as { templateId: string };
+      const tmpl = getTemplate(params.templateId);
+      opts.respond(true, { data: tmpl });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.catalog.apply", async (opts) => {
+    try {
+      const { applyTemplate } = await import("./catalog/index.js");
+      const params = (opts.params ?? {}) as { templateId: string; parameters: Record<string, unknown> };
+      const intent = applyTemplate(params.templateId, params.parameters as { name: string; environment: string; region?: string; tags?: Record<string, string> });
+      opts.respond(true, { data: intent });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.catalog.categories", async (opts) => {
+    try {
+      const { getCategories } = await import("./catalog/index.js");
+      const cats = getCategories();
+      opts.respond(true, { data: cats });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // IaC Generation
+  // ===========================================================================
+  api.registerGatewayMethod("azure.iac.generate", async (opts) => {
+    if (!state.iacManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IaC manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { plan: Record<string, unknown>; options?: Record<string, unknown> };
+      const result = state.iacManager.generate(params.plan as never, (params.options ?? { format: "terraform" }) as never);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.iac.generateFromDefinitions", async (opts) => {
+    if (!state.iacManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IaC manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { definitions: Record<string, unknown>[]; options?: Record<string, unknown> };
+      const result = state.iacManager.generateFromDefinitions(params.definitions as never[], (params.options ?? { format: "terraform" }) as never);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.iac.detectDrift", async (opts) => {
+    if (!state.iacManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IaC manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { desired: Record<string, unknown>; actual: Record<string, unknown> };
+      const drift = state.iacManager.detectDrift(params.desired as never, params.actual as never);
+      opts.respond(true, { data: drift });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.iac.exportState", async (opts) => {
+    if (!state.iacManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "IaC manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resources: Record<string, unknown>[] };
+      const exported = state.iacManager.exportState(params.resources as never[], "terraform");
+      opts.respond(true, { data: exported });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // Enterprise Services
+  // ===========================================================================
+  api.registerGatewayMethod("azure.enterprise.tenant.list", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const tenants = state.enterpriseServices.tenantManager.listTenants();
+      opts.respond(true, { data: tenants });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.tenant.switch", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { tenantId: string };
+      const result = state.enterpriseServices.tenantManager.switchTenant(params.tenantId);
+      if (!result) { opts.respond(false, undefined, { code: "NOT_FOUND", message: `Tenant ${params.tenantId} not registered` }); return; }
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.billing.account", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const account = await state.enterpriseServices.billingService.getBillingAccount("default");
+      opts.respond(true, { data: account });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.billing.budgets", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const budgets = state.enterpriseServices.billingService.listBudgets();
+      opts.respond(true, { data: budgets });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.billing.forecast", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { months?: number };
+      const forecast = await state.enterpriseServices.billingService.getCostForecast("default");
+      opts.respond(true, { data: forecast });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.auth.configureSaml", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      state.enterpriseServices.authManager.configureSaml(params as never);
+      opts.respond(true, { data: { configured: "saml" } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.auth.configureOidc", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      state.enterpriseServices.authManager.configureOidc(params as never);
+      opts.respond(true, { data: { configured: "oidc" } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.gitops.configure", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      state.enterpriseServices.gitOpsManager.configureRepository(params.name as string, params.config as never);
+      opts.respond(true, { data: { configured: params.name } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.gitops.sync", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { configId: string };
+      const result = state.enterpriseServices.gitOpsManager.triggerSync(params.configId);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.enterprise.gitops.history", async (opts) => {
+    if (!state.enterpriseServices) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Enterprise services not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { configId: string };
+      const history = state.enterpriseServices.gitOpsManager.getSyncHistory(params.configId);
+      opts.respond(true, { data: history });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // ===========================================================================
+  // Reconciliation Engine
+  // ===========================================================================
+  api.registerGatewayMethod("azure.reconciliation.run", async (opts) => {
+    if (!state.reconciliationEngine) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Reconciliation engine not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { config: Record<string, unknown>; desired: Record<string, unknown>[]; actual: Record<string, unknown>[] };
+      const result = state.reconciliationEngine.reconcile(params.config as never, params.desired as never[], params.actual as never[]);
+      opts.respond(true, { data: result });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.reconciliation.schedules.list", async (opts) => {
+    if (!state.reconciliationEngine) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Reconciliation engine not initialized" }); return; }
+    try {
+      const schedules = state.reconciliationEngine.listSchedules();
+      opts.respond(true, { data: schedules });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.reconciliation.schedules.create", async (opts) => {
+    if (!state.reconciliationEngine) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Reconciliation engine not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { name: string; config: Record<string, unknown>; cronExpression: string };
+      const schedule = state.reconciliationEngine.createSchedule(params.name, params.config as never, params.cronExpression);
+      opts.respond(true, { data: schedule });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.reconciliation.schedules.delete", async (opts) => {
+    if (!state.reconciliationEngine) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Reconciliation engine not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { scheduleId: string };
+      const ok = state.reconciliationEngine.deleteSchedule(params.scheduleId);
+      opts.respond(true, { data: { deleted: ok } });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 }

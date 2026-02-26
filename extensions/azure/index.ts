@@ -29,6 +29,20 @@ const plugin = {
   version: "1.0.0",
   configSchema,
 
+  uiHints: {
+    defaultSubscription: { label: "Default Subscription", help: "Azure subscription ID used when none is specified", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", advanced: false },
+    defaultRegion: { label: "Default Region", help: "Azure region for new resources (e.g. eastus, westeurope)", placeholder: "eastus", advanced: false },
+    defaultTenantId: { label: "Tenant ID", help: "Azure Active Directory tenant ID", placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", advanced: false },
+    credentialMethod: { label: "Credential Method", help: "Authentication method: cli, environment, or managed-identity", placeholder: "cli", advanced: true },
+    devOpsOrganization: { label: "DevOps Organization", help: "Azure DevOps organization name for DevOps features", placeholder: "my-org", advanced: true },
+    "tagConfig.enforceDefaultTags": { label: "Enforce Default Tags", help: "Automatically apply default tags to new resources", advanced: true },
+    "tagConfig.defaultTags": { label: "Default Tags", help: "Default tags applied to all created resources (JSON object)", placeholder: '{"environment":"production"}', advanced: true },
+    "retryConfig.maxRetries": { label: "Max Retries", help: "Maximum number of retry attempts for Azure API calls", placeholder: "3", advanced: true },
+    "retryConfig.baseDelayMs": { label: "Retry Base Delay", help: "Base delay in milliseconds between retries", placeholder: "1000", advanced: true },
+    "diagnostics.enabled": { label: "Enable Diagnostics", help: "Enable Azure diagnostic logging for debugging", advanced: true },
+    "diagnostics.logLevel": { label: "Diagnostic Log Level", help: "Logging verbosity: info, warning, or error", placeholder: "info", advanced: true },
+  },
+
   register(api: EspadaPluginApi) {
     api.logger.info("Registering Azure extension");
 
@@ -97,5 +111,10 @@ export function getAzureManagers() {
     automation: s?.automationManager ?? null,
     hybrid: s?.hybridManager ?? null,
     orchestrator: s?.orchestrator ?? null,
+    intentCompiler: s?.intentCompiler ?? null,
+    conversationalManager: s?.conversationalManager ?? null,
+    iacManager: s?.iacManager ?? null,
+    reconciliationEngine: s?.reconciliationEngine ?? null,
+    enterpriseServices: s?.enterpriseServices ?? null,
   };
 }

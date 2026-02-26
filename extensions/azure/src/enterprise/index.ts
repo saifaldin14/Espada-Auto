@@ -8,3 +8,43 @@ export type {
   AzureDepartment,
   AzureEnrollmentAccount,
 } from "./types.js";
+
+export {
+  AzureTenantManager,
+  AzureBillingService,
+  AzureAuthManager,
+  AzureCollaborationManager,
+  AzureGitOpsManager,
+  createEnterpriseServices,
+} from "./enterprise-services.js";
+export type { EnterpriseServices } from "./enterprise-services.js";
+export type {
+  TenantConfiguration,
+  TenantPolicy,
+  TenantQuota,
+  TenantSwitchResult,
+  BillingAccount,
+  BillingProfile,
+  InvoiceSection,
+  UsageRecord,
+  BudgetConfig,
+  BudgetNotification,
+  CostForecast,
+  AuthProtocol,
+  SamlConfiguration,
+  OidcConfiguration,
+  ScimConfiguration,
+  AuthConfiguration,
+  ConditionalAccessPolicy,
+  Workspace,
+  WorkspaceMember,
+  ApprovalFlow,
+  ApprovalStage,
+  ApprovalRequest,
+  CollaborationComment,
+  Notification,
+  GitOpsConfiguration,
+  GitOpsSync,
+  GitOpsSyncResource,
+  GitOpsHistory,
+} from "./enterprise-types.js";

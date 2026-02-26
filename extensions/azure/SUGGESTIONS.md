@@ -2,7 +2,7 @@
 
 ## Executive Summary
 
-The Azure extension is a substantial plugin: **156 agent tools**, **144 gateway methods**, **118 CLI commands**, **56 service modules**, and **68 test files**. It includes a novel IDIO orchestration engine, an Advisor module for project analysis, and DevOps PAT management with AES-256-GCM encryption.
+The Azure extension is a substantial plugin: **163 agent tools**, **150 gateway methods**, **124 CLI commands**, **62 service modules**, and **74 test files** (96 new tests across 6 files for the missing features). It includes a novel IDIO orchestration engine, an Advisor module for project analysis, DevOps PAT management with AES-256-GCM encryption, and full feature parity with the AWS extension (intent compilation, conversational UX, infrastructure catalog, IaC generation, enterprise depth, config uiHints, and reconciliation engine).
 
 This document outlines critical issues, missing services, missing features, and prioritized enhancement recommendations.
 
@@ -91,15 +91,15 @@ This document outlines critical issues, missing services, missing features, and 
 
 ## Missing Features (vs AWS Extension)
 
-| Feature | AWS Implementation | Azure Gap |
+| Feature | AWS Implementation | Azure Status |
 |---------|-------------------|-----------|
-| **Intent-driven orchestration (IDIO)** | Declarative intent → plan → execution with drift detection + reconciliation | Azure's `orchestration/` is blueprint-based only — no intent compilation, drift detection, or reconciliation |
-| **Conversational UX** | NL infrastructure queries, proactive insights, wizard-mode creation (`aws_assistant` tool) | No conversational capability at all |
-| **Infrastructure catalog** | Searchable/tagged template library with `applyTemplate()` | Blueprints exist but aren't a searchable catalog |
-| **IaC generation** | Generates CloudFormation / Terraform from discovered resources | No ARM/Bicep/Terraform generation |
-| **Enterprise depth** | Multi-tenancy, billing/metering, SAML/OIDC/SCIM auth, workspace collaboration (approval flows, comments), GitOps | Azure enterprise module is 165 LOC — read-only enumeration only |
-| **Config `uiHints`** | Labels, help text, placeholders, `advanced` flags for UI rendering | No UI hints in config schema |
-| **Reconciliation engine** | Drift detection + scheduled reconciliation workflows | No reconciliation module |
+| **Intent-driven orchestration (IDIO)** | Declarative intent → plan → execution with drift detection + reconciliation | ✅ Implemented — `src/intent/` (compiler, types, 17 tests) |
+| **Conversational UX** | NL infrastructure queries, proactive insights, wizard-mode creation (`aws_assistant` tool) | ✅ Implemented — `src/conversational/` (manager, types, 16 tests) |
+| **Infrastructure catalog** | Searchable/tagged template library with `applyTemplate()` | ✅ Implemented — `src/catalog/` (templates, types, 13 tests) |
+| **IaC generation** | Generates CloudFormation / Terraform from discovered resources | ✅ Implemented — `src/iac/` (manager, types — Terraform/Bicep/ARM, 10 tests) |
+| **Enterprise depth** | Multi-tenancy, billing/metering, SAML/OIDC/SCIM auth, workspace collaboration (approval flows, comments), GitOps | ✅ Implemented — `src/enterprise/` (enterprise-services, enterprise-types, 25 tests) |
+| **Config `uiHints`** | Labels, help text, placeholders, `advanced` flags for UI rendering | ✅ Implemented — `src/config-hints.ts` (uiHints on all config fields) |
+| **Reconciliation engine** | Drift detection + scheduled reconciliation workflows | ✅ Implemented — `src/reconciliation/` (engine, types — drift/compliance/cost/remediation/scheduling, 15 tests) |
 
 ---
 

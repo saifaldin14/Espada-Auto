@@ -61,6 +61,11 @@ import type { AzurePurviewManager } from "./purview/index.js";
 import type { AzureMapsManager } from "./maps/index.js";
 import type { AzureDigitalTwinsManager } from "./digitaltwins/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
+import type { IntentCompiler } from "./intent/index.js";
+import type { AzureConversationalManager } from "./conversational/index.js";
+import type { AzureIaCManager } from "./iac/index.js";
+import type { ReconciliationEngine } from "./reconciliation/index.js";
+import type { EnterpriseServices } from "./enterprise/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
 export type { AzureExtensionConfig } from "./config.js";
@@ -124,6 +129,11 @@ export interface AzurePluginState {
   purviewManager: AzurePurviewManager | null;
   mapsManager: AzureMapsManager | null;
   digitalTwinsManager: AzureDigitalTwinsManager | null;
+  intentCompiler: IntentCompiler | null;
+  conversationalManager: AzureConversationalManager | null;
+  iacManager: AzureIaCManager | null;
+  reconciliationEngine: ReconciliationEngine | null;
+  enterpriseServices: EnterpriseServices | null;
   orchestrator: Orchestrator | null;
 }
 
@@ -185,6 +195,11 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     purviewManager: null,
     mapsManager: null,
     digitalTwinsManager: null,
+    intentCompiler: null,
+    conversationalManager: null,
+    iacManager: null,
+    reconciliationEngine: null,
+    enterpriseServices: null,
     orchestrator: null,
   };
 }
@@ -247,6 +262,11 @@ export function clearPluginState(state: AzurePluginState): void {
   state.purviewManager = null;
   state.mapsManager = null;
   state.digitalTwinsManager = null;
+  state.intentCompiler = null;
+  state.conversationalManager = null;
+  state.iacManager = null;
+  state.reconciliationEngine = null;
+  state.enterpriseServices = null;
   state.orchestrator = null;
 }
 

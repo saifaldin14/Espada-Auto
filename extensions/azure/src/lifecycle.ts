@@ -67,6 +67,13 @@ import { AzureDigitalTwinsManager } from "./digitaltwins/index.js";
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
 
+// New feature modules (IDIO, Conversational, IaC, Reconciliation, Enterprise)
+import { createIntentCompiler } from "./intent/index.js";
+import { createConversationalManager } from "./conversational/index.js";
+import { createIaCManager } from "./iac/index.js";
+import { createReconciliationEngine } from "./reconciliation/index.js";
+import { createEnterpriseServices } from "./enterprise/index.js";
+
 export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePluginState): void {
   api.registerService({
     id: "azure-core-services",
@@ -172,6 +179,25 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.purviewManager = new AzurePurviewManager(state.credentialsManager, subscriptionId, retryOpts);
       state.mapsManager = new AzureMapsManager(state.credentialsManager, subscriptionId, retryOpts);
       state.digitalTwinsManager = new AzureDigitalTwinsManager(state.credentialsManager, subscriptionId, retryOpts);
+
+      // Intent-driven orchestration
+      state.intentCompiler = createIntentCompiler({
+        defaultRegion: config.defaultRegion ?? "eastus",
+        enableCostEstimation: true,
+        enablePolicyValidation: true,
+      });
+
+      // Conversational UX
+      state.conversationalManager = createConversationalManager(subscriptionId);
+
+      // IaC generation
+      state.iacManager = createIaCManager();
+
+      // Reconciliation engine
+      state.reconciliationEngine = createReconciliationEngine();
+
+      // Enterprise services
+      state.enterpriseServices = createEnterpriseServices(config.defaultTenantId ?? "");
 
       // Orchestration (IDIO)
       clearStepRegistry();

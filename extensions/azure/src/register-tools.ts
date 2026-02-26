@@ -13,6 +13,8 @@ import { Orchestrator, listBlueprints, getBlueprint, validatePlan } from "./orch
 import type { OrchestrationOptions, ExecutionPlan } from "./orchestration/index.js";
 import { analyzeProject, recommend, recommendAndPlan, createPromptSession, resolveParams, verify, formatReport } from "./advisor/index.js";
 import type { PromptSession, PromptAnswers } from "./advisor/index.js";
+import type { TemplateCategory } from "./catalog/templates.js";
+import type { ApplicationTierIntent } from "./intent/types.js";
 
 export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState): void {
   // =========================================================================
@@ -3005,6 +3007,356 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
         content: [{ type: "text" as const, text: JSON.stringify(endpoints, null, 2) }],
         details: { count: endpoints.length },
       };
+    },
+  });
+
+  // ===========================================================================
+  // Intent-Driven Infrastructure Orchestration (IDIO)
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_idio",
+    label: "Azure IDIO",
+    description: "Intent-driven infrastructure orchestration. Compile application intents into infrastructure plans, validate, and estimate costs. Actions: compile, validate, estimate_cost.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action to perform: compile | validate | estimate_cost", enum: ["compile", "validate", "estimate_cost"] },
+        intent: { type: "object", description: "ApplicationIntent object describing the desired infrastructure" },
+      },
+      required: ["action", "intent"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.intentCompiler) throw new Error("Intent compiler not initialized");
+      const action = params.action as string;
+      const intent = params.intent as Record<string, unknown>;
+      switch (action) {
+        case "compile": {
+          const plan = state.intentCompiler.compile(intent as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(plan, null, 2) }], details: { resourceCount: plan.resources.length } };
+        }
+        case "validate": {
+          const result = state.intentCompiler.validateIntent(intent as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { valid: result.valid } };
+        }
+        case "estimate_cost": {
+          const estimate = state.intentCompiler.estimateCost(intent as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(estimate, null, 2) }], details: { totalMonthly: estimate.estimatedMonthlyCostUsd } };
+        }
+        default:
+          throw new Error(`Unknown IDIO action: ${action}`);
+      }
+    },
+  });
+
+  // ===========================================================================
+  // Conversational Infrastructure Assistant
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_assistant",
+    label: "Azure Assistant",
+    description: "Conversational infrastructure assistant. Query infrastructure with natural language, track resources, get insights, start creation wizards. Actions: query, get_context, track_resource, untrack_resource, get_insights, list_wizards, start_wizard, wizard_next, get_wizard_state, get_summary.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action to perform", enum: ["query", "get_context", "track_resource", "untrack_resource", "get_insights", "list_wizards", "start_wizard", "wizard_next", "get_wizard_state", "get_summary"] },
+        naturalLanguage: { type: "string", description: "Natural language query (for 'query' action)" },
+        resourceId: { type: "string", description: "Azure resource ID (for track/untrack)" },
+        resourceType: { type: "string", description: "Resource type (for track)" },
+        region: { type: "string", description: "Region (for track)" },
+        tags: { type: "object", description: "Tags (for track)" },
+        wizardId: { type: "string", description: "Wizard template ID (for start_wizard, wizard_next, get_wizard_state)" },
+        answers: { type: "object", description: "Wizard step answers (for wizard_next)" },
+      },
+      required: ["action"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>, _signal?: AbortSignal) {
+      if (!state.conversationalManager) throw new Error("Conversational manager not initialized");
+      const action = params.action as string;
+      switch (action) {
+        case "query": {
+          const result = state.conversationalManager.query(params.naturalLanguage as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { category: result.query.category } };
+        }
+        case "get_context": {
+          const ctx = state.conversationalManager.getContext();
+          return { content: [{ type: "text" as const, text: JSON.stringify(ctx, null, 2) }], details: { trackedCount: ctx.resources.length } };
+        }
+        case "track_resource": {
+          state.conversationalManager.trackResource({ id: params.resourceId as string, type: params.resourceType as string, name: (params.resourceId as string).split("/").pop() ?? "", region: params.region as string, resourceGroup: "default", status: "active", tags: (params.tags ?? {}) as Record<string, string>, properties: {}, trackedAt: new Date().toISOString() });
+          return { content: [{ type: "text" as const, text: `Tracking resource: ${params.resourceId}` }], details: { resourceId: params.resourceId } };
+        }
+        case "untrack_resource": {
+          state.conversationalManager.untrackResource(params.resourceId as string);
+          return { content: [{ type: "text" as const, text: `Untracked resource: ${params.resourceId}` }], details: { resourceId: params.resourceId } };
+        }
+        case "get_insights": {
+          const insights = state.conversationalManager.getInsights();
+          return { content: [{ type: "text" as const, text: JSON.stringify(insights, null, 2) }], details: { count: insights.length } };
+        }
+        case "list_wizards": {
+          const wizards = state.conversationalManager.listWizards();
+          return { content: [{ type: "text" as const, text: JSON.stringify(wizards, null, 2) }], details: { count: wizards.length } };
+        }
+        case "start_wizard": {
+          const ws = state.conversationalManager.startWizard(params.wizardId as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(ws, null, 2) }], details: { currentStep: ws?.currentStep ?? 0 } };
+        }
+        case "wizard_next": {
+          const ws = state.conversationalManager.wizardNext(params.wizardId as string, (params.answers ?? {}) as Record<string, unknown>);
+          return { content: [{ type: "text" as const, text: JSON.stringify(ws, null, 2) }], details: { completed: ws?.completed ?? false } };
+        }
+        case "get_wizard_state": {
+          const ws = state.conversationalManager.getWizardState(params.wizardId as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(ws, null, 2) }], details: { wizardId: params.wizardId } };
+        }
+        case "get_summary": {
+          const summary = state.conversationalManager.getSummary();
+          return { content: [{ type: "text" as const, text: JSON.stringify(summary, null, 2) }], details: { totalResources: summary.totalResources } };
+        }
+        default:
+          throw new Error(`Unknown assistant action: ${action}`);
+      }
+    },
+  });
+
+  // ===========================================================================
+  // Infrastructure Catalog
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_catalog",
+    label: "Azure Catalog",
+    description: "Infrastructure template catalog. Browse, search, and apply infrastructure templates. Actions: list, search, search_by_tags, get, apply, get_categories.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action to perform", enum: ["list", "search", "search_by_tags", "get", "apply", "get_categories"] },
+        category: { type: "string", description: "Category filter (for list)" },
+        query: { type: "string", description: "Search query text (for search)" },
+        tags: { type: "array", items: { type: "string" }, description: "Tags to search by (for search_by_tags)" },
+        templateId: { type: "string", description: "Template ID (for get/apply)" },
+        parameters: { type: "object", description: "Parameters to apply to template (for apply)" },
+      },
+      required: ["action"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      const { listTemplates, searchTemplates, searchTemplatesByTags, getTemplate, applyTemplate, getCategories } = await import("./catalog/index.js");
+      const action = params.action as string;
+      switch (action) {
+        case "list": {
+          const templates = listTemplates(params.category as TemplateCategory | undefined);
+          return { content: [{ type: "text" as const, text: JSON.stringify(templates, null, 2) }], details: { count: templates.length } };
+        }
+        case "search": {
+          const results = searchTemplates(params.query as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }], details: { count: results.length } };
+        }
+        case "search_by_tags": {
+          const results = searchTemplatesByTags(params.tags as string[]);
+          return { content: [{ type: "text" as const, text: JSON.stringify(results, null, 2) }], details: { count: results.length } };
+        }
+        case "get": {
+          const tmpl = getTemplate(params.templateId as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(tmpl, null, 2) }], details: { found: tmpl !== undefined } };
+        }
+        case "apply": {
+          const intent = applyTemplate(params.templateId as string, (params.parameters ?? {}) as { name: string; environment: string; region?: string; tags?: Record<string, string>; tierOverrides?: Record<string, Partial<ApplicationTierIntent>> });
+          return { content: [{ type: "text" as const, text: JSON.stringify(intent, null, 2) }], details: { applied: true } };
+        }
+        case "get_categories": {
+          const cats = getCategories();
+          return { content: [{ type: "text" as const, text: JSON.stringify(cats, null, 2) }], details: { count: cats.length } };
+        }
+        default:
+          throw new Error(`Unknown catalog action: ${action}`);
+      }
+    },
+  });
+
+  // ===========================================================================
+  // IaC Generation
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_iac",
+    label: "Azure IaC",
+    description: "Infrastructure as Code generation. Generate Terraform, Bicep, or ARM templates from infrastructure plans or resource definitions. Actions: generate, generate_from_definitions, detect_drift, export_state.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action to perform", enum: ["generate", "generate_from_definitions", "detect_drift", "export_state"] },
+        plan: { type: "object", description: "InfrastructurePlan (for generate)" },
+        definitions: { type: "array", description: "ResourceDefinition array (for generate_from_definitions)" },
+        format: { type: "string", description: "Output format: terraform | bicep | arm", enum: ["terraform", "bicep", "arm"] },
+        options: { type: "object", description: "Generation options (includeVariables, includeOutputs, etc.)" },
+        desired: { type: "object", description: "Desired resource state (for detect_drift)" },
+        actual: { type: "object", description: "Actual resource state (for detect_drift)" },
+        resources: { type: "array", description: "Resources to export state from (for export_state)" },
+      },
+      required: ["action"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.iacManager) throw new Error("IaC manager not initialized");
+      const action = params.action as string;
+      switch (action) {
+        case "generate": {
+          const result = state.iacManager.generate(params.plan as never, { format: (params.format as never) ?? "terraform", ...(params.options as object ?? {}) } as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { format: result.format, resourceCount: result.resourceCount } };
+        }
+        case "generate_from_definitions": {
+          const result = state.iacManager.generateFromDefinitions(params.definitions as never[], { format: (params.format as never) ?? "terraform", ...(params.options as object ?? {}) } as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { format: result.format } };
+        }
+        case "detect_drift": {
+          const drift = state.iacManager.detectDrift(params.desired as never, params.actual as never);
+          return { content: [{ type: "text" as const, text: JSON.stringify(drift, null, 2) }], details: { driftDetected: drift.driftDetected, changeCount: drift.changes.length } };
+        }
+        case "export_state": {
+          const exported = state.iacManager.exportState(params.resources as never[], (params.format as never) ?? "terraform");
+          return { content: [{ type: "text" as const, text: JSON.stringify(exported, null, 2) }], details: { resourceCount: exported.resources.length } };
+        }
+        default:
+          throw new Error(`Unknown IaC action: ${action}`);
+      }
+    },
+  });
+
+  // ===========================================================================
+  // Enterprise Services
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_enterprise",
+    label: "Azure Enterprise",
+    description: "Enterprise features: multi-tenancy, billing, auth (SAML/OIDC/SCIM), collaboration (workspaces/approvals), GitOps. Use 'domain' to select the feature area and 'action' for the specific operation.",
+    parameters: {
+      type: "object",
+      properties: {
+        domain: { type: "string", description: "Feature domain", enum: ["tenant", "billing", "auth", "collaboration", "gitops"] },
+        action: { type: "string", description: "Action within the domain" },
+        params: { type: "object", description: "Action-specific parameters" },
+      },
+      required: ["domain", "action"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>, _signal?: AbortSignal) {
+      if (!state.enterpriseServices) throw new Error("Enterprise services not initialized");
+      const domain = params.domain as string;
+      const action = params.action as string;
+      const p = (params.params ?? {}) as Record<string, unknown>;
+
+      const text = await (async () => {
+        switch (domain) {
+          case "tenant": {
+            const svc = state.enterpriseServices!.tenantManager;
+            switch (action) {
+              case "switch": return JSON.stringify(svc.switchTenant(p.tenantId as string) ?? { error: "Tenant not registered" }, null, 2);
+              case "register": return JSON.stringify(svc.registerTenant(p as never), null, 2);
+              case "list": return JSON.stringify(svc.listTenants(), null, 2);
+              case "set_policy": { svc.setTenantPolicy(p.tenantId as string, p.policy as never); return "Policy set"; }
+              case "get_quotas": return JSON.stringify(svc.getTenantQuotas(p.tenantId as string), null, 2);
+              default: throw new Error(`Unknown tenant action: ${action}`);
+            }
+          }
+          case "billing": {
+            const svc = state.enterpriseServices!.billingService;
+            switch (action) {
+              case "get_account": return JSON.stringify(await svc.getBillingAccount(p.subscriptionId as string ?? "default"), null, 2);
+              case "get_usage": return JSON.stringify(await svc.getUsageRecords(p.subscriptionId as string, p.startDate as string, p.endDate as string), null, 2);
+              case "set_budget": { svc.setBudget(p.name as string, p as never); return "Budget set"; }
+              case "get_budget": return JSON.stringify(svc.getBudget(p.budgetId as string), null, 2);
+              case "list_budgets": return JSON.stringify(svc.listBudgets(), null, 2);
+              case "delete_budget": { svc.deleteBudget(p.budgetId as string); return "Budget deleted"; }
+              case "get_forecast": return JSON.stringify(await svc.getCostForecast(p.subscriptionId as string ?? "default"), null, 2);
+              default: throw new Error(`Unknown billing action: ${action}`);
+            }
+          }
+          case "auth": {
+            const svc = state.enterpriseServices!.authManager;
+            switch (action) {
+              case "configure_saml": return JSON.stringify(svc.configureSaml(p as never), null, 2);
+              case "configure_oidc": return JSON.stringify(svc.configureOidc(p as never), null, 2);
+              case "configure_scim": return JSON.stringify(svc.configureScim(p as never), null, 2);
+              case "enable_mfa": { svc.enableMfa((p.methods ?? []) as string[]); return "MFA enabled"; }
+              case "disable_mfa": { svc.disableMfa(); return "MFA disabled"; }
+              case "add_conditional_access": return JSON.stringify(svc.addConditionalAccessPolicy(p as never), null, 2);
+              default: throw new Error(`Unknown auth action: ${action}`);
+            }
+          }
+          case "collaboration": {
+            const svc = state.enterpriseServices!.collaborationManager;
+            switch (action) {
+              case "create_workspace": return JSON.stringify(svc.createWorkspace(p as never), null, 2);
+              case "add_member": return JSON.stringify(svc.addWorkspaceMember(p.workspaceId as string, p.member as never), null, 2);
+              case "create_approval_flow": return JSON.stringify(svc.createApprovalFlow(p as never), null, 2);
+              case "submit_approval": return JSON.stringify(svc.submitApprovalRequest(p.flowId as string, p.requesterId as string, p.action as string, p.resourceId as string), null, 2);
+              case "process_approval": return JSON.stringify(svc.processApproval(p.requestId as string, p.approverId as string, p.decision as "approved" | "rejected", p.comment as string | undefined), null, 2);
+              case "add_comment": return JSON.stringify(svc.addComment(p.resourceId as string, p.authorId as string, p.content as string, p.parentId as string | undefined), null, 2);
+              case "get_notifications": return JSON.stringify(svc.getNotifications(p.userId as string), null, 2);
+              default: throw new Error(`Unknown collaboration action: ${action}`);
+            }
+          }
+          case "gitops": {
+            const svc = state.enterpriseServices!.gitOpsManager;
+            switch (action) {
+              case "configure": { svc.configureRepository(p.name as string, p.config as never); return "Repository configured"; }
+              case "sync": return JSON.stringify(svc.triggerSync(p.configId as string), null, 2);
+              case "get_status": return JSON.stringify(svc.getSyncStatus(p.syncId as string), null, 2);
+              case "get_history": return JSON.stringify(svc.getSyncHistory(p.configId as string), null, 2);
+              default: throw new Error(`Unknown gitops action: ${action}`);
+            }
+          }
+          default:
+            throw new Error(`Unknown enterprise domain: ${domain}`);
+        }
+      })();
+      return { content: [{ type: "text" as const, text }], details: { domain, action } };
+    },
+  });
+
+  // ===========================================================================
+  // Reconciliation Engine
+  // ===========================================================================
+  api.registerTool({
+    name: "azure_reconciliation",
+    label: "Azure Reconciliation",
+    description: "Infrastructure reconciliation engine. Detect drift, check compliance, find cost anomalies, auto-remediate. Actions: reconcile, create_schedule, list_schedules, get_schedule, delete_schedule.",
+    parameters: {
+      type: "object",
+      properties: {
+        action: { type: "string", description: "Action to perform", enum: ["reconcile", "create_schedule", "list_schedules", "get_schedule", "delete_schedule"] },
+        config: { type: "object", description: "ReconciliationConfig (for reconcile)" },
+        desired: { type: "array", description: "Desired resource states (for reconcile)" },
+        actual: { type: "array", description: "Actual resource states (for reconcile)" },
+        schedule: { type: "object", description: "Schedule configuration (for create_schedule)" },
+        scheduleId: { type: "string", description: "Schedule ID (for get/delete)" },
+      },
+      required: ["action"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>, _signal?: AbortSignal) {
+      if (!state.reconciliationEngine) throw new Error("Reconciliation engine not initialized");
+      const action = params.action as string;
+      switch (action) {
+        case "reconcile": {
+          const result = state.reconciliationEngine.reconcile(params.config as never, params.desired as never[], params.actual as never[]);
+          return { content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }], details: { driftCount: result.summary.driftsDetected, complianceCount: result.summary.complianceIssuesFound } };
+        }
+        case "create_schedule": {
+          const s = (params.schedule ?? {}) as { name: string; config: Record<string, unknown>; cronExpression: string };
+          const sched = state.reconciliationEngine.createSchedule(s.name, s.config as never, s.cronExpression);
+          return { content: [{ type: "text" as const, text: JSON.stringify(sched, null, 2) }], details: { id: sched.id } };
+        }
+        case "list_schedules": {
+          const scheds = state.reconciliationEngine.listSchedules();
+          return { content: [{ type: "text" as const, text: JSON.stringify(scheds, null, 2) }], details: { count: scheds.length } };
+        }
+        case "get_schedule": {
+          const sched = state.reconciliationEngine.getSchedule(params.scheduleId as string);
+          return { content: [{ type: "text" as const, text: JSON.stringify(sched, null, 2) }], details: { scheduleId: params.scheduleId } };
+        }
+        case "delete_schedule": {
+          const ok = state.reconciliationEngine.deleteSchedule(params.scheduleId as string);
+          return { content: [{ type: "text" as const, text: ok ? "Schedule deleted" : "Schedule not found" }], details: { deleted: ok } };
+        }
+        default:
+          throw new Error(`Unknown reconciliation action: ${action}`);
+      }
     },
   });
 }
