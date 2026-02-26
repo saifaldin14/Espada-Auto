@@ -19,11 +19,15 @@ const mockServers = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
   get: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
 const mockDatabases = {
   listByServer: vi.fn(),
   get: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
 const mockElasticPools = { listByServer: vi.fn() };
@@ -35,12 +39,12 @@ const mockFirewallRules = {
 };
 
 vi.mock("@azure/arm-sql", () => ({
-  SqlManagementClient: vi.fn().mockImplementation(() => ({
+  SqlManagementClient: vi.fn().mockImplementation(function() { return {
     servers: mockServers,
     databases: mockDatabases,
     elasticPools: mockElasticPools,
     firewallRules: mockFirewallRules,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -146,6 +150,51 @@ describe("AzureSQLManager", () => {
     it("deletes a rule", async () => {
       mockFirewallRules.delete.mockResolvedValue(undefined);
       await expect(mgr.deleteFirewallRule("rg-1", "sql-1", "old")).resolves.toBeUndefined();
+    });
+  });
+
+  // ---------- Server CRUD ----------
+
+  describe("createServer", () => {
+    it("creates a SQL server", async () => {
+      mockServers.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Sql/servers/new-sql",
+        name: "new-sql", location: "eastus",
+        fullyQualifiedDomainName: "new-sql.database.windows.net",
+        administratorLogin: "admin", version: "12.0", state: "Ready",
+      });
+      const server = await mgr.createServer({
+        name: "new-sql", resourceGroup: "rg-1", location: "eastus",
+        administratorLogin: "admin", administratorLoginPassword: "P@ssw0rd!",
+      });
+      expect(server.name).toBe("new-sql");
+    });
+  });
+
+  describe("deleteServer", () => {
+    it("deletes a SQL server", async () => {
+      mockServers.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteServer("rg-1", "sql-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createDatabase", () => {
+    it("creates a SQL database", async () => {
+      mockDatabases.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "db-id", name: "new-db", location: "eastus",
+        status: "Online", collation: "SQL_Latin1_General_CP1_CI_AS",
+      });
+      const db = await mgr.createDatabase({
+        name: "new-db", serverName: "sql-1", resourceGroup: "rg-1",
+      });
+      expect(db.name).toBe("new-db");
+    });
+  });
+
+  describe("deleteDatabase", () => {
+    it("deletes a SQL database", async () => {
+      mockDatabases.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteDatabase("rg-1", "sql-1", "old-db")).resolves.toBeUndefined();
     });
   });
 });

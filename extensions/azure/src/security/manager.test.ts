@@ -20,14 +20,17 @@ const mockAssessments = { list: vi.fn() };
 const mockAlerts = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
+  updateSubscriptionLevelStateToDismiss: vi.fn(),
+  updateSubscriptionLevelStateToResolve: vi.fn(),
+  updateSubscriptionLevelStateToActivate: vi.fn(),
 };
 
 vi.mock("@azure/arm-security", () => ({
-  SecurityCenter: vi.fn().mockImplementation(() => ({
+  SecurityCenter: vi.fn().mockImplementation(function() { return {
     secureScores: mockSecureScores,
     assessments: mockAssessments,
     alerts: mockAlerts,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -87,6 +90,28 @@ describe("AzureSecurityManager", () => {
       ]));
       const recs = await mgr.listRecommendations();
       expect(recs).toHaveLength(1);
+    });
+  });
+
+  describe("dismissAlert", () => {
+    it("dismisses a security alert", async () => {
+      mockAlerts.updateSubscriptionLevelStateToDismiss.mockResolvedValue(undefined);
+      await expect(mgr.dismissAlert("eastus", "alert-1")).resolves.toBeUndefined();
+      expect(mockAlerts.updateSubscriptionLevelStateToDismiss).toHaveBeenCalledWith("eastus", "alert-1");
+    });
+  });
+
+  describe("resolveAlert", () => {
+    it("resolves a security alert", async () => {
+      mockAlerts.updateSubscriptionLevelStateToResolve.mockResolvedValue(undefined);
+      await expect(mgr.resolveAlert("eastus", "alert-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("activateAlert", () => {
+    it("activates a security alert", async () => {
+      mockAlerts.updateSubscriptionLevelStateToActivate.mockResolvedValue(undefined);
+      await expect(mgr.activateAlert("eastus", "alert-1")).resolves.toBeUndefined();
     });
   });
 });

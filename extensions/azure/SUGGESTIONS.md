@@ -127,25 +127,25 @@ This document outlines critical issues, missing services, missing features, and 
 
 ---
 
-## Read-Only Module Gaps
+## Read-Only Module Gaps ✅ RESOLVED
 
-The following modules only support read operations and need write/mutate capabilities:
+All 13 modules now have write/mutate capabilities (146 tests passing):
 
-| Module | Has | Needs |
-|--------|-----|-------|
-| **Storage** | List accounts, list containers, list blobs | Create account, create container, upload blob, delete blob, set access tier |
-| **SQL** | List servers, list databases, list firewall rules | Create server, create database, manage firewall rules |
-| **Cosmos DB** | List accounts, list databases, list containers | Create account, create database, manage throughput |
-| **Functions** | List function apps, list functions | Deploy function, restart app, manage app settings |
-| **Containers** | List AKS clusters, list node pools, list registries | Create AKS cluster, scale node pool, push to ACR |
-| **DNS** | List zones, list record sets | Create/update/delete records |
-| **Redis** | List caches, get cache | Create cache, manage firewall rules, regenerate keys |
-| **CDN** | List profiles, list endpoints | Create profile, create endpoint, manage custom domains |
-| **Monitor** | List alerts, list metrics, list workspaces | Create alert rules, create diagnostic settings |
-| **Security** | Get scores, list assessments, list alerts | Dismiss/resolve alerts, configure Defender plans |
-| **Backup** | List vaults, list policies, list items | Trigger backup, configure policies, restore items |
-| **Logic Apps** | List workflows, list runs (has enable/disable) | Create workflow, manage connectors |
-| **API Management** | List services, list APIs | Create API, manage products, configure policies |
+| Module | Added Operations |
+|--------|-----------------|
+| **Storage** | `createStorageAccount`, `createContainer`, `deleteContainer`, `setAccessTier` |
+| **SQL** | `createServer`, `deleteServer`, `createDatabase`, `deleteDatabase` |
+| **Cosmos DB** | NEW MODULE — full CRUD: accounts, databases, containers, throughput management (15 methods) |
+| **Functions** | `createFunctionApp`, `listFunctions`, `getAppSettings`, `updateAppSettings` |
+| **Containers** | `createAKSCluster`, `deleteAKSCluster`, `scaleNodePool`, `getClusterCredentials` |
+| **DNS** | `createZone`, `deleteZone` (already had createRecordSet/deleteRecordSet) |
+| **Redis** | `createCache`, `deleteCache`, `createFirewallRule`, `deleteFirewallRule` |
+| **CDN** | `createProfile`, `deleteProfile`, `createEndpoint`, `deleteEndpoint` |
+| **Monitor** | `createAlertRule`, `deleteAlertRule`, `createDiagnosticSetting`, `deleteDiagnosticSetting` |
+| **Security** | `dismissAlert`, `resolveAlert`, `activateAlert` |
+| **Backup** | `triggerBackup`, `createBackupPolicy`, `deleteBackupPolicy` |
+| **Logic Apps** | `createWorkflow`, `deleteWorkflow`, `runTrigger` |
+| **API Management** | NEW MODULE — full CRUD: services, APIs, products, policies (12 methods) |
 
 ---
 

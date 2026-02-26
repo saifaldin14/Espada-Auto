@@ -21,15 +21,21 @@ const mockRedis = {
   get: vi.fn(),
   listKeys: vi.fn(),
   regenerateKey: vi.fn(),
+  beginCreateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
-const mockFwRules = { list: vi.fn() };
+const mockFwRules = {
+  list: vi.fn(),
+  createOrUpdate: vi.fn(),
+  delete: vi.fn(),
+};
 
 vi.mock("@azure/arm-rediscache", () => ({
-  RedisManagementClient: vi.fn().mockImplementation(() => ({
+  RedisManagementClient: vi.fn().mockImplementation(function() { return {
     redis: mockRedis,
     firewallRules: mockFwRules,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -98,6 +104,45 @@ describe("AzureRedisManager", () => {
       mockRedis.regenerateKey.mockResolvedValue({ primaryKey: "new-pk", secondaryKey: "sk-456" });
       const keys = await mgr.regenerateKey("rg-1", "cache-1", "Primary");
       expect(keys.primaryKey).toBe("new-pk");
+    });
+  });
+
+  describe("createCache", () => {
+    it("creates a Redis cache", async () => {
+      mockRedis.beginCreateAndWait.mockResolvedValue({
+        id: "id", name: "new-cache", location: "eastus",
+        hostName: "new-cache.redis.cache.windows.net",
+        port: 6379, sslPort: 6380,
+        sku: { name: "Standard", family: "C", capacity: 1 },
+        provisioningState: "Succeeded", redisVersion: "6",
+      });
+      const cache = await mgr.createCache("rg-1", "new-cache", "eastus");
+      expect(cache.name).toBe("new-cache");
+      expect(cache.hostName).toBe("new-cache.redis.cache.windows.net");
+    });
+  });
+
+  describe("deleteCache", () => {
+    it("deletes a Redis cache", async () => {
+      mockRedis.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteCache("rg-1", "cache-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createFirewallRule", () => {
+    it("creates a firewall rule", async () => {
+      mockFwRules.createOrUpdate.mockResolvedValue({
+        id: "fw-id", name: "allow-all", startIP: "0.0.0.0", endIP: "255.255.255.255",
+      });
+      const rule = await mgr.createFirewallRule("rg-1", "cache-1", "allow-all", "0.0.0.0", "255.255.255.255");
+      expect(rule.name).toBe("allow-all");
+    });
+  });
+
+  describe("deleteFirewallRule", () => {
+    it("deletes a firewall rule", async () => {
+      mockFwRules.delete.mockResolvedValue(undefined);
+      await expect(mgr.deleteFirewallRule("rg-1", "cache-1", "old-rule")).resolves.toBeUndefined();
     });
   });
 });

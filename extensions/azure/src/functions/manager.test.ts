@@ -23,12 +23,16 @@ const mockWebApps = {
   stop: vi.fn(),
   restart: vi.fn(),
   delete: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  listFunctions: vi.fn(),
+  listApplicationSettings: vi.fn(),
+  updateApplicationSettings: vi.fn(),
 };
 
 vi.mock("@azure/arm-appservice", () => ({
-  WebSiteManagementClient: vi.fn().mockImplementation(() => ({
+  WebSiteManagementClient: vi.fn().mockImplementation(function() { return {
     webApps: mockWebApps,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -109,6 +113,56 @@ describe("AzureFunctionsManager", () => {
     it("deletes an app", async () => {
       mockWebApps.delete.mockResolvedValue(undefined);
       await expect(mgr.deleteFunctionApp("rg-1", "func-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createFunctionApp", () => {
+    it("creates a function app", async () => {
+      mockWebApps.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Web/sites/new-func",
+        name: "new-func", location: "eastus", kind: "functionapp",
+        state: "Running", defaultHostName: "new-func.azurewebsites.net",
+      });
+      const app = await mgr.createFunctionApp({
+        name: "new-func", resourceGroup: "rg-1", location: "eastus",
+        runtime: "node", storageAccountConnectionString: "DefaultEndpointsProtocol=https;...",
+      });
+      expect(app.name).toBe("new-func");
+    });
+  });
+
+  describe("listFunctions", () => {
+    it("lists functions in an app", async () => {
+      mockWebApps.listFunctions.mockReturnValue(asyncIter([
+        { name: "HttpTrigger1" },
+        { name: "TimerTrigger1" },
+      ]));
+      const fns = await mgr.listFunctions("rg-1", "func-1");
+      expect(fns).toHaveLength(2);
+      expect(fns[0]).toBe("HttpTrigger1");
+    });
+  });
+
+  describe("getAppSettings", () => {
+    it("returns app settings", async () => {
+      mockWebApps.listApplicationSettings.mockResolvedValue({
+        properties: { FUNCTIONS_WORKER_RUNTIME: "node", MY_KEY: "val" },
+      });
+      const settings = await mgr.getAppSettings("rg-1", "func-1");
+      expect(settings.MY_KEY).toBe("val");
+    });
+  });
+
+  describe("updateAppSettings", () => {
+    it("merges and updates settings", async () => {
+      mockWebApps.listApplicationSettings.mockResolvedValue({
+        properties: { EXISTING: "old" },
+      });
+      mockWebApps.updateApplicationSettings.mockResolvedValue({
+        properties: { EXISTING: "old", NEW_KEY: "new" },
+      });
+      const settings = await mgr.updateAppSettings("rg-1", "func-1", { NEW_KEY: "new" });
+      expect(settings.NEW_KEY).toBe("new");
     });
   });
 });

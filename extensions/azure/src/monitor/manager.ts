@@ -12,6 +12,8 @@ import type {
   AlertRule,
   LogAnalyticsWorkspace,
   DiagnosticSetting,
+  AlertRuleCreateOptions,
+  DiagnosticSettingCreateOptions,
 } from "./types.js";
 
 export class AzureMonitorManager {
@@ -137,6 +139,118 @@ export class AzureMonitorManager {
           retentionDays: m.retentionPolicy?.days,
         })),
       }));
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create or update a metric alert rule.
+   */
+  async createAlertRule(
+    resourceGroup: string,
+    options: AlertRuleCreateOptions
+  ): Promise<AlertRule> {
+    return withAzureRetry(async () => {
+      const client = await this.getMonitorClient();
+      const rule = await client.metricAlerts.createOrUpdate(resourceGroup, options.name, {
+        location: "global",
+        description: options.description,
+        severity: options.severity ?? 3,
+        enabled: options.enabled ?? true,
+        scopes: options.scopes,
+        evaluationFrequency: options.evaluationFrequency ?? "PT5M",
+        windowSize: options.windowSize ?? "PT5M",
+        criteria: {
+          odataType: "Microsoft.Azure.Monitor.SingleResourceMultipleMetricCriteria",
+          allOf: options.criteria?.map((c, i) => ({
+            name: c.name ?? `criterion${i}`,
+            metricName: c.metricName,
+            metricNamespace: c.metricNamespace,
+            operator: c.operator,
+            threshold: c.threshold,
+            timeAggregation: c.timeAggregation,
+            criterionType: "StaticThresholdCriterion" as const,
+          })) ?? [],
+        },
+        tags: options.tags,
+      });
+      return {
+        id: rule.id ?? "",
+        name: rule.name ?? "",
+        resourceGroup,
+        location: rule.location ?? "",
+        description: rule.description,
+        severity: (rule.severity ?? 3) as 0 | 1 | 2 | 3 | 4,
+        enabled: rule.enabled ?? false,
+        scopes: rule.scopes ?? [],
+        evaluationFrequency: rule.evaluationFrequency,
+        windowSize: rule.windowSize,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a metric alert rule.
+   */
+  async deleteAlertRule(resourceGroup: string, ruleName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getMonitorClient();
+      await client.metricAlerts.delete(resourceGroup, ruleName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create or update a diagnostic setting on a resource.
+   */
+  async createDiagnosticSetting(
+    resourceUri: string,
+    name: string,
+    options: DiagnosticSettingCreateOptions
+  ): Promise<DiagnosticSetting> {
+    return withAzureRetry(async () => {
+      const client = await this.getMonitorClient();
+      const ds = await client.diagnosticSettings.createOrUpdate(resourceUri, name, {
+        workspaceId: options.workspaceId,
+        storageAccountId: options.storageAccountId,
+        eventHubAuthorizationRuleId: options.eventHubAuthorizationRuleId,
+        logs: options.logs?.map(l => ({
+          category: l.category,
+          enabled: l.enabled,
+          retentionPolicy: l.retentionDays != null ? { enabled: true, days: l.retentionDays } : undefined,
+        })),
+        metrics: options.metrics?.map(m => ({
+          category: m.category,
+          enabled: m.enabled,
+          retentionPolicy: m.retentionDays != null ? { enabled: true, days: m.retentionDays } : undefined,
+        })),
+      });
+      return {
+        id: ds.id ?? "",
+        name: ds.name ?? "",
+        resourceUri,
+        workspaceId: ds.workspaceId,
+        storageAccountId: ds.storageAccountId,
+        eventHubAuthorizationRuleId: ds.eventHubAuthorizationRuleId,
+        logs: (ds.logs ?? []).map(l => ({
+          category: l.category ?? "",
+          enabled: l.enabled ?? false,
+          retentionDays: l.retentionPolicy?.days,
+        })),
+        metrics: (ds.metrics ?? []).map(m => ({
+          category: m.category ?? "",
+          enabled: m.enabled ?? false,
+          retentionDays: m.retentionPolicy?.days,
+        })),
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a diagnostic setting from a resource.
+   */
+  async deleteDiagnosticSetting(resourceUri: string, name: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getMonitorClient();
+      await client.diagnosticSettings.delete(resourceUri, name);
     }, this.retryOptions);
   }
 }

@@ -16,8 +16,16 @@ function asyncIter<T>(items: T[]): AsyncIterable<T> {
 }
 
 const mockMetrics = { list: vi.fn() };
-const mockMetricAlerts = { listByResourceGroup: vi.fn() };
-const mockDiagnosticSettings = { list: vi.fn() };
+const mockMetricAlerts = {
+  listByResourceGroup: vi.fn(),
+  createOrUpdate: vi.fn(),
+  delete: vi.fn(),
+};
+const mockDiagnosticSettings = {
+  list: vi.fn(),
+  createOrUpdate: vi.fn(),
+  delete: vi.fn(),
+};
 
 const mockWorkspaces = {
   list: vi.fn(),
@@ -25,17 +33,17 @@ const mockWorkspaces = {
 };
 
 vi.mock("@azure/arm-monitor", () => ({
-  MonitorClient: vi.fn().mockImplementation(() => ({
+  MonitorClient: vi.fn().mockImplementation(function() { return {
     metrics: mockMetrics,
     metricAlerts: mockMetricAlerts,
     diagnosticSettings: mockDiagnosticSettings,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/arm-operationalinsights", () => ({
-  OperationalInsightsManagementClient: vi.fn().mockImplementation(() => ({
+  OperationalInsightsManagementClient: vi.fn().mockImplementation(function() { return {
     workspaces: mockWorkspaces,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -98,6 +106,55 @@ describe("AzureMonitorManager", () => {
       });
       const settings = await mgr.listDiagnosticSettings("/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1");
       expect(settings).toHaveLength(1);
+    });
+  });
+
+  describe("createAlertRule", () => {
+    it("creates a metric alert rule", async () => {
+      mockMetricAlerts.createOrUpdate.mockResolvedValue({
+        id: "ar-id", name: "cpu-alert", location: "global",
+        severity: 2, enabled: true, scopes: ["/subscriptions/sub-1"],
+        evaluationFrequency: "PT5M", windowSize: "PT5M",
+      });
+      const rule = await mgr.createAlertRule("rg-1", {
+        name: "cpu-alert",
+        scopes: ["/subscriptions/sub-1"],
+        severity: 2,
+        criteria: [{ metricName: "CpuPercentage", operator: "GreaterThan", threshold: 80, timeAggregation: "Average" }],
+      });
+      expect(rule.name).toBe("cpu-alert");
+      expect(rule.severity).toBe(2);
+    });
+  });
+
+  describe("deleteAlertRule", () => {
+    it("deletes a metric alert rule", async () => {
+      mockMetricAlerts.delete.mockResolvedValue(undefined);
+      await expect(mgr.deleteAlertRule("rg-1", "old-alert")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createDiagnosticSetting", () => {
+    it("creates a diagnostic setting", async () => {
+      mockDiagnosticSettings.createOrUpdate.mockResolvedValue({
+        id: "ds-id", name: "new-diag",
+        workspaceId: "ws-id",
+        logs: [{ category: "AuditLogs", enabled: true }],
+        metrics: [{ category: "AllMetrics", enabled: true }],
+      });
+      const ds = await mgr.createDiagnosticSetting(
+        "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Compute/virtualMachines/vm-1",
+        "new-diag",
+        { workspaceId: "ws-id", logs: [{ category: "AuditLogs", enabled: true }] }
+      );
+      expect(ds.name).toBe("new-diag");
+    });
+  });
+
+  describe("deleteDiagnosticSetting", () => {
+    it("deletes a diagnostic setting", async () => {
+      mockDiagnosticSettings.delete.mockResolvedValue(undefined);
+      await expect(mgr.deleteDiagnosticSetting("/subscriptions/sub-1/resource", "old-diag")).resolves.toBeUndefined();
     });
   });
 });

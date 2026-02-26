@@ -54,3 +54,12 @@ export type LogicAppConnector = {
   capabilities?: string[];
   connectionParameters?: Record<string, unknown>;
 };
+
+export type LogicAppCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  state?: LogicAppState;
+  definition?: Record<string, unknown>;
+  tags?: Record<string, string>;
+};

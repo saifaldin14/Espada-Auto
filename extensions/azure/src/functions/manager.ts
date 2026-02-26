@@ -102,6 +102,79 @@ export class AzureFunctionsManager {
     );
   }
 
+  /**
+   * Create a function app.
+   */
+  async createFunctionApp(options: FunctionCreateOptions): Promise<FunctionApp> {
+    const client = await this.getWebClient();
+    return withAzureRetry(async () => {
+      const app = await client.webApps.beginCreateOrUpdateAndWait(
+        options.resourceGroup,
+        options.name,
+        {
+          location: options.location,
+          kind: "functionapp",
+          siteConfig: {
+            appSettings: [
+              { name: "FUNCTIONS_WORKER_RUNTIME", value: options.runtime },
+              { name: "FUNCTIONS_EXTENSION_VERSION", value: options.runtimeVersion ?? "~4" },
+              { name: "AzureWebJobsStorage", value: `DefaultEndpointsProtocol=https;AccountName=${options.storageAccountName}` },
+            ],
+          },
+          httpsOnly: true,
+          tags: options.tags,
+        },
+      );
+      return {
+        id: app.id ?? "", name: app.name ?? "",
+        resourceGroup: options.resourceGroup, location: app.location ?? "",
+        state: app.state ?? "Unknown", defaultHostName: app.defaultHostName ?? "",
+        httpsOnly: app.httpsOnly ?? true, runtime: options.runtime, functions: [],
+        tags: app.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * List functions within a function app.
+   */
+  async listFunctions(resourceGroup: string, name: string): Promise<string[]> {
+    const client = await this.getWebClient();
+    return withAzureRetry(async () => {
+      const functions: string[] = [];
+      for await (const fn of client.webApps.listFunctions(resourceGroup, name)) {
+        functions.push(fn.name ?? "");
+      }
+      return functions;
+    }, this.retryOptions);
+  }
+
+  /**
+   * Get app settings for a function app.
+   */
+  async getAppSettings(resourceGroup: string, name: string): Promise<Record<string, string>> {
+    const client = await this.getWebClient();
+    return withAzureRetry(async () => {
+      const settings = await client.webApps.listApplicationSettings(resourceGroup, name);
+      return (settings.properties ?? {}) as Record<string, string>;
+    }, this.retryOptions);
+  }
+
+  /**
+   * Update app settings for a function app (merge with existing).
+   */
+  async updateAppSettings(resourceGroup: string, name: string, settings: Record<string, string>): Promise<Record<string, string>> {
+    const client = await this.getWebClient();
+    return withAzureRetry(async () => {
+      const existing = await client.webApps.listApplicationSettings(resourceGroup, name);
+      const merged = { ...existing.properties, ...settings };
+      const result = await client.webApps.updateApplicationSettings(resourceGroup, name, {
+        properties: merged,
+      });
+      return (result.properties ?? {}) as Record<string, string>;
+    }, this.retryOptions);
+  }
+
   private extractResourceGroup(resourceId: string): string {
     const match = resourceId.match(/resourceGroups\/([^/]+)/i);
     return match ? match[1] : "";

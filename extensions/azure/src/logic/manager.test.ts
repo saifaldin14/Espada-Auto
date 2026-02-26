@@ -21,16 +21,21 @@ const mockWorkflows = {
   get: vi.fn(),
   enable: vi.fn(),
   disable: vi.fn(),
+  createOrUpdate: vi.fn(),
+  delete: vi.fn(),
 };
 const mockWorkflowRuns = { list: vi.fn() };
-const mockWorkflowTriggers = { list: vi.fn() };
+const mockWorkflowTriggers = {
+  list: vi.fn(),
+  run: vi.fn(),
+};
 
 vi.mock("@azure/arm-logic", () => ({
-  LogicManagementClient: vi.fn().mockImplementation(() => ({
+  LogicManagementClient: vi.fn().mockImplementation(function() { return {
     workflows: mockWorkflows,
     workflowRuns: mockWorkflowRuns,
     workflowTriggers: mockWorkflowTriggers,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -102,6 +107,36 @@ describe("AzureLogicAppsManager", () => {
     it("disables a workflow", async () => {
       mockWorkflows.disable.mockResolvedValue(undefined);
       await expect(mgr.disableWorkflow("rg-1", "wf-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createWorkflow", () => {
+    it("creates a Logic App workflow", async () => {
+      mockWorkflows.createOrUpdate.mockResolvedValue({
+        id: "wf-id", name: "new-wf", location: "eastus",
+        state: "Enabled", provisioningState: "Succeeded",
+        createdTime: new Date(), changedTime: new Date(),
+      });
+      const wf = await mgr.createWorkflow({
+        name: "new-wf", resourceGroup: "rg-1", location: "eastus",
+      });
+      expect(wf.name).toBe("new-wf");
+      expect(wf.state).toBe("Enabled");
+    });
+  });
+
+  describe("deleteWorkflow", () => {
+    it("deletes a workflow", async () => {
+      mockWorkflows.delete.mockResolvedValue(undefined);
+      await expect(mgr.deleteWorkflow("rg-1", "wf-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("runTrigger", () => {
+    it("runs a workflow trigger", async () => {
+      mockWorkflowTriggers.run.mockResolvedValue(undefined);
+      await expect(mgr.runTrigger("rg-1", "wf-1", "manual")).resolves.toBeUndefined();
+      expect(mockWorkflowTriggers.run).toHaveBeenCalledWith("rg-1", "wf-1", "manual");
     });
   });
 });

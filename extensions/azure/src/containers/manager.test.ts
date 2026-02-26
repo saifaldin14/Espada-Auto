@@ -18,6 +18,13 @@ function asyncIter<T>(items: T[]): AsyncIterable<T> {
 const mockManagedClusters = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
+  beginCreateOrUpdateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
+  listClusterUserCredentials: vi.fn(),
+};
+
+const mockAgentPools = {
+  beginCreateOrUpdateAndWait: vi.fn(),
 };
 
 const mockContainerGroups = {
@@ -31,21 +38,22 @@ const mockRegistries = {
 };
 
 vi.mock("@azure/arm-containerservice", () => ({
-  ContainerServiceClient: vi.fn().mockImplementation(() => ({
+  ContainerServiceClient: vi.fn().mockImplementation(function() { return {
     managedClusters: mockManagedClusters,
-  })),
+    agentPools: mockAgentPools,
+  }; }),
 }));
 
 vi.mock("@azure/arm-containerinstance", () => ({
-  ContainerInstanceManagementClient: vi.fn().mockImplementation(() => ({
+  ContainerInstanceManagementClient: vi.fn().mockImplementation(function() { return {
     containerGroups: mockContainerGroups,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/arm-containerregistry", () => ({
-  ContainerRegistryManagementClient: vi.fn().mockImplementation(() => ({
+  ContainerRegistryManagementClient: vi.fn().mockImplementation(function() { return {
     registries: mockRegistries,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -113,6 +121,56 @@ describe("AzureContainerManager", () => {
       mockRegistries.listByResourceGroup.mockReturnValue(asyncIter([]));
       await mgr.listContainerRegistries("rg-1");
       expect(mockRegistries.listByResourceGroup).toHaveBeenCalledWith("rg-1");
+    });
+  });
+
+  describe("createAKSCluster", () => {
+    it("creates an AKS cluster", async () => {
+      mockManagedClusters.beginCreateOrUpdateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.ContainerService/managedClusters/new-aks",
+        name: "new-aks", location: "eastus", kubernetesVersion: "1.29",
+        provisioningState: "Succeeded", powerState: { code: "Running" },
+        agentPoolProfiles: [{ name: "nodepool1", count: 3, vmSize: "Standard_D2s_v5", osType: "Linux", mode: "System" }],
+        fqdn: "new-aks.hcp.eastus.azmk8s.io",
+      });
+      const cluster = await mgr.createAKSCluster({
+        name: "new-aks", resourceGroup: "rg-1", location: "eastus",
+      });
+      expect(cluster.name).toBe("new-aks");
+      expect(cluster.nodeCount).toBe(3);
+    });
+  });
+
+  describe("deleteAKSCluster", () => {
+    it("deletes an AKS cluster", async () => {
+      mockManagedClusters.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteAKSCluster("rg-1", "aks-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("scaleNodePool", () => {
+    it("scales a node pool", async () => {
+      mockAgentPools.beginCreateOrUpdateAndWait.mockResolvedValue(undefined);
+      await expect(mgr.scaleNodePool("rg-1", "aks-1", "nodepool1", 5)).resolves.toBeUndefined();
+      expect(mockAgentPools.beginCreateOrUpdateAndWait).toHaveBeenCalledWith(
+        "rg-1", "aks-1", "nodepool1", { count: 5 }
+      );
+    });
+  });
+
+  describe("getClusterCredentials", () => {
+    it("returns kubeconfig", async () => {
+      mockManagedClusters.listClusterUserCredentials.mockResolvedValue({
+        kubeconfigs: [{ name: "clusterUser", value: new TextEncoder().encode("apiVersion: v1") }],
+      });
+      const kubeconfig = await mgr.getClusterCredentials("rg-1", "aks-1");
+      expect(kubeconfig).toBe("apiVersion: v1");
+    });
+
+    it("returns empty string when no credentials", async () => {
+      mockManagedClusters.listClusterUserCredentials.mockResolvedValue({ kubeconfigs: [] });
+      const kubeconfig = await mgr.getClusterCredentials("rg-1", "aks-1");
+      expect(kubeconfig).toBe("");
     });
   });
 });

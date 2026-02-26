@@ -18,21 +18,25 @@ function asyncIter<T>(items: T[]): AsyncIterable<T> {
 const mockProfiles = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
+  beginCreateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
 const mockEndpoints = {
   listByProfile: vi.fn(),
   beginPurgeContentAndWait: vi.fn(),
+  beginCreateAndWait: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
 const mockCustomDomains = { listByEndpoint: vi.fn() };
 
 vi.mock("@azure/arm-cdn", () => ({
-  CdnManagementClient: vi.fn().mockImplementation(() => ({
+  CdnManagementClient: vi.fn().mockImplementation(function() { return {
     profiles: mockProfiles,
     endpoints: mockEndpoints,
     customDomains: mockCustomDomains,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -91,6 +95,50 @@ describe("AzureCDNManager", () => {
       mockEndpoints.beginPurgeContentAndWait.mockResolvedValue(undefined);
       await mgr.purgeContent("rg-1", "cdn-1", "endpoint-1", ["/*"]);
       expect(mockEndpoints.beginPurgeContentAndWait).toHaveBeenCalledWith("rg-1", "cdn-1", "endpoint-1", { contentPaths: ["/*"] });
+    });
+  });
+
+  describe("createProfile", () => {
+    it("creates a CDN profile", async () => {
+      mockProfiles.beginCreateAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Cdn/profiles/new-cdn",
+        name: "new-cdn", location: "global",
+        sku: { name: "Standard_Microsoft" },
+        provisioningState: "Succeeded", resourceState: "Active",
+      });
+      const profile = await mgr.createProfile("rg-1", "new-cdn", "global", "Standard_Microsoft");
+      expect(profile.name).toBe("new-cdn");
+    });
+  });
+
+  describe("deleteProfile", () => {
+    it("deletes a CDN profile", async () => {
+      mockProfiles.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteProfile("rg-1", "cdn-1")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createEndpoint", () => {
+    it("creates a CDN endpoint", async () => {
+      mockEndpoints.beginCreateAndWait.mockResolvedValue({
+        id: "ep-id", name: "new-ep",
+        hostName: "new-ep.azureedge.net",
+        origins: [{ name: "origin1", hostName: "origin.example.com" }],
+        isHttpAllowed: true, isHttpsAllowed: true,
+        provisioningState: "Succeeded",
+      });
+      const ep = await mgr.createEndpoint("rg-1", "cdn-1", "new-ep", [
+        { name: "origin1", hostName: "origin.example.com" },
+      ]);
+      expect(ep.name).toBe("new-ep");
+      expect(ep.origins).toHaveLength(1);
+    });
+  });
+
+  describe("deleteEndpoint", () => {
+    it("deletes a CDN endpoint", async () => {
+      mockEndpoints.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteEndpoint("rg-1", "cdn-1", "ep-1")).resolves.toBeUndefined();
     });
   });
 });

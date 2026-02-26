@@ -5,7 +5,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { AKSCluster, ContainerInstance, ContainerRegistry } from "./types.js";
+import type { AKSCluster, ContainerInstance, ContainerRegistry, AKSClusterCreateOptions } from "./types.js";
 
 export class AzureContainerManager {
   private credentialsManager: AzureCredentialsManager;
@@ -110,6 +110,92 @@ export class AzureContainerManager {
 
   private extractRG(id: string): string {
     return id.match(/resourceGroups\/([^/]+)/i)?.[1] ?? "";
+  }
+
+  /**
+   * Create an AKS cluster.
+   */
+  async createAKSCluster(options: AKSClusterCreateOptions): Promise<AKSCluster> {
+    const { credential } = await this.credentialsManager.getCredential();
+    const { ContainerServiceClient } = await import("@azure/arm-containerservice");
+    const client = new ContainerServiceClient(credential, this.subscriptionId);
+
+    return withAzureRetry(async () => {
+      const c = await client.managedClusters.beginCreateOrUpdateAndWait(
+        options.resourceGroup, options.name,
+        {
+          location: options.location,
+          kubernetesVersion: options.kubernetesVersion ?? "1.29",
+          dnsPrefix: options.dnsPrefix ?? options.name,
+          agentPoolProfiles: [{
+            name: options.nodePoolName ?? "nodepool1",
+            count: options.nodeCount ?? 3,
+            vmSize: options.vmSize ?? "Standard_D2s_v5",
+            osType: "Linux",
+            mode: "System",
+            enableAutoScaling: options.enableAutoScaling ?? false,
+            minCount: options.minCount,
+            maxCount: options.maxCount,
+          }],
+          identity: { type: "SystemAssigned" },
+          tags: options.tags,
+        },
+      );
+      return {
+        id: c.id ?? "", name: c.name ?? "", resourceGroup: options.resourceGroup,
+        location: c.location ?? "", kubernetesVersion: c.kubernetesVersion ?? "",
+        provisioningState: c.provisioningState ?? "", powerState: c.powerState?.code ?? "unknown",
+        nodeCount: (c.agentPoolProfiles ?? []).reduce((sum, p) => sum + (p.count ?? 0), 0),
+        fqdn: c.fqdn,
+        agentPoolProfiles: (c.agentPoolProfiles ?? []).map(p => ({
+          name: p.name ?? "", count: p.count ?? 0, vmSize: p.vmSize ?? "",
+          osType: p.osType ?? "Linux", mode: (p.mode as "System" | "User") ?? "System",
+          enableAutoScaling: p.enableAutoScaling ?? false, minCount: p.minCount, maxCount: p.maxCount,
+        })),
+        tags: c.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete an AKS cluster.
+   */
+  async deleteAKSCluster(resourceGroup: string, name: string): Promise<void> {
+    const { credential } = await this.credentialsManager.getCredential();
+    const { ContainerServiceClient } = await import("@azure/arm-containerservice");
+    const client = new ContainerServiceClient(credential, this.subscriptionId);
+    await withAzureRetry(() => client.managedClusters.beginDeleteAndWait(resourceGroup, name), this.retryOptions);
+  }
+
+  /**
+   * Scale an AKS node pool.
+   */
+  async scaleNodePool(resourceGroup: string, clusterName: string, nodePoolName: string, count: number): Promise<void> {
+    const { credential } = await this.credentialsManager.getCredential();
+    const { ContainerServiceClient } = await import("@azure/arm-containerservice");
+    const client = new ContainerServiceClient(credential, this.subscriptionId);
+    await withAzureRetry(async () => {
+      await client.agentPools.beginCreateOrUpdateAndWait(resourceGroup, clusterName, nodePoolName, {
+        count,
+      });
+    }, this.retryOptions);
+  }
+
+  /**
+   * Get AKS cluster credentials (kubeconfig).
+   */
+  async getClusterCredentials(resourceGroup: string, clusterName: string): Promise<string> {
+    const { credential } = await this.credentialsManager.getCredential();
+    const { ContainerServiceClient } = await import("@azure/arm-containerservice");
+    const client = new ContainerServiceClient(credential, this.subscriptionId);
+    return withAzureRetry(async () => {
+      const result = await client.managedClusters.listClusterUserCredentials(resourceGroup, clusterName);
+      const kubeconfigs = result.kubeconfigs ?? [];
+      if (kubeconfigs.length === 0) return "";
+      const buf = kubeconfigs[0].value;
+      if (!buf) return "";
+      return new TextDecoder().decode(buf);
+    }, this.retryOptions);
   }
 }
 

@@ -79,3 +79,32 @@ export type ApplicationInsightsComponent = {
   applicationType?: string;
   retentionInDays?: number;
 };
+
+export type AlertRuleCriterion = {
+  name?: string;
+  metricName: string;
+  metricNamespace?: string;
+  operator: string;
+  threshold: number;
+  timeAggregation: string;
+};
+
+export type AlertRuleCreateOptions = {
+  name: string;
+  description?: string;
+  severity?: 0 | 1 | 2 | 3 | 4;
+  enabled?: boolean;
+  scopes: string[];
+  evaluationFrequency?: string;
+  windowSize?: string;
+  criteria?: AlertRuleCriterion[];
+  tags?: Record<string, string>;
+};
+
+export type DiagnosticSettingCreateOptions = {
+  workspaceId?: string;
+  storageAccountId?: string;
+  eventHubAuthorizationRuleId?: string;
+  logs?: Array<{ category: string; enabled: boolean; retentionDays?: number }>;
+  metrics?: Array<{ category: string; enabled: boolean; retentionDays?: number }>;
+};

@@ -119,6 +119,36 @@ export class AzureSecurityManager {
       return results;
     }, this.retryOptions);
   }
+
+  /**
+   * Dismiss (resolve) a security alert at the subscription level.
+   */
+  async dismissAlert(location: string, alertName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.alerts.updateSubscriptionLevelStateToDismiss(location, alertName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Resolve a security alert at the subscription level.
+   */
+  async resolveAlert(location: string, alertName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.alerts.updateSubscriptionLevelStateToResolve(location, alertName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Activate a security alert at the subscription level.
+   */
+  async activateAlert(location: string, alertName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.alerts.updateSubscriptionLevelStateToActivate(location, alertName);
+    }, this.retryOptions);
+  }
 }
 
 export function createSecurityManager(

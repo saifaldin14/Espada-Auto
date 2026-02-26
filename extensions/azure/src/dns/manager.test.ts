@@ -19,6 +19,8 @@ const mockZones = {
   list: vi.fn(),
   listByResourceGroup: vi.fn(),
   get: vi.fn(),
+  createOrUpdate: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
 };
 
 const mockRecordSets = {
@@ -28,10 +30,10 @@ const mockRecordSets = {
 };
 
 vi.mock("@azure/arm-dns", () => ({
-  DnsManagementClient: vi.fn().mockImplementation(() => ({
+  DnsManagementClient: vi.fn().mockImplementation(function() { return {
     zones: mockZones,
     recordSets: mockRecordSets,
-  })),
+  }; }),
 }));
 
 const mockCreds = {
@@ -100,6 +102,26 @@ describe("AzureDNSManager", () => {
     it("deletes a record set", async () => {
       mockRecordSets.delete.mockResolvedValue(undefined);
       await expect(mgr.deleteRecordSet("rg-1", "example.com", "old", "A")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("createZone", () => {
+    it("creates a DNS zone", async () => {
+      mockZones.createOrUpdate.mockResolvedValue({
+        id: "/subscriptions/sub-1/resourceGroups/rg-1/providers/Microsoft.Network/dnszones/myzone.com",
+        name: "myzone.com", location: "global", zoneType: "Public",
+        numberOfRecordSets: 2, nameServers: ["ns1.azure-dns.com"],
+      });
+      const zone = await mgr.createZone("rg-1", "myzone.com");
+      expect(zone.name).toBe("myzone.com");
+      expect(zone.zoneType).toBe("Public");
+    });
+  });
+
+  describe("deleteZone", () => {
+    it("deletes a DNS zone", async () => {
+      mockZones.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteZone("rg-1", "example.com")).resolves.toBeUndefined();
     });
   });
 });

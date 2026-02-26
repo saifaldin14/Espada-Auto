@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { CDNProfile, CDNEndpoint, CDNCustomDomain, CDNSkuName } from "./types.js";
+import type { CDNProfile, CDNEndpoint, CDNCustomDomain, CDNSkuName, CDNOrigin } from "./types.js";
 
 export class AzureCDNManager {
   private credentialsManager: AzureCredentialsManager;
@@ -118,6 +118,106 @@ export class AzureCDNManager {
       await client.endpoints.beginPurgeContentAndWait(resourceGroup, profileName, endpointName, {
         contentPaths,
       });
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create a CDN profile.
+   */
+  async createProfile(
+    resourceGroup: string,
+    name: string,
+    location: string,
+    sku: CDNSkuName,
+    tags?: Record<string, string>
+  ): Promise<CDNProfile> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const p = await client.profiles.beginCreateAndWait(resourceGroup, name, {
+        location,
+        sku: { name: sku },
+        tags,
+      });
+      return {
+        id: p.id ?? "",
+        name: p.name ?? "",
+        resourceGroup,
+        location: p.location ?? "",
+        sku: ((p.sku?.name ?? "Standard_Microsoft") as string as CDNSkuName),
+        provisioningState: p.provisioningState,
+        resourceState: p.resourceState,
+        frontDoorId: p.frontDoorId,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a CDN profile.
+   */
+  async deleteProfile(resourceGroup: string, profileName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.profiles.beginDeleteAndWait(resourceGroup, profileName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create a CDN endpoint.
+   */
+  async createEndpoint(
+    resourceGroup: string,
+    profileName: string,
+    name: string,
+    origins: Array<{ name: string; hostName: string }>,
+    options?: {
+      originHostHeader?: string;
+      isHttpAllowed?: boolean;
+      isHttpsAllowed?: boolean;
+      isCompressionEnabled?: boolean;
+      tags?: Record<string, string>;
+    }
+  ): Promise<CDNEndpoint> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const e = await client.endpoints.beginCreateAndWait(resourceGroup, profileName, name, {
+        location: "global",
+        origins: origins.map(o => ({ name: o.name, hostName: o.hostName })),
+        originHostHeader: options?.originHostHeader,
+        isHttpAllowed: options?.isHttpAllowed ?? true,
+        isHttpsAllowed: options?.isHttpsAllowed ?? true,
+        isCompressionEnabled: options?.isCompressionEnabled ?? false,
+        tags: options?.tags,
+      });
+      return {
+        id: e.id ?? "",
+        name: e.name ?? "",
+        profileName,
+        hostName: e.hostName,
+        originHostHeader: e.originHostHeader,
+        isHttpAllowed: e.isHttpAllowed,
+        isHttpsAllowed: e.isHttpsAllowed,
+        isCompressionEnabled: e.isCompressionEnabled,
+        provisioningState: e.provisioningState,
+        resourceState: e.resourceState,
+        origins: (e.origins ?? []).map(o => ({
+          name: o.name ?? "",
+          hostName: o.hostName ?? "",
+        })),
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a CDN endpoint.
+   */
+  async deleteEndpoint(
+    resourceGroup: string,
+    profileName: string,
+    endpointName: string
+  ): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.endpoints.beginDeleteAndWait(resourceGroup, profileName, endpointName);
     }, this.retryOptions);
   }
 }

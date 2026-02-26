@@ -85,3 +85,31 @@ export type SqlFailoverGroup = {
   readOnlyEndpoint?: string;
   databases: string[];
 };
+
+// =============================================================================
+// Create Options
+// =============================================================================
+
+export type SqlServerCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  administratorLogin: string;
+  administratorLoginPassword: string;
+  version?: string;
+  publicNetworkAccess?: string;
+  tags?: Record<string, string>;
+};
+
+export type SqlDatabaseCreateOptions = {
+  name: string;
+  serverName: string;
+  resourceGroup: string;
+  location?: string;
+  sku?: { name: string; tier?: string; capacity?: number };
+  maxSizeBytes?: number;
+  collation?: string;
+  zoneRedundant?: boolean;
+  elasticPoolId?: string;
+  tags?: Record<string, string>;
+};

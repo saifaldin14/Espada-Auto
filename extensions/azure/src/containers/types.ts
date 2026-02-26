@@ -58,3 +58,18 @@ export type ContainerRegistry = {
   adminUserEnabled: boolean;
   tags?: Record<string, string>;
 };
+
+export type AKSClusterCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  kubernetesVersion?: string;
+  dnsPrefix?: string;
+  nodePoolName?: string;
+  nodeCount?: number;
+  vmSize?: string;
+  enableAutoScaling?: boolean;
+  minCount?: number;
+  maxCount?: number;
+  tags?: Record<string, string>;
+};

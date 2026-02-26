@@ -24,19 +24,26 @@ const mockVaults = {
 const mockBackupPolicies = { list: vi.fn() };
 const mockBackupProtectedItems = { list: vi.fn() };
 const mockBackupJobs = { list: vi.fn() };
+const mockBackups = { trigger: vi.fn() };
+const mockProtectionPolicies = {
+  createOrUpdate: vi.fn(),
+  beginDeleteAndWait: vi.fn(),
+};
 
 vi.mock("@azure/arm-recoveryservices", () => ({
-  RecoveryServicesClient: vi.fn().mockImplementation(() => ({
+  RecoveryServicesClient: vi.fn().mockImplementation(function() { return {
     vaults: mockVaults,
-  })),
+  }; }),
 }));
 
 vi.mock("@azure/arm-recoveryservicesbackup", () => ({
-  RecoveryServicesBackupClient: vi.fn().mockImplementation(() => ({
+  RecoveryServicesBackupClient: vi.fn().mockImplementation(function() { return {
     backupPolicies: mockBackupPolicies,
     backupProtectedItems: mockBackupProtectedItems,
     backupJobs: mockBackupJobs,
-  })),
+    backups: mockBackups,
+    protectionPolicies: mockProtectionPolicies,
+  }; }),
 }));
 
 const mockCreds = {
@@ -106,6 +113,37 @@ describe("AzureBackupManager", () => {
       ]));
       const jobs = await mgr.listBackupJobs("rg-1", "vault-1");
       expect(jobs).toHaveLength(1);
+    });
+  });
+
+  describe("triggerBackup", () => {
+    it("triggers an on-demand backup", async () => {
+      mockBackups.trigger.mockResolvedValue(undefined);
+      await expect(
+        mgr.triggerBackup("rg-1", "vault-1", "Azure", "vm-container", "vm-item")
+      ).resolves.toBeUndefined();
+      expect(mockBackups.trigger).toHaveBeenCalled();
+    });
+  });
+
+  describe("createBackupPolicy", () => {
+    it("creates a backup policy", async () => {
+      mockProtectionPolicies.createOrUpdate.mockResolvedValue({
+        id: "bp-id", name: "NewPolicy",
+        properties: { backupManagementType: "AzureIaasVM" },
+      });
+      const policy = await mgr.createBackupPolicy("rg-1", "vault-1", "NewPolicy", {
+        backupManagementType: "AzureIaasVM",
+        objectType: "AzureIaaSVMProtectionPolicy",
+      });
+      expect(policy.name).toBe("NewPolicy");
+    });
+  });
+
+  describe("deleteBackupPolicy", () => {
+    it("deletes a backup policy", async () => {
+      mockProtectionPolicies.beginDeleteAndWait.mockResolvedValue(undefined);
+      await expect(mgr.deleteBackupPolicy("rg-1", "vault-1", "OldPolicy")).resolves.toBeUndefined();
     });
   });
 });

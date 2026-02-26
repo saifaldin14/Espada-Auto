@@ -135,6 +135,44 @@ export class AzureDNSManager {
       await client.recordSets.delete(resourceGroup, zoneName, recordName, recordType);
     }, this.retryOptions);
   }
+
+  /**
+   * Create or update a DNS zone.
+   */
+  async createZone(
+    resourceGroup: string,
+    zoneName: string,
+    options?: { location?: string; zoneType?: "Public" | "Private"; tags?: Record<string, string> }
+  ): Promise<DNSZone> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const z = await client.zones.createOrUpdate(resourceGroup, zoneName, {
+        location: options?.location ?? "global",
+        zoneType: options?.zoneType ?? "Public",
+        tags: options?.tags,
+      });
+      return {
+        id: z.id ?? "",
+        name: z.name ?? "",
+        resourceGroup,
+        location: z.location ?? "",
+        zoneType: (z.zoneType as "Public" | "Private") ?? "Public",
+        numberOfRecordSets: z.numberOfRecordSets,
+        maxNumberOfRecordSets: z.maxNumberOfRecordSets,
+        nameServers: z.nameServers,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a DNS zone.
+   */
+  async deleteZone(resourceGroup: string, zoneName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.zones.beginDeleteAndWait(resourceGroup, zoneName);
+    }, this.retryOptions);
+  }
 }
 
 export function createDNSManager(

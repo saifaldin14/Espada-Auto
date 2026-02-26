@@ -43,17 +43,21 @@ const mockStorageAccounts = {
   listByResourceGroup: vi.fn(),
   getProperties: vi.fn(),
   delete: vi.fn(),
+  beginCreateAndWait: vi.fn(),
+  update: vi.fn(),
 };
 
 const mockBlobContainers = {
   list: vi.fn(),
+  create: vi.fn(),
+  delete: vi.fn(),
 };
 
 vi.mock("@azure/arm-storage", () => ({
-  StorageManagementClient: vi.fn().mockImplementation(() => ({
+  StorageManagementClient: vi.fn().mockImplementation(function() { return {
     storageAccounts: mockStorageAccounts,
     blobContainers: mockBlobContainers,
-  })),
+  }; }),
 }));
 
 const mockCredential = { getToken: vi.fn().mockResolvedValue({ token: "t", expiresOnTimestamp: Date.now() + 3600000 }) };
@@ -158,6 +162,45 @@ describe("AzureStorageManager", () => {
       mockStorageAccounts.delete.mockResolvedValue(undefined);
       await mgr.deleteStorageAccount("rg-1", "sa1");
       expect(mockStorageAccounts.delete).toHaveBeenCalledWith("rg-1", "sa1");
+    });
+  });
+
+  describe("createStorageAccount", () => {
+    it("creates a storage account with defaults", async () => {
+      mockStorageAccounts.beginCreateAndWait.mockResolvedValue(makeSdkStorageAccount());
+      const account = await mgr.createStorageAccount({
+        name: "sa1",
+        resourceGroup: "rg-1",
+        location: "eastus",
+      });
+      expect(account.name).toBe("sa1");
+      expect(mockStorageAccounts.beginCreateAndWait).toHaveBeenCalledWith("rg-1", "sa1", expect.objectContaining({
+        location: "eastus",
+        kind: "StorageV2",
+      }));
+    });
+  });
+
+  describe("createContainer", () => {
+    it("creates a blob container", async () => {
+      mockBlobContainers.create.mockResolvedValue({ name: "my-container", id: "c-id" });
+      const container = await mgr.createContainer("rg-1", "sa1", { name: "my-container" });
+      expect(container.name).toBe("my-container");
+    });
+  });
+
+  describe("deleteContainer", () => {
+    it("deletes a blob container", async () => {
+      mockBlobContainers.delete.mockResolvedValue(undefined);
+      await expect(mgr.deleteContainer("rg-1", "sa1", "old-container")).resolves.toBeUndefined();
+    });
+  });
+
+  describe("setAccessTier", () => {
+    it("updates the access tier", async () => {
+      mockStorageAccounts.update.mockResolvedValue(undefined);
+      await mgr.setAccessTier("rg-1", "sa1", "Cool");
+      expect(mockStorageAccounts.update).toHaveBeenCalledWith("rg-1", "sa1", { accessTier: "Cool" });
     });
   });
 });

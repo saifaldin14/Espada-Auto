@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { SqlServer, SqlDatabase, SqlElasticPool, SqlFirewallRule, SqlFailoverGroup } from "./types.js";
+import type { SqlServer, SqlDatabase, SqlElasticPool, SqlFirewallRule, SqlFailoverGroup, SqlServerCreateOptions, SqlDatabaseCreateOptions } from "./types.js";
 
 // =============================================================================
 // AzureSQLManager
@@ -182,6 +182,76 @@ export class AzureSQLManager {
   async deleteFirewallRule(resourceGroup: string, serverName: string, ruleName: string): Promise<void> {
     const client = await this.getClient();
     await withAzureRetry(() => client.firewallRules.delete(resourceGroup, serverName, ruleName), this.retryOptions);
+  }
+
+  /**
+   * Create a SQL server.
+   */
+  async createServer(options: SqlServerCreateOptions): Promise<SqlServer> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const s = await client.servers.beginCreateOrUpdateAndWait(options.resourceGroup, options.name, {
+        location: options.location,
+        administratorLogin: options.administratorLogin,
+        administratorLoginPassword: options.administratorLoginPassword,
+        version: options.version ?? "12.0",
+        publicNetworkAccess: options.publicNetworkAccess,
+        tags: options.tags,
+      });
+      return {
+        id: s.id ?? "", name: s.name ?? "", resourceGroup: options.resourceGroup,
+        location: s.location ?? "", fullyQualifiedDomainName: s.fullyQualifiedDomainName,
+        administratorLogin: s.administratorLogin, version: s.version,
+        state: s.state, publicNetworkAccess: s.publicNetworkAccess,
+        tags: s.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a SQL server.
+   */
+  async deleteServer(resourceGroup: string, serverName: string): Promise<void> {
+    const client = await this.getClient();
+    await withAzureRetry(() => client.servers.beginDeleteAndWait(resourceGroup, serverName), this.retryOptions);
+  }
+
+  /**
+   * Create a SQL database.
+   */
+  async createDatabase(options: SqlDatabaseCreateOptions): Promise<SqlDatabase> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const d = await client.databases.beginCreateOrUpdateAndWait(
+        options.resourceGroup, options.serverName, options.name,
+        {
+          location: options.location ?? "",
+          sku: options.sku,
+          maxSizeBytes: options.maxSizeBytes,
+          collation: options.collation ?? "SQL_Latin1_General_CP1_CI_AS",
+          zoneRedundant: options.zoneRedundant,
+          elasticPoolId: options.elasticPoolId,
+          tags: options.tags,
+        },
+      );
+      return {
+        id: d.id ?? "", name: d.name ?? "", serverName: options.serverName,
+        resourceGroup: options.resourceGroup, location: d.location ?? "",
+        status: d.status, edition: d.sku?.tier, serviceLevelObjective: d.sku?.name,
+        maxSizeBytes: d.maxSizeBytes ? Number(d.maxSizeBytes) : undefined,
+        collation: d.collation, creationDate: d.creationDate?.toISOString(),
+        elasticPoolId: d.elasticPoolId, zoneRedundant: d.zoneRedundant,
+        tags: d.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a SQL database.
+   */
+  async deleteDatabase(resourceGroup: string, serverName: string, dbName: string): Promise<void> {
+    const client = await this.getClient();
+    await withAzureRetry(() => client.databases.beginDeleteAndWait(resourceGroup, serverName, dbName), this.retryOptions);
   }
 }
 

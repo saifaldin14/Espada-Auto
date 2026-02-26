@@ -7,7 +7,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { LogicAppWorkflow, LogicAppRun, LogicAppTrigger, LogicAppState } from "./types.js";
+import type { LogicAppWorkflow, LogicAppRun, LogicAppTrigger, LogicAppState, LogicAppCreateOptions } from "./types.js";
 
 export class AzureLogicAppsManager {
   private credentialsManager: AzureCredentialsManager;
@@ -142,6 +142,61 @@ export class AzureLogicAppsManager {
     return withAzureRetry(async () => {
       const client = await this.getClient();
       await client.workflows.disable(resourceGroup, workflowName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create or update a Logic App workflow.
+   */
+  async createWorkflow(options: LogicAppCreateOptions): Promise<LogicAppWorkflow> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const w = await client.workflows.createOrUpdate(options.resourceGroup, options.name, {
+        location: options.location,
+        state: options.state ?? "Enabled",
+        definition: options.definition ?? {
+          "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          contentVersion: "1.0.0.0",
+          parameters: {},
+          triggers: {},
+          actions: {},
+          outputs: {},
+        },
+        tags: options.tags,
+      });
+      return {
+        id: w.id ?? "",
+        name: w.name ?? "",
+        resourceGroup: options.resourceGroup,
+        location: w.location ?? "",
+        state: ((w.state ?? "Enabled") as string as LogicAppState),
+        version: w.version,
+        accessEndpoint: w.accessEndpoint,
+        provisioningState: w.provisioningState,
+        createdTime: w.createdTime?.toISOString(),
+        changedTime: w.changedTime?.toISOString(),
+        sku: w.sku?.name,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a Logic App workflow.
+   */
+  async deleteWorkflow(resourceGroup: string, workflowName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.workflows.delete(resourceGroup, workflowName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Run a workflow trigger manually.
+   */
+  async runTrigger(resourceGroup: string, workflowName: string, triggerName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.workflowTriggers.run(resourceGroup, workflowName, triggerName);
     }, this.retryOptions);
   }
 }

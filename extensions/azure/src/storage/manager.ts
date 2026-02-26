@@ -5,7 +5,7 @@ import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions, AzurePaginationOptions, AzurePagedResult } from "../types.js";
 import { withAzureRetry } from "../retry.js";
 import { collectPaged, collectAll } from "../pagination.js";
-import type { StorageAccount, BlobContainer } from "./types.js";
+import type { StorageAccount, BlobContainer, StorageAccountCreateOptions, BlobContainerCreateOptions } from "./types.js";
 
 export class AzureStorageManager {
   private credentialsManager: AzureCredentialsManager;
@@ -92,6 +92,77 @@ export class AzureStorageManager {
   async deleteStorageAccount(resourceGroup: string, name: string): Promise<void> {
     const client = await this.getStorageClient();
     await withAzureRetry(() => client.storageAccounts.delete(resourceGroup, name), this.retryOptions);
+  }
+
+  /**
+   * Create a storage account.
+   */
+  async createStorageAccount(options: StorageAccountCreateOptions): Promise<StorageAccount> {
+    const client = await this.getStorageClient();
+    return withAzureRetry(async () => {
+      const result = await client.storageAccounts.beginCreateAndWait(
+        options.resourceGroup,
+        options.name,
+        {
+          location: options.location,
+          kind: options.kind ?? "StorageV2",
+          sku: { name: options.sku ?? "Standard_LRS" },
+          enableHttpsTrafficOnly: options.httpsOnly ?? true,
+          minimumTlsVersion: options.minimumTlsVersion ?? "TLS1_2",
+          tags: options.tags,
+        },
+      );
+      return {
+        id: result.id ?? "", name: result.name ?? "", resourceGroup: options.resourceGroup,
+        location: result.location ?? "", kind: (result.kind ?? "StorageV2") as StorageAccount["kind"],
+        sku: (result.sku?.name ?? "Standard_LRS") as StorageAccount["sku"],
+        provisioningState: result.provisioningState ?? "",
+        primaryEndpoints: result.primaryEndpoints as StorageAccount["primaryEndpoints"],
+        httpsOnly: result.enableHttpsTrafficOnly ?? true,
+        tags: result.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create a blob container within a storage account.
+   */
+  async createContainer(
+    resourceGroup: string, accountName: string, options: BlobContainerCreateOptions,
+  ): Promise<BlobContainer> {
+    const client = await this.getStorageClient();
+    return withAzureRetry(async () => {
+      const c = await client.blobContainers.create(resourceGroup, accountName, options.name, {
+        publicAccess: options.publicAccess ?? "None",
+        metadata: options.metadata,
+      });
+      return {
+        name: c.name ?? options.name, publicAccess: c.publicAccess ?? "None",
+        lastModified: c.lastModifiedTime?.toISOString(),
+        leaseState: c.leaseState, hasImmutabilityPolicy: c.hasImmutabilityPolicy ?? false,
+        hasLegalHold: c.hasLegalHold ?? false,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a blob container.
+   */
+  async deleteContainer(resourceGroup: string, accountName: string, containerName: string): Promise<void> {
+    const client = await this.getStorageClient();
+    await withAzureRetry(() => client.blobContainers.delete(resourceGroup, accountName, containerName), this.retryOptions);
+  }
+
+  /**
+   * Set the access tier for a storage account.
+   */
+  async setAccessTier(resourceGroup: string, accountName: string, accessTier: "Hot" | "Cool"): Promise<void> {
+    const client = await this.getStorageClient();
+    await withAzureRetry(async () => {
+      await client.storageAccounts.update(resourceGroup, accountName, {
+        accessTier,
+      });
+    }, this.retryOptions);
   }
 }
 

@@ -139,6 +139,70 @@ export class AzureBackupManager {
       return results;
     }, this.retryOptions);
   }
+
+  /**
+   * Trigger an on-demand backup for a protected item.
+   */
+  async triggerBackup(
+    resourceGroup: string,
+    vaultName: string,
+    fabricName: string,
+    containerName: string,
+    protectedItemName: string,
+    expiryDateTimeUtc?: string
+  ): Promise<void> {
+    return withAzureRetry(async () => {
+      const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
+      const { credential } = await this.credentialsManager.getCredential();
+      const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
+      await client.backups.trigger(
+        vaultName, resourceGroup, fabricName, containerName, protectedItemName,
+        { properties: { objectType: "IaasVMBackupRequest" } }
+      );
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create or update a backup protection policy.
+   */
+  async createBackupPolicy(
+    resourceGroup: string,
+    vaultName: string,
+    policyName: string,
+    properties: Record<string, unknown>
+  ): Promise<BackupPolicy> {
+    return withAzureRetry(async () => {
+      const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
+      const { credential } = await this.credentialsManager.getCredential();
+      const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
+      const p = await client.protectionPolicies.createOrUpdate(
+        vaultName, resourceGroup, policyName,
+        { properties: properties as any }
+      );
+      return {
+        id: p.id ?? "",
+        name: p.name ?? "",
+        vaultName,
+        backupManagementType: (p.properties as { backupManagementType?: string } | undefined)?.backupManagementType,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a backup protection policy.
+   */
+  async deleteBackupPolicy(
+    resourceGroup: string,
+    vaultName: string,
+    policyName: string
+  ): Promise<void> {
+    return withAzureRetry(async () => {
+      const { RecoveryServicesBackupClient } = await import("@azure/arm-recoveryservicesbackup");
+      const { credential } = await this.credentialsManager.getCredential();
+      const client = new RecoveryServicesBackupClient(credential, this.subscriptionId);
+      await client.protectionPolicies.beginDeleteAndWait(vaultName, resourceGroup, policyName);
+    }, this.retryOptions);
+  }
 }
 
 export function createBackupManager(

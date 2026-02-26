@@ -29,3 +29,20 @@ export type StorageLifecycleRule = {
   filters?: { blobTypes: string[]; prefixMatch?: string[] };
   actions: Record<string, unknown>;
 };
+
+export type StorageAccountCreateOptions = {
+  name: string;
+  resourceGroup: string;
+  location: string;
+  kind?: StorageAccountKind;
+  sku?: StorageSkuName;
+  httpsOnly?: boolean;
+  minimumTlsVersion?: string;
+  tags?: Record<string, string>;
+};
+
+export type BlobContainerCreateOptions = {
+  name: string;
+  publicAccess?: "None" | "Blob" | "Container";
+  metadata?: Record<string, string>;
+};

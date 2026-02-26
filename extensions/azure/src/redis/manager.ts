@@ -132,6 +132,107 @@ export class AzureRedisManager {
       };
     }, this.retryOptions);
   }
+
+  /**
+   * Create an Azure Cache for Redis instance.
+   */
+  async createCache(
+    resourceGroup: string,
+    name: string,
+    location: string,
+    options?: {
+      skuName?: RedisSkuName;
+      skuFamily?: string;
+      skuCapacity?: number;
+      enableNonSslPort?: boolean;
+      minimumTlsVersion?: string;
+      redisVersion?: string;
+      tags?: Record<string, string>;
+    }
+  ): Promise<RedisCache> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const r = await client.redis.beginCreateAndWait(resourceGroup, name, {
+        location,
+        sku: {
+          name: options?.skuName ?? "Standard",
+          family: options?.skuFamily ?? "C",
+          capacity: options?.skuCapacity ?? 1,
+        },
+        enableNonSslPort: options?.enableNonSslPort ?? false,
+        minimumTlsVersion: options?.minimumTlsVersion ?? "1.2",
+        redisVersion: options?.redisVersion,
+        tags: options?.tags,
+      });
+      return {
+        id: r.id ?? "",
+        name: r.name ?? "",
+        resourceGroup,
+        location: r.location ?? "",
+        hostName: r.hostName,
+        port: r.port,
+        sslPort: r.sslPort,
+        sku: {
+          name: ((r.sku?.name ?? "Standard") as string as RedisSkuName),
+          family: r.sku?.family ?? "",
+          capacity: r.sku?.capacity ?? 0,
+        },
+        provisioningState: r.provisioningState,
+        redisVersion: r.redisVersion,
+        enableNonSslPort: r.enableNonSslPort,
+        minimumTlsVersion: r.minimumTlsVersion,
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a Redis cache.
+   */
+  async deleteCache(resourceGroup: string, cacheName: string): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.redis.beginDeleteAndWait(resourceGroup, cacheName);
+    }, this.retryOptions);
+  }
+
+  /**
+   * Create or update a firewall rule for a Redis cache.
+   */
+  async createFirewallRule(
+    resourceGroup: string,
+    cacheName: string,
+    ruleName: string,
+    startIP: string,
+    endIP: string
+  ): Promise<RedisFirewallRule> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      const rule = await client.firewallRules.createOrUpdate(
+        resourceGroup, cacheName, ruleName,
+        { startIP, endIP }
+      );
+      return {
+        id: rule.id ?? "",
+        name: rule.name ?? "",
+        startIP: rule.startIP ?? "",
+        endIP: rule.endIP ?? "",
+      };
+    }, this.retryOptions);
+  }
+
+  /**
+   * Delete a firewall rule from a Redis cache.
+   */
+  async deleteFirewallRule(
+    resourceGroup: string,
+    cacheName: string,
+    ruleName: string
+  ): Promise<void> {
+    return withAzureRetry(async () => {
+      const client = await this.getClient();
+      await client.firewallRules.delete(resourceGroup, cacheName, ruleName);
+    }, this.retryOptions);
+  }
 }
 
 export function createRedisManager(
