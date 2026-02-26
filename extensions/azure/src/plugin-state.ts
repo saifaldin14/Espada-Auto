@@ -43,6 +43,10 @@ import type { AzureGuardrailsManager } from "./guardrails/index.js";
 import type { AzureComplianceManager } from "./compliance/index.js";
 import type { AzureAutomationManager } from "./automation/index.js";
 import type { AzureHybridManager } from "./hybrid/index.js";
+import type { AzureWebAppManager } from "./webapp/index.js";
+import type { AzureFirewallManager } from "./firewall/index.js";
+import type { AzureEventHubsManager } from "./eventhubs/index.js";
+import type { AzureAppGatewayManager } from "./appgateway/index.js";
 import type { Orchestrator } from "./orchestration/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
@@ -62,17 +66,21 @@ export interface AzurePluginState {
   activityLogManager: AzureActivityLogManager | null;
   vmManager: AzureVMManager | null;
   functionsManager: AzureFunctionsManager | null;
+  webAppManager: AzureWebAppManager | null;
   containerManager: AzureContainerManager | null;
   storageManager: AzureStorageManager | null;
   sqlManager: AzureSQLManager | null;
   cosmosDBManager: AzureCosmosDBManager | null;
   networkManager: AzureNetworkManager | null;
+  firewallManager: AzureFirewallManager | null;
+  appGatewayManager: AzureAppGatewayManager | null;
   keyVaultManager: AzureKeyVaultManager | null;
   monitorManager: AzureMonitorManager | null;
   iamManager: AzureIAMManager | null;
   costManager: AzureCostManager | null;
   serviceBusManager: AzureServiceBusManager | null;
   eventGridManager: AzureEventGridManager | null;
+  eventHubsManager: AzureEventHubsManager | null;
   dnsManager: AzureDNSManager | null;
   redisManager: AzureRedisManager | null;
   cdnManager: AzureCDNManager | null;
@@ -106,17 +114,21 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     activityLogManager: null,
     vmManager: null,
     functionsManager: null,
+    webAppManager: null,
     containerManager: null,
     storageManager: null,
     sqlManager: null,
     cosmosDBManager: null,
     networkManager: null,
+    firewallManager: null,
+    appGatewayManager: null,
     keyVaultManager: null,
     monitorManager: null,
     iamManager: null,
     costManager: null,
     serviceBusManager: null,
     eventGridManager: null,
+    eventHubsManager: null,
     dnsManager: null,
     redisManager: null,
     cdnManager: null,
@@ -151,17 +163,21 @@ export function clearPluginState(state: AzurePluginState): void {
   state.activityLogManager = null;
   state.vmManager = null;
   state.functionsManager = null;
+  state.webAppManager = null;
   state.containerManager = null;
   state.storageManager = null;
   state.sqlManager = null;
   state.cosmosDBManager = null;
   state.networkManager = null;
+  state.firewallManager = null;
+  state.appGatewayManager = null;
   state.keyVaultManager = null;
   state.monitorManager = null;
   state.iamManager = null;
   state.costManager = null;
   state.serviceBusManager = null;
   state.eventGridManager = null;
+  state.eventHubsManager = null;
   state.dnsManager = null;
   state.redisManager = null;
   state.cdnManager = null;

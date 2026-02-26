@@ -360,6 +360,209 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
     },
   });
 
+  // --- Web Apps tools ---
+  api.registerTool({
+    name: "azure_list_webapps",
+    label: "Azure List Web Apps",
+    description: "List Azure App Service Web Apps (excludes Function Apps)",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const apps = await state.webAppManager.listWebApps(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(apps, null, 2) }], details: { count: apps.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_webapp",
+    label: "Azure Get Web App",
+    description: "Get details of a specific Azure Web App",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const app = await state.webAppManager.getWebApp(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(app, null, 2) }], details: app };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_app_service_plans",
+    label: "Azure List Plans",
+    description: "List Azure App Service Plans",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const plans = await state.webAppManager.listAppServicePlans(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(plans, null, 2) }], details: { count: plans.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_webapp_start",
+    label: "Azure Start Web App",
+    description: "Start an Azure Web App",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      await state.webAppManager.startWebApp(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: `Web App '${params.name}' started successfully` }], details: { action: "start", name: params.name } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_webapp_stop",
+    label: "Azure Stop Web App",
+    description: "Stop an Azure Web App",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      await state.webAppManager.stopWebApp(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: `Web App '${params.name}' stopped successfully` }], details: { action: "stop", name: params.name } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_webapp_restart",
+    label: "Azure Restart Web App",
+    description: "Restart an Azure Web App",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      await state.webAppManager.restartWebApp(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: `Web App '${params.name}' restarted successfully` }], details: { action: "restart", name: params.name } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_deployment_slots",
+    label: "Azure Deployment Slots",
+    description: "List deployment slots for a Web App",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, appName: { type: "string" } },
+      required: ["resourceGroup", "appName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const slots = await state.webAppManager.listDeploymentSlots(params.resourceGroup as string, params.appName as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(slots, null, 2) }], details: { count: slots.length } };
+    },
+  });
+
+  // --- Firewall tools ---
+  api.registerTool({
+    name: "azure_list_firewalls",
+    label: "Azure List Firewalls",
+    description: "List Azure Firewalls",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.firewallManager) throw new Error("Firewall manager not initialized");
+      const firewalls = await state.firewallManager.listFirewalls(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(firewalls, null, 2) }], details: { count: firewalls.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_firewall",
+    label: "Azure Get Firewall",
+    description: "Get details of a specific Azure Firewall",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.firewallManager) throw new Error("Firewall manager not initialized");
+      const fw = await state.firewallManager.getFirewall(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(fw, null, 2) }], details: fw };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_firewall_policies",
+    label: "Azure FW Policies",
+    description: "List Azure Firewall Policies",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.firewallManager) throw new Error("Firewall manager not initialized");
+      const policies = await state.firewallManager.listPolicies(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(policies, null, 2) }], details: { count: policies.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_ip_groups",
+    label: "Azure IP Groups",
+    description: "List Azure IP Groups (used with Firewall rules)",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.firewallManager) throw new Error("Firewall manager not initialized");
+      const groups = await state.firewallManager.listIPGroups(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }], details: { count: groups.length } };
+    },
+  });
+
+  // --- Application Gateway tools ---
+  api.registerTool({
+    name: "azure_list_app_gateways",
+    label: "Azure List App GWs",
+    description: "List Azure Application Gateways",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.appGatewayManager) throw new Error("App Gateway manager not initialized");
+      const gateways = await state.appGatewayManager.listGateways(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(gateways, null, 2) }], details: { count: gateways.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_app_gateway",
+    label: "Azure Get App GW",
+    description: "Get details of a specific Application Gateway",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.appGatewayManager) throw new Error("App Gateway manager not initialized");
+      const gw = await state.appGatewayManager.getGateway(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(gw, null, 2) }], details: gw };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_waf_config",
+    label: "Azure WAF Config",
+    description: "Get WAF configuration for an Application Gateway",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, name: { type: "string" } },
+      required: ["resourceGroup", "name"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.appGatewayManager) throw new Error("App Gateway manager not initialized");
+      const waf = await state.appGatewayManager.getWAFConfig(params.resourceGroup as string, params.name as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(waf, null, 2) }], details: waf };
+    },
+  });
+
   // --- DNS tools ---
   api.registerTool({
     name: "azure_list_dns_zones",
@@ -647,6 +850,53 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       if (!state.eventGridManager) throw new Error("EventGrid manager not initialized");
       const subs = await state.eventGridManager.listEventSubscriptions(params.scope as string | undefined);
       return { content: [{ type: "text" as const, text: JSON.stringify(subs, null, 2) }], details: { count: subs.length } };
+    },
+  });
+
+  // --- Event Hubs tools ---
+  api.registerTool({
+    name: "azure_list_eventhub_namespaces",
+    label: "Azure EH Namespaces",
+    description: "List Azure Event Hubs namespaces",
+    parameters: { type: "object", properties: { resourceGroup: { type: "string", description: "Resource group name" } } },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.eventHubsManager) throw new Error("Event Hubs manager not initialized");
+      const namespaces = await state.eventHubsManager.listNamespaces(params.resourceGroup as string | undefined);
+      return { content: [{ type: "text" as const, text: JSON.stringify(namespaces, null, 2) }], details: { count: namespaces.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_eventhubs",
+    label: "Azure List Event Hubs",
+    description: "List event hubs within a namespace",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, namespaceName: { type: "string" } },
+      required: ["resourceGroup", "namespaceName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.eventHubsManager) throw new Error("Event Hubs manager not initialized");
+      const hubs = await state.eventHubsManager.listEventHubs(params.resourceGroup as string, params.namespaceName as string);
+      return { content: [{ type: "text" as const, text: JSON.stringify(hubs, null, 2) }], details: { count: hubs.length } };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_list_consumer_groups",
+    label: "Azure EH Consumers",
+    description: "List consumer groups for an event hub",
+    parameters: {
+      type: "object",
+      properties: { resourceGroup: { type: "string" }, namespaceName: { type: "string" }, eventHubName: { type: "string" } },
+      required: ["resourceGroup", "namespaceName", "eventHubName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.eventHubsManager) throw new Error("Event Hubs manager not initialized");
+      const groups = await state.eventHubsManager.listConsumerGroups(
+        params.resourceGroup as string, params.namespaceName as string, params.eventHubName as string,
+      );
+      return { content: [{ type: "text" as const, text: JSON.stringify(groups, null, 2) }], details: { count: groups.length } };
     },
   });
 

@@ -46,6 +46,10 @@ import { createGuardrailsManager } from "./guardrails/index.js";
 import { AzureComplianceManager } from "./compliance/index.js";
 import { AzureAutomationManager } from "./automation/index.js";
 import { AzureHybridManager } from "./hybrid/index.js";
+import { AzureWebAppManager } from "./webapp/index.js";
+import { AzureFirewallManager } from "./firewall/index.js";
+import { AzureEventHubsManager } from "./eventhubs/index.js";
+import { AzureAppGatewayManager } from "./appgateway/index.js";
 
 // Orchestration (IDIO)
 import { Orchestrator, registerBuiltinSteps, clearStepRegistry } from "./orchestration/index.js";
@@ -81,6 +85,7 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       // Compute
       state.vmManager = new AzureVMManager(state.credentialsManager, subscriptionId, config.defaultRegion, retryOpts);
       state.functionsManager = new AzureFunctionsManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.webAppManager = new AzureWebAppManager(state.credentialsManager, subscriptionId, retryOpts);
       state.containerManager = new AzureContainerManager(state.credentialsManager, subscriptionId, retryOpts);
 
       // Data
@@ -91,6 +96,8 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
 
       // Networking
       state.networkManager = new AzureNetworkManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.firewallManager = new AzureFirewallManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.appGatewayManager = new AzureAppGatewayManager(state.credentialsManager, subscriptionId, retryOpts);
       state.dnsManager = new AzureDNSManager(state.credentialsManager, subscriptionId, retryOpts);
       state.cdnManager = new AzureCDNManager(state.credentialsManager, subscriptionId, retryOpts);
 
@@ -109,6 +116,7 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       // Messaging
       state.serviceBusManager = new AzureServiceBusManager(state.credentialsManager, subscriptionId, retryOpts);
       state.eventGridManager = new AzureEventGridManager(state.credentialsManager, subscriptionId, retryOpts);
+      state.eventHubsManager = new AzureEventHubsManager(state.credentialsManager, subscriptionId, retryOpts);
 
       // AI
       state.aiManager = new AzureAIManager(state.credentialsManager, subscriptionId, retryOpts);

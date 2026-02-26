@@ -196,6 +196,135 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 
+  // --- Web Apps ---
+  api.registerGatewayMethod("azure.webapp.list", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const apps = await state.webAppManager.listWebApps(params.resourceGroup);
+      opts.respond(true, { data: apps });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.get", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const app = await state.webAppManager.getWebApp(params.resourceGroup, params.name);
+      opts.respond(true, { data: app });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.start", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      await state.webAppManager.startWebApp(params.resourceGroup, params.name);
+      opts.respond(true, { data: { status: "started" } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.stop", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      await state.webAppManager.stopWebApp(params.resourceGroup, params.name);
+      opts.respond(true, { data: { status: "stopped" } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.restart", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      await state.webAppManager.restartWebApp(params.resourceGroup, params.name);
+      opts.respond(true, { data: { status: "restarted" } });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.plans", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const plans = await state.webAppManager.listAppServicePlans(params.resourceGroup);
+      opts.respond(true, { data: plans });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.webapp.slots", async (opts) => {
+    if (!state.webAppManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Web App manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; appName: string };
+      const slots = await state.webAppManager.listDeploymentSlots(params.resourceGroup, params.appName);
+      opts.respond(true, { data: slots });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Firewall ---
+  api.registerGatewayMethod("azure.firewall.list", async (opts) => {
+    if (!state.firewallManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Firewall manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const firewalls = await state.firewallManager.listFirewalls(params.resourceGroup);
+      opts.respond(true, { data: firewalls });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.firewall.get", async (opts) => {
+    if (!state.firewallManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Firewall manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const fw = await state.firewallManager.getFirewall(params.resourceGroup, params.name);
+      opts.respond(true, { data: fw });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.firewall.policies", async (opts) => {
+    if (!state.firewallManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Firewall manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const policies = await state.firewallManager.listPolicies(params.resourceGroup);
+      opts.respond(true, { data: policies });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.firewall.ipgroups", async (opts) => {
+    if (!state.firewallManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Firewall manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const groups = await state.firewallManager.listIPGroups(params.resourceGroup);
+      opts.respond(true, { data: groups });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Application Gateway ---
+  api.registerGatewayMethod("azure.appgateway.list", async (opts) => {
+    if (!state.appGatewayManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "App Gateway manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const gateways = await state.appGatewayManager.listGateways(params.resourceGroup);
+      opts.respond(true, { data: gateways });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.appgateway.get", async (opts) => {
+    if (!state.appGatewayManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "App Gateway manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const gw = await state.appGatewayManager.getGateway(params.resourceGroup, params.name);
+      opts.respond(true, { data: gw });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.appgateway.waf", async (opts) => {
+    if (!state.appGatewayManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "App Gateway manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; name: string };
+      const waf = await state.appGatewayManager.getWAFConfig(params.resourceGroup, params.name);
+      opts.respond(true, { data: waf });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
   // --- DNS ---
   api.registerGatewayMethod("azure.dns.zones", async (opts) => {
     if (!state.dnsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "DNS manager not initialized" }); return; }
@@ -316,6 +445,34 @@ export function registerGatewayMethods(api: EspadaPluginApi, state: AzurePluginS
       const params = (opts.params ?? {}) as { resourceGroup?: string };
       const domains = await state.eventGridManager.listDomains(params.resourceGroup);
       opts.respond(true, { data: domains });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  // --- Event Hubs ---
+  api.registerGatewayMethod("azure.eventhubs.namespaces", async (opts) => {
+    if (!state.eventHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Event Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup?: string };
+      const namespaces = await state.eventHubsManager.listNamespaces(params.resourceGroup);
+      opts.respond(true, { data: namespaces });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.eventhubs.list", async (opts) => {
+    if (!state.eventHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Event Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string };
+      const hubs = await state.eventHubsManager.listEventHubs(params.resourceGroup, params.namespaceName);
+      opts.respond(true, { data: hubs });
+    } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
+  });
+
+  api.registerGatewayMethod("azure.eventhubs.consumergroups", async (opts) => {
+    if (!state.eventHubsManager) { opts.respond(false, undefined, { code: "NOT_INITIALIZED", message: "Event Hubs manager not initialized" }); return; }
+    try {
+      const params = (opts.params ?? {}) as { resourceGroup: string; namespaceName: string; eventHubName: string };
+      const groups = await state.eventHubsManager.listConsumerGroups(params.resourceGroup, params.namespaceName, params.eventHubName);
+      opts.respond(true, { data: groups });
     } catch (error) { opts.respond(false, undefined, { code: "AZURE_ERROR", message: String(error) }); }
   });
 

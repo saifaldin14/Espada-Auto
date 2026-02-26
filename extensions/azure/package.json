@@ -197,6 +197,7 @@
     "@azure/arm-costmanagement": "1.0.0-beta.2",
     "@azure/arm-dns": "^5.1.0",
     "@azure/arm-eventgrid": "^14.2.0",
+    "@azure/arm-eventhub": "^5.2.0",
     "@azure/arm-extendedlocation": "1.0.0-beta.3",
     "@azure/arm-hybridcompute": "^4.0.0",
     "@azure/arm-hybridkubernetes": "^2.1.0",

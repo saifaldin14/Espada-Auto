@@ -233,6 +233,115 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
           }
         });
 
+      // --- Web Apps commands ---
+      const webappCmd = az.command("webapp").description("Azure App Service Web Apps management");
+
+      webappCmd
+        .command("list")
+        .description("List web apps")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            const apps = await state.webAppManager.listWebApps(options.resourceGroup);
+            if (apps.length === 0) { console.log("No web apps found"); return; }
+            console.log("\nWeb Apps:\n");
+            for (const app of apps) {
+              console.log(`  ${app.name}  ${theme.muted(app.state)}  ${app.defaultHostName ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list web apps: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      webappCmd
+        .command("start")
+        .description("Start a web app")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--name <name>", "Web app name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            await state.webAppManager.startWebApp(options.resourceGroup, options.name);
+            console.log(theme.success(`Web App '${options.name}' started`));
+          } catch (error) {
+            console.error(theme.error(`Failed to start web app: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      webappCmd
+        .command("stop")
+        .description("Stop a web app")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--name <name>", "Web app name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            await state.webAppManager.stopWebApp(options.resourceGroup, options.name);
+            console.log(theme.success(`Web App '${options.name}' stopped`));
+          } catch (error) {
+            console.error(theme.error(`Failed to stop web app: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      webappCmd
+        .command("restart")
+        .description("Restart a web app")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--name <name>", "Web app name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            await state.webAppManager.restartWebApp(options.resourceGroup, options.name);
+            console.log(theme.success(`Web App '${options.name}' restarted`));
+          } catch (error) {
+            console.error(theme.error(`Failed to restart web app: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      webappCmd
+        .command("plans")
+        .description("List App Service Plans")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            const plans = await state.webAppManager.listAppServicePlans(options.resourceGroup);
+            if (plans.length === 0) { console.log("No App Service Plans found"); return; }
+            console.log("\nApp Service Plans:\n");
+            for (const p of plans) {
+              console.log(`  ${p.name}  ${theme.muted(p.sku)}  ${p.tier}  sites: ${p.numberOfSites}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list plans: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      webappCmd
+        .command("slots")
+        .description("List deployment slots for a web app")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--app-name <name>", "Web app name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; appName: string };
+          if (!state.webAppManager) { console.error(theme.error("Web App manager not initialized")); return; }
+          try {
+            const slots = await state.webAppManager.listDeploymentSlots(options.resourceGroup, options.appName);
+            if (slots.length === 0) { console.log("No deployment slots found"); return; }
+            console.log("\nDeployment Slots:\n");
+            for (const s of slots) {
+              console.log(`  ${s.name}  ${theme.muted(s.state)}  ${s.defaultHostName ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list slots: ${formatErrorMessage(error)}`));
+          }
+        });
+
       // --- KeyVault commands ---
       const kvCmd = az.command("keyvault").description("Key Vault management");
 
@@ -539,6 +648,107 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
           }
         });
 
+      // --- Firewall commands ---
+      const fwCmd = az.command("firewall").description("Azure Firewall management");
+
+      fwCmd
+        .command("list")
+        .description("List Azure Firewalls")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.firewallManager) { console.error(theme.error("Firewall manager not initialized")); return; }
+          try {
+            const firewalls = await state.firewallManager.listFirewalls(options.resourceGroup);
+            if (firewalls.length === 0) { console.log("No Azure Firewalls found"); return; }
+            console.log("\nAzure Firewalls:\n");
+            for (const fw of firewalls) {
+              console.log(`  ${fw.name}  ${theme.muted(fw.skuTier ?? "")}  ${fw.provisioningState ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list firewalls: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      fwCmd
+        .command("policies")
+        .description("List Firewall Policies")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.firewallManager) { console.error(theme.error("Firewall manager not initialized")); return; }
+          try {
+            const policies = await state.firewallManager.listPolicies(options.resourceGroup);
+            if (policies.length === 0) { console.log("No Firewall Policies found"); return; }
+            console.log("\nFirewall Policies:\n");
+            for (const p of policies) {
+              console.log(`  ${p.name}  ${theme.muted(p.threatIntelMode ?? "")}  ${p.provisioningState ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list firewall policies: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      fwCmd
+        .command("ip-groups")
+        .description("List IP Groups")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.firewallManager) { console.error(theme.error("Firewall manager not initialized")); return; }
+          try {
+            const groups = await state.firewallManager.listIPGroups(options.resourceGroup);
+            if (groups.length === 0) { console.log("No IP Groups found"); return; }
+            console.log("\nIP Groups:\n");
+            for (const g of groups) {
+              console.log(`  ${g.name}  ${theme.muted(g.ipAddresses.length + " IPs")}  ${g.location ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list IP groups: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Application Gateway commands ---
+      const appgwCmd = az.command("appgateway").description("Azure Application Gateway management");
+
+      appgwCmd
+        .command("list")
+        .description("List Application Gateways")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.appGatewayManager) { console.error(theme.error("App Gateway manager not initialized")); return; }
+          try {
+            const gateways = await state.appGatewayManager.listGateways(options.resourceGroup);
+            if (gateways.length === 0) { console.log("No Application Gateways found"); return; }
+            console.log("\nApplication Gateways:\n");
+            for (const gw of gateways) {
+              console.log(`  ${gw.name}  ${theme.muted(gw.skuTier ?? "")}  ${gw.operationalState ?? ""}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list app gateways: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      appgwCmd
+        .command("waf")
+        .description("Get WAF configuration for an Application Gateway")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--name <name>", "Application Gateway name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; name: string };
+          if (!state.appGatewayManager) { console.error(theme.error("App Gateway manager not initialized")); return; }
+          try {
+            const waf = await state.appGatewayManager.getWAFConfig(options.resourceGroup, options.name);
+            if (!waf) { console.log("No WAF configuration found"); return; }
+            console.log("\nWAF Configuration:\n");
+            console.log(`  Enabled: ${waf.enabled}  Mode: ${waf.firewallMode ?? "N/A"}`);
+            console.log(`  Rule Set: ${waf.ruleSetType ?? "N/A"} ${waf.ruleSetVersion ?? ""}`);
+          } catch (error) {
+            console.error(theme.error(`Failed to get WAF config: ${formatErrorMessage(error)}`));
+          }
+        });
+
       // --- CosmosDB commands ---
       const cosmosCmd = az.command("cosmosdb").description("Azure Cosmos DB management");
 
@@ -672,6 +882,69 @@ export function registerAzureCli(api: EspadaPluginApi, state: AzurePluginState):
             }
           } catch (error) {
             console.error(theme.error(`Failed to list Event Grid domains: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      // --- Event Hubs commands ---
+      const ehCmd = az.command("eventhubs").description("Azure Event Hubs management");
+
+      ehCmd
+        .command("namespaces")
+        .description("List Event Hubs namespaces")
+        .option("--resource-group <rg>", "Filter by resource group")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup?: string };
+          if (!state.eventHubsManager) { console.error(theme.error("Event Hubs manager not initialized")); return; }
+          try {
+            const namespaces = await state.eventHubsManager.listNamespaces(options.resourceGroup);
+            if (namespaces.length === 0) { console.log("No Event Hubs namespaces found"); return; }
+            console.log("\nEvent Hubs Namespaces:\n");
+            for (const ns of namespaces) {
+              console.log(`  ${ns.name}  ${theme.muted(ns.sku)}  ${ns.tier}  kafka: ${ns.kafkaEnabled}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list Event Hubs namespaces: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      ehCmd
+        .command("list")
+        .description("List event hubs in a namespace")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--namespace <ns>", "Namespace name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; namespace: string };
+          if (!state.eventHubsManager) { console.error(theme.error("Event Hubs manager not initialized")); return; }
+          try {
+            const hubs = await state.eventHubsManager.listEventHubs(options.resourceGroup, options.namespace);
+            if (hubs.length === 0) { console.log("No event hubs found"); return; }
+            console.log("\nEvent Hubs:\n");
+            for (const h of hubs) {
+              console.log(`  ${h.name}  partitions: ${h.partitionCount}  retention: ${h.messageRetentionInDays}d`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list event hubs: ${formatErrorMessage(error)}`));
+          }
+        });
+
+      ehCmd
+        .command("consumer-groups")
+        .description("List consumer groups for an event hub")
+        .requiredOption("--resource-group <rg>", "Resource group name")
+        .requiredOption("--namespace <ns>", "Namespace name")
+        .requiredOption("--eventhub <eh>", "Event hub name")
+        .action(async (...args: unknown[]) => {
+          const options = (args[args.length - 1] ?? {}) as { resourceGroup: string; namespace: string; eventhub: string };
+          if (!state.eventHubsManager) { console.error(theme.error("Event Hubs manager not initialized")); return; }
+          try {
+            const groups = await state.eventHubsManager.listConsumerGroups(options.resourceGroup, options.namespace, options.eventhub);
+            if (groups.length === 0) { console.log("No consumer groups found"); return; }
+            console.log("\nConsumer Groups:\n");
+            for (const g of groups) {
+              console.log(`  ${g.name}  ${theme.muted(g.userMetadata ?? "")}`);
+            }
+          } catch (error) {
+            console.error(theme.error(`Failed to list consumer groups: ${formatErrorMessage(error)}`));
           }
         });
 
