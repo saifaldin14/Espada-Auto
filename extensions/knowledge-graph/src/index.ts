@@ -358,6 +358,27 @@ export type {
   AccessDecision,
 } from "./core/rbac.js";
 
+// OPA/Rego Policy Engine Integration
+export {
+  RemoteOpaEngine,
+  LocalOpaEngine,
+  MockOpaEngine,
+  createOpaEngine,
+  buildOpaInput,
+} from "./core/opa-engine.js";
+export type {
+  OpaEngine,
+  OpaInput,
+  OpaEvaluationResult,
+  OpaPolicyViolation,
+  OpaSeverity,
+  OpaEngineConfig,
+  RemoteOpaConfig,
+  LocalOpaConfig,
+  LocalRegoRule,
+  LocalRegoCondition,
+} from "./core/opa-engine.js";
+
 // Performance benchmarks (P3.24)
 export {
   runBenchmarks,
