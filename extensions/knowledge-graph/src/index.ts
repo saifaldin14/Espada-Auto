@@ -75,7 +75,7 @@ export { registerInfraCli } from "./infra-cli.js";
 export type { InfraCliContext } from "./infra-cli.js";
 
 // Tools & CLI (for direct use / testing)
-export { registerGraphTools, registerTemporalTools, registerIQLTools } from "./tools.js";
+export { registerGraphTools, registerTemporalTools, registerIQLTools, registerP2Tools } from "./tools.js";
 export { registerPolicyScanTool } from "./policy-scan-tool.js";
 export { registerGraphCli } from "./cli.js";
 
@@ -224,3 +224,113 @@ export type {
   MockMonitorOptions,
   MockMonitorResult,
 } from "./monitoring-mock.js";
+
+// Compliance framework mapping (P2.17)
+export {
+  evaluateFramework,
+  runComplianceAssessment,
+  formatComplianceMarkdown,
+  COMPLIANCE_CONTROLS,
+  SUPPORTED_FRAMEWORKS,
+  getFrameworkControls,
+} from "./compliance.js";
+export type {
+  ComplianceFramework,
+  ComplianceControl,
+  ControlResult,
+  ComplianceSummary,
+  ComplianceReport,
+} from "./compliance.js";
+
+// Resource recommendation engine (P2.18)
+export {
+  generateRecommendations,
+  formatRecommendationsMarkdown,
+} from "./recommendations.js";
+export type {
+  RecommendationCategory,
+  RecommendationPriority,
+  Recommendation,
+  RecommendationReport,
+} from "./recommendations.js";
+
+// Agent action modeling (P2.19)
+export {
+  registerAgent,
+  recordAgentAction,
+  getAgents,
+  getAgentResources,
+  detectAgentConflicts,
+  getAgentActivity,
+  generateAgentReport,
+  formatAgentReportMarkdown,
+  buildAgentNodeId,
+} from "./agent-model.js";
+export type {
+  AgentNode,
+  AgentAction,
+  AgentActionType,
+  AgentConflict,
+  AgentActivitySummary,
+  AgentReport,
+} from "./agent-model.js";
+
+// Natural language → IQL translation (P2.20)
+export {
+  translateNLToIQL,
+  getAvailableResourceTypes,
+  getAvailableProviders,
+  getExampleQueries,
+} from "./nl-translator.js";
+export type { NLTranslationResult } from "./nl-translator.js";
+
+// Drift auto-remediation (P2.21)
+export {
+  generateRemediationPlan,
+  formatRemediationMarkdown,
+} from "./remediation.js";
+export type {
+  IaCFormat,
+  RemediationPatch,
+  DriftedField,
+  RemediationPlan,
+} from "./remediation.js";
+
+// Supply chain graph (P2.22)
+export {
+  parseCycloneDX,
+  parseSPDX,
+  parseSBOM,
+  ingestContainerImage,
+  linkImageToInfra,
+  findImagesByCVE,
+  getImageVulnerabilities,
+  generateSupplyChainReport,
+  formatSupplyChainMarkdown,
+  buildImageNodeId,
+  buildPackageNodeId,
+  buildCVENodeId,
+} from "./supply-chain.js";
+export type {
+  SBOMFormat,
+  SBOMPackage,
+  CVEReference,
+  ContainerImage,
+  SupplyChainReport,
+} from "./supply-chain.js";
+
+// Graph visualization (P2.16)
+export {
+  exportVisualization,
+  DEFAULT_COLORS,
+} from "./visualization.js";
+export type {
+  VisualizationFormat,
+  VisualizationOptions,
+  VisualizationResult,
+  LayoutStrategy,
+  CytoscapeNode,
+  CytoscapeEdge,
+  D3Node,
+  D3Link,
+} from "./visualization.js";

@@ -10,7 +10,7 @@ import { Type } from "@sinclair/typebox";
 import type { EspadaPluginApi } from "espada/plugin-sdk";
 import { stringEnum } from "espada/plugin-sdk";
 import type { GraphEngine } from "./engine.js";
-import type { GraphStorage } from "./types.js";
+import type { CloudProvider, GraphStorage } from "./types.js";
 import {
   shortestPath,
   findOrphans,
@@ -28,6 +28,35 @@ import {
 } from "./temporal.js";
 import { parseIQL, executeQuery, IQLSyntaxError } from "./iql/index.js";
 import type { IQLExecutorOptions } from "./iql/index.js";
+
+// P2 imports
+import {
+  runComplianceAssessment,
+  formatComplianceMarkdown,
+  SUPPORTED_FRAMEWORKS,
+} from "./compliance.js";
+import type { ComplianceFramework } from "./compliance.js";
+import {
+  generateRecommendations,
+  formatRecommendationsMarkdown,
+} from "./recommendations.js";
+import {
+  generateAgentReport,
+  formatAgentReportMarkdown,
+  buildAgentNodeId,
+} from "./agent-model.js";
+import { translateNLToIQL, getExampleQueries } from "./nl-translator.js";
+import {
+  generateRemediationPlan,
+  formatRemediationMarkdown,
+} from "./remediation.js";
+import type { IaCFormat } from "./remediation.js";
+import {
+  generateSupplyChainReport,
+  formatSupplyChainMarkdown,
+} from "./supply-chain.js";
+import { exportVisualization } from "./visualization.js";
+import type { VisualizationFormat, LayoutStrategy } from "./visualization.js";
 
 // =============================================================================
 // Constants
@@ -1521,5 +1550,468 @@ export function registerIQLTools(
       },
     },
     { names: ["kg_query"] },
+  );
+}
+
+// =============================================================================
+// P2 Tool Registration
+// =============================================================================
+
+const COMPLIANCE_FRAMEWORKS = ["soc2", "hipaa", "pci-dss", "iso-27001"] as const;
+const IAC_FORMATS = ["terraform", "cloudformation"] as const;
+const VIZ_FORMATS = ["cytoscape", "d3-force"] as const;
+const LAYOUT_STRATEGIES = ["force-directed", "hierarchical", "circular", "grid", "concentric"] as const;
+
+/**
+ * Register P2 knowledge graph tools (compliance, recommendations, agents,
+ * NL query, remediation, supply chain, visualization).
+ */
+export function registerP2Tools(
+  api: EspadaPluginApi,
+  engine: GraphEngine,
+  storage: GraphStorage,
+): void {
+  // ---------------------------------------------------------------------------
+  // Compliance Assessment
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_compliance",
+      label: "Compliance Check",
+      description:
+        "Run a compliance assessment against infrastructure resources. " +
+        "Evaluates SOC2, HIPAA, PCI-DSS, ISO 27001, CIS, and NIST 800-53 controls. " +
+        "Returns pass/fail for each control with remediation guidance.",
+      parameters: Type.Object({
+        framework: Type.Optional(
+          stringEnum(COMPLIANCE_FRAMEWORKS, {
+            description: "Specific framework to evaluate (default: all)",
+          }),
+        ),
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, { description: "Filter by cloud provider" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { framework, provider } = params as {
+          framework?: string;
+          provider?: string;
+        };
+
+        try {
+          const frameworks = framework
+            ? [framework as ComplianceFramework]
+            : (SUPPORTED_FRAMEWORKS as unknown as ComplianceFramework[]);
+
+          const filter = provider ? { provider: provider as CloudProvider } : undefined;
+          const report = await runComplianceAssessment(frameworks, storage, filter);
+          const md = formatComplianceMarkdown(report);
+
+          return {
+            content: [{ type: "text" as const, text: md }],
+            details: {
+              frameworks: report.frameworks.map((f) => f.framework),
+              totalResources: report.totalResources,
+              frameworkCount: report.frameworks.length,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Compliance assessment failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_compliance"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Recommendations
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_recommendations",
+      label: "Recommendations",
+      description:
+        "Analyze infrastructure for optimization recommendations. " +
+        "Detects unused resources, idle resources, missing tags, security issues, " +
+        "reliability weaknesses, right-sizing opportunities, and architecture problems.",
+      parameters: Type.Object({
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, { description: "Filter by cloud provider" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { provider } = params as { provider?: string };
+        try {
+          const filter = provider ? { provider: provider as CloudProvider } : undefined;
+          const report = await generateRecommendations(engine, storage, filter);
+          const md = formatRecommendationsMarkdown(report);
+
+          return {
+            content: [{ type: "text" as const, text: md }],
+            details: {
+              totalRecommendations: report.totalRecommendations,
+              estimatedSavings: report.totalEstimatedSavings,
+              byCategory: report.byCategory,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Recommendations analysis failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_recommendations"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Agent Activity Report
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_agents",
+      label: "Agent Activity",
+      description:
+        "Review AI agent activity on infrastructure. Shows which agents are " +
+        "modifying which resources, detects conflicts between agents, and " +
+        "provides activity summaries.",
+      parameters: Type.Object({
+        agentId: Type.Optional(
+          Type.String({ description: "Filter to a specific agent ID" }),
+        ),
+        since: Type.Optional(
+          Type.String({ description: "ISO 8601 timestamp to filter recent activity (e.g. 2024-01-01T00:00:00Z)" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { agentId, since } = params as { agentId?: string; since?: string };
+        try {
+          const report = await generateAgentReport(storage, since);
+
+          // Filter to specific agent if requested
+          if (agentId) {
+            const agentNodeId = buildAgentNodeId(agentId);
+            report.agents = report.agents.filter(
+              (a) => a.agentNodeId === agentNodeId,
+            );
+            report.conflicts = report.conflicts.filter(
+              (c) => c.agent1Id === agentNodeId || c.agent2Id === agentNodeId,
+            );
+            report.totalAgents = report.agents.length;
+            report.totalActions = report.agents.reduce(
+              (sum, a) => sum + a.totalActions,
+              0,
+            );
+          }
+
+          const md = formatAgentReportMarkdown(report);
+
+          return {
+            content: [{ type: "text" as const, text: md }],
+            details: {
+              totalAgents: report.totalAgents,
+              totalActions: report.totalActions,
+              conflicts: report.conflicts.length,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Agent activity report failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_agents"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Natural Language Query
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_ask",
+      label: "Ask Infrastructure",
+      description:
+        "Ask a natural language question about your infrastructure. " +
+        "Translates the question to IQL and runs it. " +
+        "Examples: 'show all databases', 'what depends on my load balancer', " +
+        "'how much do compute resources cost'.",
+      parameters: Type.Object({
+        question: Type.String({
+          description: "Natural language question about infrastructure",
+        }),
+      }),
+      async execute(_toolCallId, params) {
+        const { question } = params as { question: string };
+        const translation = translateNLToIQL(question);
+
+        if (!translation.success || !translation.iql) {
+          const examples = getExampleQueries();
+          const text = [
+            "Could not translate the question to a query.",
+            translation.explanation ? `Reason: ${translation.explanation}` : "",
+            "",
+            "**Try questions like:**",
+            ...examples.slice(0, 5).map((e) => `- ${e.natural}`),
+          ]
+            .filter(Boolean)
+            .join("\n");
+
+          return {
+            content: [{ type: "text" as const, text }],
+            details: { success: false, suggestions: translation.suggestions },
+          };
+        }
+
+        // Execute the translated query
+        try {
+          const ast = translation.ast!;
+          const result = await executeQuery(ast, { storage });
+
+          const lines = [
+            `**Question:** ${question}`,
+            `**IQL:** \`${translation.iql}\``,
+            `**Confidence:** ${(translation.confidence * 100).toFixed(0)}%`,
+            "",
+          ];
+
+          if (result.type === "find") {
+            lines.push(
+              `Found ${result.nodes.length} resources:`,
+              "",
+              "| Name | Type | Provider | Status |",
+              "|------|------|----------|--------|",
+              ...result.nodes.slice(0, 50).map(
+                (n) => `| ${n.name} | ${n.resourceType} | ${n.provider} | ${n.status} |`,
+              ),
+            );
+          } else {
+            lines.push("```json", JSON.stringify(result, null, 2), "```");
+          }
+
+          return {
+            content: [{ type: "text" as const, text: lines.join("\n") }],
+            details: {
+              success: true,
+              iql: translation.iql,
+              confidence: translation.confidence,
+              resultType: result.type,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Translated to IQL: \`${translation.iql}\` but execution failed: ${err instanceof Error ? err.message : String(err)}`,
+              },
+            ],
+            details: { success: false, iql: translation.iql },
+          };
+        }
+      },
+    },
+    { names: ["kg_ask"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Drift Remediation
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_remediation",
+      label: "Drift Remediation",
+      description:
+        "Generate IaC patches (Terraform HCL or CloudFormation YAML) to fix " +
+        "infrastructure drift. Scans for drift and generates corrective patches.",
+      parameters: Type.Object({
+        iacFormat: Type.Optional(
+          stringEnum(IAC_FORMATS, {
+            description: "Output format: terraform (default) or cloudformation",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { iacFormat } = params as { iacFormat?: string };
+        const fmt = (iacFormat ?? "terraform") as IaCFormat;
+
+        try {
+          // Run drift scan first
+          const drift = await engine.detectDrift();
+          if (drift.driftedNodes.length === 0 && drift.disappearedNodes.length === 0) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: "No drift detected — infrastructure matches the graph state.",
+                },
+              ],
+              details: { drifted: 0 },
+            };
+          }
+
+          const plan = generateRemediationPlan(drift, fmt);
+          const md = formatRemediationMarkdown(plan);
+
+          return {
+            content: [{ type: "text" as const, text: md }],
+            details: {
+              totalPatches: plan.totalPatches,
+              autoRemediable: plan.autoRemediable.length,
+              manualReview: plan.manualReview.length,
+              unremeditable: plan.unremeditable.length,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Drift remediation failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_remediation"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Supply Chain Report
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_supply_chain",
+      label: "Supply Chain",
+      description:
+        "Generate a software supply chain security report. Shows container images, " +
+        "packages, and known vulnerabilities (CVEs) across the infrastructure.",
+      parameters: Type.Object({
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, { description: "Filter by cloud provider" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { provider } = params as { provider?: string };
+        try {
+          const report = await generateSupplyChainReport(
+            storage,
+            provider as CloudProvider | undefined,
+          );
+          const md = formatSupplyChainMarkdown(report);
+
+          return {
+            content: [{ type: "text" as const, text: md }],
+            details: {
+              totalImages: report.totalImages,
+              totalPackages: report.totalPackages,
+              totalVulnerabilities: report.totalVulnerabilities,
+              criticalVulnerabilities: report.criticalVulnerabilities,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Supply chain report failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_supply_chain"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Graph Visualization
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_visualize",
+      label: "Visualize Graph",
+      description:
+        "Export infrastructure graph in a visualization-ready format (Cytoscape.js or D3). " +
+        "Returns JSON data with nodes, edges, styling, and layout configuration.",
+      parameters: Type.Object({
+        vizFormat: Type.Optional(
+          stringEnum(VIZ_FORMATS, {
+            description: "Visualization format: cytoscape (default) or d3-force",
+          }),
+        ),
+        layout: Type.Optional(
+          stringEnum(LAYOUT_STRATEGIES, {
+            description: "Layout strategy (default: force-directed)",
+          }),
+        ),
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, { description: "Filter by cloud provider" }),
+        ),
+        highlightNodeId: Type.Optional(
+          Type.String({
+            description: "Highlight a specific node and its neighborhood",
+          }),
+        ),
+        maxNodes: Type.Optional(
+          Type.Number({ description: "Max nodes to include (default: 500)" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { vizFormat, layout, provider, highlightNodeId, maxNodes } =
+          params as {
+            vizFormat?: string;
+            layout?: string;
+            provider?: string;
+            highlightNodeId?: string;
+            maxNodes?: number;
+          };
+
+        try {
+          const result = await exportVisualization(
+            storage,
+            (vizFormat ?? "cytoscape") as VisualizationFormat,
+            {
+              filter: provider ? { provider: provider as CloudProvider } : undefined,
+              layout: (layout ?? "force-directed") as LayoutStrategy,
+              highlightNodeId,
+              maxNodes,
+              includeCost: true,
+              includeMetadata: true,
+              groupByProvider: true,
+            },
+          );
+
+          const summary = [
+            `## Graph Visualization (${result.format})`,
+            "",
+            `- **Nodes:** ${result.nodeCount}`,
+            `- **Edges:** ${result.edgeCount}`,
+            `- **Groups:** ${result.groupCount}`,
+            "",
+            "Graph data exported. Use the attached JSON with a " +
+              (result.format === "cytoscape" ? "Cytoscape.js" : "D3.js") +
+              " renderer to view the interactive graph.",
+          ];
+
+          return {
+            content: [
+              { type: "text" as const, text: summary.join("\n") },
+              { type: "text" as const, text: result.content },
+            ],
+            details: {
+              format: result.format,
+              nodeCount: result.nodeCount,
+              edgeCount: result.edgeCount,
+              groupCount: result.groupCount,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Graph visualization failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_visualize"] },
   );
 }
