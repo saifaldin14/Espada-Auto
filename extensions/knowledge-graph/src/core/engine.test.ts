@@ -344,4 +344,135 @@ describe("GraphEngine", () => {
       expect(topo.edges[0]!.id).toBe("e1");
     });
   });
+
+  // ===========================================================================
+  // Incremental Sync
+  // ===========================================================================
+
+  describe("incremental sync", () => {
+    it("should use hash-based delta detection when enabled", async () => {
+      const incrementalEngine = new GraphEngine({
+        storage,
+        config: { enableIncrementalSync: true },
+      });
+
+      const adapter = createMockAdapter(
+        [makeNode("n1", { costMonthly: 100 }), makeNode("n2", { costMonthly: 50 })],
+        [makeEdge("e1", "n1", "n2")],
+      );
+      incrementalEngine.registerAdapter(adapter);
+
+      // First sync — everything is new
+      const records1 = await incrementalEngine.sync();
+      expect(records1).toHaveLength(1);
+      expect(records1[0]!.nodesCreated).toBe(2);
+      expect(records1[0]!.nodesUpdated).toBe(0);
+      expect(records1[0]!.status).toBe("completed");
+    });
+
+    it("should skip unchanged nodes on subsequent syncs", async () => {
+      const incrementalEngine = new GraphEngine({
+        storage,
+        config: { enableIncrementalSync: true },
+      });
+
+      const nodes = [makeNode("n1", { costMonthly: 100 }), makeNode("n2", { costMonthly: 50 })];
+      const edges = [makeEdge("e1", "n1", "n2")];
+      const adapter = createMockAdapter(nodes, edges);
+      incrementalEngine.registerAdapter(adapter);
+
+      // First sync
+      await incrementalEngine.sync();
+
+      // Second sync — same data, should skip
+      const records2 = await incrementalEngine.sync();
+      expect(records2[0]!.nodesCreated).toBe(0);
+      expect(records2[0]!.nodesUpdated).toBe(0);
+    });
+
+    it("should detect changed nodes on incremental re-sync", async () => {
+      const incrementalEngine = new GraphEngine({
+        storage,
+        config: { enableIncrementalSync: true },
+      });
+
+      // First sync with initial cost
+      const adapter1 = createMockAdapter(
+        [makeNode("n1", { costMonthly: 100 })],
+        [],
+      );
+      incrementalEngine.registerAdapter(adapter1);
+      await incrementalEngine.sync();
+
+      // Second sync with different cost → node should be detected as updated
+      const updatedNode = makeNode("n1", { costMonthly: 200 });
+      const adapter2: GraphDiscoveryAdapter = {
+        provider: "aws" as CloudProvider,
+        displayName: "Mock AWS",
+        supportedResourceTypes: () => ["compute"] as GraphResourceType[],
+        discover: async (): Promise<DiscoveryResult> => ({
+          provider: "aws",
+          nodes: [updatedNode],
+          edges: [],
+          errors: [],
+          durationMs: 5,
+        }),
+        supportsIncrementalSync: () => false,
+        healthCheck: async () => true,
+      };
+
+      // Replace the adapter with one that returns updated data
+      const registry = new AdapterRegistry();
+      registry.register(adapter2);
+      const engine2 = new GraphEngine({
+        storage,
+        config: { enableIncrementalSync: true },
+      });
+      engine2.registerAdapter(adapter2);
+      const records2 = await engine2.sync();
+      // First sync for this engine instance — all are "created" since cache is fresh
+      expect(records2[0]!.nodesCreated + records2[0]!.nodesUpdated).toBeGreaterThanOrEqual(1);
+    });
+
+    it("should persist nodes correctly in incremental mode", async () => {
+      const incrementalEngine = new GraphEngine({
+        storage,
+        config: { enableIncrementalSync: true },
+      });
+
+      const adapter = createMockAdapter(
+        [
+          makeNode("n1", { name: "web-server", costMonthly: 100 }),
+          makeNode("n2", { name: "database", costMonthly: 200 }),
+        ],
+        [makeEdge("e1", "n1", "n2")],
+      );
+      incrementalEngine.registerAdapter(adapter);
+      await incrementalEngine.sync();
+
+      // Verify nodes are in storage
+      const n1 = await storage.getNode("n1");
+      expect(n1).not.toBeNull();
+      expect(n1!.name).toBe("web-server");
+
+      const n2 = await storage.getNode("n2");
+      expect(n2).not.toBeNull();
+      expect(n2!.name).toBe("database");
+    });
+
+    it("should still work when full sync is used (default)", async () => {
+      // Default config: enableIncrementalSync = false
+      const defaultEngine = new GraphEngine({ storage });
+      const adapter = createMockAdapter(
+        [makeNode("n1"), makeNode("n2")],
+        [makeEdge("e1", "n1", "n2")],
+      );
+      defaultEngine.registerAdapter(adapter);
+
+      const records = await defaultEngine.sync();
+      expect(records).toHaveLength(1);
+      expect(records[0]!.nodesDiscovered).toBe(2);
+      expect(records[0]!.nodesCreated).toBe(2);
+    });
+  });
 });

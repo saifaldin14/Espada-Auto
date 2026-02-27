@@ -8,7 +8,7 @@ import {
   generateRemediationPlan,
   formatRemediationMarkdown,
 } from "./remediation.js";
-import type { IaCFormat } from "./remediation.js";
+import type { IaCFormat, DependencyEdge, RemediationOptions } from "./remediation.js";
 
 // =============================================================================
 // Fixtures
@@ -335,6 +335,188 @@ describe("Drift Auto-Remediation (P2.21)", () => {
       const md = formatRemediationMarkdown(plan);
       expect(md).toContain("Auto-Remediable");
       expect(md).toContain("Manual Review");
+    });
+  });
+
+  // ===========================================================================
+  // Dependency-Aware Ordering & Warnings
+  // ===========================================================================
+
+  describe("dependency-aware ordering", () => {
+    it("orders patches by dependency (upstream first)", () => {
+      const vpc = makeGraphNode("vpc-1", { resourceType: "vpc", provider: "aws" });
+      const subnet = makeGraphNode("subnet-1", { resourceType: "subnet", provider: "aws" });
+
+      const edges: DependencyEdge[] = [
+        { sourceId: "vpc-1", targetId: "subnet-1", relationship: "contains" },
+      ];
+
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node: subnet, changes: [makeDriftChange("metadata.cidrBlock", "10.0.0.0/24", "10.0.1.0/24")] },
+          { node: vpc, changes: [makeDriftChange("metadata.cidrBlock", "10.0.0.0/16", "10.0.0.0/20")] },
+        ]),
+        "terraform",
+        { edges },
+      );
+
+      // VPC should come before subnet in ordered output
+      const allPatches = [...plan.autoRemediable, ...plan.manualReview];
+      if (allPatches.length >= 2) {
+        const vpcIdx = allPatches.findIndex((p) => p.nodeId === "vpc-1");
+        const subnetIdx = allPatches.findIndex((p) => p.nodeId === "subnet-1");
+        // Upstream (vpc) should be ordered before downstream (subnet)
+        expect(vpcIdx).toBeLessThan(subnetIdx);
+      }
+    });
+
+    it("detects dependency warnings for sensitive field changes", () => {
+      const sg = makeGraphNode("sg-1", { resourceType: "security-group", provider: "aws" });
+      const server = makeGraphNode("server-1", { resourceType: "compute", provider: "aws" });
+
+      const edges: DependencyEdge[] = [
+        { sourceId: "sg-1", targetId: "server-1", relationship: "secures" },
+      ];
+
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node: sg, changes: [makeDriftChange("status", "active", "modified")] },
+          { node: server, changes: [makeDriftChange("metadata.instanceType", "t3.small", "t3.medium")] },
+        ]),
+        "terraform",
+        { edges },
+      );
+
+      expect(plan.dependencyWarnings).toBeDefined();
+      expect(plan.dependencyWarnings!.length).toBeGreaterThan(0);
+      expect(plan.dependencyWarnings![0]!.warning).toContain("status");
+    });
+
+    it("returns no dependency warnings when no edges provided", () => {
+      const node = makeGraphNode("solo-server", { resourceType: "compute", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceType", "t3.small", "t3.medium")] },
+        ]),
+        "terraform",
+      );
+
+      expect(plan.dependencyWarnings ?? []).toHaveLength(0);
+    });
+  });
+
+  // ===========================================================================
+  // Module-Aware Patches
+  // ===========================================================================
+
+  describe("module-aware patches", () => {
+    it("generates module-wrapped Terraform patches", () => {
+      const node = makeGraphNode("web-server", { resourceType: "compute", provider: "aws" });
+      const changes = [
+        makeDriftChange("metadata.instanceType", "t3.small", "t3.medium"),
+      ];
+
+      const options: RemediationOptions = { moduleAware: true };
+      const plan = generateRemediationPlan(makeDriftResult([{ node, changes }]), "terraform", options);
+
+      const allPatches = [...plan.autoRemediable, ...plan.manualReview];
+      expect(allPatches.length).toBeGreaterThan(0);
+      const patch = allPatches[0]!;
+      expect(patch.patch).toContain("module");
+      expect(patch.patch).toContain("source");
+      expect(patch.patch).toContain("./modules/");
+    });
+
+    it("uses custom module name when provided", () => {
+      const node = makeGraphNode("web-server", { resourceType: "compute", provider: "aws" });
+      const changes = [
+        makeDriftChange("metadata.instanceType", "t3.small", "t3.medium"),
+      ];
+
+      const options: RemediationOptions = { moduleAware: true, moduleName: "my_custom_module" };
+      const plan = generateRemediationPlan(makeDriftResult([{ node, changes }]), "terraform", options);
+
+      const allPatches = [...plan.autoRemediable, ...plan.manualReview];
+      expect(allPatches.length).toBeGreaterThan(0);
+      expect(allPatches[0]!.patch).toContain("my_custom_module");
+    });
+  });
+
+  // ===========================================================================
+  // Import Block Generation
+  // ===========================================================================
+
+  describe("import block generation", () => {
+    it("generates Terraform import blocks when requested", () => {
+      const node = makeGraphNode("db-instance", { resourceType: "database", provider: "aws" });
+      const changes = [
+        makeDriftChange("metadata.instanceClass", "db.t3.micro", "db.t3.small"),
+      ];
+
+      const options: RemediationOptions = { generateImports: true };
+      const plan = generateRemediationPlan(makeDriftResult([{ node, changes }]), "terraform", options);
+
+      expect(plan.importBlocks).toBeDefined();
+      expect(plan.importBlocks!.length).toBeGreaterThan(0);
+      const block = plan.importBlocks![0]!;
+      expect(block.block).toContain("import {");
+      expect(block.block).toContain("to =");
+      expect(block.block).toContain("id =");
+      expect(block.nodeId).toBe("db-instance");
+    });
+
+    it("does not generate import blocks for CloudFormation", () => {
+      const node = makeGraphNode("cf-server", { resourceType: "compute", provider: "aws" });
+      const changes = [
+        makeDriftChange("metadata.instanceType", "t3.small", "t3.medium"),
+      ];
+
+      const options: RemediationOptions = { generateImports: true };
+      const plan = generateRemediationPlan(makeDriftResult([{ node, changes }]), "cloudformation", options);
+
+      expect(plan.importBlocks ?? []).toHaveLength(0);
+    });
+  });
+
+  // ===========================================================================
+  // Markdown Output with New Sections
+  // ===========================================================================
+
+  describe("formatRemediationMarkdown — dependency warnings & imports", () => {
+    it("renders dependency warnings in markdown output", () => {
+      const sg = makeGraphNode("sg-1", { resourceType: "security-group", provider: "aws" });
+      const server = makeGraphNode("server-1", { resourceType: "compute", provider: "aws" });
+
+      const edges: DependencyEdge[] = [
+        { sourceId: "sg-1", targetId: "server-1", relationship: "secures" },
+      ];
+
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node: sg, changes: [makeDriftChange("status", "active", "modified")] },
+          { node: server, changes: [makeDriftChange("metadata.instanceType", "t3.small", "t3.medium")] },
+        ]),
+        "terraform",
+        { edges },
+      );
+
+      const md = formatRemediationMarkdown(plan);
+      expect(md).toContain("Dependency Warning");
+    });
+
+    it("renders import blocks in markdown output", () => {
+      const node = makeGraphNode("db-prod", { resourceType: "database", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceClass", "db.t3.micro", "db.t3.small")] },
+        ]),
+        "terraform",
+        { generateImports: true },
+      );
+
+      const md = formatRemediationMarkdown(plan);
+      expect(md).toContain("Import Block");
+      expect(md).toContain("import {");
     });
   });
 });

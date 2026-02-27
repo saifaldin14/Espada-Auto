@@ -116,8 +116,13 @@ export type LocalRegoCondition =
   | { type: "field_matches"; field: string; pattern: string }
   | { type: "field_gt"; field: string; value: number }
   | { type: "field_lt"; field: string; value: number }
+  | { type: "field_gte"; field: string; value: number }
+  | { type: "field_lte"; field: string; value: number }
   | { type: "field_in"; field: string; values: unknown[] }
   | { type: "field_not_in"; field: string; values: unknown[] }
+  | { type: "field_exists"; field: string }
+  | { type: "field_not_exists"; field: string }
+  | { type: "field_size"; field: string; op: "eq" | "gt" | "lt" | "gte" | "lte"; value: number }
   | { type: "and"; conditions: LocalRegoCondition[] }
   | { type: "or"; conditions: LocalRegoCondition[] }
   | { type: "not"; condition: LocalRegoCondition };
@@ -545,36 +550,62 @@ function normalizeAction(
 /** Flatten the OPA input into dot-path accessible fields. */
 function flattenInput(input: OpaInput): Record<string, unknown> {
   const flat: Record<string, unknown> = {};
-  const cr = input.changeRequest;
-
-  flat["changeRequest"] = cr;
-  flat["changeRequest.id"] = cr.id;
-  flat["changeRequest.initiator"] = cr.initiator;
-  flat["changeRequest.initiatorType"] = cr.initiatorType;
-  flat["changeRequest.targetResourceId"] = cr.targetResourceId;
-  flat["changeRequest.resourceType"] = cr.resourceType;
-  flat["changeRequest.provider"] = cr.provider;
-  flat["changeRequest.action"] = cr.action;
-  flat["changeRequest.description"] = cr.description;
-  flat["changeRequest.riskScore"] = cr.riskScore;
-  flat["changeRequest.riskLevel"] = cr.riskLevel;
-  flat["changeRequest.riskFactors"] = cr.riskFactors;
-  flat["changeRequest.metadata"] = cr.metadata;
-  flat["timestamp"] = input.timestamp;
-
-  // Flatten metadata
-  if (cr.metadata) {
-    for (const [k, v] of Object.entries(cr.metadata)) {
-      flat[`changeRequest.metadata.${k}`] = v;
-    }
-  }
-
+  deepFlatten(input, "", flat);
   return flat;
 }
 
-/** Resolve a dot-path field from a flat record. */
+/**
+ * Recursively flatten a nested object into dot-path keys.
+ * Arrays are indexed numerically (e.g. `riskFactors.0`, `riskFactors.1`).
+ *
+ * Depth-limited to 20 levels to prevent stack overflow on circular or
+ * pathologically deep objects in production.
+ */
+function deepFlatten(
+  obj: unknown,
+  prefix: string,
+  flat: Record<string, unknown>,
+  depth = 0,
+): void {
+  if (obj == null || typeof obj !== "object") {
+    if (prefix) flat[prefix] = obj;
+    return;
+  }
+  // Store the object/array itself at its path too (for field_exists / field_size)
+  if (prefix) flat[prefix] = obj;
+
+  // Guard against circular references or extremely deep nesting
+  if (depth >= 20) return;
+
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      deepFlatten(obj[i], prefix ? `${prefix}.${i}` : String(i), flat, depth + 1);
+    }
+  } else {
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      deepFlatten(v, prefix ? `${prefix}.${k}` : k, flat, depth + 1);
+    }
+  }
+}
+
+/**
+ * Resolve a dot-path field from a flat record.
+ * Falls back to deep traversal for paths not in the flat map (e.g. array wildcards).
+ */
 function getField(flat: Record<string, unknown>, path: string): unknown {
-  return flat[path];
+  if (path in flat) return flat[path];
+  return undefined;
+}
+
+/**
+ * Get the "size" of a value: array length, object key count, or string length.
+ * Returns -1 for non-sizeable values.
+ */
+function getSize(value: unknown): number {
+  if (Array.isArray(value)) return value.length;
+  if (value != null && typeof value === "object") return Object.keys(value).length;
+  if (typeof value === "string") return value.length;
+  return -1;
 }
 
 /** Evaluate a local Rego condition against flattened input. */
@@ -590,17 +621,42 @@ function evaluateCondition(
     case "field_contains":
       return String(getField(flat, cond.field) ?? "").includes(cond.value);
     case "field_matches":
-      return new RegExp(cond.pattern).test(
-        String(getField(flat, cond.field) ?? ""),
-      );
+      try {
+        return new RegExp(cond.pattern).test(
+          String(getField(flat, cond.field) ?? ""),
+        );
+      } catch {
+        // Invalid regex pattern in rule — treat as non-match rather than crash
+        return false;
+      }
     case "field_gt":
       return Number(getField(flat, cond.field)) > cond.value;
     case "field_lt":
       return Number(getField(flat, cond.field)) < cond.value;
+    case "field_gte":
+      return Number(getField(flat, cond.field)) >= cond.value;
+    case "field_lte":
+      return Number(getField(flat, cond.field)) <= cond.value;
     case "field_in":
       return (cond.values as unknown[]).includes(getField(flat, cond.field));
     case "field_not_in":
       return !(cond.values as unknown[]).includes(getField(flat, cond.field));
+    case "field_exists":
+      return getField(flat, cond.field) !== undefined;
+    case "field_not_exists":
+      return getField(flat, cond.field) === undefined;
+    case "field_size": {
+      const size = getSize(getField(flat, cond.field));
+      if (size < 0) return false;
+      switch (cond.op) {
+        case "eq": return size === cond.value;
+        case "gt": return size > cond.value;
+        case "lt": return size < cond.value;
+        case "gte": return size >= cond.value;
+        case "lte": return size <= cond.value;
+      }
+      return false;
+    }
     case "and":
       return cond.conditions.every((c) => evaluateCondition(c, flat));
     case "or":
@@ -665,4 +721,277 @@ export function buildOpaInput(request: ChangeRequest): OpaInput {
     },
     timestamp: new Date().toISOString(),
   };
+}
+// =============================================================================
+// Batch Evaluation
+// =============================================================================
+
+/** Result of a batch evaluation. */
+export type BatchEvaluationResult = {
+  results: OpaEvaluationResult[];
+  totalDurationMs: number;
+  totalViolations: number;
+  inputCount: number;
+};
+
+/**
+ * Evaluate multiple inputs against an OPA engine in a single call.
+ * Runs evaluations sequentially (OPA engines may not be thread-safe)
+ * and aggregates results with summary statistics.
+ */
+export async function batchEvaluate(
+  engine: OpaEngine,
+  inputs: OpaInput[],
+): Promise<BatchEvaluationResult> {
+  const start = Date.now();
+  const results: OpaEvaluationResult[] = [];
+  let totalViolations = 0;
+
+  for (const input of inputs) {
+    const result = await engine.evaluate(input);
+    results.push(result);
+    totalViolations += result.violations.length;
+  }
+
+  return {
+    results,
+    totalDurationMs: Date.now() - start,
+    totalViolations,
+    inputCount: inputs.length,
+  };
+}
+
+// =============================================================================
+// Rego Subset Parser
+// =============================================================================
+
+/**
+ * A parsed Rego deny rule in simplified form.
+ * Captures the common pattern:
+ *   deny[msg] { condition1; condition2; msg := "..." }
+ */
+export type ParsedRegoRule = {
+  /** Package name from `package ...` declaration. */
+  package: string;
+  /** Rule head (e.g. "deny", "warn", "violation"). */
+  ruleHead: string;
+  /** Parsed conditions (best-effort from Rego body). */
+  conditions: LocalRegoCondition[];
+  /** Message template (from `msg := "..."` or inline string). */
+  message: string;
+  /** Lines that could not be parsed into conditions. */
+  unparsedLines: string[];
+};
+
+/**
+ * Parse a subset of Rego into structured conditions.
+ *
+ * Supported Rego patterns:
+ *   - `input.field == "value"` → field_equals
+ *   - `input.field != "value"` → field_not_equals
+ *   - `input.field > N` / `< N` / `>= N` / `<= N` → field_gt/lt/gte/lte
+ *   - `not input.field` → field_not_exists
+ *   - `input.field` (bare reference) → field_exists
+ *   - `contains(input.field, "substr")` → field_contains
+ *   - `re_match("pattern", input.field)` → field_matches
+ *   - `msg := "..."` → message capture
+ *
+ * Unsupported lines are captured in `unparsedLines` so callers know
+ * what couldn't be translated and would need a real OPA server.
+ */
+export function parseRegoSubset(rego: string): ParsedRegoRule[] {
+  const rules: ParsedRegoRule[] = [];
+  let currentPackage = "espada.policy.custom";
+
+  // Extract package
+  const pkgMatch = rego.match(/^package\s+([\w.]+)/m);
+  if (pkgMatch) currentPackage = pkgMatch[1]!;
+
+  // Split into rule blocks: look for `ruleHead[msg] { ... }` or `ruleHead { ... }`
+  // Uses balanced-brace matching instead of [^}]* to handle nested braces
+  // (e.g. `tags := { ... }` inside a rule body).
+  const ruleRegex = /(\w+)(?:\[(\w+)\])?\s*\{/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = ruleRegex.exec(rego)) !== null) {
+    const ruleHead = match[1]!;
+    // Skip package/import/default statements
+    if (["package", "import", "default"].includes(ruleHead)) continue;
+
+    // Extract body with balanced brace matching
+    const bodyStart = match.index + match[0].length;
+    const body = extractBalancedBody(rego, bodyStart);
+    if (body === null) continue;
+    // Advance regex past the extracted body + closing brace so inner blocks
+    // (e.g. `resource.config { ... }`) are not matched as top-level rules.
+    ruleRegex.lastIndex = bodyStart + body.length + 1;
+    const conditions: LocalRegoCondition[] = [];
+    const unparsedLines: string[] = [];
+    let message = `Policy violation: ${ruleHead}`;
+
+    // Parse body line by line (semicolons or newlines as separators)
+    const lines = body
+      .split(/[;\n]/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0 && !l.startsWith("#"));
+
+    for (const line of lines) {
+      const parsed = parseRegoLine(line);
+      if (parsed === null) {
+        unparsedLines.push(line);
+      } else if (parsed.type === "message") {
+        message = parsed.value;
+      } else {
+        conditions.push(parsed.condition);
+      }
+    }
+
+    rules.push({
+      package: currentPackage,
+      ruleHead,
+      conditions,
+      message,
+      unparsedLines,
+    });
+  }
+
+  return rules;
+}
+
+type RegoLineResult =
+  | { type: "condition"; condition: LocalRegoCondition }
+  | { type: "message"; value: string }
+  | null;
+
+function parseRegoLine(line: string): RegoLineResult {
+  // Message assignment: msg := "..." or msg = "..."
+  const msgMatch = line.match(/^\w+\s*:?=\s*"([^"]*)"$/);
+  if (msgMatch) return { type: "message", value: msgMatch[1]! };
+
+  // Sprintf message: msg := sprintf("...", [...])
+  const sprintfMatch = line.match(/^\w+\s*:?=\s*sprintf\("([^"]*)",/);
+  if (sprintfMatch) return { type: "message", value: sprintfMatch[1]! };
+
+  // Comparison: input.field == "value" / != / > / < / >= / <=
+  const cmpMatch = line.match(
+    /^input\.([\w.]+)\s*(==|!=|>=|<=|>|<)\s*(.+)$/,
+  );
+  if (cmpMatch) {
+    const field = cmpMatch[1]!;
+    const op = cmpMatch[2]!;
+    const rawValue = cmpMatch[3]!.trim();
+    const value = parseRegoValue(rawValue);
+
+    switch (op) {
+      case "==": return { type: "condition", condition: { type: "field_equals", field, value } };
+      case "!=": return { type: "condition", condition: { type: "field_not_equals", field, value } };
+      case ">": return { type: "condition", condition: { type: "field_gt", field, value: Number(value) } };
+      case "<": return { type: "condition", condition: { type: "field_lt", field, value: Number(value) } };
+      case ">=": return { type: "condition", condition: { type: "field_gte", field, value: Number(value) } };
+      case "<=": return { type: "condition", condition: { type: "field_lte", field, value: Number(value) } };
+    }
+  }
+
+  // Negation: not input.field
+  const notMatch = line.match(/^not\s+input\.([\w.]+)$/);
+  if (notMatch) {
+    return { type: "condition", condition: { type: "field_not_exists", field: notMatch[1]! } };
+  }
+
+  // Bare field reference: input.field (existence check)
+  const existsMatch = line.match(/^input\.([\w.]+)$/);
+  if (existsMatch) {
+    return { type: "condition", condition: { type: "field_exists", field: existsMatch[1]! } };
+  }
+
+  // contains(input.field, "value")
+  const containsMatch = line.match(
+    /^contains\(input\.([\w.]+),\s*"([^"]*)"\)$/,
+  );
+  if (containsMatch) {
+    return {
+      type: "condition",
+      condition: { type: "field_contains", field: containsMatch[1]!, value: containsMatch[2]! },
+    };
+  }
+
+  // re_match("pattern", input.field)
+  const reMatch = line.match(
+    /^re_match\("([^"]*)",\s*input\.([\w.]+)\)$/,
+  );
+  if (reMatch) {
+    return {
+      type: "condition",
+      condition: { type: "field_matches", field: reMatch[2]!, pattern: reMatch[1]! },
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Extract the body of a brace-delimited block, handling nested braces.
+ * `startIdx` should point to the character immediately after the opening `{`.
+ * Returns null if braces are unbalanced.
+ */
+function extractBalancedBody(source: string, startIdx: number): string | null {
+  let depth = 1;
+  let i = startIdx;
+  while (i < source.length && depth > 0) {
+    if (source[i] === "{") depth++;
+    else if (source[i] === "}") depth--;
+    if (depth > 0) i++;
+  }
+  return depth === 0 ? source.slice(startIdx, i) : null;
+}
+
+function parseRegoValue(raw: string): unknown {
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  if (raw === "null") return null;
+  // Quoted string
+  const strMatch = raw.match(/^"([^"]*)"$/);
+  if (strMatch) return strMatch[1];
+  // Number
+  const num = Number(raw);
+  if (!Number.isNaN(num)) return num;
+  return raw;
+}
+
+/**
+ * Convert parsed Rego rules into LocalRegoRule objects usable by LocalOpaEngine.
+ * Maps rule heads to actions: deny → deny, warn → warn, violation → deny, etc.
+ */
+export function regoToLocalRules(parsed: ParsedRegoRule[]): LocalRegoRule[] {
+  const headToAction: Record<string, "deny" | "warn" | "require_approval" | "notify"> = {
+    deny: "deny",
+    violation: "deny",
+    warn: "warn",
+    warning: "warn",
+    notify: "notify",
+    approve: "require_approval",
+  };
+
+  const headToSeverity: Record<string, OpaSeverity> = {
+    deny: "high",
+    violation: "high",
+    warn: "medium",
+    warning: "medium",
+    notify: "low",
+    approve: "medium",
+  };
+
+  return parsed.map((rule, idx) => ({
+    id: `rego-parsed-${idx}`,
+    description: `Parsed from Rego: ${rule.ruleHead} (${rule.package})`,
+    package: rule.package,
+    condition: rule.conditions.length === 1
+      ? rule.conditions[0]!
+      : rule.conditions.length > 1
+        ? { type: "and" as const, conditions: rule.conditions }
+        : { type: "field_equals" as const, field: "_always_true", value: undefined },
+    severity: headToSeverity[rule.ruleHead] ?? "medium",
+    action: headToAction[rule.ruleHead] ?? "deny",
+    message: rule.message,
+  }));
 }

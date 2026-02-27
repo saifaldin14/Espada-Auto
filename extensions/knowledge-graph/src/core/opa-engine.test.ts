@@ -15,12 +15,16 @@ import {
   RemoteOpaEngine,
   createOpaEngine,
   buildOpaInput,
+  batchEvaluate,
+  parseRegoSubset,
+  regoToLocalRules,
 } from "./opa-engine.js";
 import type {
   OpaInput,
   OpaPolicyViolation,
   LocalRegoRule,
   OpaEvaluationResult,
+  LocalRegoCondition,
 } from "./opa-engine.js";
 import type { ChangeRequest, RiskAssessment } from "./governance.js";
 
@@ -775,5 +779,515 @@ describe("buildOpaInput", () => {
     expect(input.changeRequest.riskFactors).toEqual(["Production environment"]);
     expect(input.changeRequest.metadata).toEqual({ environment: "production", costAtRisk: 3000 });
     expect(input.timestamp).toBeTruthy();
+  });
+});
+
+// =============================================================================
+// New Condition Types (field_gte, field_lte, field_exists, field_not_exists, field_size)
+// =============================================================================
+
+describe("LocalOpaEngine — extended conditions", () => {
+  function makeRule(id: string, condition: LocalRegoCondition): LocalRegoRule {
+    return {
+      id,
+      description: `Test rule ${id}`,
+      package: "espada.test",
+      condition,
+      severity: "high",
+      action: "deny",
+      message: `Rule ${id} triggered`,
+    };
+  }
+
+  it("should match field_gte condition", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("gte-test", { type: "field_gte", field: "changeRequest.riskScore", value: 25 })],
+    });
+    // riskScore = 25 in default input, 25 >= 25 should match
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.violations).toHaveLength(1);
+
+    // Below threshold
+    const result2 = await engine.evaluate(makeOpaInput({ riskScore: 10 }));
+    expect(result2.violations).toHaveLength(0);
+  });
+
+  it("should match field_lte condition", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("lte-test", { type: "field_lte", field: "changeRequest.riskScore", value: 30 })],
+    });
+    const result = await engine.evaluate(makeOpaInput({ riskScore: 30 }));
+    expect(result.violations).toHaveLength(1);
+
+    const result2 = await engine.evaluate(makeOpaInput({ riskScore: 50 }));
+    expect(result2.violations).toHaveLength(0);
+  });
+
+  it("should match field_exists condition", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("exists-test", { type: "field_exists", field: "changeRequest.metadata" })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("should match field_not_exists condition", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("not-exists-test", { type: "field_not_exists", field: "changeRequest.nonExistentField" })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("should match field_size condition", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("size-test", { type: "field_size", field: "changeRequest.riskFactors", op: "gte", value: 1 })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    // Default input has 1 risk factor, >= 1 matches
+    expect(result.violations).toHaveLength(1);
+
+    // Size equality check
+    const engine2 = new LocalOpaEngine({
+      rules: [makeRule("size-eq", { type: "field_size", field: "changeRequest.riskFactors", op: "eq", value: 5 })],
+    });
+    const result2 = await engine2.evaluate(makeOpaInput());
+    expect(result2.violations).toHaveLength(0); // Only 1 risk factor, not 5
+  });
+
+  it("should handle field_size with object (key count)", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("size-obj", { type: "field_size", field: "changeRequest.metadata", op: "gt", value: 0 })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    // metadata has { environment: "staging", costAtRisk: 500 } = 2 keys > 0
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("should resolve deep nested paths", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("deep-path", { type: "field_equals", field: "changeRequest.metadata.environment", value: "staging" })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.violations).toHaveLength(1);
+  });
+
+  it("should resolve array index paths", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [makeRule("array-path", { type: "field_equals", field: "changeRequest.riskFactors.0", value: "Blast radius: 3 resources" })],
+    });
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.violations).toHaveLength(1);
+  });
+});
+
+// =============================================================================
+// Batch Evaluation
+// =============================================================================
+
+describe("batchEvaluate", () => {
+  it("evaluates multiple inputs and aggregates results", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [{
+        id: "high-risk-deny",
+        description: "Deny high risk",
+        package: "espada.test",
+        condition: { type: "field_gt", field: "changeRequest.riskScore", value: 50 },
+        severity: "high",
+        action: "deny",
+        message: "High risk denied",
+      }],
+    });
+
+    const inputs = [
+      makeOpaInput({ riskScore: 20 }),
+      makeOpaInput({ riskScore: 75 }),
+      makeOpaInput({ riskScore: 90 }),
+    ];
+
+    const batch = await batchEvaluate(engine, inputs);
+    expect(batch.inputCount).toBe(3);
+    expect(batch.results).toHaveLength(3);
+    expect(batch.totalViolations).toBe(2); // 75 and 90 exceed 50
+    expect(batch.totalDurationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns zero violations for empty input list", async () => {
+    const engine = new LocalOpaEngine({ rules: [] });
+    const batch = await batchEvaluate(engine, []);
+    expect(batch.inputCount).toBe(0);
+    expect(batch.totalViolations).toBe(0);
+    expect(batch.results).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Rego Subset Parser
+// =============================================================================
+
+describe("parseRegoSubset", () => {
+  it("parses a simple deny rule with field comparison", () => {
+    const rego = `
+package espada.policy.security
+
+deny[msg] {
+  input.changeRequest.action == "delete"
+  input.changeRequest.riskScore > 80
+  msg := "Cannot delete high-risk resources"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.package).toBe("espada.policy.security");
+    expect(rules[0]!.ruleHead).toBe("deny");
+    expect(rules[0]!.conditions).toHaveLength(2);
+    expect(rules[0]!.message).toBe("Cannot delete high-risk resources");
+
+    // First condition: field_equals for action
+    expect(rules[0]!.conditions[0]!.type).toBe("field_equals");
+
+    // Second condition: field_gt for riskScore
+    expect(rules[0]!.conditions[1]!.type).toBe("field_gt");
+  });
+
+  it("parses negation and bare existence checks", () => {
+    const rego = `
+package test.policy
+
+warn[msg] {
+  not input.changeRequest.metadata.approved
+  input.changeRequest.metadata.environment
+  msg := "Missing approval for existing environment"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.ruleHead).toBe("warn");
+
+    const notExists = rules[0]!.conditions.find((c) => c.type === "field_not_exists");
+    expect(notExists).toBeDefined();
+
+    const exists = rules[0]!.conditions.find((c) => c.type === "field_exists");
+    expect(exists).toBeDefined();
+  });
+
+  it("parses contains and re_match functions", () => {
+    const rego = `
+package test.policy
+
+deny[msg] {
+  contains(input.changeRequest.description, "drop")
+  re_match("prod.*critical", input.changeRequest.metadata.environment)
+  msg := "Cannot drop in production"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.conditions).toHaveLength(2);
+
+    const containsCond = rules[0]!.conditions.find((c) => c.type === "field_contains");
+    expect(containsCond).toBeDefined();
+    if (containsCond?.type === "field_contains") {
+      expect(containsCond.value).toBe("drop");
+    }
+
+    const matchesCond = rules[0]!.conditions.find((c) => c.type === "field_matches");
+    expect(matchesCond).toBeDefined();
+    if (matchesCond?.type === "field_matches") {
+      expect(matchesCond.pattern).toBe("prod.*critical");
+    }
+  });
+
+  it("parses comparison operators (!=, >=, <=, <)", () => {
+    const rego = `
+package test
+
+deny[msg] {
+  input.riskScore >= 50
+  input.action != "read"
+  input.cost <= 10000
+  input.priority < 3
+  msg := "Multiple conditions"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    const types = rules[0]!.conditions.map((c) => c.type);
+    expect(types).toContain("field_gte");
+    expect(types).toContain("field_not_equals");
+    expect(types).toContain("field_lte");
+    expect(types).toContain("field_lt");
+  });
+
+  it("parses multiple rule blocks", () => {
+    const rego = `
+package espada.multi
+
+deny[msg] {
+  input.action == "delete"
+  msg := "No deletes"
+}
+
+warn[msg] {
+  input.riskScore > 50
+  msg := "High risk"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(2);
+    expect(rules[0]!.ruleHead).toBe("deny");
+    expect(rules[1]!.ruleHead).toBe("warn");
+  });
+
+  it("captures unparsed lines", () => {
+    const rego = `
+package test
+
+deny[msg] {
+  some x in input.items
+  input.action == "delete"
+  msg := "Has unparsed"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.unparsedLines.length).toBeGreaterThan(0);
+    expect(rules[0]!.unparsedLines[0]).toContain("some x");
+  });
+
+  it("handles sprintf message", () => {
+    const rego = `
+package test
+
+deny[msg] {
+  input.action == "delete"
+  msg := sprintf("Denied action %s", [input.action])
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.message).toBe("Denied action %s");
+  });
+});
+
+// =============================================================================
+// regoToLocalRules
+// =============================================================================
+
+describe("regoToLocalRules", () => {
+  it("converts deny rules to high-severity deny action", () => {
+    const parsed = parseRegoSubset(`
+package test
+deny[msg] {
+  input.action == "delete"
+  msg := "No deletes"
+}`);
+
+    const rules = regoToLocalRules(parsed);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.action).toBe("deny");
+    expect(rules[0]!.severity).toBe("high");
+    expect(rules[0]!.message).toBe("No deletes");
+  });
+
+  it("converts warn rules to medium-severity warn action", () => {
+    const parsed = parseRegoSubset(`
+package test
+warn[msg] {
+  input.riskScore > 50
+  msg := "High risk"
+}`);
+
+    const rules = regoToLocalRules(parsed);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.action).toBe("warn");
+    expect(rules[0]!.severity).toBe("medium");
+  });
+
+  it("wraps multiple conditions in AND", () => {
+    const parsed = parseRegoSubset(`
+package test
+deny[msg] {
+  input.action == "delete"
+  input.riskScore > 80
+  msg := "Cannot delete high risk"
+}`);
+
+    const rules = regoToLocalRules(parsed);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.condition.type).toBe("and");
+  });
+
+  it("uses single condition directly (no wrapping)", () => {
+    const parsed = parseRegoSubset(`
+package test
+deny[msg] {
+  input.action == "delete"
+  msg := "No deletes"
+}`);
+
+    const rules = regoToLocalRules(parsed);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.condition.type).toBe("field_equals");
+  });
+
+  it("produces rules that work with LocalOpaEngine", async () => {
+    const parsed = parseRegoSubset(`
+package espada.policy
+deny[msg] {
+  input.changeRequest.action == "delete"
+  msg := "Deletes are blocked"
+}`);
+
+    const rules = regoToLocalRules(parsed);
+    const engine = new LocalOpaEngine({ rules });
+
+    // Should match - action is "delete"
+    const deleteInput = makeOpaInput({ action: "delete" });
+    const deleteResult = await engine.evaluate(deleteInput);
+    expect(deleteResult.violations).toHaveLength(1);
+    expect(deleteResult.violations[0]!.message).toBe("Deletes are blocked");
+
+    // Should not match - action is "update"
+    const updateInput = makeOpaInput({ action: "update" });
+    const updateResult = await engine.evaluate(updateInput);
+    expect(updateResult.violations).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Production Edge-Case Tests
+// =============================================================================
+
+describe("production edge cases", () => {
+  it("deepFlatten handles deeply nested objects without crashing", async () => {
+    // Build 30-level-deep nested object (exceeds the 20-level guard)
+    let deep: Record<string, unknown> = { val: "leaf" };
+    for (let i = 0; i < 30; i++) {
+      deep = { nested: deep };
+    }
+
+    const engine = new LocalOpaEngine({
+      rules: [{
+        id: "deep-check",
+        description: "Check something at depth 25",
+        package: "test",
+        condition: { type: "field_exists", field: "changeRequest.metadata.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.nested.val" },
+        severity: "low",
+        action: "notify",
+        message: "Deep check",
+      }],
+    });
+
+    const input = makeOpaInput({ metadata: deep });
+    // Should not throw — just won't find the field beyond depth 20
+    const result = await engine.evaluate(input);
+    expect(result.ok).toBe(true);
+    // The field is beyond depth limit so it shouldn't match
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it("field_matches with invalid regex does not throw", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [{
+        id: "bad-regex",
+        description: "Invalid regex pattern",
+        package: "test",
+        condition: { type: "field_matches", field: "changeRequest.action", pattern: "[invalid((" },
+        severity: "high",
+        action: "deny",
+        message: "Bad regex",
+      }],
+    });
+
+    const result = await engine.evaluate(makeOpaInput());
+    expect(result.ok).toBe(true);
+    // Invalid regex should be silently treated as non-match
+    expect(result.violations).toHaveLength(0);
+  });
+
+  it("parseRegoSubset handles nested braces in rule body", () => {
+    const rego = `
+package test.nested
+
+deny[msg] {
+  input.changeRequest.action == "delete"
+  tags := {"env": "prod", "team": "infra"}
+  msg := "No deletes in prod"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.conditions.length).toBeGreaterThanOrEqual(1);
+    expect(rules[0]!.message).toBe("No deletes in prod");
+  });
+
+  it("parseRegoSubset returns empty array for empty/invalid input", () => {
+    expect(parseRegoSubset("")).toHaveLength(0);
+    expect(parseRegoSubset("not valid rego at all")).toHaveLength(0);
+    expect(parseRegoSubset("package foo\n# just comments")).toHaveLength(0);
+  });
+
+  it("batchEvaluate does not lose errors from individual evaluations", async () => {
+    const engine = new LocalOpaEngine({
+      rules: [{
+        id: "always-deny",
+        description: "Deny all",
+        package: "test",
+        condition: { type: "field_exists", field: "timestamp" },
+        severity: "high",
+        action: "deny",
+        message: "Denied",
+      }],
+    });
+
+    const batch = await batchEvaluate(engine, [makeOpaInput(), makeOpaInput()]);
+    expect(batch.results).toHaveLength(2);
+    expect(batch.totalViolations).toBe(2);
+    expect(batch.results.every((r) => r.ok)).toBe(true);
+  });
+
+  it("parseRegoSubset does not create spurious rules from nested block structures", () => {
+    // Rego with a nested block inside the rule body that matches the `word { }` pattern.
+    // Without advancing ruleRegex.lastIndex past the body, the regex would match
+    // "config {" as a separate top-level rule.
+    const rego = `
+package test.nested_blocks
+
+deny[msg] {
+  resource := data.resources[i]
+  config {
+    something := true
+  }
+  msg := "bad resource"
+}
+
+warn[msg] {
+  input.changeRequest.riskScore > 50
+  msg := "risky"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    // Should be exactly 2 rules (deny + warn), NOT 3 (deny + config + warn)
+    expect(rules).toHaveLength(2);
+    expect(rules[0]!.ruleHead).toBe("deny");
+    expect(rules[1]!.ruleHead).toBe("warn");
+  });
+
+  it("parseRegoSubset handles multiple nested braces without duplication", () => {
+    const rego = `
+package test.multi_nested
+
+deny[msg] {
+  input.changeRequest.action == "delete"
+  labels := {"env": "prod", "team": "infra"}
+  annotations := {"owner": "ops"}
+  msg := "blocked"
+}`;
+
+    const rules = parseRegoSubset(rego);
+    expect(rules).toHaveLength(1);
+    expect(rules[0]!.ruleHead).toBe("deny");
+    expect(rules[0]!.message).toBe("blocked");
   });
 });

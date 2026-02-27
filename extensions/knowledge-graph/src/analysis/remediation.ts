@@ -65,6 +65,39 @@ export type RemediationPlan = {
     resourceName: string;
     reason: string;
   }>;
+  /** Terraform import blocks (if generateImports was set). */
+  importBlocks?: ImportBlock[];
+  /** Warnings about cross-resource dependencies. */
+  dependencyWarnings?: DependencyWarning[];
+};
+
+/** Edge representing a dependency between two resources. */
+export type DependencyEdge = {
+  sourceId: string;
+  targetId: string;
+  relationship: string;
+};
+
+/** Warning about cross-resource dependency conflicts. */
+export type DependencyWarning = {
+  sourceResource: string;
+  targetResource: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  relationship: string;
+  warning: string;
+};
+
+/** Options for advanced remediation plan generation. */
+export type RemediationOptions = {
+  /** Graph edges for dependency-aware ordering. */
+  edges?: DependencyEdge[];
+  /** Generate Terraform import blocks for state management. */
+  generateImports?: boolean;
+  /** Wrap patches in module blocks. */
+  moduleAware?: boolean;
+  /** Module name prefix (defaults to mod_<resource_name>). */
+  moduleName?: string;
 };
 
 // =============================================================================
@@ -360,10 +393,12 @@ function assessPatchRisk(
 
 /**
  * Generate a remediation plan from drift detection results.
+ * Optionally accepts graph edges for dependency-aware ordering.
  */
 export function generateRemediationPlan(
   driftResult: DriftResult,
   format: IaCFormat = "terraform",
+  options?: RemediationOptions,
 ): RemediationPlan {
   const patches: RemediationPatch[] = [];
   const unremeditable: RemediationPlan["unremeditable"] = [];
@@ -407,7 +442,9 @@ export function generateRemediationPlan(
 
     const patchContent =
       format === "terraform"
-        ? generateTerraformPatch(node, fields)
+        ? options?.moduleAware
+          ? generateModuleAwarePatch(node, fields, options.moduleName)
+          : generateTerraformPatch(node, fields)
         : generateCloudFormationPatch(node, fields);
 
     if (!patchContent) {
@@ -444,20 +481,38 @@ export function generateRemediationPlan(
     });
   }
 
+  // Sort patches by dependency order if edges are provided
+  const edges = options?.edges ?? [];
+  const orderedPatches = edges.length > 0
+    ? orderByDependency(patches, edges)
+    : patches;
+
   // Classify patches by risk
-  const autoRemediable = patches.filter((p) => p.risk === "low");
-  const manualReview = patches.filter(
+  const autoRemediable = orderedPatches.filter((p) => p.risk === "low");
+  const manualReview = orderedPatches.filter(
     (p) => p.risk === "medium" || p.risk === "high",
   );
+
+  // Generate import blocks if requested
+  const importBlocks = options?.generateImports
+    ? generateImportBlocks(patches, format)
+    : undefined;
+
+  // Detect cross-resource dependency warnings
+  const dependencyWarnings = edges.length > 0
+    ? detectDependencyWarnings(patches, edges)
+    : [];
 
   return {
     generatedAt: new Date().toISOString(),
     format,
     totalDriftedResources: driftResult.driftedNodes.length,
-    totalPatches: patches.length,
+    totalPatches: orderedPatches.length,
     autoRemediable,
     manualReview,
     unremeditable,
+    importBlocks,
+    dependencyWarnings,
   };
 }
 
@@ -474,6 +529,28 @@ export function formatRemediationMarkdown(plan: RemediationPlan): string {
     `Remediable patches: ${plan.totalPatches}`,
     "",
   ];
+
+  if (plan.dependencyWarnings && plan.dependencyWarnings.length > 0) {
+    lines.push(
+      "## Dependency Warnings",
+      "",
+      ...plan.dependencyWarnings.map((w) => `- **${w.sourceResource}** → **${w.targetResource}**: ${w.warning}`),
+      "",
+    );
+  }
+
+  if (plan.importBlocks && plan.importBlocks.length > 0) {
+    lines.push(
+      "## Import Blocks",
+      "",
+      "Run these before applying patches to import existing resources into state:",
+      "",
+      "```hcl",
+      ...plan.importBlocks.map((b) => b.block),
+      "```",
+      "",
+    );
+  }
 
   if (plan.autoRemediable.length > 0) {
     lines.push(
@@ -522,4 +599,203 @@ export function formatRemediationMarkdown(plan: RemediationPlan): string {
   }
 
   return lines.join("\n");
+}
+
+// =============================================================================
+// Dependency-Aware Ordering
+// =============================================================================
+
+/**
+ * Sort patches based on edge dependencies so that upstream resources
+ * are patched before downstream resources.
+ * Uses topological sort; cycles fall back to original order.
+ */
+function orderByDependency(
+  patches: RemediationPatch[],
+  edges: DependencyEdge[],
+): RemediationPatch[] {
+  if (patches.length <= 1) return patches;
+
+  const patchById = new Map(patches.map((p) => [p.nodeId, p]));
+  const patchIds = new Set(patches.map((p) => p.nodeId));
+
+  // Build adjacency list (only for nodes in the patch set)
+  const inDegree = new Map<string, number>();
+  const adj = new Map<string, string[]>();
+  for (const id of patchIds) {
+    inDegree.set(id, 0);
+    adj.set(id, []);
+  }
+
+  for (const edge of edges) {
+    if (patchIds.has(edge.sourceId) && patchIds.has(edge.targetId)) {
+      adj.get(edge.sourceId)!.push(edge.targetId);
+      inDegree.set(edge.targetId, (inDegree.get(edge.targetId) ?? 0) + 1);
+    }
+  }
+
+  // Kahn's algorithm — topological sort
+  const queue: string[] = [];
+  for (const [id, deg] of inDegree) {
+    if (deg === 0) queue.push(id);
+  }
+
+  const sorted: string[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    sorted.push(current);
+    for (const neighbor of adj.get(current) ?? []) {
+      const newDeg = (inDegree.get(neighbor) ?? 1) - 1;
+      inDegree.set(neighbor, newDeg);
+      if (newDeg === 0) queue.push(neighbor);
+    }
+  }
+
+  // If cycle detected (sorted.length < patchIds.size), fall back to original order
+  if (sorted.length < patchIds.size) {
+    return patches;
+  }
+
+  return sorted
+    .map((id) => patchById.get(id))
+    .filter((p): p is RemediationPatch => p != null);
+}
+
+// =============================================================================
+// Dependency Warning Detection
+// =============================================================================
+
+/**
+ * Detect patches that affect resources which depend on each other.
+ * Warns when a downstream resource may break if the upstream patch
+ * changes a field the downstream depends on.
+ */
+function detectDependencyWarnings(
+  patches: RemediationPatch[],
+  edges: DependencyEdge[],
+): DependencyWarning[] {
+  const warnings: DependencyWarning[] = [];
+  const patchIds = new Set(patches.map((p) => p.nodeId));
+  const patchMap = new Map(patches.map((p) => [p.nodeId, p]));
+
+  // Cross-reference fields: if source and target are both being patched,
+  // and the source is changing a field that could affect the target
+  const sensitiveFields = new Set([
+    "status", "region", "name",
+    "metadata.publiclyAccessible", "metadata.encrypted",
+    "metadata.vpcId", "metadata.subnetId", "metadata.securityGroupId",
+  ]);
+
+  for (const edge of edges) {
+    if (patchIds.has(edge.sourceId) && patchIds.has(edge.targetId)) {
+      const sourcePatch = patchMap.get(edge.sourceId)!;
+      const targetPatch = patchMap.get(edge.targetId)!;
+
+      const sensitiveChanges = sourcePatch.driftedFields.filter(
+        (f) => sensitiveFields.has(f.field),
+      );
+
+      if (sensitiveChanges.length > 0) {
+        warnings.push({
+          sourceResource: sourcePatch.resourceName,
+          targetResource: targetPatch.resourceName,
+          sourceNodeId: edge.sourceId,
+          targetNodeId: edge.targetId,
+          relationship: edge.relationship,
+          warning: `Changing ${sensitiveChanges.map((f) => f.field).join(", ")} on ${sourcePatch.resourceName} may affect dependent resource ${targetPatch.resourceName}. Review carefully.`,
+        });
+      }
+    }
+  }
+
+  return warnings;
+}
+
+// =============================================================================
+// Module-Aware Terraform Patches
+// =============================================================================
+
+/**
+ * Generate a Terraform patch wrapped in a module block.
+ * Useful when the resource is managed through a Terraform module.
+ */
+function generateModuleAwarePatch(
+  node: GraphNode,
+  fields: DriftedField[],
+  moduleName?: string,
+): string {
+  const tfType = getTerraformResourceType(node.resourceType, node.provider);
+  if (!tfType) return "";
+
+  const tfName = sanitizeTfName(node.name);
+  const modName = moduleName ?? `mod_${sanitizeTfName(node.name)}`;
+  const innerPatch = generateTerraformPatch(node, fields);
+  if (!innerPatch) return "";
+
+  const lines: string[] = [
+    `# Module-aware remediation for ${node.name}`,
+    `# If this resource is managed via a Terraform module, adjust the`,
+    `# module source and variables below to match your module structure.`,
+    `module "${modName}" {`,
+    `  source = "./modules/${node.resourceType}"`,
+    "",
+    `  # Pass drifted values as module variables:`,
+  ];
+
+  for (const field of fields) {
+    if (field.expectedValue == null) continue;
+    const varName = field.field.replace("metadata.", "").replace(/\./g, "_");
+    lines.push(`  ${varName} = ${formatTerraformValue(field.expectedValue)}`);
+  }
+
+  lines.push("}");
+  lines.push("");
+  lines.push("# Alternatively, patch the resource directly:");
+  lines.push(innerPatch);
+
+  return lines.join("\n");
+}
+
+// =============================================================================
+// Import Block Generation
+// =============================================================================
+
+/** An import block for bringing existing resources into Terraform state. */
+export type ImportBlock = {
+  nodeId: string;
+  resourceName: string;
+  block: string;
+};
+
+/**
+ * Generate Terraform import blocks for resources in the remediation plan.
+ * These should be run before applying patches to avoid "resource already exists" errors.
+ */
+function generateImportBlocks(
+  patches: RemediationPatch[],
+  format: IaCFormat,
+): ImportBlock[] {
+  if (format !== "terraform") return [];
+
+  return patches
+    .map((patch) => {
+      const tfType = getTerraformResourceType(patch.resourceType, patch.provider);
+      if (!tfType) return null;
+
+      const tfName = sanitizeTfName(patch.resourceName);
+      // Use the node's nativeId or fall back to nodeId for the import identifier
+      const importId = patch.nodeId;
+
+      return {
+        nodeId: patch.nodeId,
+        resourceName: patch.resourceName,
+        block: [
+          `import {`,
+          `  to = ${tfType}.${tfName}`,
+          `  id = "${importId}"`,
+          `}`,
+        ].join("\n"),
+      };
+    })
+    .filter((b): b is ImportBlock => b != null);
 }

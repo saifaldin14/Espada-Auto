@@ -302,20 +302,30 @@ export async function incrementalSync(
 
   // Partition discovered nodes into create/update/skip
   const toUpsert: GraphNodeInput[] = [];
+  const toTouch: string[] = [];
   const discoveredIds = new Set<string>();
+  // O(1) lookup map for the touchNodes fallback path
+  const nodeById = new Map<string, GraphNodeInput>();
+  for (const n of discoveredNodes) nodeById.set(n.id, n);
+
+  // Pre-fetch existing node IDs in one batch query to avoid N sequential
+  // getNode() calls on cache miss (cold-start or large delta).
+  const existingNodes = await storage.queryNodes({});
+  const existingIds = new Set(existingNodes.map((n) => n.id));
 
   for (const node of discoveredNodes) {
     discoveredIds.add(node.id);
     const hash = computeNodeHash(node);
 
     if (hashCache.matches(node.id, hash)) {
-      // Node unchanged — still update lastSeenAt
+      // Node unchanged — but must update lastSeenAt so stale detection
+      // doesn't incorrectly mark it as disappeared.
       skipped++;
+      toTouch.push(node.id);
       continue;
     }
 
-    const existing = await storage.getNode(node.id);
-    if (existing) {
+    if (existingIds.has(node.id)) {
       updated++;
     } else {
       created++;
@@ -328,6 +338,23 @@ export async function incrementalSync(
   // Batch upsert changed nodes
   for (let i = 0; i < toUpsert.length; i += batchSize) {
     await storage.upsertNodes(toUpsert.slice(i, i + batchSize));
+  }
+
+  // Touch unchanged nodes to refresh lastSeenAt (prevents false disappearance)
+  if (toTouch.length > 0 && storage.touchNodes) {
+    for (let i = 0; i < toTouch.length; i += batchSize) {
+      await storage.touchNodes(toTouch.slice(i, i + batchSize));
+    }
+  } else if (toTouch.length > 0) {
+    // Fallback: re-upsert unchanged nodes to update lastSeenAt
+    const unchanged: GraphNodeInput[] = [];
+    for (const id of toTouch) {
+      const node = nodeById.get(id);
+      if (node) unchanged.push(node);
+    }
+    for (let i = 0; i < unchanged.length; i += batchSize) {
+      await storage.upsertNodes(unchanged.slice(i, i + batchSize));
+    }
   }
 
   // Batch upsert edges

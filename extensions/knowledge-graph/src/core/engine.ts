@@ -10,6 +10,7 @@ import type {
   GraphStorage,
   GraphNode,
   GraphNodeInput,
+  GraphEdgeInput,
   GraphEdge,
   GraphChange,
   SubgraphResult,
@@ -24,6 +25,7 @@ import type {
 } from "../types.js";
 import type { GraphDiscoveryAdapter, DiscoverOptions } from "../adapters/types.js";
 import { AdapterRegistry } from "../adapters/types.js";
+import { NodeHashCache, incrementalSync } from "./sync.js";
 
 // =============================================================================
 // Engine Configuration
@@ -38,6 +40,12 @@ export type GraphEngineConfig = {
   enableDriftDetection: boolean;
   /** Whether to delete edges whose nodes have disappeared. */
   pruneOrphanedEdges: boolean;
+  /**
+   * Enable hash-based incremental sync.
+   * When true, sync uses SHA-256 content hashing to skip unchanged nodes,
+   * dramatically reducing write I/O for large, mostly-stable infrastructures.
+   */
+  enableIncrementalSync: boolean;
 };
 
 export const defaultEngineConfig: GraphEngineConfig = {
@@ -45,6 +53,7 @@ export const defaultEngineConfig: GraphEngineConfig = {
   staleThresholdMs: 24 * 60 * 60 * 1000, // 24 hours
   enableDriftDetection: true,
   pruneOrphanedEdges: true,
+  enableIncrementalSync: false,
 };
 
 // =============================================================================
@@ -79,6 +88,10 @@ export class GraphEngine {
   private storage: GraphStorage;
   private adapters: AdapterRegistry;
   private config: GraphEngineConfig;
+  /** Hash cache for incremental sync (populated lazily on first sync). */
+  private hashCache: NodeHashCache | null = null;
+  /** Promise guard to prevent concurrent cache initialization. */
+  private hashCacheInitPromise: Promise<NodeHashCache> | null = null;
 
   constructor(options: {
     storage: GraphStorage;
@@ -142,6 +155,9 @@ export class GraphEngine {
 
   /**
    * Sync a single provider adapter.
+   * Supports two modes:
+   *   - Full sync (default): re-discovers everything, diffs against stored state
+   *   - Incremental sync: uses hash-based delta detection to skip unchanged nodes
    */
   private async syncProvider(
     adapter: GraphDiscoveryAdapter,
@@ -175,104 +191,49 @@ export class GraphEngine {
       record.edgesDiscovered = result.edges.length;
       record.errors = result.errors.map((e) => `${e.resourceType}${e.region ? ` (${e.region})` : ""}: ${e.message}`);
 
-      // Process nodes — detect creates vs updates
-      const changes: GraphChange[] = [];
-
-      for (const nodeInput of result.nodes) {
-        const existing = await this.storage.getNode(nodeInput.id);
-
-        if (!existing) {
-          // New node
-          record.nodesCreated++;
-          changes.push({
-            id: generateId(),
-            targetId: nodeInput.id,
-            changeType: "node-created",
-            field: null,
-            previousValue: null,
-            newValue: nodeInput.name,
-            detectedAt: now(),
-            detectedVia: "sync",
-            correlationId: syncId,
-            initiator: null,
-            initiatorType: null,
-            metadata: { provider: adapter.provider, resourceType: nodeInput.resourceType },
-          });
-        } else {
-          // Existing node — check for field-level changes
-          const fieldChanges = this.diffNode(existing, nodeInput);
-          if (fieldChanges.length > 0) {
-            record.nodesUpdated++;
-            changes.push(...fieldChanges.map((fc) => ({
-              ...fc,
-              correlationId: syncId,
-            })));
-          }
+      // ---- Incremental sync path (hash-based delta detection) ----
+      if (this.config.enableIncrementalSync) {
+        // Lazily initialize the hash cache from storage on first sync.
+        // Use a shared promise to prevent concurrent initializations from
+        // overwriting each other's cache instance.
+        if (!this.hashCache) {
+          this.hashCacheInitPromise ??= NodeHashCache.fromStorage(this.storage);
+          this.hashCache = await this.hashCacheInitPromise;
+          this.hashCacheInitPromise = null;
         }
-      }
 
-      // Batch upsert nodes
-      await this.storage.upsertNodes(result.nodes);
+        const staleThreshold = new Date(startMs - this.config.staleThresholdMs).toISOString();
+        const syncResult = await incrementalSync(
+          this.storage,
+          result.nodes,
+          result.edges,
+          this.hashCache,
+          {
+            provider: adapter.provider,
+            staleThreshold,
+            batchSize: 100,
+          },
+        );
 
-      // Process edges — detect new edges
-      for (const edgeInput of result.edges) {
-        const existing = await this.storage.getEdge(edgeInput.id);
-        if (!existing) {
-          record.edgesCreated++;
-          changes.push({
-            id: generateId(),
-            targetId: edgeInput.id,
-            changeType: "edge-created",
-            field: null,
-            previousValue: null,
-            newValue: `${edgeInput.sourceNodeId} -[${edgeInput.relationshipType}]-> ${edgeInput.targetNodeId}`,
-            detectedAt: now(),
-            detectedVia: "sync",
-            correlationId: syncId,
-            initiator: null,
-            initiatorType: null,
-            metadata: { relationshipType: edgeInput.relationshipType },
-          });
+        record.nodesCreated = syncResult.created;
+        record.nodesUpdated = syncResult.updated;
+        record.nodesDisappeared = syncResult.disappeared;
+        // edgesUpserted includes both new and existing edges;
+        // report it under edgesDiscovered / changesRecorded instead.
+        record.edgesCreated = 0; // incremental sync doesn't distinguish new vs existing edges
+        // Incremental sync doesn't track individual changes; record the total
+        record.changesRecorded = syncResult.created + syncResult.updated + syncResult.disappeared;
+
+        if (this.config.pruneOrphanedEdges) {
+          const removed = await this.storage.deleteStaleEdges(staleThreshold);
+          record.edgesRemoved = removed;
         }
+
+        record.status = record.errors.length > 0 ? "partial" : "completed";
+      } else {
+        // ---- Full sync path (original behavior) ----
+        await this.fullSyncProvider(adapter, result, record, syncId, startMs);
       }
-
-      // Batch upsert edges
-      await this.storage.upsertEdges(result.edges);
-
-      // Mark stale nodes as disappeared
-      const staleThreshold = new Date(startMs - this.config.staleThresholdMs).toISOString();
-      const disappeared = await this.storage.markNodesDisappeared(staleThreshold, adapter.provider);
-      record.nodesDisappeared = disappeared.length;
-      for (const nodeId of disappeared) {
-        changes.push({
-          id: generateId(),
-          targetId: nodeId,
-          changeType: "node-disappeared",
-          field: "status",
-          previousValue: null,
-          newValue: "disappeared",
-          detectedAt: now(),
-          detectedVia: "sync",
-          correlationId: syncId,
-          initiator: null,
-          initiatorType: null,
-          metadata: {},
-        });
-      }
-
-      // Prune orphaned edges
-      if (this.config.pruneOrphanedEdges) {
-        const removed = await this.storage.deleteStaleEdges(staleThreshold);
-        record.edgesRemoved = removed;
-      }
-
-      // Persist all changes
-      if (changes.length > 0) {
-        await this.storage.appendChanges(changes);
-      }
-      record.changesRecorded = changes.length;
-
-      record.status = record.errors.length > 0 ? "partial" : "completed";
     } catch (error) {
       record.status = "failed";
       record.errors.push(error instanceof Error ? error.message : String(error));
@@ -283,6 +244,116 @@ export class GraphEngine {
     await this.storage.saveSyncRecord(record);
 
     return record;
+  }
+
+  /**
+   * Full sync path: iterate every discovered node/edge, diff individually, record changes.
+   */
+  private async fullSyncProvider(
+    adapter: GraphDiscoveryAdapter,
+    result: { nodes: GraphNodeInput[]; edges: GraphEdgeInput[]; errors: Array<{ resourceType: string; region?: string; message: string }> },
+    record: SyncRecord,
+    syncId: string,
+    startMs: number,
+  ): Promise<void> {
+    // Process nodes — detect creates vs updates
+    const changes: GraphChange[] = [];
+
+    for (const nodeInput of result.nodes) {
+      const existing = await this.storage.getNode(nodeInput.id);
+
+      if (!existing) {
+        // New node
+        record.nodesCreated++;
+        changes.push({
+          id: generateId(),
+          targetId: nodeInput.id,
+          changeType: "node-created",
+          field: null,
+          previousValue: null,
+          newValue: nodeInput.name,
+          detectedAt: now(),
+          detectedVia: "sync",
+          correlationId: syncId,
+          initiator: null,
+          initiatorType: null,
+          metadata: { provider: adapter.provider, resourceType: nodeInput.resourceType },
+        });
+      } else {
+        // Existing node — check for field-level changes
+        const fieldChanges = this.diffNode(existing, nodeInput);
+        if (fieldChanges.length > 0) {
+          record.nodesUpdated++;
+          changes.push(...fieldChanges.map((fc) => ({
+            ...fc,
+            correlationId: syncId,
+          })));
+        }
+      }
+    }
+
+    // Batch upsert nodes
+    await this.storage.upsertNodes(result.nodes);
+
+    // Process edges — detect new edges
+    for (const edgeInput of result.edges) {
+      const existing = await this.storage.getEdge(edgeInput.id);
+      if (!existing) {
+        record.edgesCreated++;
+        changes.push({
+          id: generateId(),
+          targetId: edgeInput.id,
+          changeType: "edge-created",
+          field: null,
+          previousValue: null,
+          newValue: `${edgeInput.sourceNodeId} -[${edgeInput.relationshipType}]-> ${edgeInput.targetNodeId}`,
+          detectedAt: now(),
+          detectedVia: "sync",
+          correlationId: syncId,
+          initiator: null,
+          initiatorType: null,
+          metadata: { relationshipType: edgeInput.relationshipType },
+        });
+      }
+    }
+
+    // Batch upsert edges
+    await this.storage.upsertEdges(result.edges);
+
+    // Mark stale nodes as disappeared
+    const staleThreshold = new Date(startMs - this.config.staleThresholdMs).toISOString();
+    const disappeared = await this.storage.markNodesDisappeared(staleThreshold, adapter.provider);
+    record.nodesDisappeared = disappeared.length;
+    for (const nodeId of disappeared) {
+      changes.push({
+        id: generateId(),
+        targetId: nodeId,
+        changeType: "node-disappeared",
+        field: "status",
+        previousValue: null,
+        newValue: "disappeared",
+        detectedAt: now(),
+        detectedVia: "sync",
+        correlationId: syncId,
+        initiator: null,
+        initiatorType: null,
+        metadata: {},
+      });
+    }
+
+    // Prune orphaned edges
+    if (this.config.pruneOrphanedEdges) {
+      const removed = await this.storage.deleteStaleEdges(staleThreshold);
+      record.edgesRemoved = removed;
+    }
+
+    // Persist all changes
+    if (changes.length > 0) {
+      await this.storage.appendChanges(changes);
+    }
+    record.changesRecorded = changes.length;
+
+    record.status = record.errors.length > 0 ? "partial" : "completed";
   }
 
   /**

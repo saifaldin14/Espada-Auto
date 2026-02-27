@@ -294,6 +294,10 @@ export type {
   RemediationPatch,
   DriftedField,
   RemediationPlan,
+  DependencyEdge,
+  DependencyWarning,
+  RemediationOptions,
+  ImportBlock,
 } from "./analysis/remediation.js";
 
 // Supply chain graph (P2.22)
@@ -365,6 +369,9 @@ export {
   MockOpaEngine,
   createOpaEngine,
   buildOpaInput,
+  batchEvaluate,
+  parseRegoSubset,
+  regoToLocalRules,
 } from "./core/opa-engine.js";
 export type {
   OpaEngine,
@@ -377,6 +384,8 @@ export type {
   LocalOpaConfig,
   LocalRegoRule,
   LocalRegoCondition,
+  BatchEvaluationResult,
+  ParsedRegoRule,
 } from "./core/opa-engine.js";
 
 // Performance benchmarks (P3.24)
@@ -411,15 +420,27 @@ export {
   generateCostForecast,
   buildCostTimeSeries,
   formatCostForecastMarkdown,
+  fitEWMA,
+  fitHoltLinear,
+  fitHoltWinters,
+  forecastHoltWinters,
+  selectBestModel,
+  ensembleForecast,
 } from "./analysis/cost-forecast.js";
 export type {
   CostDataPoint,
   RegressionModel,
+  HoltWintersModel,
+  EWMAModel,
+  ForecastMethod,
+  ModelSelection,
   ForecastPoint,
   SeasonalPattern,
   CostForecast,
   CostForecastSummary,
   CostForecastOptions,
+  EnsembleMember,
+  EnsembleForecastResult,
 } from "./analysis/cost-forecast.js";
 
 // Anomaly detection

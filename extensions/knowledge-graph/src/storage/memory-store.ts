@@ -162,6 +162,16 @@ export class InMemoryGraphStorage implements GraphStorage {
     return disappeared;
   }
 
+  async touchNodes(nodeIds: string[]): Promise<void> {
+    const ts = now();
+    for (const id of nodeIds) {
+      const node = this.nodes.get(id);
+      if (node) {
+        this.nodes.set(id, { ...node, lastSeenAt: ts, updatedAt: ts });
+      }
+    }
+  }
+
   // ---------- Edges ----------
 
   async upsertEdge(input: GraphEdgeInput): Promise<void> {

@@ -562,6 +562,13 @@ export interface GraphStorage {
   queryNodesPaginated(filter: NodeFilter, pagination?: PaginationOptions): Promise<PaginatedResult<GraphNode>>;
   deleteNode(id: string): Promise<void>;
   markNodesDisappeared(olderThan: string, provider?: CloudProvider): Promise<string[]>;
+  /**
+   * Update `lastSeenAt` for nodes without re-upserting all fields.
+   * Used by incremental sync to prevent unchanged nodes from being
+   * mistakenly marked as disappeared by the stale-threshold check.
+   * Optional — if not implemented, incremental sync falls back to full upsert.
+   */
+  touchNodes?(nodeIds: string[]): Promise<void>;
 
   // -- Edges --
   upsertEdge(edge: GraphEdgeInput): Promise<void>;
