@@ -1234,7 +1234,7 @@ export class InfraMonitor {
   /**
    * Poll an event source for new events and process them.
    */
-  private async pollEventSource(source: EventSourceAdapter): Promise<CloudEvent[]> {
+  async pollEventSource(source: EventSourceAdapter): Promise<CloudEvent[]> {
     try {
       // Get last sync time for this provider
       const lastSync = await this.storage.getLastSyncRecord(source.provider);
@@ -1272,6 +1272,40 @@ export class InfraMonitor {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Ingest externally pushed events (e.g. from a WebhookReceiver).
+   * Converts events to graph changes and persists them. Skips read-only events.
+   */
+  async ingestEvents(events: CloudEvent[]): Promise<number> {
+    let ingested = 0;
+    for (const event of events) {
+      if (event.readOnly) continue;
+
+      const change: GraphChange = {
+        id: `event-${event.id}`,
+        targetId: event.resourceId,
+        changeType: this.mapEventToChangeType(event.eventType),
+        field: null,
+        previousValue: null,
+        newValue: event.eventType,
+        detectedAt: event.timestamp,
+        detectedVia: "event-stream",
+        correlationId: event.id,
+        initiator: event.actor,
+        initiatorType: "human",
+        metadata: {
+          eventSource: "webhook",
+          eventType: event.eventType,
+          success: event.success,
+        },
+      };
+
+      await this.storage.appendChange(change);
+      ingested++;
+    }
+    return ingested;
   }
 
   /**

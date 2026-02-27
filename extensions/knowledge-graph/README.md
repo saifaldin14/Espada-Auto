@@ -1,56 +1,97 @@
 # Infrastructure Knowledge Graph
 
-A graph-based infrastructure topology engine for Espada. Discovers cloud resources and their relationships, stores them in a queryable graph, and provides blast-radius analysis, drift detection, cost attribution, and structural queries (shortest path, SPOFs, critical paths).
+A graph-based infrastructure topology engine for Espada. Discovers cloud resources and relationships across AWS, Azure, GCP, Kubernetes, and Terraform — then provides blast-radius analysis, drift detection, cost attribution, governance workflows, temporal snapshots, and a custom query language (IQL).
 
 ## Status
 
+> **28,000+ LOC** of source across 50 files · **14,000+ LOC** of tests across 18 files · **643+ tests passing**
+
 | Layer | Status | Notes |
 |-------|--------|-------|
-| **Core types** | Production | 450+ lines, 24 resource types, 24 relationship types |
-| **SQLite storage** | Production | Schema v1, recursive CTE traversal, WAL mode, 15+ indexes |
+| **Core types** | Production | 50 resource types, 43 relationship types, 9 node statuses |
+| **SQLite storage** | Production | WAL mode, recursive CTE traversal, 15+ indexes, JSONB metadata |
+| **PostgreSQL storage** | Production | JSONB queries, materialized views, schema-based multi-tenancy |
 | **InMemory storage** | Production | BFS traversal, full interface parity, ideal for tests |
 | **GraphEngine** | Production | Sync, blast radius, dependency chains, drift, cost, topology |
 | **Graph queries** | Production | Shortest path, orphans, SPOFs (Tarjan's), clusters, critical nodes |
-| **Graph export** | Production | JSON, DOT (Graphviz), Mermaid formats with filtering |
-| **Plugin wiring** | Production | Entry point with storage factory, engine init, service registration |
-| **CLI commands** | Production | 12 subcommands under `espada graph` (status, sync, blast, deps, etc.) |
-| **Agent tools** | Production | 9 tools (blast radius, deps, cost, drift, SPOF, path, orphans, status, export) |
+| **Graph export** | Production | JSON, DOT (Graphviz), Mermaid with filtering |
+| **IQL query language** | Production | Lexer + parser + executor, `FIND`/`WHERE`/`CONNECTED TO`/`AT`/aggregations |
+| **Governance** | Production | 7-factor risk scoring, approval workflows, audit trails |
+| **Temporal** | Production | Point-in-time snapshots, time travel, diffing, evolution summaries |
+| **Monitoring** | Production | CloudTrail/Azure/GCP event sources, 5 alert rules, mock mode |
+| **AWS adapter** | Production | 2,096 LOC orchestrator + 10 domain modules, 50+ relationship rules, Cost Explorer, SecurityHub, CloudTrail |
+| **Azure adapter** | Production | 885 LOC, ~20 relationship rules, static cost estimates |
+| **GCP adapter** | Production | 861 LOC, ~20 relationship rules, static cost estimates |
+| **Kubernetes adapter** | Production | 1,145 LOC, 16 kind mappings, namespace/workload/network discovery |
+| **Terraform adapter** | Production | 1,207 LOC, 100+ resource type mappings, HCL state parsing |
+| **Cross-cloud adapter** | Production | 487 LOC, 5 discovery rules for multi-cloud relationships |
+| **Plugin wiring** | Production | Entry point, storage factory, engine init, service registration |
+| **CLI commands** | Production | 12+ subcommands under `espada graph` + `espada infra` |
+| **Agent tools** | Production | 20 tools (graph core, governance, temporal, IQL) |
 | **Background sync** | Production | Light sync (15min) + full sync (6hr) with drift detection |
 | **Gateway methods** | Production | RPC endpoints for stats, blast-radius, topology |
-| **AWS adapter** | Skeleton | 31 relationship rules, 17 service mappings, utility functions production-ready |
-| **Azure/GCP adapters** | Not started | Provider-agnostic core is ready |
-| **Semantic search** | Not started | See Phase 5 below |
-| **Scheduled sync** | Not started | See Phase 6 below |
+| **Report generation** | Production | Markdown, HTML, JSON, terminal output formats |
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                      Plugin Entry Point                       │
-│  register() · storage factory · service · gateway methods     │
-├──────────┬────────────────────────┬──────────┬────────────────┤
-│   CLI    │      Agent Tools       │  Export  │    Gateway     │
-│ 12 cmds  │  9 tools (blast, deps  │ JSON/DOT │  stats/blast/  │
-│ graph *  │  cost, drift, SPOF...) │ Mermaid  │  topology RPC  │
-├──────────┴────────────────────────┴──────────┴────────────────┤
-│                       GraphEngine                             │
-│  sync() · blastRadius() · drift() · cost() · timeline() · …  │
-├──────────────┬─────────────────────┬──────────────────────────┤
-│   Adapters   │      Storage        │    Queries               │
-│  AWS (skel)  │  SQLite (prod)      │  shortestPath            │
-│  Azure (-)   │  InMemory (prod)    │  findOrphans             │
-│  GCP (-)     │                     │  findSPOFs               │
-│  K8s (-)     │                     │  findClusters            │
-│              │                     │  criticalNodes           │
-└──────────────┴─────────────────────┴──────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        Plugin Entry Point                            │
+│   register() · storage factory · service · gateway methods           │
+├──────────┬──────────────┬──────────┬──────────────┬──────────────────┤
+│   CLI    │  Agent Tools  │  Export  │   Gateway    │     Reports     │
+│ graph *  │  20 tools     │ JSON/DOT │  stats/blast │  MD/HTML/JSON   │
+│ infra *  │  IQL queries  │ Mermaid  │  topology    │  terminal       │
+├──────────┴──────────────┴──────────┴──────────────┴──────────────────┤
+│                         GraphEngine                                  │
+│   sync() · blastRadius() · drift() · cost() · timeline() · …        │
+├──────────────┬─────────────────────┬─────────────┬──────────────────┤
+│   Adapters   │      Storage        │   Queries   │   Governance     │
+│  AWS (prod)  │  SQLite (prod)      │  BFS/DFS    │  Risk scoring    │
+│  Azure       │  PostgreSQL (prod)  │  SPOFs      │  Approvals       │
+│  GCP         │  InMemory (test)    │  Clusters   │  Audit trails    │
+│  Kubernetes  │                     │  Paths      │                  │
+│  Terraform   ├─────────────────────┤  Critical   ├──────────────────┤
+│  Cross-cloud │   Temporal Store    │  Orphans    │   Monitoring     │
+│              │  Snapshots · Diff   │             │  Alert rules     │
+│              │  Time travel · AT   │             │  Event sources   │
+├──────────────┴─────────────────────┼─────────────┴──────────────────┤
+│              IQL Engine            │       Cache (LRU+TTL)          │
+│   Lexer → Parser → Executor       │  Category invalidation         │
+│   FIND · WHERE · CONNECTED TO     │  Hit-rate stats                │
+│   AT (temporal) · Aggregations     │                                │
+└────────────────────────────────────┴────────────────────────────────┘
 ```
 
-## Quick Start (Development)
+### AWS Adapter Module Structure
+
+The AWS adapter is decomposed into focused domain modules:
+
+```
+src/adapters/aws/
+├── index.ts           # Module re-exports
+├── types.ts           # AWS-specific type definitions
+├── constants.ts       # Relationship rules, cost tables, service mappings
+├── utils.ts           # Field resolution, ID extraction, node matching
+├── context.ts         # AwsAdapterContext interface for module delegation
+├── compute.ts         # EC2 deeper: ASGs, Load Balancers, Target Groups
+├── database.ts        # ElastiCache + RDS deeper discovery
+├── organization.ts    # AWS Organization: accounts, OUs, SCPs
+├── backup.ts          # AWS Backup vaults, plans, protected resources
+├── automation.ts      # EventBridge rules, Step Functions
+├── cicd.ts            # CodePipeline, CodeBuild, CodeDeploy
+├── cognito.ts         # User Pools, Identity Pools, App Clients
+├── enrichment.ts      # Tags, events, observability, compliance
+├── cost.ts            # Forecasting, optimization, unused detection
+└── security.ts        # Security posture, GuardDuty, CloudTrail
+```
+
+## Quick Start
 
 ```bash
 cd extensions/knowledge-graph
 pnpm install
-pnpm test              # vitest
+pnpm test              # vitest — 643+ tests
 ```
 
 ### Programmatic Usage
@@ -63,10 +104,9 @@ import { AwsDiscoveryAdapter } from "@espada/knowledge-graph/adapters";
 const storage = new InMemoryGraphStorage();
 const engine = new GraphEngine({ storage });
 
-// Register an adapter (once SDK wiring is complete)
 engine.registerAdapter(new AwsDiscoveryAdapter({ accountId: "123456789" }));
 
-// Sync discovers resources and persists to graph
+// Discover resources and persist to graph
 await engine.sync();
 
 // Blast radius: "what breaks if I touch this subnet?"
@@ -76,9 +116,25 @@ console.log(`${blast.nodes.size} resources affected, $${blast.totalCostMonthly}/
 // Dependency chain: "what does this Lambda depend on?"
 const deps = await engine.getDependencyChain("aws:123:us-east-1:serverless-function:my-func", "upstream");
 
-// Cost attribution: total spend for a service group
-const cost = await engine.getGroupCost("group-id");
-console.log(`${cost.label}: $${cost.totalMonthly}/mo`);
+// IQL: custom queries
+const result = await engine.executeIQL('FIND compute WHERE provider = "aws" AND status = "running"');
+```
+
+### IQL (Infrastructure Query Language)
+
+```sql
+-- Find all running EC2 instances in production
+FIND compute WHERE status = "running" AND tags.env = "production"
+
+-- Find databases connected to a specific VPC
+FIND database CONNECTED TO vpc WHERE nativeId = "vpc-abc123"
+
+-- Time travel: what did the graph look like yesterday?
+FIND * AT "2024-01-15T00:00:00Z"
+
+-- Aggregations for cost analysis
+FIND compute WHERE provider = "aws" | sum(costMonthly)
+FIND * WHERE provider = "aws" | group_by(resourceType) | count()
 ```
 
 ### Graph Queries
@@ -86,43 +142,10 @@ console.log(`${cost.label}: $${cost.totalMonthly}/mo`);
 ```typescript
 import { shortestPath, findOrphans, findSinglePointsOfFailure, findClusters } from "@espada/knowledge-graph/queries";
 
-// Shortest path between any two resources
 const path = await shortestPath(storage, "node-a", "node-b");
-
-// Find unconnected resources (cleanup candidates)
 const orphans = await findOrphans(storage);
-
-// Find single points of failure (Tarjan's algorithm)
-const spofs = await findSinglePointsOfFailure(storage);
-
-// Find connected clusters
+const spofs = await findSinglePointsOfFailure(storage);  // Tarjan's algorithm
 const clusters = await findClusters(storage);
-```
-
-## File Structure
-
-```
-extensions/knowledge-graph/
-├── package.json              # Extension manifest
-├── tsconfig.json             # TypeScript config
-├── espada.plugin.json        # Espada plugin registration
-├── README.md                 # This file
-├── src/
-│   ├── types.ts              # Core type system (GraphNode, GraphEdge, etc.)
-│   ├── engine.ts             # GraphEngine orchestrator
-│   ├── queries.ts            # Graph algorithms
-│   ├── storage/
-│   │   ├── sqlite-store.ts   # SQLite implementation (better-sqlite3)
-│   │   ├── memory-store.ts   # InMemory implementation
-│   │   └── index.ts
-│   ├── adapters/
-│   │   ├── types.ts          # GraphDiscoveryAdapter interface
-│   │   ├── aws.ts            # AWS adapter (skeleton + relationship rules)
-│   │   └── index.ts
-│   ├── graph-storage.test.ts # Storage contract tests
-│   ├── engine.test.ts        # Engine tests
-│   ├── queries.test.ts       # Query algorithm tests
-│   └── aws-adapter.test.ts   # AWS utility function tests
 ```
 
 ## Node ID Format
@@ -137,8 +160,19 @@ Examples:
 - `aws:123456789:us-east-1:compute:i-abc123`
 - `azure:sub-id:eastus:database:my-sql-server`
 - `gcp:project-id:us-central1:serverless-function:my-func`
+- `kubernetes:cluster-id:default:deployment:nginx`
+- `terraform:local::compute:aws_instance.web`
 
-## Relationship Types
+## Agent Tools (20)
+
+| Category | Tools | Count |
+|----------|-------|-------|
+| Graph Core | `kg_blast_radius`, `kg_dependencies`, `kg_cost`, `kg_drift`, `kg_spof_analysis`, `kg_path`, `kg_orphans`, `kg_status`, `kg_export` | 9 |
+| Governance | `kg_audit_trail`, `kg_request_change`, `kg_governance_summary`, `kg_pending_approvals` | 4 |
+| Temporal | `kg_time_travel`, `kg_diff`, `kg_node_history`, `kg_evolution`, `kg_snapshot`, `kg_list_snapshots` | 6 |
+| IQL | `kg_query` | 1 |
+
+## Relationship Types (43)
 
 | Type | Example |
 |------|---------|
@@ -154,300 +188,99 @@ Examples:
 | `uses` | Lambda → IAM Role |
 | `monitors` | CloudWatch → EC2 |
 | `logs-to` | App → CloudWatch Logs |
-| ...and 12 more | See `types.ts` |
+| `load-balances` | ALB → Target instances |
+| `backed-by` | CloudFront → S3 Origin |
+| `encrypts-with` | S3 → KMS Key |
+| `managed-by` | Arc machine → Azure |
+| …and 27 more | See `src/types.ts` |
 
----
+## Cloud Adapter Feature Matrix
 
-## Deferred Phases — Implementation Guide
+| Feature | AWS | Azure | GCP | K8s | Terraform |
+|---------|-----|-------|-----|-----|-----------|
+| Resource discovery | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Relationship extraction | 50+ rules | ~20 rules | ~20 rules | 16 mappings | 100+ mappings |
+| Incremental sync | ✅ CloudTrail | ❌ Full rescan | ❌ Full rescan | ❌ Full rescan | ❌ Full rescan |
+| Live cost data | ✅ Cost Explorer | ❌ Static | ❌ Static | ❌ Static | ❌ Static |
+| Security posture | ✅ SecurityHub + GuardDuty | ❌ | ❌ | ❌ | ❌ |
+| Cost forecasting | ✅ CostManager | ❌ | ❌ | ❌ | ❌ |
+| Optimization recs | ✅ Rightsizing + RI | ❌ | ❌ | ❌ | ❌ |
 
-The following phases are designed and documented but not yet implemented. Each section describes exactly what to build and how it integrates with the production-ready core.
+## File Structure
 
-### Phase 4: Integration Wiring ✅ COMPLETE
-
-**Goal**: Connect the graph engine to Espada's plugin system.
-
-All Phase 4 components are implemented and tested (94 tests passing):
-
-#### 4a. Extension Entry Point (`index.ts`) ✅
-
-- Plugin registration with `register(api)` lifecycle
-- Storage factory (SQLite/InMemory based on config)
-- GraphEngine initialization with configurable `maxTraversalDepth` and drift detection
-- Configurable sync intervals and adapter selection
-
-#### 4b. Confirmation Workflow Integration — Deferred
-
-Not yet implemented. Wire blast radius into `@espada/infrastructure` confirmation system when that extension matures.
-
-#### 4c. CLI Commands (`src/cli.ts`) ✅
-
-12 subcommands under `espada graph`:
-
-| Command | Description |
-|---------|-------------|
-| `espada graph status` | Show graph statistics |
-| `espada graph sync` | Run full discovery sync |
-| `espada graph blast <resource>` | Show blast radius |
-| `espada graph deps <resource>` | Show dependency chain |
-| `espada graph orphans` | List unconnected resources |
-| `espada graph spofs` | List single points of failure |
-| `espada graph cost` | Cost attribution breakdown |
-| `espada graph drift` | Detect configuration drift |
-| `espada graph path <from> <to>` | Shortest path between resources |
-| `espada graph clusters` | Find connected resource clusters |
-| `espada graph critical` | Find critical nodes (high fan-in/out) |
-| `espada graph export` | Export topology as JSON/DOT/Mermaid |
-| `espada graph timeline <resource>` | Show change timeline |
-
-#### 4d. Agent Tools (`src/tools.ts`) ✅
-
-9 tools registered via `registerGraphTools()`:
-
-| Tool | Description |
-|------|-------------|
-| `kg_blast_radius` | Blast radius analysis with hop distances and cost-at-risk |
-| `kg_dependencies` | Upstream/downstream dependency chains |
-| `kg_cost` | Cost attribution by resource, group, or provider |
-| `kg_drift` | Drift detection (drifted, disappeared, new resources) |
-| `kg_spof_analysis` | Single points of failure via Tarjan's algorithm |
-| `kg_path` | Shortest path between two resources |
-| `kg_orphans` | Unconnected resource detection |
-| `kg_status` | Graph statistics and health |
-| `kg_export` | Export topology in JSON/DOT/Mermaid format |
-
-#### 4e. Graph Export (`src/export.ts`) ✅
-
-Export infrastructure topology in three formats:
-- **JSON**: Full graph data for programmatic analysis
-- **DOT**: Graphviz format for visualization
-- **Mermaid**: Markdown-embeddable diagrams for docs
-
-Supports filtering by `NodeFilter`, cost inclusion, and `maxNodes` safety limit.
-
-#### 4f. Background Sync Service ✅
-
-Registered via `api.registerService()`:
-- Light sync every 15 min (critical resource types only)
-- Full sync every 6 hours with automatic drift detection
-- Configurable intervals via plugin config
-
-#### 4g. Gateway RPC Methods ✅
-
-Three RPC endpoints via `api.registerGatewayMethod()`:
-- `knowledge-graph/stats` — graph statistics
-- `knowledge-graph/blast-radius` — blast radius query
-- `knowledge-graph/topology` — topology summary
-
-### Phase 5: Semantic Search Layer
-
-**Goal**: Enable natural-language queries over the graph using LanceDB.
-
-#### Integration Points
-
-Espada already has `extensions/memory-lancedb` for vector storage. The knowledge graph can reuse this pattern:
-
-1. On every sync, embed node metadata (name, tags, type, region, relationships) into vectors
-2. Store vectors in a LanceDB table alongside the node ID
-3. Add a `search(query: string)` method to GraphEngine that:
-   - Embeds the query
-   - Finds nearest neighbor nodes in LanceDB
-   - Returns the nodes with their graph context (edges, groups)
-
-Example queries this enables:
-- "Show me all databases in production"
-- "What resources are in the payment service?"
-- "Find Lambda functions connected to SQS"
-
-#### Implementation Sketch
-
-```typescript
-// src/semantic.ts
-import { LanceDB } from "lancedb";
-
-export class GraphSemanticIndex {
-  constructor(private db: LanceDB, private storage: GraphStorage) {}
-  
-  async indexNode(node: GraphNode): Promise<void> {
-    const text = `${node.name} ${node.resourceType} ${node.provider} ${node.region} ${Object.entries(node.tags).map(([k,v]) => `${k}=${v}`).join(" ")}`;
-    const embedding = await embed(text);
-    await this.db.upsert("graph_nodes", { id: node.id, vector: embedding, text });
-  }
-  
-  async search(query: string, limit = 10): Promise<GraphNode[]> {
-    const embedding = await embed(query);
-    const results = await this.db.search("graph_nodes", embedding, limit);
-    return Promise.all(results.map(r => this.storage.getNode(r.id)));
-  }
-}
 ```
-
-### Phase 6: Scheduled Sync & Event-Driven Updates
-
-**Goal**: Keep the graph continuously up-to-date.
-
-#### 6a. Scheduled Full Sync
-
-Use the existing Espada scheduling infrastructure (if available) or implement a simple interval:
-
-```typescript
-// In plugin setup
-const LIGHT_SYNC_INTERVAL = 15 * 60 * 1000; // 15 minutes
-const FULL_SYNC_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
-
-setInterval(() => engine.sync({ discoverOptions: { resourceTypes: criticalTypes } }), LIGHT_SYNC_INTERVAL);
-setInterval(() => engine.sync(), FULL_SYNC_INTERVAL);
+extensions/knowledge-graph/
+├── package.json
+├── tsconfig.json
+├── espada.plugin.json
+├── KNOWLEDGE_GRAPH_AUDIT.md    # Comprehensive audit & improvement plan
+├── README.md
+├── src/
+│   ├── types.ts                # Core type system (50 resource types, 43 rel types)
+│   ├── engine.ts               # GraphEngine orchestrator (724 LOC)
+│   ├── queries.ts              # Graph algorithms (374 LOC)
+│   ├── tools.ts                # 20 agent tools (1,525 LOC)
+│   ├── governance.ts           # Risk scoring + approval workflows (804 LOC)
+│   ├── temporal.ts             # Snapshots, time travel, diffing (684 LOC)
+│   ├── monitoring.ts           # Event sources + alert rules (1,325 LOC)
+│   ├── sync.ts                 # SHA-256 delta sync (307 LOC)
+│   ├── cache.ts                # LRU+TTL cache (422 LOC)
+│   ├── tenant.ts               # Multi-tenancy, cross-account (612 LOC)
+│   ├── report.ts               # MD/HTML/JSON/terminal reports (600 LOC)
+│   ├── export.ts               # JSON, DOT, Mermaid export (244 LOC)
+│   ├── policy-scan-tool.ts     # Cross-extension policy bridge (407 LOC)
+│   ├── cli.ts                  # `espada graph` commands (519 LOC)
+│   ├── infra-cli.ts            # `espada infra` commands (1,511 LOC)
+│   ├── iql/                    # Infrastructure Query Language
+│   │   ├── lexer.ts            # Tokenizer (270 LOC)
+│   │   ├── parser.ts           # AST builder (390 LOC)
+│   │   ├── executor.ts         # Query executor (648 LOC)
+│   │   └── types.ts            # IQL AST types (170 LOC)
+│   ├── storage/
+│   │   ├── sqlite-store.ts     # SQLite backend (1,090 LOC)
+│   │   ├── postgres-store.ts   # PostgreSQL backend (1,182 LOC)
+│   │   ├── memory-store.ts     # InMemory backend (600 LOC)
+│   │   └── index.ts
+│   ├── adapters/
+│   │   ├── types.ts            # GraphDiscoveryAdapter interface
+│   │   ├── aws.ts              # AWS orchestrator (2,096 LOC)
+│   │   ├── aws/                # AWS domain modules (15 files)
+│   │   ├── azure.ts            # Azure adapter (885 LOC)
+│   │   ├── gcp.ts              # GCP adapter (861 LOC)
+│   │   ├── kubernetes.ts       # Kubernetes adapter (1,145 LOC)
+│   │   ├── terraform.ts        # Terraform adapter (1,207 LOC)
+│   │   ├── cross-cloud.ts      # Cross-cloud relationships (487 LOC)
+│   │   └── index.ts
+│   └── *.test.ts               # 18 test files (14,000+ LOC, 643+ tests)
 ```
-
-#### 6b. CloudTrail Event Subscription
-
-For near-real-time updates, subscribe to CloudTrail events:
-
-1. Set up an SQS queue subscribed to CloudTrail events
-2. Poll the queue for resource change events
-3. Map CloudTrail event names to graph operations:
-   - `RunInstances` → upsert compute node
-   - `TerminateInstances` → mark node disappeared
-   - `CreateSecurityGroup` → upsert security-group node
-   - `AuthorizeSecurityGroupIngress` → upsert edge
-
-This requires the adapter's `supportsIncrementalSync()` to return `true` and implementing an `onEvent(event)` method.
-
-### Phase 7: Full AWS Adapter Implementation
-
-**Goal**: Wire up actual AWS SDK calls for all 17 service mappings.
-
-The skeleton in `src/adapters/aws.ts` provides:
-- `AWS_SERVICE_MAPPINGS`: maps each resource type to its SDK client and methods
-- `AWS_RELATIONSHIP_RULES`: 31 rules for extracting edges from API responses
-- `resolveFieldPath()`: production-ready field path resolver
-- `extractResourceId()`: ARN/URL parser
-- `extractRelationships()`: applies rules to raw API responses
-
-#### Per-Service Implementation Pattern
-
-For each service mapping, implement the `discoverService()` method body:
-
-```typescript
-private async discoverService(mapping: AwsServiceMapping, region: string): Promise<...> {
-  const client = new SDK[mapping.awsService]Client({ region });
-  const response = await client[mapping.listMethod]({});
-  const items = resolveFieldPath(response, mapping.responseKey);
-  
-  const nodes: GraphNodeInput[] = [];
-  const edges: GraphEdgeInput[] = [];
-  
-  for (const item of items) {
-    const nativeId = resolveFieldPath(item, mapping.idField)[0];
-    const name = resolveFieldPath(item, mapping.nameField)[0] ?? nativeId;
-    const nodeId = buildAwsNodeId(this.config.accountId, region, mapping.graphType, nativeId);
-    
-    nodes.push({
-      id: nodeId,
-      name,
-      provider: "aws",
-      accountId: this.config.accountId,
-      region,
-      resourceType: mapping.graphType,
-      nativeId,
-      status: mapAwsStatus(item),
-      tags: extractTags(item),
-      metadata: item,
-      costMonthly: null, // Phase 7b: Cost Explorer integration
-      owner: null,
-    });
-    
-    // Extract relationships using the production-ready rules engine
-    edges.push(...this.extractRelationships(nodeId, mapping.graphType, item, this.config.accountId, region));
-  }
-  
-  return { discoveredNodes: nodes, discoveredEdges: edges };
-}
-```
-
-#### Priority Order for Service Implementation
-
-1. **VPC, Subnet, Security Group** — foundational networking (most edges reference these)
-2. **EC2** — highest relationship density
-3. **RDS** — critical data tier
-4. **Lambda** — serverless with many triggers/dependencies
-5. **ALB/NLB** — routing layer
-6. **S3** — storage with event triggers
-7. **SQS, SNS** — messaging
-8. **ECS** — container workloads
-9. **API Gateway, CloudFront** — edge layer
-10. **IAM Roles** — security relationships
-11. **Route53, SecretsManager, ElastiCache, DynamoDB** — supporting services
-
-#### Cost Explorer Integration
-
-Add `costMonthly` to nodes by querying AWS Cost Explorer:
-
-```typescript
-import { CostExplorerClient, GetCostAndUsageCommand } from "@aws-sdk/client-cost-explorer";
-
-async function getResourceCosts(accountId: string, region: string): Promise<Map<string, number>> {
-  const client = new CostExplorerClient({ region: "us-east-1" }); // Cost Explorer is global
-  const response = await client.send(new GetCostAndUsageCommand({
-    TimePeriod: { Start: thirtyDaysAgo(), End: today() },
-    Granularity: "MONTHLY",
-    GroupBy: [{ Type: "DIMENSION", Key: "RESOURCE_ID" }],
-    Metrics: ["UnblendedCost"],
-  }));
-  // Map resource IDs to monthly costs
-}
-```
-
-### Future: Azure & GCP Adapters
-
-The adapter interface is provider-agnostic. To add Azure:
-
-1. Create `src/adapters/azure.ts`
-2. Implement `GraphDiscoveryAdapter` using `@azure/arm-*` SDK clients
-3. Define `AZURE_RELATIONSHIP_RULES` (similar pattern to AWS)
-4. Register in plugin setup
-
-Key Azure resources to map:
-- Virtual Networks → VPCs
-- NSGs → Security Groups
-- App Services → Compute
-- Azure SQL → Database
-- Functions → Serverless
-- Storage Accounts → Storage
 
 ## Testing
 
 ```bash
-# Unit tests (InMemory storage)
-pnpm test
-
-# With coverage
-pnpm test:coverage
-
-# Specific test file
-pnpm test src/engine.test.ts
+pnpm test                          # All tests (643+)
+pnpm test:coverage                 # With V8 coverage
+pnpm test src/engine.test.ts       # Specific file
+pnpm test src/iql/iql.test.ts      # IQL tests (94 tests)
+pnpm test src/aws-adapter.test.ts  # AWS adapter (117 tests)
 ```
-
-The test suite covers:
-- Storage contract (node CRUD, edge CRUD, traversal, groups, stats)
-- Engine (sync with mock adapter, blast radius, dependency chains, cost attribution, topology)
-- Queries (shortest path, orphans, critical nodes, SPOFs, clusters)
-- AWS utilities (field path resolution, ARN parsing, relationship extraction)
 
 ## Design Decisions
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| Storage | SQLite (better-sqlite3) | Embedded, zero-ops, recursive CTEs for graph traversal, WAL for concurrent reads |
-| In-memory option | Yes | Fast tests, small deployments, same interface |
-| Node ID format | `provider:account:region:type:nativeId` | Deterministic, avoids UUID collisions, human-readable |
-| Change tracking | Append-only log | Enables timeline reconstruction, audit trail, drift detection |
-| Edge confidence | 0.0–1.0 float | API-derived edges (0.95) vs inferred edges (0.7) vs user-defined (1.0) |
+| Storage | SQLite + PostgreSQL | SQLite for embedded/zero-ops; PostgreSQL for enterprise multi-tenancy |
+| Node ID format | `provider:account:region:type:nativeId` | Deterministic, collision-free, human-readable |
+| Query language | IQL (custom) | Domain-specific, supports temporal AT, graph traversal, aggregations |
+| Change tracking | Append-only log | Timeline reconstruction, audit trail, drift detection |
+| Edge confidence | 0.0–1.0 float | API-derived (0.95) vs inferred (0.7) vs user-defined (1.0) |
+| AWS decomposition | Context-based delegation | AwsAdapterContext binds class internals; domain modules are pure functions |
 | Traversal | Recursive CTE (SQLite) / BFS (InMemory) | Handles cycles, respects depth limits, tracks paths |
-| SPOF detection | Tarjan's algorithm | O(V+E) articulation point detection, handles disconnected components |
+| SPOF detection | Tarjan's algorithm | O(V+E) articulation point detection |
+| Governance | 7-factor risk scoring | Auto-approve ≤30, block ≥70, manual review in between |
 
 ## Contributing
 
-1. Follow existing Espada conventions (see root `AGENTS.md`)
-2. Keep files under ~500 LOC
+1. Follow Espada conventions (see root `AGENTS.md`)
+2. Keep files under ~500 LOC (split/refactor as needed)
 3. Add tests for new functionality
 4. Run `pnpm lint && pnpm build && pnpm test` before committing

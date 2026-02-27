@@ -457,8 +457,7 @@ function simplifyNode(n: GraphNode) {
 // =============================================================================
 
 function formatHtml(report: ScanReport, focus: string, topN: number): string {
-  // Generate markdown first, then wrap in minimal HTML
-  const md = formatMarkdown(report, focus, topN);
+  // Build HTML directly from report data (structured output, not markdown conversion)
 
   return `<!DOCTYPE html>
 <html lang="en">
