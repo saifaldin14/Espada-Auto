@@ -402,3 +402,141 @@ export type {
   ExtendedExportResult,
   ExtendedExportOptions,
 } from "./reporting/export-extended.js";
+
+// Cost forecasting
+export {
+  fitLinearRegression,
+  detectSeasonality,
+  generateForecastFromData,
+  generateCostForecast,
+  buildCostTimeSeries,
+  formatCostForecastMarkdown,
+} from "./analysis/cost-forecast.js";
+export type {
+  CostDataPoint,
+  RegressionModel,
+  ForecastPoint,
+  SeasonalPattern,
+  CostForecast,
+  CostForecastSummary,
+  CostForecastOptions,
+} from "./analysis/cost-forecast.js";
+
+// Anomaly detection
+export {
+  computeBaseline,
+  detectAnomalies,
+  detectAnomaliesFromGraph,
+  formatAnomalyReportMarkdown,
+} from "./analysis/anomaly-detection.js";
+export type {
+  AnomalyType,
+  AnomalySeverity,
+  GraphAnomaly,
+  AnomalyDetectionConfig,
+  MetricBaseline,
+  AnomalyReport,
+} from "./analysis/anomaly-detection.js";
+
+// Agent cost allocation
+export {
+  computeCostAllocations,
+  formatCostAllocationMarkdown,
+} from "./analysis/agent-cost-allocation.js";
+export type {
+  AllocationMethod,
+  CostAllocationEntry,
+  AgentCostSummary,
+  AgentBudget,
+  AgentBudgetStatus,
+  CostAllocationReport,
+  CostAllocationOptions,
+} from "./analysis/agent-cost-allocation.js";
+
+// Multi-region failover mapping
+export {
+  buildRegionProfiles,
+  generateFailoverMap,
+  formatFailoverMapMarkdown,
+} from "./analysis/failover-map.js";
+export type {
+  RegionProfile,
+  FailoverPair,
+  FailoverIssue,
+  SingleRegionDependency,
+  FailoverMap,
+  FailoverMapSummary,
+} from "./analysis/failover-map.js";
+
+// Deployment impact analysis
+export {
+  parseTerraformPlan,
+  analyzeDeploymentImpact,
+  analyzeTerraformPlanImpact,
+  formatDeploymentImpactMarkdown,
+} from "./analysis/deployment-impact.js";
+export type {
+  PlannedChange,
+  ChangeImpact,
+  DeploymentImpactReport,
+  DeploymentImpactSummary,
+  TerraformPlan,
+} from "./analysis/deployment-impact.js";
+
+// Policy-as-Code authoring
+export {
+  buildPolicyRule,
+  buildPolicyRules,
+  allOf,
+  anyOf,
+  not as notCondition,
+  fieldEquals,
+  fieldGt,
+  fieldLt,
+  fieldMatches,
+  fieldIn,
+  validatePolicyRule,
+  validatePolicyPack,
+  createPolicyPack,
+  getSecurityBaselinePack,
+  getCostGovernancePack,
+  getAvailableTemplates,
+  formatPolicyPackMarkdown,
+} from "./analysis/policy-authoring.js";
+export type {
+  PolicyTemplateType,
+  PolicyTemplateInput,
+  PolicyPack,
+  PolicyValidationResult,
+} from "./analysis/policy-authoring.js";
+
+// LLM-powered IQL translation
+export {
+  translateWithLLM,
+  validateAndClassifyIQL,
+  MockLLMProvider,
+  getIQLSystemPrompt,
+  getIQLFewShotExamples,
+} from "./analysis/llm-iql.js";
+export type {
+  IQLLLMProvider,
+  LLMCompletionResult,
+  LLMTranslationResult,
+  LLMTranslationOptions,
+} from "./analysis/llm-iql.js";
+
+// Cross-extension graph federation
+export {
+  GraphFederationManager,
+  formatFederationStatsMarkdown,
+} from "./core/federation.js";
+export type {
+  FederationPeer,
+  ConflictResolution,
+  FederatedQueryOptions,
+  FederatedNode,
+  FederatedEdge,
+  FederatedQueryResult,
+  FederatedStats,
+  MergeResult,
+} from "./core/federation.js";
