@@ -408,16 +408,19 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
       parts.push(`| where type in~ (${knownTypes.join(", ")})`);
     }
 
-    // Filter by resource group
+    // Filter by resource group (escape single quotes to prevent KQL injection)
     if (this.config.resourceGroups?.length) {
-      const rgs = this.config.resourceGroups.map((rg) => `'${rg}'`);
+      const rgs = this.config.resourceGroups.map((rg) => `'${rg.replace(/'/g, "\\'")}'`);
       parts.push(`| where resourceGroup in~ (${rgs.join(", ")})`);
     }
 
     // Filter by tags
     if (options?.tags) {
       for (const [key, value] of Object.entries(options.tags)) {
-        parts.push(`| where tags['${key}'] == '${value}'`);
+        // Escape single quotes to prevent KQL injection
+        const safeKey = key.replace(/'/g, "\\'");
+        const safeValue = value.replace(/'/g, "\\'");
+        parts.push(`| where tags['${safeKey}'] == '${safeValue}'`);
       }
     }
 

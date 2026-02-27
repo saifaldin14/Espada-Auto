@@ -162,7 +162,7 @@ export function computeBaseline(values: number[]): MetricBaseline {
  * Compute the z-score for a value relative to a baseline.
  */
 export function zScore(value: number, baseline: MetricBaseline): number {
-  if (baseline.stdDev === 0) return value === baseline.mean ? 0 : Infinity;
+  if (baseline.stdDev === 0) return value === baseline.mean ? 0 : (value > baseline.mean ? 10 : -10);
   return (value - baseline.mean) / baseline.stdDev;
 }
 

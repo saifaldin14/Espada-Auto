@@ -989,7 +989,7 @@ export class SQLiteGraphStorage implements GraphStorage {
         FROM reachable r
         JOIN edges e ON ${joinClause} ${edgeTypeFilter}
         WHERE r.depth < ${maxDepth}
-          AND INSTR(r.path, ${nextNodeExpr}) = 0
+          AND INSTR(',' || r.path || ',', ',' || ${nextNodeExpr} || ',') = 0
       )
       SELECT DISTINCT node_id, depth FROM reachable
     `;

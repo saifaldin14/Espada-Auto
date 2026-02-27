@@ -207,12 +207,20 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS ${schema}.node_stats AS
   FROM ${schema}.nodes
   GROUP BY GROUPING SETS ((), (provider), (resource_type));
 
+-- Unique index required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+CREATE UNIQUE INDEX IF NOT EXISTS idx_node_stats_unique
+  ON ${schema}.node_stats (COALESCE(provider, ''), COALESCE(resource_type, ''));
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS ${schema}.edge_stats AS
   SELECT
     relationship_type,
     COUNT(*) AS cnt
   FROM ${schema}.edges
   GROUP BY relationship_type;
+
+-- Unique index required for REFRESH MATERIALIZED VIEW CONCURRENTLY
+CREATE UNIQUE INDEX IF NOT EXISTS idx_edge_stats_unique
+  ON ${schema}.edge_stats (COALESCE(relationship_type, ''));
 `;
 }
 
@@ -251,7 +259,12 @@ export class PostgresGraphStorage implements GraphStorage {
 
   constructor(config: PostgresConfig) {
     this.config = config;
-    this.schema = config.schema ?? "public";
+    // Validate schema name to prevent SQL injection — schema names can't be parameterized
+    const schema = config.schema ?? "public";
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+      throw new Error(`Invalid schema name: ${schema}`);
+    }
+    this.schema = schema;
   }
 
   // ---------- Lifecycle ----------

@@ -668,7 +668,7 @@ export function tenantScopedFilter(
   const accounts = accountRegistry.list({ tenantId, enabled: true });
   if (accounts.length === 0) return baseFilter;
 
-  // If filtering by a single account, keep the account filter as-is
-  // Otherwise, rely on the storage being tenant-scoped
-  return { ...baseFilter };
+  // Scope queries to this tenant's accounts
+  const accountIds = accounts.map((a) => a.accountId);
+  return { ...baseFilter, accounts: accountIds };
 }

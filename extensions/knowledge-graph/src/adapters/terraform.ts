@@ -8,7 +8,7 @@
  * credentials required, just a `terraform.tfstate` file.
  */
 
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type {
   GraphNodeInput,
   GraphEdgeInput,
@@ -370,7 +370,7 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
     const errors: DiscoveryError[] = [];
 
     try {
-      this.state = this.parseStateFile();
+      this.state = await this.parseStateFile();
     } catch (err) {
       return {
         provider: this.config.defaultProvider ?? "custom",
@@ -635,7 +635,7 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
 
   async healthCheck(): Promise<boolean> {
     try {
-      this.parseStateFile();
+      await this.parseStateFile();
       return true;
     } catch {
       return false;
@@ -646,8 +646,8 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
   // Parsing
   // ===========================================================================
 
-  private parseStateFile(): TerraformState {
-    const raw = readFileSync(this.config.statePath, "utf-8");
+  private async parseStateFile(): Promise<TerraformState> {
+    const raw = await readFile(this.config.statePath, "utf-8");
     const state = JSON.parse(raw) as TerraformState;
 
     if (state.version !== 4) {
@@ -1131,7 +1131,9 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
   /**
    * Check if any attribute value in the object tree references the given value.
    */
-  private attributeReferences(attrs: Record<string, unknown>, value: string): boolean {
+  private attributeReferences(attrs: Record<string, unknown>, value: string, depth = 0): boolean {
+    // Guard against deeply nested or circular structures
+    if (depth > 20) return false;
     for (const v of Object.values(attrs)) {
       if (v === value) return true;
       if (typeof v === "string" && v.includes(value)) return true;
@@ -1140,12 +1142,12 @@ export class TerraformDiscoveryAdapter implements GraphDiscoveryAdapter {
           if (item === value) return true;
           if (typeof item === "string" && item.includes(value)) return true;
           if (item && typeof item === "object") {
-            if (this.attributeReferences(item as Record<string, unknown>, value)) return true;
+            if (this.attributeReferences(item as Record<string, unknown>, value, depth + 1)) return true;
           }
         }
       }
       if (v && typeof v === "object" && !Array.isArray(v)) {
-        if (this.attributeReferences(v as Record<string, unknown>, value)) return true;
+        if (this.attributeReferences(v as Record<string, unknown>, value, depth + 1)) return true;
       }
     }
     return false;

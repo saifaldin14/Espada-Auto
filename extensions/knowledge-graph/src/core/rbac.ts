@@ -226,6 +226,33 @@ export function isNodeInScope(node: GraphNode, scope: AccessScope): boolean {
   return true;
 }
 
+/**
+ * Check if a node input (for upsert) falls within a principal's access scope.
+ * Uses the same fields as isNodeInScope but works with GraphNodeInput.
+ */
+export function isNodeInputInScope(node: GraphNodeInput, scope: AccessScope): boolean {
+  if (scope.providers?.length && !scope.providers.includes(node.provider)) {
+    return false;
+  }
+  if (scope.accounts?.length && !scope.accounts.includes(node.account)) {
+    return false;
+  }
+  if (scope.regions?.length && !scope.regions.includes(node.region)) {
+    return false;
+  }
+  if (scope.resourceTypes?.length && !scope.resourceTypes.includes(node.resourceType)) {
+    return false;
+  }
+  if (scope.requiredTags) {
+    for (const [key, value] of Object.entries(scope.requiredTags)) {
+      if (node.tags[key] !== value) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 /** Check if a node filter is compatible with a scope (pre-filter optimization). */
 export function mergeFilterWithScope(
   filter: NodeFilter,
@@ -374,11 +401,20 @@ export class RBACGraphStorage implements GraphStorage {
 
   async upsertNode(node: GraphNodeInput): Promise<void> {
     this.requirePermission("upsertNode", "write");
+    if (!isNodeInputInScope(node, this.scope)) {
+      this.logDecision("upsertNode", true, undefined, 1);
+      throw new Error("Node outside access scope");
+    }
     return this.inner.upsertNode(node);
   }
 
   async upsertNodes(nodes: GraphNodeInput[]): Promise<void> {
     this.requirePermission("upsertNodes", "write");
+    const outOfScope = nodes.filter((n) => !isNodeInputInScope(n, this.scope));
+    if (outOfScope.length > 0) {
+      this.logDecision("upsertNodes", true, undefined, outOfScope.length);
+      throw new Error(`${outOfScope.length} node(s) outside access scope`);
+    }
     return this.inner.upsertNodes(nodes);
   }
 
@@ -430,6 +466,12 @@ export class RBACGraphStorage implements GraphStorage {
 
   async deleteNode(id: string): Promise<void> {
     this.requirePermission("deleteNode", "write");
+    // Verify the target node falls within the principal's access scope
+    const node = await this.inner.getNode(id);
+    if (node && !isNodeInScope(node, this.scope)) {
+      this.logDecision("deleteNode", true, undefined, 1);
+      throw new Error("Node outside access scope");
+    }
     return this.inner.deleteNode(id);
   }
 
@@ -442,11 +484,33 @@ export class RBACGraphStorage implements GraphStorage {
 
   async upsertEdge(edge: GraphEdgeInput): Promise<void> {
     this.requirePermission("upsertEdge", "write");
+    // Verify both source and target nodes are within scope
+    const [src, tgt] = await Promise.all([
+      this.inner.getNode(edge.sourceNodeId),
+      this.inner.getNode(edge.targetNodeId),
+    ]);
+    if ((src && !isNodeInScope(src, this.scope)) || (tgt && !isNodeInScope(tgt, this.scope))) {
+      this.logDecision("upsertEdge", true, undefined, 1);
+      throw new Error("Edge references node(s) outside access scope");
+    }
     return this.inner.upsertEdge(edge);
   }
 
   async upsertEdges(edges: GraphEdgeInput[]): Promise<void> {
     this.requirePermission("upsertEdges", "write");
+    // Batch scope check: collect all referenced node IDs
+    const nodeIds = new Set<string>();
+    for (const e of edges) {
+      nodeIds.add(e.sourceNodeId);
+      nodeIds.add(e.targetNodeId);
+    }
+    for (const nid of nodeIds) {
+      const node = await this.inner.getNode(nid);
+      if (node && !isNodeInScope(node, this.scope)) {
+        this.logDecision("upsertEdges", true, undefined, 1);
+        throw new Error("Edge references node(s) outside access scope");
+      }
+    }
     return this.inner.upsertEdges(edges);
   }
 

@@ -629,12 +629,22 @@ function compareValues(
       .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
       .replace(/%/g, ".*")
       .replace(/_/g, ".");
-    return new RegExp(`^${escaped}$`, "i").test(fieldVal);
+    try {
+      return new RegExp(`^${escaped}$`, "i").test(fieldVal);
+    } catch {
+      return false;
+    }
   }
 
   if (op === "MATCHES") {
     if (typeof fieldVal !== "string" || typeof target !== "string") return false;
-    return new RegExp(target, "i").test(fieldVal);
+    try {
+      // Guard: reject patterns likely to cause catastrophic backtracking (ReDoS)
+      if (target.length > 200) return false;
+      return new RegExp(target, "i").test(fieldVal);
+    } catch {
+      return false; // Invalid regex pattern
+    }
   }
 
   switch (op) {

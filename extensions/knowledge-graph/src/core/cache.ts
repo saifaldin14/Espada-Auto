@@ -352,7 +352,17 @@ export class QueryCache {
    * Called when a node is created, updated, or deleted.
    */
   invalidateNode(nodeId: string): number {
-    return this.cache.invalidateMatching((key) => key.includes(nodeId));
+    // Use boundary-aware matching to avoid over-invalidating similar IDs
+    // Keys are formatted as "category:...nodeId..." — match exact ID segments
+    return this.cache.invalidateMatching((key) => {
+      const idx = key.indexOf(nodeId);
+      if (idx === -1) return false;
+      // Check the character before and after the match boundary
+      const before = idx > 0 ? key[idx - 1] : ":";
+      const after = idx + nodeId.length < key.length ? key[idx + nodeId.length] : ":";
+      const isBoundary = (c: string) => c === ":" || c === "," || c === "|";
+      return isBoundary(before) && isBoundary(after);
+    });
   }
 
   /**

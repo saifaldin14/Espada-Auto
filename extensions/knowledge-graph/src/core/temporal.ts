@@ -405,7 +405,8 @@ export class InMemoryTemporalStorage implements TemporalGraphStorage {
       if (snap.createdAt <= timestamp) return snap;
     }
 
-    return sorted[sorted.length - 1] ?? null;
+    // No snapshot exists at or before the requested timestamp
+    return null;
   }
 }
 

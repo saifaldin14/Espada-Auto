@@ -8,6 +8,15 @@
 import type { GraphNodeInput, GraphRelationshipType } from "../../types.js";
 
 // =============================================================================
+// Internal Helpers
+// =============================================================================
+
+/** Escape special regex characters in a string for safe use in `new RegExp()`. */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+// =============================================================================
 // Field Path Resolution
 // =============================================================================
 
@@ -128,12 +137,16 @@ export function findNodeByArnOrId(
   arn: string,
   extractedId: string,
 ): GraphNodeInput | undefined {
+  // Prefer exact matches first, then fall back to ARN segment matching
   return nodes.find((n) =>
     n.nativeId === arn ||
-    n.nativeId === extractedId ||
-    arn.includes(n.nativeId) ||
-    n.nativeId.includes(extractedId),
-  );
+    n.nativeId === extractedId,
+  ) ?? nodes.find((n) => {
+    // Match only if nativeId appears as a complete ARN segment (after / or :)
+    if (n.nativeId.length < 3) return false; // Avoid trivially short IDs
+    const sep = new RegExp(`[/:]${escapeRegex(n.nativeId)}(?:[/:]|$)`);
+    return sep.test(arn);
+  });
 }
 
 // =============================================================================

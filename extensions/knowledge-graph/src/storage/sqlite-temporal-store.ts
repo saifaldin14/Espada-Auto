@@ -445,7 +445,13 @@ export class SQLiteTemporalStorage implements TemporalGraphStorage {
     let sql = `SELECT * FROM temporal_snapshots ${where} ORDER BY created_at DESC, seq DESC`;
 
     if (filter?.limit) {
-      sql += ` LIMIT ${filter.limit}`;
+      // Parameterize LIMIT to prevent injection
+      const limitVal = Math.max(1, Math.floor(Number(filter.limit)));
+      if (!Number.isFinite(limitVal)) {
+        throw new Error(`Invalid limit value: ${filter.limit}`);
+      }
+      sql += ` LIMIT @_limit`;
+      params._limit = limitVal;
     }
 
     const rows = this.db.prepare(sql).all(params) as RawSnapshotRow[];
@@ -518,6 +524,10 @@ export class SQLiteTemporalStorage implements TemporalGraphStorage {
       }
       if (filter.tags) {
         for (const [key, value] of Object.entries(filter.tags)) {
+          // Validate tag key to prevent SQL injection in json_extract path
+          if (!/^[a-zA-Z0-9_\-:.]+$/.test(key)) {
+            throw new Error(`Invalid tag key: ${key}`);
+          }
           const paramKey = `tag_${key.replace(/[^a-zA-Z0-9]/g, "_")}`;
           clauses.push(`json_extract(tags, '$.${key}') = @${paramKey}`);
           params[paramKey] = value;

@@ -16,7 +16,7 @@
 
 import type { IncomingMessage, ServerResponse, Server } from "node:http";
 import { createServer } from "node:http";
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import type { CloudEvent, EventSourceAdapter, EventSourceType } from "./monitoring.js";
 import type { CloudProvider } from "../types.js";
 
@@ -320,17 +320,16 @@ export class WebhookReceiver {
   // Signature verification
   // ---------------------------------------------------------------------------
 
-  /** Verify HMAC-SHA256 signature. */
+  /** Verify HMAC-SHA256 signature using constant-time comparison. */
   private verifySignature(body: string, signature: string | undefined): boolean {
     if (!this.config.secret || !signature) return false;
     const expected = createHmac("sha256", this.config.secret).update(body).digest("hex");
-    // Constant-time comparison via string length + every-char check
-    if (expected.length !== signature.length) return false;
-    let mismatch = 0;
-    for (let i = 0; i < expected.length; i++) {
-      mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-    }
-    return mismatch === 0;
+    // Use timingSafeEqual to prevent timing-based side-channel attacks.
+    // Pad to equal length to avoid length-based early-return leak.
+    const a = Buffer.from(expected, "utf-8");
+    const b = Buffer.from(signature.padEnd(a.length, "\0").slice(0, a.length), "utf-8");
+    // Also check that the original signature length matches
+    return expected.length === signature.length && timingSafeEqual(a, b);
   }
 
   // ---------------------------------------------------------------------------

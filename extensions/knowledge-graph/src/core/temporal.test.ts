@@ -478,9 +478,21 @@ describe("Temporal Knowledge Graph", () => {
   describe("diffTimestamps()", () => {
     it("should diff between two timestamps", async () => {
       await seedGraphState(storage, [makeNode("n1")]);
-      await temporal.createSnapshot("manual");
+      const s1 = await temporal.createSnapshot("manual");
 
       await seedGraphState(storage, [makeNode("n1"), makeNode("n2")]);
+      await temporal.createSnapshot("manual");
+
+      const diff = await diffTimestamps(
+        temporal,
+        s1.createdAt,
+        new Date(Date.now() + 1000).toISOString(),
+      );
+      expect(diff).not.toBeNull();
+    });
+
+    it("should return null when from-timestamp is before all snapshots", async () => {
+      await seedGraphState(storage, [makeNode("n1")]);
       await temporal.createSnapshot("manual");
 
       const diff = await diffTimestamps(
@@ -488,7 +500,7 @@ describe("Temporal Knowledge Graph", () => {
         new Date(0).toISOString(),
         new Date(Date.now() + 1000).toISOString(),
       );
-      expect(diff).not.toBeNull();
+      expect(diff).toBeNull();
     });
 
     it("should return no-change diff for same timestamp", async () => {

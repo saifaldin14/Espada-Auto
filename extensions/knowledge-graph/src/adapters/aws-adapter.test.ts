@@ -27,7 +27,8 @@ import type {
   AwsIncrementalChanges,
   AwsSecurityPosture,
 } from "./aws.js";
-import type { GraphNodeInput, GraphEdgeInput } from "./types.js";
+import type { GraphNodeInput } from "./types.js";
+import type { GraphEdgeInput } from "../types.js";
 
 // =============================================================================
 // Test helper: typed access to private members (eliminates `as any`)
@@ -38,7 +39,7 @@ import type { GraphNodeInput, GraphEdgeInput } from "./types.js";
  * This avoids scattering `(adapter as any)` throughout the test suite
  * while keeping type safety on the test-side API surface.
  */
-interface AwsAdapterTestable extends AwsDiscoveryAdapter {
+interface AwsAdapterTestable extends Omit<AwsDiscoveryAdapter, '_credentialsManager'> {
   // Lazy-init manager getters
   ensureSdkAvailable(): Promise<boolean>;
   getCredentialsManager(): Promise<unknown | null>;
@@ -101,7 +102,7 @@ interface AwsAdapterTestable extends AwsDiscoveryAdapter {
 
   // Cost methods
   estimateCostStatic(resourceType: string, metadata: Record<string, unknown>): number;
-  queryServiceCosts(nodes: GraphNodeInput[]): Promise<Record<string, number> | null>;
+  queryServiceCosts(nodes: GraphNodeInput[]): Promise<Map<string, number> | null>;
   queryResourceCosts(nodes: GraphNodeInput[]): Promise<Map<string, number> | null>;
 }
 
@@ -2641,8 +2642,8 @@ describe("AwsDiscoveryAdapter — @espada/aws integration", () => {
       expect(compliance1).toBeDefined();
       expect(compliance1.violationCount).toBe(1);
       expect(compliance1.violations).toHaveLength(1);
-      expect(compliance1.violations[0].rule).toBe("ec2-encrypted-volumes");
-      expect(compliance1.violations[0].status).toBe("NON_COMPLIANT");
+      expect((compliance1.violations as Array<Record<string, unknown>>)[0].rule).toBe("ec2-encrypted-volumes");
+      expect((compliance1.violations as Array<Record<string, unknown>>)[0].status).toBe("NON_COMPLIANT");
 
       // Second node should have compliant rule
       const compliance2 = nodes[1].metadata["compliance"] as Record<string, unknown>;
