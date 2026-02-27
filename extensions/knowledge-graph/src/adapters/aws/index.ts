@@ -15,6 +15,12 @@
  *   automation.ts   — EventBridge rules + Step Functions
  *   cicd.ts         — CodePipeline, CodeBuild, CodeDeploy
  *   cognito.ts      — User Pools, Identity Pools, App Clients
+ *   containers.ts   — ECS clusters/services/tasks, EKS clusters/node groups, ECR repos
+ *   network.ts      — VPC peering, Transit GWs, NACLs, VPC endpoints, flow logs
+ *   dynamodb.ts     — DynamoDB tables, GSIs, global tables, backups
+ *   apigateway.ts   — REST/HTTP APIs, stages, integrations, authorizers
+ *   messaging.ts    — SQS queue enrichment, SNS topic subscriptions/fanout
+ *   route53-dns.ts  — Route 53 hosted zones, DNS record aliases, health checks
  *   enrichment.ts   — Post-discovery enrichment (tags, events, observability, compliance)
  *   cost.ts         — Cost Explorer enrichment, forecasting, optimization
  *   security.ts     — Security posture, GuardDuty, CloudTrail changes
@@ -73,6 +79,12 @@ export { discoverBackupResources } from "./backup.js";
 export { discoverAutomation } from "./automation.js";
 export { discoverCICD } from "./cicd.js";
 export { discoverCognito } from "./cognito.js";
+export { discoverContainersDeeper } from "./containers.js";
+export { discoverNetworkDeeper } from "./network.js";
+export { discoverDynamoDB } from "./dynamodb.js";
+export { discoverAPIGatewayDeeper } from "./apigateway.js";
+export { enrichSQS, enrichSNS } from "./messaging.js";
+export { discoverRoute53Deeper } from "./route53-dns.js";
 export {
   enrichWithTags,
   enrichWithEventSources,

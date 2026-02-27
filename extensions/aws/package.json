@@ -130,6 +130,30 @@
     "./cognito": {
       "import": "./dist/cognito/index.js",
       "types": "./dist/cognito/index.d.ts"
+    },
+    "./network": {
+      "import": "./dist/network/index.js",
+      "types": "./dist/network/index.d.ts"
+    },
+    "./dynamodb": {
+      "import": "./dist/dynamodb/index.js",
+      "types": "./dist/dynamodb/index.d.ts"
+    },
+    "./apigateway": {
+      "import": "./dist/apigateway/index.js",
+      "types": "./dist/apigateway/index.d.ts"
+    },
+    "./sqs": {
+      "import": "./dist/sqs/index.js",
+      "types": "./dist/sqs/index.d.ts"
+    },
+    "./sns": {
+      "import": "./dist/sns/index.js",
+      "types": "./dist/sns/index.d.ts"
+    },
+    "./route53": {
+      "import": "./dist/route53/index.js",
+      "types": "./dist/route53/index.d.ts"
     }
   },
   "scripts": {

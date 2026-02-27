@@ -66,4 +66,11 @@ export interface AwsAdapterContext {
   getSecurityManager(): Promise<unknown | null>;
   getCostManagerInstance(): Promise<unknown | null>;
   getCloudTrailManager(): Promise<unknown | null>;
+  getContainerManager(): Promise<unknown | null>;
+  getNetworkManager(): Promise<unknown | null>;
+  getDynamoDBManager(): Promise<unknown | null>;
+  getAPIGatewayManager(): Promise<unknown | null>;
+  getSQSManager(): Promise<unknown | null>;
+  getSNSManager(): Promise<unknown | null>;
+  getRoute53Manager(): Promise<unknown | null>;
 }

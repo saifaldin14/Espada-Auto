@@ -132,6 +132,12 @@ import * as cognitoModule from "./aws/cognito.js";
 import * as enrichmentModule from "./aws/enrichment.js";
 import * as costModule from "./aws/cost.js";
 import * as securityModule from "./aws/security.js";
+import * as containersModule from "./aws/containers.js";
+import * as networkModule from "./aws/network.js";
+import * as dynamodbModule from "./aws/dynamodb.js";
+import * as apigatewayModule from "./aws/apigateway.js";
+import * as messagingModule from "./aws/messaging.js";
+import * as route53DnsModule from "./aws/route53-dns.js";
 import type { AwsAdapterContext } from "./aws/context.js";
 
 /**
@@ -179,6 +185,13 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   private _rdsManager: unknown | undefined = undefined;
   private _cicdManager: unknown | undefined = undefined;
   private _cognitoManager: unknown | undefined = undefined;
+  private _containerManager: unknown | undefined = undefined;
+  private _networkManager: unknown | undefined = undefined;
+  private _dynamodbManager: unknown | undefined = undefined;
+  private _apigatewayManager: unknown | undefined = undefined;
+  private _sqsManager: unknown | undefined = undefined;
+  private _snsManager: unknown | undefined = undefined;
+  private _route53Manager: unknown | undefined = undefined;
 
   constructor(config: AwsAdapterConfig) {
     this.config = config;
@@ -406,6 +419,69 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
         await this.discoverCognito(nodes, edges);
       } catch {
         // Cognito discovery is best-effort
+      }
+    }
+
+    // Discover deeper container resources (ECS, EKS, ECR) via ContainerManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverContainersDeeper(nodes, edges);
+      } catch {
+        // Container discovery is best-effort
+      }
+    }
+
+    // Discover deeper networking resources (VPC peering, TGW, NACLs, endpoints) via NetworkManager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.discoverNetworkDeeper(nodes, edges);
+      } catch {
+        // Network discovery is best-effort
+      }
+    }
+
+    // Discover DynamoDB tables, GSIs, global tables, and backups via DynamoDBManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverDynamoDB(nodes, edges);
+      } catch {
+        // DynamoDB discovery is best-effort
+      }
+    }
+
+    // Discover deeper API Gateway resources (REST/HTTP APIs, stages, integrations) via APIGatewayManager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverAPIGatewayDeeper(nodes, edges);
+      } catch {
+        // API Gateway discovery is best-effort
+      }
+    }
+
+    // Enrich SQS queues with deeper attributes (metrics, DLQ edges) via SQSManager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichSQSDeeper(nodes, edges);
+      } catch {
+        // SQS enrichment is best-effort
+      }
+    }
+
+    // Enrich SNS topics with subscriptions and fanout edges via SNSManager.
+    if (!this.config.clientFactory && nodes.length > 0) {
+      try {
+        await this.enrichSNSDeeper(nodes, edges);
+      } catch {
+        // SNS enrichment is best-effort
+      }
+    }
+
+    // Discover Route 53 hosted zones, records, and health checks via Route53Manager.
+    if (!this.config.clientFactory) {
+      try {
+        await this.discoverRoute53Deeper(nodes, edges);
+      } catch {
+        // Route 53 discovery is best-effort
       }
     }
 
@@ -1674,6 +1750,188 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   }
 
   /**
+   * Lazily get or create a ContainerManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getContainerManager(): Promise<unknown | null> {
+    if (this._containerManager !== undefined) return this._containerManager as unknown | null;
+
+    if (this.config.managers?.containers !== undefined) {
+      this._containerManager = this.config.managers.containers;
+      return this._containerManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/containers");
+      const config = this.buildManagerConfig();
+      this._containerManager = mod.createContainerManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._containerManager as unknown;
+    } catch {
+      this._containerManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a NetworkManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getNetworkManager(): Promise<unknown | null> {
+    if (this._networkManager !== undefined) return this._networkManager as unknown | null;
+
+    if (this.config.managers?.network !== undefined) {
+      this._networkManager = this.config.managers.network;
+      return this._networkManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/network");
+      const config = this.buildManagerConfig();
+      this._networkManager = mod.createNetworkManager({
+        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._networkManager as unknown;
+    } catch {
+      this._networkManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a DynamoDBManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getDynamoDBManager(): Promise<unknown | null> {
+    if (this._dynamodbManager !== undefined) return this._dynamodbManager as unknown | null;
+
+    if (this.config.managers?.dynamodb !== undefined) {
+      this._dynamodbManager = this.config.managers.dynamodb;
+      return this._dynamodbManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/dynamodb");
+      const config = this.buildManagerConfig();
+      this._dynamodbManager = mod.createDynamoDBManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._dynamodbManager as unknown;
+    } catch {
+      this._dynamodbManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an APIGatewayManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getAPIGatewayManager(): Promise<unknown | null> {
+    if (this._apigatewayManager !== undefined) return this._apigatewayManager as unknown | null;
+
+    if (this.config.managers?.apigateway !== undefined) {
+      this._apigatewayManager = this.config.managers.apigateway;
+      return this._apigatewayManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/apigateway");
+      const config = this.buildManagerConfig();
+      this._apigatewayManager = mod.createAPIGatewayManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._apigatewayManager as unknown;
+    } catch {
+      this._apigatewayManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an SQSManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getSQSManager(): Promise<unknown | null> {
+    if (this._sqsManager !== undefined) return this._sqsManager as unknown | null;
+
+    if (this.config.managers?.sqs !== undefined) {
+      this._sqsManager = this.config.managers.sqs;
+      return this._sqsManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/sqs");
+      const config = this.buildManagerConfig();
+      this._sqsManager = mod.createSQSManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._sqsManager as unknown;
+    } catch {
+      this._sqsManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create an SNSManager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getSNSManager(): Promise<unknown | null> {
+    if (this._snsManager !== undefined) return this._snsManager as unknown | null;
+
+    if (this.config.managers?.sns !== undefined) {
+      this._snsManager = this.config.managers.sns;
+      return this._snsManager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/sns");
+      const config = this.buildManagerConfig();
+      this._snsManager = mod.createSNSManager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._snsManager as unknown;
+    } catch {
+      this._snsManager = null;
+      return null;
+    }
+  }
+
+  /**
+   * Lazily get or create a Route53Manager from @espada/aws.
+   * Returns null if the extension is unavailable.
+   */
+  private async getRoute53Manager(): Promise<unknown | null> {
+    if (this._route53Manager !== undefined) return this._route53Manager as unknown | null;
+
+    if (this.config.managers?.route53 !== undefined) {
+      this._route53Manager = this.config.managers.route53;
+      return this._route53Manager as unknown | null;
+    }
+
+    try {
+      const mod = await import("@espada/aws/route53");
+      const config = this.buildManagerConfig();
+      this._route53Manager = mod.createRoute53Manager({
+        region: (config["defaultRegion"] as string) ?? "us-east-1",
+        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
+      });
+      return this._route53Manager as unknown;
+    } catch {
+      this._route53Manager = null;
+      return null;
+    }
+  }
+
+  /**
    * Build a standard config object for @espada/aws managers that take
    * `{ region?, credentials? }` style configuration.
    */
@@ -1722,6 +1980,13 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
       getSecurityManager: () => this.getSecurityManager(),
       getCostManagerInstance: () => this.getCostManagerInstance(),
       getCloudTrailManager: () => this.getCloudTrailManager(),
+      getContainerManager: () => this.getContainerManager(),
+      getNetworkManager: () => this.getNetworkManager(),
+      getDynamoDBManager: () => this.getDynamoDBManager(),
+      getAPIGatewayManager: () => this.getAPIGatewayManager(),
+      getSQSManager: () => this.getSQSManager(),
+      getSNSManager: () => this.getSNSManager(),
+      getRoute53Manager: () => this.getRoute53Manager(),
     };
   }
 
@@ -1829,6 +2094,62 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     edges: GraphEdgeInput[],
   ): Promise<void> {
     return cognitoModule.discoverCognito(this._getContext(), nodes, edges);
+  }
+
+  /** Discover deeper container resources: ECS clusters/services/tasks, EKS clusters/node groups, ECR repos. */
+  private async discoverContainersDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return containersModule.discoverContainersDeeper(this._getContext(), nodes, edges);
+  }
+
+  /** Discover deeper networking resources: VPC peering, Transit GWs, NACLs, endpoints, flow logs. */
+  private async discoverNetworkDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return networkModule.discoverNetworkDeeper(this._getContext(), nodes, edges);
+  }
+
+  /** Discover DynamoDB tables, GSIs, global tables, and backups. */
+  private async discoverDynamoDB(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return dynamodbModule.discoverDynamoDB(this._getContext(), nodes, edges);
+  }
+
+  /** Discover deeper API Gateway resources: REST/HTTP APIs, stages, integrations, authorizers. */
+  private async discoverAPIGatewayDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return apigatewayModule.discoverAPIGatewayDeeper(this._getContext(), nodes, edges);
+  }
+
+  /** Enrich SQS queues with deeper attributes: metrics, DLQ edges, encryption links. */
+  private async enrichSQSDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return messagingModule.enrichSQS(this._getContext(), nodes, edges);
+  }
+
+  /** Enrich SNS topics with subscriptions and fanout edges to SQS/Lambda/HTTP targets. */
+  private async enrichSNSDeeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return messagingModule.enrichSNS(this._getContext(), nodes, edges);
+  }
+
+  /** Discover Route 53 hosted zones, DNS record aliases, and health checks. */
+  private async discoverRoute53Deeper(
+    nodes: GraphNodeInput[],
+    edges: GraphEdgeInput[],
+  ): Promise<void> {
+    return route53DnsModule.discoverRoute53Deeper(this._getContext(), nodes, edges);
   }
 
   // ===========================================================================
@@ -2090,5 +2411,12 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
     this._rdsManager = undefined;
     this._cicdManager = undefined;
     this._cognitoManager = undefined;
+    this._containerManager = undefined;
+    this._networkManager = undefined;
+    this._dynamodbManager = undefined;
+    this._apigatewayManager = undefined;
+    this._sqsManager = undefined;
+    this._snsManager = undefined;
+    this._route53Manager = undefined;
   }
 }
