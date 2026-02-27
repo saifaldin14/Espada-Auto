@@ -217,7 +217,7 @@ export async function recordAgentAction(
   };
   await storage.upsertEdge(edge);
 
-  // Record as a graph change
+  // Record as a graph change (includes all action data for accurate aggregation)
   const change: GraphChange = {
     id: `agent-action:${edgeId}:${Date.now()}`,
     targetId: action.targetNodeId,
@@ -228,6 +228,7 @@ export async function recordAgentAction(
       actionType: action.actionType,
       success: action.success,
       durationMs: action.durationMs,
+      costUsd: action.costUsd ?? 0,
     }),
     detectedAt: now,
     detectedVia: "manual",
@@ -396,32 +397,43 @@ export async function getAgentActivity(
       ...new Set(edges.map((e) => e.targetNodeId)),
     ];
 
+    // Derive action counts from the change log (each change = one action),
+    // not from edges (which are upserted and only reflect unique relationships).
     const actionsByType: Record<string, number> = {};
     let totalCost = 0;
     let successCount = 0;
 
-    for (const edge of edges) {
-      const action = typeof edge.metadata.actionType === "string"
-        ? edge.metadata.actionType
-        : "unknown";
-      actionsByType[action] = (actionsByType[action] ?? 0) + 1;
-      if (typeof edge.metadata.costUsd === "number") {
-        totalCost += edge.metadata.costUsd;
+    for (const change of changes) {
+      if (change.field !== "agent-action") continue;
+      try {
+        const data = JSON.parse(change.newValue ?? "{}") as Record<string, unknown>;
+        const action = typeof data.actionType === "string"
+          ? data.actionType
+          : "unknown";
+        actionsByType[action] = (actionsByType[action] ?? 0) + 1;
+        if (typeof data.costUsd === "number") {
+          totalCost += data.costUsd;
+        }
+        if (data.success === true) successCount++;
+      } catch {
+        // Malformed change entry; skip
       }
-      if (edge.metadata.success === true) successCount++;
     }
+
+    const actionChanges = changes.filter((c) => c.field === "agent-action");
+    const totalActions = actionChanges.length;
 
     summaries.push({
       agentNodeId: agent.id,
       agentName: agent.name,
-      totalActions: edges.length,
+      totalActions,
       actionsByType,
       uniqueResourcesTouched: resourceIds.length,
       resourceIds,
       totalCostUsd: totalCost,
       changesInitiated: changes.length,
       successRate:
-        edges.length > 0 ? successCount / edges.length : 0,
+        totalActions > 0 ? successCount / totalActions : 0,
     });
   }
 

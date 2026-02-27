@@ -58,13 +58,33 @@ import {
 import { exportVisualization } from "../analysis/visualization.js";
 import type { VisualizationFormat, LayoutStrategy } from "../analysis/visualization.js";
 
+// P3 imports
+import {
+  createRBACPolicy,
+  formatRBACPolicyMarkdown,
+  getRolePermissions,
+} from "../core/rbac.js";
+import type { RBACRole } from "../core/rbac.js";
+import {
+  runBenchmarks,
+  formatBenchmarkMarkdown,
+} from "../core/benchmark.js";
+import type { BenchmarkScale } from "../core/benchmark.js";
+import {
+  exportExtended,
+} from "../reporting/export-extended.js";
+import type { ExtendedExportFormat } from "../reporting/export-extended.js";
+
 // =============================================================================
 // Constants
 // =============================================================================
 
 const DIRECTIONS = ["upstream", "downstream", "both"] as const;
 const EXPORT_FORMATS = ["json", "dot", "mermaid"] as const;
+const EXTENDED_EXPORT_FORMATS = ["yaml", "csv", "openlineage"] as const;
 const PROVIDERS = ["aws", "azure", "gcp", "k8s", "custom"] as const;
+const RBAC_ROLES = ["viewer", "operator", "admin", "superadmin"] as const;
+const BENCHMARK_SCALES = ["1k", "10k", "100k"] as const;
 
 // =============================================================================
 // Tool Registration
@@ -2013,5 +2033,222 @@ export function registerP2Tools(
       },
     },
     { names: ["kg_visualize"] },
+  );
+}
+
+// =============================================================================
+// P3 Tools — Enterprise & Polish
+// =============================================================================
+
+/**
+ * Register P3 tools: RBAC, benchmarks, extended export.
+ */
+export function registerP3Tools(
+  api: EspadaPluginApi,
+  _engine: GraphEngine,
+  storage: GraphStorage,
+): void {
+  // ---------------------------------------------------------------------------
+  // RBAC Policy Summary
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_rbac",
+      label: "RBAC Policy",
+      description:
+        "View or manage the RBAC (Role-Based Access Control) policy for the knowledge graph. " +
+        "Shows role permissions, registered principals, and access scope restrictions. " +
+        "Use to understand who can access what parts of the infrastructure graph.",
+      parameters: Type.Object({
+        action: Type.Optional(
+          stringEnum(["view", "permissions"] as const, {
+            description: "Action: 'view' shows current policy, 'permissions' shows role permission matrix (default: view)",
+          }),
+        ),
+        role: Type.Optional(
+          stringEnum(RBAC_ROLES, {
+            description: "View permissions for a specific role",
+          }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { action, role } = params as { action?: string; role?: string };
+
+        try {
+          if (action === "permissions" || role) {
+            const r = (role ?? "viewer") as RBACRole;
+            const perms = getRolePermissions(r);
+            const lines = [
+              `## RBAC Permissions: ${r}`,
+              "",
+              "| Permission | Granted |",
+              "|------------|---------|",
+              ...Object.entries(perms).map(
+                ([k, v]) => `| ${k} | ${v ? "✅" : "❌"} |`,
+              ),
+            ];
+            return {
+              content: [{ type: "text" as const, text: lines.join("\n") }],
+              details: { role: r, permissions: perms },
+            };
+          }
+
+          // Default: show full policy summary
+          const policy = createRBACPolicy([], { defaultRole: "admin" });
+          const markdown = formatRBACPolicyMarkdown(policy);
+          return {
+            content: [{ type: "text" as const, text: markdown }],
+            details: { principalCount: policy.principals.length },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `RBAC query failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_rbac"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Performance Benchmarks
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_benchmark",
+      label: "Performance Benchmark",
+      description:
+        "Run performance benchmarks on the knowledge graph at various scales (1K, 10K, 100K nodes). " +
+        "Measures insert throughput, query latency, traversal performance, and algorithm execution time. " +
+        "WARNING: Creates temporary synthetic data in the storage backend.",
+      parameters: Type.Object({
+        scale: Type.Optional(
+          stringEnum(BENCHMARK_SCALES, {
+            description: "Graph scale: 1k, 10k, or 100k nodes (default: 1k). WARNING: 100k is slow.",
+          }),
+        ),
+        includeTraversals: Type.Optional(
+          Type.Boolean({ description: "Include traversal benchmarks (default: true)" }),
+        ),
+        includeAlgorithms: Type.Optional(
+          Type.Boolean({ description: "Include algorithm benchmarks (default: true for <= 10k)" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { scale, includeTraversals, includeAlgorithms } =
+          params as {
+            scale?: string;
+            includeTraversals?: boolean;
+            includeAlgorithms?: boolean;
+          };
+
+        try {
+          const result = await runBenchmarks(storage, {
+            scale: (scale ?? "1k") as BenchmarkScale,
+            includeTraversals,
+            includeAlgorithms,
+          });
+
+          const markdown = formatBenchmarkMarkdown(result);
+          return {
+            content: [{ type: "text" as const, text: markdown }],
+            details: {
+              scale: result.scale,
+              nodeCount: result.nodeCount,
+              edgeCount: result.edgeCount,
+              totalDurationMs: result.totalDurationMs,
+              peakMemoryMB: result.peakMemoryMB,
+              measurementCount: result.measurements.length,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Benchmark failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_benchmark"] },
+  );
+
+  // ---------------------------------------------------------------------------
+  // Extended Export (YAML, CSV, OpenLineage)
+  // ---------------------------------------------------------------------------
+  api.registerTool(
+    {
+      name: "kg_export_extended",
+      label: "Extended Export",
+      description:
+        "Export the infrastructure graph in additional formats: YAML (human-readable), " +
+        "CSV (spreadsheet-compatible), or OpenLineage (data lineage standard). " +
+        "Complements the existing JSON/DOT/Mermaid export formats.",
+      parameters: Type.Object({
+        format: stringEnum(EXTENDED_EXPORT_FORMATS, {
+          description: "Export format: yaml, csv, or openlineage",
+        }),
+        provider: Type.Optional(
+          stringEnum(PROVIDERS, { description: "Filter by cloud provider" }),
+        ),
+        includeMetadata: Type.Optional(
+          Type.Boolean({ description: "Include metadata and tags (default: false)" }),
+        ),
+        includeCost: Type.Optional(
+          Type.Boolean({ description: "Include cost data (default: true)" }),
+        ),
+        maxNodes: Type.Optional(
+          Type.Number({ description: "Maximum nodes to export (default: 5000)" }),
+        ),
+      }),
+      async execute(_toolCallId, params) {
+        const { format, provider, includeMetadata, includeCost, maxNodes } =
+          params as {
+            format: string;
+            provider?: string;
+            includeMetadata?: boolean;
+            includeCost?: boolean;
+            maxNodes?: number;
+          };
+
+        try {
+          const result = await exportExtended(
+            storage,
+            format as ExtendedExportFormat,
+            {
+              filter: provider ? { provider: provider as CloudProvider } : undefined,
+              includeMetadata: includeMetadata ?? false,
+              includeCost: includeCost ?? true,
+              maxNodes,
+            },
+          );
+
+          const summary = [
+            `## Export: ${result.format.toUpperCase()}`,
+            "",
+            `- **Nodes:** ${result.nodeCount}`,
+            `- **Edges:** ${result.edgeCount}`,
+          ];
+
+          return {
+            content: [
+              { type: "text" as const, text: summary.join("\n") },
+              { type: "text" as const, text: result.content },
+            ],
+            details: {
+              format: result.format,
+              nodeCount: result.nodeCount,
+              edgeCount: result.edgeCount,
+            },
+          };
+        } catch (err) {
+          return {
+            content: [{ type: "text" as const, text: `Extended export failed: ${err instanceof Error ? err.message : String(err)}` }],
+            details: { error: true },
+          };
+        }
+      },
+    },
+    { names: ["kg_export_extended"] },
   );
 }

@@ -78,13 +78,20 @@ export type RecommendationReport = {
 // =============================================================================
 
 let recCounter = 0;
+let recEpoch = Date.now();
+
 function recId(): string {
-  return `rec-${Date.now()}-${++recCounter}`;
+  return `rec-${recEpoch}-${++recCounter}`;
 }
 
-/** Reset the counter (for testing). */
+/**
+ * Reset the counter (for testing).
+ * Uses a new epoch timestamp to avoid ID collisions with
+ * recommendations generated before the reset.
+ */
 export function resetRecommendationCounter(): void {
   recCounter = 0;
+  recEpoch = Date.now();
 }
 
 /**

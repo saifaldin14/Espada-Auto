@@ -560,19 +560,11 @@ export async function exportVisualization(
   const nodes = allNodes.slice(0, maxNodes);
   const nodeIdSet = new Set(nodes.map((n) => n.id));
 
-  // Fetch edges
-  const allEdges: GraphEdge[] = [];
-  for (const node of nodes) {
-    const edges = await storage.getEdgesForNode(node.id, "both");
-    for (const e of edges) {
-      if (nodeIdSet.has(e.sourceNodeId) && nodeIdSet.has(e.targetNodeId)) {
-        allEdges.push(e);
-      }
-    }
-  }
-  const edgeMap = new Map<string, GraphEdge>();
-  for (const e of allEdges) edgeMap.set(e.id, e);
-  const edges = [...edgeMap.values()];
+  // Fetch edges in a single batch query instead of per-node (avoids N+1)
+  const allEdgesRaw = await storage.queryEdges({});
+  const edges = allEdgesRaw.filter(
+    (e) => nodeIdSet.has(e.sourceNodeId) && nodeIdSet.has(e.targetNodeId),
+  );
 
   // Compute highlighted node set
   let highlightedNodeIds = new Set<string>();

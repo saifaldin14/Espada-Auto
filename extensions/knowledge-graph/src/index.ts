@@ -75,7 +75,7 @@ export { registerInfraCli } from "./cli/infra-cli.js";
 export type { InfraCliContext } from "./cli/infra-cli.js";
 
 // Tools & CLI (for direct use / testing)
-export { registerGraphTools, registerTemporalTools, registerIQLTools, registerP2Tools } from "./tools/tools.js";
+export { registerGraphTools, registerTemporalTools, registerIQLTools, registerP2Tools, registerP3Tools } from "./tools/tools.js";
 export { registerPolicyScanTool } from "./tools/policy-scan-tool.js";
 export { registerGraphCli } from "./cli/cli.js";
 
@@ -334,3 +334,50 @@ export type {
   D3Node,
   D3Link,
 } from "./analysis/visualization.js";
+
+// RBAC (P3.23)
+export {
+  RBACGraphStorage,
+  AccessDeniedError,
+  getEffectivePermissions,
+  getRolePermissions,
+  isNodeInScope,
+  mergeFilterWithScope,
+  createRBACPolicy,
+  resolvePrincipal,
+  withRBAC,
+  formatRBACPolicyMarkdown,
+  DEFAULT_RBAC_POLICY,
+} from "./core/rbac.js";
+export type {
+  RBACRole,
+  AccessScope,
+  RBACPermissions,
+  RBACPrincipal,
+  RBACPolicy,
+  AccessDecision,
+} from "./core/rbac.js";
+
+// Performance benchmarks (P3.24)
+export {
+  runBenchmarks,
+  formatBenchmarkMarkdown,
+  generateNodes,
+  generateEdges,
+} from "./core/benchmark.js";
+export type {
+  BenchmarkMeasurement,
+  BenchmarkScale,
+  BenchmarkResult,
+  BenchmarkOptions,
+} from "./core/benchmark.js";
+
+// Extended export formats (P3.29)
+export {
+  exportExtended,
+} from "./reporting/export-extended.js";
+export type {
+  ExtendedExportFormat,
+  ExtendedExportResult,
+  ExtendedExportOptions,
+} from "./reporting/export-extended.js";
