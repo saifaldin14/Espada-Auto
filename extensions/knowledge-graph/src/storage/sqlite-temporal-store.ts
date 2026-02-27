@@ -32,7 +32,7 @@ import type {
   EdgeVersion,
   SnapshotDiff,
   SnapshotRetentionConfig,
-} from "../temporal.js";
+} from "../core/temporal.js";
 
 // =============================================================================
 // Schema DDL — Temporal Tables

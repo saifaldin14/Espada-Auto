@@ -23,7 +23,7 @@ import type {
   IQLDiffResult,
 } from "./types.js";
 import { InMemoryGraphStorage } from "../storage/memory-store.js";
-import { InMemoryTemporalStorage } from "../temporal.js";
+import { InMemoryTemporalStorage } from "../core/temporal.js";
 import type { GraphNodeInput, GraphEdgeInput, GraphNodeStatus, GraphRelationshipType } from "../types.js";
 
 // =============================================================================

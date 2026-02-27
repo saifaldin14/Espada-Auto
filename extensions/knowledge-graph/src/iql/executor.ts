@@ -34,8 +34,8 @@ import type {
   NodeFilter,
   ChangeFilter,
 } from "../types.js";
-import type { TemporalGraphStorage } from "../temporal.js";
-import { shortestPath } from "../queries.js";
+import type { TemporalGraphStorage } from "../core/temporal.js";
+import { shortestPath } from "../core/queries.js";
 
 // =============================================================================
 // Public API

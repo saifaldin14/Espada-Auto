@@ -7,22 +7,22 @@
  */
 
 import type { EspadaPluginApi } from "espada/plugin-sdk";
-import { GraphEngine } from "./src/engine.js";
+import { GraphEngine } from "./src/core/engine.js";
 import { InMemoryGraphStorage } from "./src/storage/index.js";
 import { SQLiteGraphStorage } from "./src/storage/index.js";
-import { registerGraphTools, registerGovernanceTools } from "./src/tools.js";
-import { registerGraphCli } from "./src/cli.js";
-import { registerInfraCli } from "./src/infra-cli.js";
-import { ChangeGovernor } from "./src/governance.js";
+import { registerGraphTools, registerGovernanceTools } from "./src/tools/tools.js";
+import { registerGraphCli } from "./src/cli/cli.js";
+import { registerInfraCli } from "./src/cli/infra-cli.js";
+import { ChangeGovernor } from "./src/core/governance.js";
 import type { GraphStorage, CloudProvider } from "./src/types.js";
 
 // Re-export public API for programmatic use by other extensions
-export { GraphEngine } from "./src/engine.js";
+export { GraphEngine } from "./src/core/engine.js";
 export { InMemoryGraphStorage, SQLiteGraphStorage } from "./src/storage/index.js";
 export { AdapterRegistry, AwsDiscoveryAdapter } from "./src/adapters/index.js";
-export { exportTopology } from "./src/export.js";
-export { ChangeGovernor, calculateRiskScore } from "./src/governance.js";
-export type { ChangeRequest, RiskAssessment} from "./src/governance.js";
+export { exportTopology } from "./src/reporting/export.js";
+export { ChangeGovernor, calculateRiskScore } from "./src/core/governance.js";
+export type { ChangeRequest, RiskAssessment} from "./src/core/governance.js";
 
 // =============================================================================
 // Plugin Configuration

@@ -32,8 +32,8 @@ export type {
 } from "./types.js";
 
 // Engine
-export { GraphEngine } from "./engine.js";
-export type { GraphEngineConfig } from "./engine.js";
+export { GraphEngine } from "./core/engine.js";
+export type { GraphEngineConfig } from "./core/engine.js";
 
 // Storage
 export { InMemoryGraphStorage } from "./storage/index.js";
@@ -55,29 +55,29 @@ export {
   findCriticalNodes,
   findSinglePointsOfFailure,
   findClusters,
-} from "./queries.js";
-export type { PathResult, CriticalNode, ClusterResult } from "./queries.js";
+} from "./core/queries.js";
+export type { PathResult, CriticalNode, ClusterResult } from "./core/queries.js";
 
 // Export
-export { exportTopology } from "./export.js";
-export type { ExportFormat, ExportResult, ExportOptions } from "./export.js";
+export { exportTopology } from "./reporting/export.js";
+export type { ExportFormat, ExportResult, ExportOptions } from "./reporting/export.js";
 
 // Terraform adapter
 export { TerraformDiscoveryAdapter, parseTerraformState, TERRAFORM_TYPE_MAP } from "./adapters/index.js";
 export type { TerraformAdapterConfig } from "./adapters/index.js";
 
 // Report generator
-export { generateScanReport } from "./report.js";
-export type { ReportFormat, ScanReport, ReportFindings, ReportOptions } from "./report.js";
+export { generateScanReport } from "./reporting/report.js";
+export type { ReportFormat, ScanReport, ReportFindings, ReportOptions } from "./reporting/report.js";
 
 // Infra CLI
-export { registerInfraCli } from "./infra-cli.js";
-export type { InfraCliContext } from "./infra-cli.js";
+export { registerInfraCli } from "./cli/infra-cli.js";
+export type { InfraCliContext } from "./cli/infra-cli.js";
 
 // Tools & CLI (for direct use / testing)
-export { registerGraphTools, registerTemporalTools, registerIQLTools, registerP2Tools } from "./tools.js";
-export { registerPolicyScanTool } from "./policy-scan-tool.js";
-export { registerGraphCli } from "./cli.js";
+export { registerGraphTools, registerTemporalTools, registerIQLTools, registerP2Tools } from "./tools/tools.js";
+export { registerPolicyScanTool } from "./tools/policy-scan-tool.js";
+export { registerGraphCli } from "./cli/cli.js";
 
 // Kubernetes adapter
 export { KubernetesDiscoveryAdapter, buildK8sNodeId, extractK8sRelationships, extractCrossCloudEdges, detectHelmReleases } from "./adapters/index.js";
@@ -94,7 +94,7 @@ export {
   getEvolutionSummary,
   syncWithSnapshot,
   DEFAULT_RETENTION,
-} from "./temporal.js";
+} from "./core/temporal.js";
 export type {
   GraphSnapshot,
   NodeVersion,
@@ -102,7 +102,7 @@ export type {
   SnapshotDiff,
   SnapshotRetentionConfig,
   TemporalGraphStorage,
-} from "./temporal.js";
+} from "./core/temporal.js";
 
 // Infrastructure Query Language (IQL)
 export { parseIQL, executeQuery, IQLLexer, IQLParser, IQLSyntaxError } from "./iql/index.js";
@@ -134,17 +134,17 @@ export {
   collectPaginated,
   NodeHashCache,
   incrementalSync,
-} from "./sync.js";
+} from "./core/sync.js";
 export type {
   BatchOptions,
   DiscoveryPage,
   PaginatedDiscoveryConfig,
   IncrementalSyncResult,
-} from "./sync.js";
+} from "./core/sync.js";
 
 // Query cache
-export { LRUCache, QueryCache } from "./cache.js";
-export type { QueryCacheConfig } from "./cache.js";
+export { LRUCache, QueryCache } from "./core/cache.js";
+export type { QueryCacheConfig } from "./core/cache.js";
 
 // Multi-tenant
 export {
@@ -152,7 +152,7 @@ export {
   TenantManager,
   discoverCrossAccountRelationships,
   tenantScopedFilter,
-} from "./tenant.js";
+} from "./core/tenant.js";
 export type {
   CloudAccount,
   CloudAccountInput,
@@ -162,7 +162,7 @@ export type {
   TenantStorageFactory,
   CrossAccountConfig,
   CrossAccountRelType,
-} from "./tenant.js";
+} from "./core/tenant.js";
 
 // Monitoring
 export {
@@ -181,7 +181,7 @@ export {
   CloudTrailEventSource,
   AzureActivityLogEventSource,
   GcpAuditLogEventSource,
-} from "./monitoring.js";
+} from "./monitoring/monitoring.js";
 export type {
   MonitorConfig,
   MonitorSchedule,
@@ -201,7 +201,7 @@ export type {
   TimelineSummary,
   GraphDiff,
   CostTrendPoint,
-} from "./monitoring.js";
+} from "./monitoring/monitoring.js";
 
 // Monitoring Mock Mode (testing/demos)
 export {
@@ -217,13 +217,13 @@ export {
   disappearanceScenario,
   multiCloudScenario,
   ALL_SCENARIOS,
-} from "./monitoring-mock.js";
+} from "./monitoring/monitoring-mock.js";
 export type {
   MockEventGeneratorConfig,
   MockScenario,
   MockMonitorOptions,
   MockMonitorResult,
-} from "./monitoring-mock.js";
+} from "./monitoring/monitoring-mock.js";
 
 // Compliance framework mapping (P2.17)
 export {
@@ -233,26 +233,26 @@ export {
   COMPLIANCE_CONTROLS,
   SUPPORTED_FRAMEWORKS,
   getFrameworkControls,
-} from "./compliance.js";
+} from "./analysis/compliance.js";
 export type {
   ComplianceFramework,
   ComplianceControl,
   ControlResult,
   ComplianceSummary,
   ComplianceReport,
-} from "./compliance.js";
+} from "./analysis/compliance.js";
 
 // Resource recommendation engine (P2.18)
 export {
   generateRecommendations,
   formatRecommendationsMarkdown,
-} from "./recommendations.js";
+} from "./analysis/recommendations.js";
 export type {
   RecommendationCategory,
   RecommendationPriority,
   Recommendation,
   RecommendationReport,
-} from "./recommendations.js";
+} from "./analysis/recommendations.js";
 
 // Agent action modeling (P2.19)
 export {
@@ -265,7 +265,7 @@ export {
   generateAgentReport,
   formatAgentReportMarkdown,
   buildAgentNodeId,
-} from "./agent-model.js";
+} from "./analysis/agent-model.js";
 export type {
   AgentNode,
   AgentAction,
@@ -273,7 +273,7 @@ export type {
   AgentConflict,
   AgentActivitySummary,
   AgentReport,
-} from "./agent-model.js";
+} from "./analysis/agent-model.js";
 
 // Natural language → IQL translation (P2.20)
 export {
@@ -281,20 +281,20 @@ export {
   getAvailableResourceTypes,
   getAvailableProviders,
   getExampleQueries,
-} from "./nl-translator.js";
-export type { NLTranslationResult } from "./nl-translator.js";
+} from "./analysis/nl-translator.js";
+export type { NLTranslationResult } from "./analysis/nl-translator.js";
 
 // Drift auto-remediation (P2.21)
 export {
   generateRemediationPlan,
   formatRemediationMarkdown,
-} from "./remediation.js";
+} from "./analysis/remediation.js";
 export type {
   IaCFormat,
   RemediationPatch,
   DriftedField,
   RemediationPlan,
-} from "./remediation.js";
+} from "./analysis/remediation.js";
 
 // Supply chain graph (P2.22)
 export {
@@ -310,20 +310,20 @@ export {
   buildImageNodeId,
   buildPackageNodeId,
   buildCVENodeId,
-} from "./supply-chain.js";
+} from "./analysis/supply-chain.js";
 export type {
   SBOMFormat,
   SBOMPackage,
   CVEReference,
   ContainerImage,
   SupplyChainReport,
-} from "./supply-chain.js";
+} from "./analysis/supply-chain.js";
 
 // Graph visualization (P2.16)
 export {
   exportVisualization,
   DEFAULT_COLORS,
-} from "./visualization.js";
+} from "./analysis/visualization.js";
 export type {
   VisualizationFormat,
   VisualizationOptions,
@@ -333,4 +333,4 @@ export type {
   CytoscapeEdge,
   D3Node,
   D3Link,
-} from "./visualization.js";
+} from "./analysis/visualization.js";
