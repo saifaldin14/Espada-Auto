@@ -14,6 +14,7 @@ import { registerConfigureCommand } from "./register.configure.js";
 import { registerMaintenanceCommands } from "./register.maintenance.js";
 import { registerMessageCommands } from "./register.message.js";
 import { registerOnboardCommand } from "./register.onboard.js";
+import { registerQuickstartCommand } from "./register.quickstart.js";
 import { registerSetupCommand } from "./register.setup.js";
 import { registerStatusHealthSessionsCommands } from "./register.status-health-sessions.js";
 import { registerSubCliCommands } from "./register.subclis.js";
@@ -107,6 +108,10 @@ export const commandRegistry: CommandRegistration[] = [
   {
     id: "setup",
     register: ({ program }) => registerSetupCommand(program),
+  },
+  {
+    id: "quickstart",
+    register: ({ program }) => registerQuickstartCommand(program),
   },
   {
     id: "onboard",

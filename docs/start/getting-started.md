@@ -13,6 +13,33 @@ Fastest chat: open the Control UI (no channel setup needed). Run `espada dashboa
 and chat in the browser, or open `http://127.0.0.1:18789/` on the gateway host.
 Docs: [Dashboard](/web/dashboard) and [Control UI](/web/control-ui).
 
+## Quickstart (recommended — zero config)
+
+If you already have an API key in your environment (e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`), or Ollama running locally, the fastest path is:
+
+```bash
+npm install -g espada@latest && espada quickstart
+```
+
+`espada quickstart` will:
+1. **Auto-detect** your LLM credentials from environment variables
+2. **Auto-detect** local Ollama models (no API key needed)
+3. **Skip** channel setup — chat immediately in the browser dashboard
+4. **Generate** a gateway token and write a minimal config
+5. **Open** the dashboard at `http://127.0.0.1:18789/`
+
+You'll be chatting in under 30 seconds. When you're ready to extend:
+
+```bash
+espada configure --section channels   # Connect WhatsApp, Telegram, Discord, etc.
+espada configure --section cloud       # Connect AWS, Azure, GCP for infra tools
+espada onboard                         # Full configuration wizard
+```
+
+---
+
+**Full setup path:** if you prefer step-by-step control, continue with the wizard below.
+
 Recommended path: use the **CLI onboarding wizard** (`espada onboard`). It sets up:
 - model/auth (OAuth recommended)
 - gateway settings
