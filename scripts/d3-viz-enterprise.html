@@ -1,0 +1,1847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Espada — Enterprise Infrastructure Topology</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    :root {
+      --bg: #06080f; --surface: #0d1117; --surface2: #161b22; --surface3: #1c2333;
+      --border: #30363d; --border2: #484f58; --text: #e6edf3; --text2: #8b949e;
+      --text3: #6e7681; --accent: #58a6ff; --accent2: #388bfd; --green: #3fb950;
+      --red: #f85149; --orange: #d29922; --purple: #a371f7; --pink: #f778ba;
+      --sidebar-w: 320px; --filter-w: 260px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Top Bar ── */
+    #topbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0; z-index: 50; height: 46px;
+    }
+    #topbar .brand { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    #topbar .brand span { color: var(--accent); }
+    #topbar .kpi-strip { display: flex; gap: 20px; }
+    .kpi { text-align: center; }
+    .kpi-val { font-size: 18px; font-weight: 700; line-height: 1; }
+    .kpi-label { font-size: 9px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ── View Tabs ── */
+    #view-tabs {
+      display: flex; background: var(--surface); border-bottom: 1px solid var(--border);
+      flex-shrink: 0; z-index: 40; padding: 0 16px; gap: 2px;
+    }
+    .view-tab {
+      padding: 8px 16px; font-size: 11px; color: var(--text3); cursor: pointer;
+      border-bottom: 2px solid transparent; transition: all 0.15s;
+      background: none; border-top: none; border-left: none; border-right: none;
+      font-family: inherit;
+    }
+    .view-tab:hover { color: var(--text2); }
+    .view-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Main Layout ── */
+    #main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+    /* ── Filter Sidebar (left) ── */
+    #filter-panel {
+      width: var(--filter-w); background: var(--surface); border-right: 1px solid var(--border);
+      overflow-y: auto; flex-shrink: 0; padding: 12px; display: flex; flex-direction: column; gap: 12px;
+      transition: margin-left 0.25s ease;
+    }
+    #filter-panel.collapsed { margin-left: calc(-1 * var(--filter-w)); }
+    .filter-section { }
+    .filter-section h4 {
+      font-size: 10px; text-transform: uppercase; color: var(--text3); letter-spacing: 0.6px;
+      margin-bottom: 6px; display: flex; align-items: center; justify-content: space-between;
+    }
+    .filter-section h4 .count { font-weight: 400; }
+    .filter-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+    .filter-chip {
+      display: flex; align-items: center; gap: 4px;
+      padding: 4px 8px; border-radius: 12px; font-size: 10px;
+      background: var(--surface2); border: 1px solid var(--border); cursor: pointer;
+      transition: all 0.15s; color: var(--text2);
+    }
+    .filter-chip:hover { border-color: var(--accent); }
+    .filter-chip.active { background: rgba(88,166,255,0.15); border-color: var(--accent); color: var(--accent); }
+    .filter-chip.excluded { opacity: 0.3; text-decoration: line-through; }
+    .filter-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .filter-chip .chip-count { font-weight: 600; }
+
+    /* Cost slider */
+    .cost-slider-container { padding: 4px 0; }
+    .cost-slider-container label { font-size: 10px; color: var(--text3); display: block; margin-bottom: 4px; }
+    .cost-slider-container input[type=range] { width: 100%; accent-color: var(--accent); }
+    .cost-val { font-size: 11px; color: var(--accent); font-weight: 600; }
+
+    /* Search in filters */
+    .filter-search {
+      width: 100%; padding: 6px 8px; font-size: 11px;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; outline: none;
+    }
+    .filter-search:focus { border-color: var(--accent); }
+    .filter-search::placeholder { color: var(--text3); }
+
+    /* ── Canvas Area ── */
+    #canvas-area { flex: 1; position: relative; overflow: hidden; }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    /* Breadcrumb bar for drill-down */
+    #breadcrumb {
+      position: absolute; top: 8px; left: 8px; z-index: 20;
+      display: flex; align-items: center; gap: 4px; font-size: 11px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 4px 10px;
+    }
+    .crumb { color: var(--text3); cursor: pointer; transition: color 0.15s; }
+    .crumb:hover { color: var(--accent); }
+    .crumb.current { color: var(--text); cursor: default; font-weight: 600; }
+    .crumb-sep { color: var(--text3); margin: 0 2px; }
+
+    /* Zoom controls */
+    #zoom-controls {
+      position: absolute; bottom: 12px; right: 12px; z-index: 20;
+      display: flex; flex-direction: column; gap: 4px;
+    }
+    .zoom-btn {
+      width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border: 1px solid var(--border); color: var(--text2);
+      border-radius: 6px; cursor: pointer; font-size: 14px; transition: all 0.15s;
+    }
+    .zoom-btn:hover { background: var(--surface2); border-color: var(--accent); color: var(--accent); }
+
+    /* Zoom level indicator */
+    #zoom-level {
+      position: absolute; bottom: 12px; right: 56px; z-index: 20;
+      font-size: 10px; color: var(--text3); background: var(--surface); border: 1px solid var(--border);
+      padding: 4px 8px; border-radius: 4px;
+    }
+
+    /* ── Detail Sidebar (right) ── */
+    #detail-panel {
+      width: var(--sidebar-w); background: var(--surface); border-left: 1px solid var(--border);
+      overflow-y: auto; flex-shrink: 0; padding: 16px; display: none;
+    }
+    #detail-panel.open { display: block; }
+    #detail-panel .close-btn {
+      position: absolute; top: 8px; right: 8px; background: none; border: none;
+      color: var(--text3); cursor: pointer; font-size: 16px;
+    }
+    .detail-header { margin-bottom: 14px; }
+    .detail-header .type-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
+    }
+    .detail-header h2 { font-size: 14px; font-weight: 600; word-break: break-all; }
+    .detail-section { margin-bottom: 14px; }
+    .detail-section h3 {
+      font-size: 9px; text-transform: uppercase; color: var(--text3); letter-spacing: 0.6px;
+      margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border);
+    }
+    .detail-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 11px; }
+    .detail-key { color: var(--text3); }
+    .detail-val { color: var(--text); font-weight: 500; text-align: right; max-width: 180px; word-break: break-all; }
+    .conn-item {
+      display: flex; align-items: center; gap: 6px; padding: 5px 6px; font-size: 10px;
+      border-radius: 4px; cursor: pointer; transition: background 0.1s; margin: 1px 0;
+    }
+    .conn-item:hover { background: var(--surface2); }
+    .conn-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Minimap ── */
+    #minimap {
+      position: absolute; bottom: 12px; left: 12px; z-index: 20;
+      width: 160px; height: 100px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+    }
+    #minimap canvas { width: 100%; height: 100%; }
+
+    /* ── Tooltip ── */
+    #tooltip {
+      position: fixed; display: none; background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 12px; font-size: 10px; max-width: 260px;
+      pointer-events: none; z-index: 1000; box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .tt-label { font-weight: 600; font-size: 12px; margin-bottom: 3px; }
+    .tt-row { display: flex; justify-content: space-between; gap: 12px; margin-top: 1px; }
+    .tt-key { color: var(--text3); }
+    .tt-val { color: var(--text); font-weight: 500; }
+
+    /* ── Overview dashboard overlay ── */
+    #overview-dashboard {
+      display: none; position: absolute; inset: 0; z-index: 30;
+      background: var(--bg); overflow-y: auto; padding: 24px;
+    }
+    #overview-dashboard.visible { display: block; }
+    .dash-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+    .dash-card {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 16px; min-height: 200px;
+    }
+    .dash-card h3 { font-size: 12px; color: var(--text2); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .treemap-container { width: 100%; height: 200px; position: relative; }
+    .treemap-cell {
+      position: absolute; border: 1px solid var(--bg); border-radius: 2px;
+      display: flex; align-items: center; justify-content: center; overflow: hidden;
+      font-size: 9px; color: #fff; font-weight: 600; cursor: pointer; transition: opacity 0.15s;
+    }
+    .treemap-cell:hover { opacity: 0.85; }
+    .sunburst-container { width: 100%; display: flex; justify-content: center; }
+    .bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 10px; }
+    .bar-label { width: 100px; color: var(--text2); text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .bar-track { flex: 1; height: 16px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; display: flex; align-items: center; padding-left: 6px; font-size: 9px; color: #fff; font-weight: 600; min-width: 20px; }
+    .bar-val { width: 60px; text-align: right; color: var(--text3); flex-shrink: 0; }
+
+    /* Risk list */
+    .risk-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 4px; margin-bottom: 4px; font-size: 11px; }
+    .risk-item.high { background: rgba(248,81,73,0.08); border-left: 3px solid var(--red); }
+    .risk-item.medium { background: rgba(210,153,34,0.08); border-left: 3px solid var(--orange); }
+    .risk-item.low { background: rgba(63,185,80,0.08); border-left: 3px solid var(--green); }
+    .risk-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; }
+
+    /* Toggle filter panel btn */
+    #toggle-filters {
+      position: absolute; top: 8px; left: 8px; z-index: 25;
+      background: var(--surface); border: 1px solid var(--border); color: var(--text2);
+      width: 28px; height: 28px; border-radius: 6px; cursor: pointer;
+      display: none; align-items: center; justify-content: center; font-size: 14px;
+    }
+    #toggle-filters.visible { display: flex; }
+  </style>
+</head>
+<body>
+  <!-- Top bar with KPIs -->
+  <div id="topbar">
+    <div class="brand"><span>Espada</span> Enterprise Infrastructure</div>
+    <div class="kpi-strip">
+      <div class="kpi"><div class="kpi-val" id="kpi-resources">0</div><div class="kpi-label">Resources</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpi-connections">0</div><div class="kpi-label">Connections</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpi-orphaned" style="color:var(--orange)">0</div><div class="kpi-label">Orphaned</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpi-cost" style="color:var(--green)">$0</div><div class="kpi-label">Monthly</div></div>
+      <div class="kpi"><div class="kpi-val" id="kpi-risk" style="color:var(--red)">0</div><div class="kpi-label">Risks</div></div>
+    </div>
+  </div>
+
+  <!-- View tabs -->
+  <div id="view-tabs">
+    <button class="view-tab active" data-view="topology">🗺 Topology</button>
+    <button class="view-tab" data-view="overview">📊 Overview</button>
+    <button class="view-tab" data-view="dependency">🔗 Dependencies</button>
+    <button class="view-tab" data-view="risk">⚠️ Risk & Drift</button>
+  </div>
+
+  <div id="main-container">
+    <!-- Filter panel (left) -->
+    <div id="filter-panel">
+      <input class="filter-search" id="filter-search" type="text" placeholder="Search resources..." />
+
+      <div class="filter-section" id="fs-service"><h4>Service Type <span class="count"></span></h4><div class="filter-chips" id="chips-service"></div></div>
+      <div class="filter-section" id="fs-region"><h4>Region <span class="count"></span></h4><div class="filter-chips" id="chips-region"></div></div>
+      <div class="filter-section" id="fs-account"><h4>Account <span class="count"></span></h4><div class="filter-chips" id="chips-account"></div></div>
+      <div class="filter-section" id="fs-status"><h4>Status <span class="count"></span></h4><div class="filter-chips" id="chips-status"></div></div>
+
+      <div class="filter-section">
+        <h4>Cost Threshold</h4>
+        <div class="cost-slider-container">
+          <input type="range" id="cost-slider" min="0" max="100" value="0" step="0.5" />
+          <label>Show resources costing ≥ <span class="cost-val" id="cost-val">$0.00</span>/mo</label>
+        </div>
+      </div>
+
+      <div class="filter-section" id="fs-compliance">
+        <h4>Compliance</h4>
+        <div class="filter-chips" id="chips-compliance"></div>
+      </div>
+
+      <div class="filter-section" style="border-top: 1px solid var(--border); padding-top: 10px;">
+        <button id="clear-filters" style="width:100%; padding:6px; font-size:10px; background:var(--surface2); border:1px solid var(--border); color:var(--text2); border-radius:6px; cursor:pointer;">Clear All Filters</button>
+      </div>
+    </div>
+
+    <!-- Canvas area -->
+    <div id="canvas-area">
+      <div id="breadcrumb"><span class="crumb current">All Resources</span></div>
+      <canvas id="main-canvas"></canvas>
+      <div id="overview-dashboard"></div>
+
+      <button id="toggle-filters" title="Toggle filters">☰</button>
+
+      <div id="zoom-controls">
+        <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+        <button class="zoom-btn" id="zoom-out" title="Zoom out">−</button>
+        <button class="zoom-btn" id="zoom-fit" title="Fit all">⊡</button>
+      </div>
+      <div id="zoom-level">100%</div>
+
+      <div id="minimap"><canvas id="minimap-canvas"></canvas></div>
+    </div>
+
+    <!-- Detail sidebar (right) -->
+    <div id="detail-panel">
+      <div id="detail-content"></div>
+    </div>
+  </div>
+
+  <div id="tooltip"></div>
+
+  <script>
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DATA INJECTION & CONFIG
+  // ═══════════════════════════════════════════════════════════════════════════
+  const rawData = GRAPH_DATA_PLACEHOLDER;
+  const DPR = window.devicePixelRatio || 1;
+
+  // Type → color/icon/label
+  const TYPE_CFG = {
+    'vpc':              { color: '#58a6ff', icon: '☁', label: 'VPC' },
+    'subnet':           { color: '#3fb950', icon: '⊞', label: 'Subnet' },
+    'security-group':   { color: '#f85149', icon: '🛡', label: 'Security Group' },
+    'internet-gateway': { color: '#39d4e8', icon: '🌐', label: 'Internet Gateway' },
+    'route-table':      { color: '#a371f7', icon: '↔', label: 'Route Table' },
+    'network-acl':      { color: '#768390', icon: '⊟', label: 'Network ACL' },
+    'iam-role':         { color: '#f778ba', icon: '👤', label: 'IAM Role' },
+    'storage':          { color: '#d29922', icon: '📦', label: 'Storage' },
+    'compute':          { color: '#ff9900', icon: '⚙', label: 'Compute' },
+    'database':         { color: '#3b48cc', icon: '⛁', label: 'Database' },
+    'function':         { color: '#ff9900', icon: 'λ', label: 'Function' },
+    'load-balancer':    { color: '#e7157b', icon: '⇋', label: 'Load Balancer' },
+    'container':        { color: '#ff9900', icon: '▦', label: 'Container' },
+    'queue':            { color: '#ff4f8b', icon: '⇶', label: 'Queue' },
+    'custom':           { color: '#768390', icon: '○', label: 'Other' },
+  };
+  const REL_COLORS = {
+    'runs-in': '#3fb950', 'attached-to': '#39d4e8',
+    'secures': '#f85149', 'deployed-at': '#a371f7',
+    'connects-to': '#58a6ff', 'depends-on': '#d29922',
+  };
+  function typeColor(t) { return (TYPE_CFG[t] || TYPE_CFG.custom).color; }
+  function typeLabel(t) { return (TYPE_CFG[t] || TYPE_CFG.custom).label; }
+  function typeIcon(t)  { return (TYPE_CFG[t] || TYPE_CFG.custom).icon; }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DATA ENRICHMENT — Build hierarchy: Account → Region → VPC → leaf
+  // ═══════════════════════════════════════════════════════════════════════════
+  const allNodes = rawData.nodes.map(n => ({
+    ...n,
+    _color: typeColor(n.resourceType),
+    _label: typeLabel(n.resourceType),
+    _icon: typeIcon(n.resourceType),
+    _cost: n.costMonthly || 0,
+    _account: n.account || n.tags?.account || 'default',
+    _region: n.region || 'unknown',
+    _vpc: null,             // filled below
+    _connected: false,      // filled below
+    _risks: [],             // synthetic risk data
+    _compliance: 'ok',      // synthetic
+    x: 0, y: 0, vx: 0, vy: 0,
+  }));
+  const allLinks = rawData.links.map(l => ({
+    ...l,
+    _color: REL_COLORS[l.relationship] || '#484f58',
+  }));
+
+  // Build adjacency
+  const adj = new Map();
+  allNodes.forEach(n => adj.set(n.id, []));
+  allLinks.forEach(l => {
+    const s = typeof l.source === 'object' ? l.source.id : l.source;
+    const t = typeof l.target === 'object' ? l.target.id : l.target;
+    if (adj.has(s)) adj.get(s).push({ target: t, rel: l.relationship });
+    if (adj.has(t)) adj.get(t).push({ target: s, rel: l.relationship });
+  });
+
+  // Mark connected and determine VPC parent
+  const connectedIds = new Set();
+  allLinks.forEach(l => {
+    connectedIds.add(typeof l.source === 'object' ? l.source.id : l.source);
+    connectedIds.add(typeof l.target === 'object' ? l.target.id : l.target);
+  });
+  allNodes.forEach(n => { n._connected = connectedIds.has(n.id); });
+
+  // VPC assignment: find VPC through runs-in or attached-to edges
+  const vpcNodes = allNodes.filter(n => n.resourceType === 'vpc');
+  function findVpc(nodeId, depth = 0) {
+    if (depth > 4) return null;
+    const edges = adj.get(nodeId) || [];
+    for (const e of edges) {
+      const tgt = allNodes.find(n => n.id === e.target);
+      if (tgt && tgt.resourceType === 'vpc') return tgt.id;
+    }
+    for (const e of edges) {
+      const v = findVpc(e.target, depth + 1);
+      if (v) return v;
+    }
+    return null;
+  }
+  allNodes.forEach(n => { if (n.resourceType !== 'vpc') n._vpc = findVpc(n.id); });
+
+  // Synthetic risk/compliance for demo richness
+  allNodes.forEach(n => {
+    if (n.resourceType === 'security-group') {
+      n._risks.push({ level: 'high', msg: 'Open ingress 0.0.0.0/0 on port 22' });
+      n._compliance = 'fail';
+    }
+    if (!n._connected && n._cost > 0) {
+      n._risks.push({ level: 'medium', msg: 'Orphaned resource incurring cost' });
+      n._compliance = 'warn';
+    }
+    if (n.resourceType === 'iam-role' && !n._connected) {
+      n._risks.push({ level: 'low', msg: 'Unused IAM role — candidate for removal' });
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // HIERARCHY ENGINE — Collapsible cluster tree
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Hierarchy levels: root → account → region → vpc → leaf
+  function buildHierarchy(nodes) {
+    const root = { id: 'root', label: 'All Resources', children: new Map(), _nodes: nodes, _level: 0 };
+
+    for (const n of nodes) {
+      // Account level
+      if (!root.children.has(n._account)) {
+        root.children.set(n._account, {
+          id: `account:${n._account}`, label: `Account: ${n._account}`,
+          children: new Map(), _nodes: [], _level: 1, _type: 'account',
+        });
+      }
+      const accGroup = root.children.get(n._account);
+
+      // Region level
+      if (!accGroup.children.has(n._region)) {
+        accGroup.children.set(n._region, {
+          id: `region:${n._account}:${n._region}`, label: n._region,
+          children: new Map(), _nodes: [], _level: 2, _type: 'region',
+        });
+      }
+      const regGroup = accGroup.children.get(n._region);
+
+      // VPC level (or "no-vpc" for orphans)
+      const vpcKey = n._vpc || (n.resourceType === 'vpc' ? n.id : 'no-vpc');
+      if (!regGroup.children.has(vpcKey)) {
+        const vpcNode = n.resourceType === 'vpc' ? n : allNodes.find(v => v.id === vpcKey);
+        regGroup.children.set(vpcKey, {
+          id: `vpc:${n._account}:${n._region}:${vpcKey}`,
+          label: vpcNode ? vpcNode.label : 'Unattached Resources',
+          children: new Map(), _nodes: [], _level: 3, _type: 'vpc',
+        });
+      }
+      regGroup.children.get(vpcKey)._nodes.push(n);
+    }
+
+    return root;
+  }
+
+  // Aggregate stats for a cluster node
+  function clusterStats(group) {
+    const nodes = collectLeafNodes(group);
+    return {
+      count: nodes.length,
+      cost: nodes.reduce((s, n) => s + n._cost, 0),
+      types: [...new Set(nodes.map(n => n.resourceType))],
+      risks: nodes.reduce((s, n) => s + n._risks.length, 0),
+      orphaned: nodes.filter(n => !n._connected).length,
+    };
+  }
+
+  function collectLeafNodes(group) {
+    if (!group.children || group.children.size === 0) return group._nodes || [];
+    let out = [...(group._nodes || [])];
+    for (const child of group.children.values()) {
+      out = out.concat(collectLeafNodes(child));
+    }
+    return out;
+  }
+
+  const hierarchy = buildHierarchy(allNodes);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FILTER STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const filterState = {
+    serviceTypes: new Set(),   // empty = all
+    regions: new Set(),
+    accounts: new Set(),
+    statuses: new Set(),       // 'connected', 'orphaned'
+    compliance: new Set(),     // 'ok', 'warn', 'fail'
+    costMin: 0,
+    searchText: '',
+  };
+
+  function passesFilter(n) {
+    if (filterState.searchText) {
+      const q = filterState.searchText.toLowerCase();
+      if (!n.label.toLowerCase().includes(q) && !n.id.toLowerCase().includes(q) && !n.resourceType.includes(q)) return false;
+    }
+    if (filterState.serviceTypes.size > 0 && !filterState.serviceTypes.has(n.resourceType)) return false;
+    if (filterState.regions.size > 0 && !filterState.regions.has(n._region)) return false;
+    if (filterState.accounts.size > 0 && !filterState.accounts.has(n._account)) return false;
+    if (filterState.statuses.size > 0) {
+      const s = n._connected ? 'connected' : 'orphaned';
+      if (!filterState.statuses.has(s)) return false;
+    }
+    if (filterState.compliance.size > 0 && !filterState.compliance.has(n._compliance)) return false;
+    if (filterState.costMin > 0 && n._cost < filterState.costMin) return false;
+    return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DRILL DOWN STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+  let drillPath = [];   // stack of group ids
+  let currentView = 'topology';
+  let visibleNodes = allNodes;
+  let visibleLinks = allLinks;
+  let clusterNodes = []; // virtual cluster nodes for collapsed groups
+
+  function computeVisible() {
+    // Determine what level we're at
+    let currentGroup = hierarchy;
+    for (const pid of drillPath) {
+      for (const child of currentGroup.children.values()) {
+        if (child.id === pid) { currentGroup = child; break; }
+      }
+    }
+
+    const leafNodes = collectLeafNodes(currentGroup).filter(passesFilter);
+    const leafIds = new Set(leafNodes.map(n => n.id));
+
+    // Determine if we should show clusters or individual nodes
+    // Show clusters if there are children groups and we have lots of nodes
+    clusterNodes = [];
+    if (currentGroup.children && currentGroup.children.size > 0 && leafNodes.length > 20) {
+      // Show cluster bubbles for each child group
+      for (const child of currentGroup.children.values()) {
+        const stats = clusterStats(child);
+        const cNodes = collectLeafNodes(child).filter(passesFilter);
+        if (cNodes.length === 0) continue;
+        clusterNodes.push({
+          id: child.id,
+          label: child.label,
+          _level: child._level,
+          _type: child._type,
+          _stats: stats,
+          _color: child._type === 'account' ? '#58a6ff'
+            : child._type === 'region' ? '#a371f7'
+            : child._type === 'vpc' ? '#3fb950'
+            : '#768390',
+          _radius: Math.max(28, Math.min(80, 20 + Math.sqrt(stats.count) * 8)),
+          _isCluster: true,
+          x: 0, y: 0, vx: 0, vy: 0,
+        });
+      }
+    }
+
+    if (clusterNodes.length > 0 && leafNodes.length > 20) {
+      // Show aggregated cluster view
+      visibleNodes = clusterNodes;
+      visibleLinks = [];  // no edges between clusters in collapsed mode
+
+      // Compute inter-cluster links by counting cross-links
+      const childGroupMap = new Map();
+      for (const child of currentGroup.children.values()) {
+        const cNodes = collectLeafNodes(child);
+        cNodes.forEach(n => childGroupMap.set(n.id, child.id));
+      }
+      const interLinks = new Map();
+      allLinks.forEach(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        const sg = childGroupMap.get(s);
+        const tg = childGroupMap.get(t);
+        if (sg && tg && sg !== tg) {
+          const key = [sg, tg].sort().join('::');
+          interLinks.set(key, (interLinks.get(key) || 0) + 1);
+        }
+      });
+      visibleLinks = [...interLinks.entries()].map(([key, count]) => {
+        const [s, t] = key.split('::');
+        return {
+          source: s, target: t, label: `${count} connections`,
+          relationship: 'connects-to', confidence: 1,
+          strokeWidth: Math.max(1, Math.min(5, count)),
+          strokeDasharray: '', _color: '#484f58', _count: count,
+        };
+      });
+    } else {
+      // Show individual leaf nodes
+      visibleNodes = leafNodes;
+      visibleLinks = allLinks.filter(l => {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        return leafIds.has(s) && leafIds.has(t);
+      });
+    }
+
+    restartSimulation();
+    updateBreadcrumb(currentGroup);
+    updateKPIs();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // CANVAS RENDERER (WebGL-ready Canvas2D, handles 10k+ nodes)
+  // ═══════════════════════════════════════════════════════════════════════════
+  const canvas = document.getElementById('main-canvas');
+  const ctx = canvas.getContext('2d');
+  const mmCanvas = document.getElementById('minimap-canvas');
+  const mmCtx = mmCanvas.getContext('2d');
+
+  let canvasW, canvasH;
+  function resizeCanvas() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvasW = rect.width;
+    canvasH = rect.height;
+    canvas.width = canvasW * DPR;
+    canvas.height = canvasH * DPR;
+    canvas.style.width = canvasW + 'px';
+    canvas.style.height = canvasH + 'px';
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    mmCanvas.width = 160 * DPR;
+    mmCanvas.height = 100 * DPR;
+    mmCtx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener('resize', () => { resizeCanvas(); draw(); });
+
+  // Transform state (pan + zoom)
+  let transform = { x: 0, y: 0, k: 1 };
+
+  function screenToWorld(sx, sy) {
+    return { x: (sx - transform.x) / transform.k, y: (sy - transform.y) / transform.k };
+  }
+  function worldToScreen(wx, wy) {
+    return { x: wx * transform.k + transform.x, y: wy * transform.k + transform.y };
+  }
+
+  // ── Edge bundling ──
+  function bundleControlPoint(s, t, index, total) {
+    const mx = (s.x + t.x) / 2;
+    const my = (s.y + t.y) / 2;
+    const dx = t.x - s.x;
+    const dy = t.y - s.y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const spread = (index - (total - 1) / 2) * 18;
+    const curvature = Math.min(len * 0.2, 40);
+    return { x: mx + nx * (curvature + spread), y: my + ny * (curvature + spread) };
+  }
+
+  // Count parallel edges between same node pairs for bundling
+  function computeEdgeBundles(links) {
+    const pairCount = new Map();
+    const pairIndex = new Map();
+    links.forEach(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      const key = [s, t].sort().join('::');
+      pairCount.set(key, (pairCount.get(key) || 0) + 1);
+    });
+    links.forEach(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      const key = [s, t].sort().join('::');
+      const idx = pairIndex.get(key) || 0;
+      l._bundleIndex = idx;
+      l._bundleTotal = pairCount.get(key);
+      pairIndex.set(key, idx + 1);
+    });
+  }
+
+  // ── Semantic zoom level-of-detail ──
+  function getLOD() {
+    if (transform.k < 0.3) return 'overview';     // aggregate bubbles, no text
+    if (transform.k < 0.7) return 'summary';      // labels on clusters, counts
+    if (transform.k < 1.5) return 'normal';        // labels + icons
+    return 'detail';                                // full detail + cost + mini-tags
+  }
+
+  // ── Draw frame ──
+  let hoveredNode = null;
+  let selectedNode = null;
+  let highlightedNeighbors = new Set();
+
+  function draw() {
+    ctx.save();
+    ctx.clearRect(0, 0, canvasW, canvasH);
+
+    // Background
+    const bgGrad = ctx.createRadialGradient(canvasW / 2, canvasH / 2, 0, canvasW / 2, canvasH / 2, canvasW * 0.7);
+    bgGrad.addColorStop(0, '#0d1117');
+    bgGrad.addColorStop(1, '#06080f');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // Grid
+    ctx.save();
+    ctx.translate(transform.x, transform.y);
+    ctx.scale(transform.k, transform.k);
+
+    const lod = getLOD();
+
+    if (transform.k > 0.2) {
+      const gridSize = 60;
+      ctx.strokeStyle = '#161b22';
+      ctx.lineWidth = 0.5 / transform.k;
+      const bounds = screenToWorld(0, 0);
+      const bounds2 = screenToWorld(canvasW, canvasH);
+      const startX = Math.floor(bounds.x / gridSize) * gridSize;
+      const startY = Math.floor(bounds.y / gridSize) * gridSize;
+      ctx.beginPath();
+      for (let x = startX; x < bounds2.x; x += gridSize) {
+        ctx.moveTo(x, bounds.y);
+        ctx.lineTo(x, bounds2.y);
+      }
+      for (let y = startY; y < bounds2.y; y += gridSize) {
+        ctx.moveTo(bounds.x, y);
+        ctx.lineTo(bounds2.x, y);
+      }
+      ctx.stroke();
+    }
+
+    // ── Draw convex hulls for resource type groups ──
+    if (lod !== 'overview' && !visibleNodes[0]?._isCluster) {
+      const groups = new Map();
+      visibleNodes.forEach(n => {
+        const key = n._vpc || (n._connected ? 'connected' : n.resourceType);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(n);
+      });
+      groups.forEach((gNodes, key) => {
+        if (gNodes.length < 3) return;
+        const points = gNodes.map(n => [n.x, n.y]);
+        const hull = d3.polygonHull(points);
+        if (!hull) return;
+        const cx = d3.mean(hull, p => p[0]);
+        const cy = d3.mean(hull, p => p[1]);
+        const expanded = hull.map(p => [
+          cx + (p[0] - cx) * 1.3,
+          cy + (p[1] - cy) * 1.3,
+        ]);
+        ctx.beginPath();
+        ctx.moveTo(expanded[0][0], expanded[0][1]);
+        for (let i = 1; i < expanded.length; i++) ctx.lineTo(expanded[i][0], expanded[i][1]);
+        ctx.closePath();
+        const gColor = gNodes[0]._color;
+        ctx.fillStyle = gColor + '08';
+        ctx.fill();
+        ctx.strokeStyle = gColor + '20';
+        ctx.lineWidth = 1 / transform.k;
+        ctx.setLineDash([6 / transform.k, 4 / transform.k]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      });
+    }
+
+    // ── Draw edges with bundling ──
+    computeEdgeBundles(visibleLinks);
+    const nodeMap = new Map(visibleNodes.map(n => [n.id, n]));
+
+    visibleLinks.forEach(l => {
+      const src = nodeMap.get(typeof l.source === 'object' ? l.source.id : l.source);
+      const tgt = nodeMap.get(typeof l.target === 'object' ? l.target.id : l.target);
+      if (!src || !tgt) return;
+
+      const isHighlighted = selectedNode && (
+        src.id === selectedNode.id || tgt.id === selectedNode.id
+      );
+
+      const alpha = selectedNode ? (isHighlighted ? 0.7 : 0.04) : 0.2;
+      const color = l._color || '#484f58';
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = alpha;
+      ctx.lineWidth = (l.strokeWidth || 1.2) * (isHighlighted ? 1.5 : 1);
+
+      if (l.strokeDasharray) {
+        ctx.setLineDash([4 / transform.k, 3 / transform.k]);
+      }
+
+      if (l._bundleTotal > 1) {
+        // Bezier curve for bundled edges
+        const cp = bundleControlPoint(src, tgt, l._bundleIndex, l._bundleTotal);
+        ctx.beginPath();
+        ctx.moveTo(src.x, src.y);
+        ctx.quadraticCurveTo(cp.x, cp.y, tgt.x, tgt.y);
+        ctx.stroke();
+      } else {
+        // Slight curve for single edges (reduces overlap)
+        const mx = (src.x + tgt.x) / 2;
+        const my = (src.y + tgt.y) / 2;
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const curve = Math.min(len * 0.08, 15);
+        const cpx = mx + (-dy / len) * curve;
+        const cpy = my + (dx / len) * curve;
+        ctx.beginPath();
+        ctx.moveTo(src.x, src.y);
+        ctx.quadraticCurveTo(cpx, cpy, tgt.x, tgt.y);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+
+      // Arrow
+      if (lod !== 'overview' && alpha > 0.1) {
+        const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+        const r = (tgt._radius || 16) + 4;
+        const ax = tgt.x - Math.cos(angle) * r;
+        const ay = tgt.y - Math.sin(angle) * r;
+        ctx.save();
+        ctx.translate(ax, ay);
+        ctx.rotate(angle);
+        ctx.fillStyle = color;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-8, -4);
+        ctx.lineTo(-8, 4);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      // Edge label at high zoom
+      if (lod === 'detail' && isHighlighted && l.label) {
+        const mx2 = (src.x + tgt.x) / 2;
+        const my2 = (src.y + tgt.y) / 2;
+        ctx.font = `${9 / transform.k}px Inter, sans-serif`;
+        ctx.fillStyle = '#6e7681';
+        ctx.textAlign = 'center';
+        ctx.fillText(l.label, mx2, my2 - 6 / transform.k);
+      }
+    });
+
+    // ── Draw nodes ──
+    visibleNodes.forEach(n => {
+      const r = n._radius || (n._isCluster ? n._radius : (n._connected ? 16 : 8));
+      const isHovered = hoveredNode === n;
+      const isSelected = selectedNode === n;
+      const isDimmed = selectedNode && !isSelected && !highlightedNeighbors.has(n.id);
+
+      const alpha = isDimmed ? 0.08 : 1;
+      ctx.globalAlpha = alpha;
+
+      // Outer glow for connected/hovered
+      if ((isHovered || isSelected || n._isCluster) && alpha > 0.5) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 6, 0, Math.PI * 2);
+        ctx.fillStyle = n._color + '15';
+        ctx.fill();
+        ctx.strokeStyle = n._color + '40';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+
+      // Node circle with gradient
+      const grad = ctx.createRadialGradient(n.x - r * 0.3, n.y - r * 0.3, 0, n.x, n.y, r);
+      const c = d3.color(n._color);
+      grad.addColorStop(0, c.brighter(0.6).toString());
+      grad.addColorStop(1, c.darker(0.3).toString());
+
+      ctx.beginPath();
+      if (n._isCluster) {
+        // Cluster: rounded hexagon-ish shape
+        const sides = 6;
+        for (let i = 0; i < sides; i++) {
+          const angle = (Math.PI * 2 * i) / sides - Math.PI / 2;
+          const px = n.x + r * Math.cos(angle);
+          const py = n.y + r * Math.sin(angle);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+      } else {
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+      }
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = (isSelected ? '#fff' : c.brighter(0.4).toString());
+      ctx.lineWidth = isSelected ? 2.5 : (n._connected ? 1.5 : 0.5);
+      ctx.stroke();
+
+      // Risk indicator ring
+      if (n._risks && n._risks.length > 0 && !n._isCluster) {
+        const riskColor = n._risks.some(r2 => r2.level === 'high') ? '#f85149'
+          : n._risks.some(r2 => r2.level === 'medium') ? '#d29922' : '#3fb950';
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r + 3, 0, Math.PI * 2);
+        ctx.strokeStyle = riskColor;
+        ctx.lineWidth = 2;
+        ctx.setLineDash([3, 3]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Icon / label based on LOD
+      ctx.globalAlpha = isDimmed ? 0.08 : 1;
+
+      if (n._isCluster) {
+        // Cluster: show count, cost, and label
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Count
+        ctx.font = `bold ${Math.max(14, r * 0.4)}px Inter, sans-serif`;
+        ctx.fillStyle = '#fff';
+        ctx.fillText(n._stats.count.toString(), n.x, n.y - (lod === 'overview' ? 0 : 6));
+
+        if (lod !== 'overview') {
+          // Label
+          ctx.font = `${Math.max(8, r * 0.18)}px Inter, sans-serif`;
+          ctx.fillStyle = '#8b949e';
+          ctx.fillText(n.label.slice(0, 24), n.x, n.y + 8);
+
+          // Cost
+          ctx.font = `${Math.max(8, r * 0.16)}px Inter, sans-serif`;
+          ctx.fillStyle = '#3fb950';
+          ctx.fillText(`$${n._stats.cost.toFixed(2)}/mo`, n.x, n.y + 20);
+        }
+
+        // Expand hint
+        if (isHovered) {
+          ctx.font = '9px Inter, sans-serif';
+          ctx.fillStyle = '#58a6ff';
+          ctx.fillText('Click to expand ▶', n.x, n.y + r + 16);
+        }
+      } else if (lod === 'overview') {
+        // Overview: just colored dots, no text
+      } else if (lod === 'summary') {
+        // Summary: brief label only
+        if (n._connected || r > 10) {
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.font = '8px Inter, sans-serif';
+          ctx.fillStyle = '#6e7681';
+          ctx.fillText(n.label.slice(0, 16), n.x, n.y + r + 4);
+        }
+      } else {
+        // Normal / Detail: icon + label
+        if (r >= 12) {
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.font = `${r * 0.65}px Inter, sans-serif`;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(n._icon, n.x, n.y);
+        }
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.font = `${n._connected ? 9 : 7}px Inter, sans-serif`;
+        ctx.fillStyle = n._connected ? '#c9d1d9' : '#484f58';
+        const truncLabel = n.label.length > 22 ? n.label.slice(0, 20) + '…' : n.label;
+        ctx.fillText(truncLabel, n.x, n.y + r + 4);
+
+        // Cost badge
+        if (lod === 'detail' && n._cost > 0) {
+          ctx.font = '7px Inter, sans-serif';
+          ctx.fillStyle = '#d29922';
+          ctx.fillText(`$${n._cost.toFixed(2)}/mo`, n.x, n.y + r + 16);
+        }
+
+        // Tags at detail level
+        if (lod === 'detail' && n.tags && Object.keys(n.tags).length > 0) {
+          ctx.font = '6px Inter, sans-serif';
+          ctx.fillStyle = '#484f58';
+          const tagStr = Object.entries(n.tags).slice(0, 2).map(([k, v]) => `${k}:${v}`).join(' ');
+          ctx.fillText(tagStr, n.x, n.y + r + 26);
+        }
+      }
+
+      ctx.globalAlpha = 1;
+    });
+
+    ctx.restore();
+
+    // ── Draw minimap ──
+    drawMinimap();
+  }
+
+  function drawMinimap() {
+    mmCtx.clearRect(0, 0, 160, 100);
+    mmCtx.fillStyle = '#0d1117';
+    mmCtx.fillRect(0, 0, 160, 100);
+
+    if (visibleNodes.length === 0) return;
+
+    // Compute bounds
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    visibleNodes.forEach(n => {
+      if (n.x < minX) minX = n.x;
+      if (n.x > maxX) maxX = n.x;
+      if (n.y < minY) minY = n.y;
+      if (n.y > maxY) maxY = n.y;
+    });
+    const pad = 50;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const sw = maxX - minX || 1;
+    const sh = maxY - minY || 1;
+    const scale = Math.min(150 / sw, 90 / sh);
+    const ox = (160 - sw * scale) / 2;
+    const oy = (100 - sh * scale) / 2;
+
+    // Nodes
+    visibleNodes.forEach(n => {
+      const x = ox + (n.x - minX) * scale;
+      const y = oy + (n.y - minY) * scale;
+      mmCtx.beginPath();
+      mmCtx.arc(x, y, Math.max(1.5, (n._radius || 8) * scale * 0.15), 0, Math.PI * 2);
+      mmCtx.fillStyle = n._color;
+      mmCtx.globalAlpha = 0.7;
+      mmCtx.fill();
+    });
+    mmCtx.globalAlpha = 1;
+
+    // Viewport rect
+    const tl = screenToWorld(0, 0);
+    const br = screenToWorld(canvasW, canvasH);
+    const vx = ox + (tl.x - minX) * scale;
+    const vy = oy + (tl.y - minY) * scale;
+    const vw = (br.x - tl.x) * scale;
+    const vh = (br.y - tl.y) * scale;
+    mmCtx.strokeStyle = '#58a6ff';
+    mmCtx.lineWidth = 1;
+    mmCtx.setLineDash([2, 2]);
+    mmCtx.strokeRect(vx, vy, vw, vh);
+    mmCtx.setLineDash([]);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FORCE SIMULATION
+  // ═══════════════════════════════════════════════════════════════════════════
+  let simulation = null;
+  let simTickCounter = 0;
+
+  function restartSimulation() {
+    if (simulation) simulation.stop();
+
+    // Reset positions for cluster nodes
+    const cx = canvasW / (2 * transform.k);
+    const cy = canvasH / (2 * transform.k);
+    visibleNodes.forEach((n, i) => {
+      if (n.x === 0 && n.y === 0) {
+        const angle = (2 * Math.PI * i) / visibleNodes.length;
+        const r = 120 + Math.sqrt(visibleNodes.length) * 15;
+        n.x = cx + r * Math.cos(angle);
+        n.y = cy + r * Math.sin(angle);
+      }
+    });
+
+    // Resolve links to object references
+    const nodeMap = new Map(visibleNodes.map(n => [n.id, n]));
+    const resolvedLinks = visibleLinks.filter(l => {
+      const sid = typeof l.source === 'object' ? l.source.id : l.source;
+      const tid = typeof l.target === 'object' ? l.target.id : l.target;
+      l.source = nodeMap.get(sid) || l.source;
+      l.target = nodeMap.get(tid) || l.target;
+      return typeof l.source === 'object' && typeof l.target === 'object';
+    });
+
+    computeEdgeBundles(resolvedLinks);
+
+    const isClusterView = visibleNodes.length > 0 && visibleNodes[0]._isCluster;
+    const chargeStrength = isClusterView ? -600 : (visibleNodes.length > 200 ? -100 : -300);
+    const linkDistance = isClusterView ? 200 : (visibleNodes.length > 200 ? 50 : 80);
+
+    simulation = d3.forceSimulation(visibleNodes)
+      .force('link', d3.forceLink(resolvedLinks).id(d => d.id).distance(linkDistance).strength(0.4))
+      .force('charge', d3.forceManyBody().strength(chargeStrength).distanceMax(isClusterView ? 600 : 400))
+      .force('center', d3.forceCenter(cx, cy).strength(0.05))
+      .force('collision', d3.forceCollide().radius(d => (d._radius || 12) + 6).strength(0.7))
+      .force('x', d3.forceX(cx).strength(0.02))
+      .force('y', d3.forceY(cy).strength(0.02))
+      .alphaDecay(visibleNodes.length > 500 ? 0.05 : 0.02)
+      .velocityDecay(0.35)
+      .on('tick', () => {
+        simTickCounter++;
+        // Throttle drawing for large graphs
+        if (visibleNodes.length > 500 && simTickCounter % 3 !== 0) return;
+        draw();
+      });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // INTERACTION — Pan, zoom, hover, click, drag
+  // ═══════════════════════════════════════════════════════════════════════════
+  let isDragging = false;
+  let dragNode = null;
+  let panStart = null;
+  const DRAG_THRESHOLD = 4;
+  let mouseDownPos = null;
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const scale = e.deltaY < 0 ? 1.08 : 0.93;
+    const newK = Math.max(0.05, Math.min(10, transform.k * scale));
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    transform.x = mx - (mx - transform.x) * (newK / transform.k);
+    transform.y = my - (my - transform.y) * (newK / transform.k);
+    transform.k = newK;
+    document.getElementById('zoom-level').textContent = Math.round(transform.k * 100) + '%';
+    draw();
+  }, { passive: false });
+
+  function getNodeAt(sx, sy) {
+    const wp = screenToWorld(sx, sy);
+    let closest = null, closestDist = Infinity;
+    for (const n of visibleNodes) {
+      const r = n._radius || 12;
+      const dx = wp.x - n.x, dy = wp.y - n.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < r + 4 && dist < closestDist) {
+        closest = n;
+        closestDist = dist;
+      }
+    }
+    return closest;
+  }
+
+  canvas.addEventListener('mousedown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    mouseDownPos = { x: mx, y: my };
+
+    const node = getNodeAt(mx, my);
+    if (node) {
+      dragNode = node;
+      isDragging = false;
+      if (simulation) simulation.alphaTarget(0.3).restart();
+      dragNode.fx = dragNode.x;
+      dragNode.fy = dragNode.y;
+    } else {
+      panStart = { x: mx - transform.x, y: my - transform.y };
+    }
+  });
+
+  canvas.addEventListener('mousemove', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    if (dragNode) {
+      const wp = screenToWorld(mx, my);
+      dragNode.fx = wp.x;
+      dragNode.fy = wp.y;
+      isDragging = true;
+      draw();
+      return;
+    }
+    if (panStart) {
+      transform.x = mx - panStart.x;
+      transform.y = my - panStart.y;
+      draw();
+      return;
+    }
+
+    // Hover detection
+    const node = getNodeAt(mx, my);
+    if (node !== hoveredNode) {
+      hoveredNode = node;
+      canvas.style.cursor = node ? 'pointer' : 'default';
+      draw();
+
+      // Tooltip
+      const tt = document.getElementById('tooltip');
+      if (node) {
+        tt.style.display = 'block';
+        tt.style.left = (e.clientX + 14) + 'px';
+        tt.style.top = (e.clientY - 8) + 'px';
+
+        if (node._isCluster) {
+          tt.innerHTML = `
+            <div class="tt-label" style="color:${node._color}">${node.label}</div>
+            <div class="tt-row"><span class="tt-key">Resources</span><span class="tt-val">${node._stats.count}</span></div>
+            <div class="tt-row"><span class="tt-key">Types</span><span class="tt-val">${node._stats.types.length}</span></div>
+            <div class="tt-row"><span class="tt-key">Cost</span><span class="tt-val">$${node._stats.cost.toFixed(2)}/mo</span></div>
+            <div class="tt-row"><span class="tt-key">Risks</span><span class="tt-val" style="color:${node._stats.risks > 0 ? '#f85149' : '#3fb950'}">${node._stats.risks}</span></div>
+            <div class="tt-row"><span class="tt-key">Orphaned</span><span class="tt-val">${node._stats.orphaned}</span></div>
+            <div style="margin-top:4px;font-size:9px;color:#58a6ff;">Click to drill down</div>
+          `;
+        } else {
+          const status = node._connected ? 'Connected' : 'Orphaned';
+          const statusColor = node._connected ? '#3fb950' : '#d29922';
+          tt.innerHTML = `
+            <div class="tt-label" style="color:${node._color}">${node._icon} ${node.label}</div>
+            <div class="tt-row"><span class="tt-key">Type</span><span class="tt-val">${node._label}</span></div>
+            <div class="tt-row"><span class="tt-key">Region</span><span class="tt-val">${node._region}</span></div>
+            <div class="tt-row"><span class="tt-key">Status</span><span class="tt-val" style="color:${statusColor}">${status}</span></div>
+            <div class="tt-row"><span class="tt-key">Cost</span><span class="tt-val">$${node._cost.toFixed(2)}/mo</span></div>
+            ${node._risks.length > 0 ? `<div class="tt-row"><span class="tt-key">Risks</span><span class="tt-val" style="color:#f85149">${node._risks.length}</span></div>` : ''}
+          `;
+        }
+      } else {
+        tt.style.display = 'none';
+      }
+    } else if (hoveredNode) {
+      document.getElementById('tooltip').style.left = (e.clientX + 14) + 'px';
+      document.getElementById('tooltip').style.top = (e.clientY - 8) + 'px';
+    }
+  });
+
+  canvas.addEventListener('mouseup', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const wasDragging = isDragging || (mouseDownPos && Math.hypot(mx - mouseDownPos.x, my - mouseDownPos.y) > DRAG_THRESHOLD);
+
+    if (dragNode) {
+      if (simulation) simulation.alphaTarget(0);
+      dragNode.fx = null;
+      dragNode.fy = null;
+
+      if (!wasDragging) {
+        // Click on node
+        if (dragNode._isCluster) {
+          drillInto(dragNode);
+        } else {
+          selectNode(dragNode);
+        }
+      }
+      dragNode = null;
+      isDragging = false;
+    } else if (panStart) {
+      if (!wasDragging) {
+        // Click on background
+        deselectNode();
+      }
+      panStart = null;
+    }
+    mouseDownPos = null;
+  });
+
+  // Double-click to drill into a non-cluster node's VPC
+  canvas.addEventListener('dblclick', e => {
+    const rect = canvas.getBoundingClientRect();
+    const node = getNodeAt(e.clientX - rect.left, e.clientY - rect.top);
+    if (node && !node._isCluster) {
+      // Find a meaningful parent cluster and drill there
+      drillToNode(node);
+    }
+  });
+
+  // ── Selection ──
+  function selectNode(n) {
+    selectedNode = n;
+    highlightedNeighbors = new Set([n.id]);
+    allLinks.forEach(l => {
+      const s = typeof l.source === 'object' ? l.source.id : l.source;
+      const t = typeof l.target === 'object' ? l.target.id : l.target;
+      if (s === n.id) highlightedNeighbors.add(t);
+      if (t === n.id) highlightedNeighbors.add(s);
+    });
+    openDetailPanel(n);
+    draw();
+  }
+
+  function deselectNode() {
+    selectedNode = null;
+    highlightedNeighbors.clear();
+    document.getElementById('detail-panel').classList.remove('open');
+    draw();
+  }
+
+  // ── Drill down ──
+  function drillInto(clusterNode) {
+    drillPath.push(clusterNode.id);
+    transform = { x: 0, y: 0, k: 1 };
+    computeVisible();
+    zoomFit(600);
+    draw();
+  }
+
+  function drillUp(toIndex) {
+    drillPath = drillPath.slice(0, toIndex);
+    transform = { x: 0, y: 0, k: 1 };
+    computeVisible();
+    zoomFit(600);
+    draw();
+  }
+
+  function drillToNode(n) {
+    // Navigate to the deepest cluster containing this node
+    drillPath = [];
+    let curr = hierarchy;
+    let found = true;
+    while (found && curr.children && curr.children.size > 0) {
+      found = false;
+      for (const child of curr.children.values()) {
+        const leaves = collectLeafNodes(child);
+        if (leaves.some(ln => ln.id === n.id)) {
+          drillPath.push(child.id);
+          curr = child;
+          found = true;
+          break;
+        }
+      }
+    }
+    transform = { x: 0, y: 0, k: 1 };
+    computeVisible();
+    zoomFit(600);
+    selectNode(n);
+  }
+
+  // ── Detail panel ──
+  function openDetailPanel(n) {
+    const panel = document.getElementById('detail-panel');
+    panel.classList.add('open');
+
+    const neighbors = [];
+    allLinks.forEach(l => {
+      const sid = typeof l.source === 'object' ? l.source.id : l.source;
+      const tid = typeof l.target === 'object' ? l.target.id : l.target;
+      if (sid === n.id) {
+        const t = allNodes.find(nd => nd.id === tid);
+        if (t) neighbors.push({ node: t, rel: l.relationship, dir: '→' });
+      }
+      if (tid === n.id) {
+        const s = allNodes.find(nd => nd.id === sid);
+        if (s) neighbors.push({ node: s, rel: l.relationship, dir: '←' });
+      }
+    });
+
+    const statusColor = n._connected ? '#3fb950' : '#d29922';
+    const statusText = n._connected ? 'Connected' : 'Orphaned';
+
+    let html = `
+      <div class="detail-header">
+        <div class="type-badge" style="background:${n._color}22;color:${n._color}">${n._icon} ${n._label}</div>
+        <h2>${n.label}</h2>
+      </div>
+      <div class="detail-section">
+        <h3>Properties</h3>
+        <div class="detail-row"><span class="detail-key">Provider</span><span class="detail-val">${(n.provider || 'aws').toUpperCase()}</span></div>
+        <div class="detail-row"><span class="detail-key">Region</span><span class="detail-val">${n._region}</span></div>
+        <div class="detail-row"><span class="detail-key">Account</span><span class="detail-val">${n._account}</span></div>
+        <div class="detail-row"><span class="detail-key">Status</span><span class="detail-val" style="color:${statusColor}">${statusText}</span></div>
+        <div class="detail-row"><span class="detail-key">Monthly Cost</span><span class="detail-val">$${n._cost.toFixed(2)}</span></div>
+        <div class="detail-row"><span class="detail-key">Full ID</span><span class="detail-val" style="font-size:9px">${n.id}</span></div>
+      </div>
+    `;
+
+    if (n._risks.length > 0) {
+      html += `<div class="detail-section"><h3>Risks (${n._risks.length})</h3>`;
+      n._risks.forEach(r => {
+        const col = r.level === 'high' ? '#f85149' : r.level === 'medium' ? '#d29922' : '#3fb950';
+        html += `<div class="risk-item ${r.level}"><span class="risk-badge" style="background:${col}22;color:${col}">${r.level}</span> <span style="font-size:10px">${r.msg}</span></div>`;
+      });
+      html += '</div>';
+    }
+
+    if (neighbors.length > 0) {
+      html += `<div class="detail-section"><h3>Connections (${neighbors.length})</h3>`;
+      neighbors.forEach(({ node: nb, rel, dir }) => {
+        html += `<div class="conn-item" onclick="window._selectById('${nb.id}')"><span class="conn-dot" style="background:${nb._color}"></span>${dir} <b>${rel}</b> ${nb.label}</div>`;
+      });
+      html += '</div>';
+    } else {
+      html += '<div class="detail-section"><h3>Connections</h3><p style="font-size:10px;color:#6e7681">No connections — orphaned resource.</p></div>';
+    }
+
+    html += '<div style="margin-top:16px"><button onclick="document.getElementById(\'detail-panel\').classList.remove(\'open\')" style="width:100%;padding:6px;font-size:10px;background:var(--surface2);border:1px solid var(--border);color:var(--text2);border-radius:6px;cursor:pointer;">Close</button></div>';
+
+    document.getElementById('detail-content').innerHTML = html;
+  }
+
+  window._selectById = (id) => {
+    const n = allNodes.find(nd => nd.id === id);
+    if (n) { selectNode(n); }
+  };
+
+  // ── Breadcrumb ──
+  function updateBreadcrumb(currentGroup) {
+    const bc = document.getElementById('breadcrumb');
+    let html = `<span class="crumb${drillPath.length === 0 ? ' current' : ''}" onclick="drillUp(0)">All</span>`;
+
+    let g = hierarchy;
+    for (let i = 0; i < drillPath.length; i++) {
+      html += '<span class="crumb-sep">›</span>';
+      for (const child of g.children.values()) {
+        if (child.id === drillPath[i]) {
+          const isCurrent = (i === drillPath.length - 1);
+          html += `<span class="crumb${isCurrent ? ' current' : ''}" onclick="drillUp(${i + 1})">${child.label}</span>`;
+          g = child;
+          break;
+        }
+      }
+    }
+    bc.innerHTML = html;
+  }
+  window.drillUp = drillUp;
+
+  // ── Zoom controls ──
+  document.getElementById('zoom-in').onclick = () => {
+    transform.k = Math.min(10, transform.k * 1.3);
+    transform.x = canvasW / 2 - (canvasW / 2 - transform.x) * 1.3;
+    transform.y = canvasH / 2 - (canvasH / 2 - transform.y) * 1.3;
+    document.getElementById('zoom-level').textContent = Math.round(transform.k * 100) + '%';
+    draw();
+  };
+  document.getElementById('zoom-out').onclick = () => {
+    transform.k = Math.max(0.05, transform.k * 0.75);
+    transform.x = canvasW / 2 - (canvasW / 2 - transform.x) * 0.75;
+    transform.y = canvasH / 2 - (canvasH / 2 - transform.y) * 0.75;
+    document.getElementById('zoom-level').textContent = Math.round(transform.k * 100) + '%';
+    draw();
+  };
+
+  function zoomFit(duration) {
+    if (visibleNodes.length === 0) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    visibleNodes.forEach(n => {
+      const r = n._radius || 20;
+      if (n.x - r < minX) minX = n.x - r;
+      if (n.x + r > maxX) maxX = n.x + r;
+      if (n.y - r < minY) minY = n.y - r;
+      if (n.y + r > maxY) maxY = n.y + r;
+    });
+    const pad = 60;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const bw = maxX - minX || 1;
+    const bh = maxY - minY || 1;
+    const k = Math.min(canvasW / bw, canvasH / bh, 2);
+    const tx = canvasW / 2 - k * (minX + bw / 2);
+    const ty = canvasH / 2 - k * (minY + bh / 2);
+
+    if (duration) {
+      const startT = { ...transform };
+      const startTime = performance.now();
+      function anim(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const ease = t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+        transform.x = startT.x + (tx - startT.x) * ease;
+        transform.y = startT.y + (ty - startT.y) * ease;
+        transform.k = startT.k + (k - startT.k) * ease;
+        document.getElementById('zoom-level').textContent = Math.round(transform.k * 100) + '%';
+        draw();
+        if (t < 1) requestAnimationFrame(anim);
+      }
+      requestAnimationFrame(anim);
+    } else {
+      transform = { x: tx, y: ty, k };
+      document.getElementById('zoom-level').textContent = Math.round(transform.k * 100) + '%';
+      draw();
+    }
+  }
+
+  document.getElementById('zoom-fit').onclick = () => zoomFit(500);
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FILTER PANEL SETUP
+  // ═══════════════════════════════════════════════════════════════════════════
+  function buildFilterChips() {
+    // Service types
+    const types = {};
+    allNodes.forEach(n => { types[n.resourceType] = (types[n.resourceType] || 0) + 1; });
+    const chipsService = document.getElementById('chips-service');
+    chipsService.innerHTML = '';
+    Object.entries(types).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `<span class="dot" style="background:${typeColor(type)}"></span>${typeLabel(type)} <span class="chip-count">${count}</span>`;
+      chip.onclick = () => toggleFilter('serviceTypes', type, chip);
+      chipsService.appendChild(chip);
+    });
+    document.querySelector('#fs-service .count').textContent = `(${Object.keys(types).length})`;
+
+    // Regions
+    const regions = {};
+    allNodes.forEach(n => { regions[n._region] = (regions[n._region] || 0) + 1; });
+    const chipsRegion = document.getElementById('chips-region');
+    chipsRegion.innerHTML = '';
+    Object.entries(regions).sort((a, b) => b[1] - a[1]).forEach(([region, count]) => {
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `${region} <span class="chip-count">${count}</span>`;
+      chip.onclick = () => toggleFilter('regions', region, chip);
+      chipsRegion.appendChild(chip);
+    });
+    document.querySelector('#fs-region .count').textContent = `(${Object.keys(regions).length})`;
+
+    // Accounts
+    const accounts = {};
+    allNodes.forEach(n => { accounts[n._account] = (accounts[n._account] || 0) + 1; });
+    const chipsAccount = document.getElementById('chips-account');
+    chipsAccount.innerHTML = '';
+    Object.entries(accounts).forEach(([acc, count]) => {
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `${acc.slice(-8)} <span class="chip-count">${count}</span>`;
+      chip.title = acc;
+      chip.onclick = () => toggleFilter('accounts', acc, chip);
+      chipsAccount.appendChild(chip);
+    });
+    document.querySelector('#fs-account .count').textContent = `(${Object.keys(accounts).length})`;
+
+    // Status
+    const chipsStatus = document.getElementById('chips-status');
+    chipsStatus.innerHTML = '';
+    const connected = allNodes.filter(n => n._connected).length;
+    const orphaned = allNodes.length - connected;
+    [['connected', connected, '#3fb950'], ['orphaned', orphaned, '#d29922']].forEach(([status, count, color]) => {
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `<span class="dot" style="background:${color}"></span>${status} <span class="chip-count">${count}</span>`;
+      chip.onclick = () => toggleFilter('statuses', status, chip);
+      chipsStatus.appendChild(chip);
+    });
+
+    // Compliance
+    const chipsCompliance = document.getElementById('chips-compliance');
+    chipsCompliance.innerHTML = '';
+    const compStates = { ok: 0, warn: 0, fail: 0 };
+    allNodes.forEach(n => { compStates[n._compliance] = (compStates[n._compliance] || 0) + 1; });
+    const compColors = { ok: '#3fb950', warn: '#d29922', fail: '#f85149' };
+    const compLabels = { ok: 'Compliant', warn: 'Warning', fail: 'Non-compliant' };
+    Object.entries(compStates).filter(([_, c]) => c > 0).forEach(([state, count]) => {
+      const chip = document.createElement('div');
+      chip.className = 'filter-chip';
+      chip.innerHTML = `<span class="dot" style="background:${compColors[state]}"></span>${compLabels[state]} <span class="chip-count">${count}</span>`;
+      chip.onclick = () => toggleFilter('compliance', state, chip);
+      chipsCompliance.appendChild(chip);
+    });
+
+    // Cost slider
+    const maxCost = Math.max(...allNodes.map(n => n._cost), 1);
+    const slider = document.getElementById('cost-slider');
+    slider.max = Math.ceil(maxCost);
+    slider.step = maxCost > 10 ? 1 : 0.01;
+    slider.oninput = () => {
+      filterState.costMin = parseFloat(slider.value);
+      document.getElementById('cost-val').textContent = '$' + filterState.costMin.toFixed(2);
+      computeVisible();
+    };
+  }
+
+  function toggleFilter(setName, value, chip) {
+    const set = filterState[setName];
+    if (set.has(value)) { set.delete(value); chip.classList.remove('active'); }
+    else { set.add(value); chip.classList.add('active'); }
+    computeVisible();
+  }
+
+  // Search
+  document.getElementById('filter-search').oninput = function () {
+    filterState.searchText = this.value;
+    computeVisible();
+  };
+
+  // Clear all
+  document.getElementById('clear-filters').onclick = () => {
+    filterState.serviceTypes.clear();
+    filterState.regions.clear();
+    filterState.accounts.clear();
+    filterState.statuses.clear();
+    filterState.compliance.clear();
+    filterState.costMin = 0;
+    filterState.searchText = '';
+    document.getElementById('filter-search').value = '';
+    document.getElementById('cost-slider').value = 0;
+    document.getElementById('cost-val').textContent = '$0.00';
+    document.querySelectorAll('.filter-chip.active').forEach(c => c.classList.remove('active'));
+    computeVisible();
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KPIs
+  // ═══════════════════════════════════════════════════════════════════════════
+  function updateKPIs() {
+    const filtered = allNodes.filter(passesFilter);
+    const totalCost = filtered.reduce((s, n) => s + n._cost, 0);
+    const orphaned = filtered.filter(n => !n._connected).length;
+    const risks = filtered.reduce((s, n) => s + n._risks.length, 0);
+
+    document.getElementById('kpi-resources').textContent = filtered.length.toLocaleString();
+    document.getElementById('kpi-connections').textContent = allLinks.length.toLocaleString();
+    document.getElementById('kpi-orphaned').textContent = orphaned;
+    document.getElementById('kpi-cost').textContent = '$' + totalCost.toFixed(2);
+    document.getElementById('kpi-risk').textContent = risks;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // VIEW TABS — Overview Dashboard / Topology / Dependency / Risk
+  // ═══════════════════════════════════════════════════════════════════════════
+  document.querySelectorAll('.view-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.view-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentView = tab.dataset.view;
+      switchView(currentView);
+    });
+  });
+
+  function switchView(view) {
+    const dashboard = document.getElementById('overview-dashboard');
+    const canvasEl = document.getElementById('main-canvas');
+    const minimap = document.getElementById('minimap');
+    const bc = document.getElementById('breadcrumb');
+    const zc = document.getElementById('zoom-controls');
+    const zl = document.getElementById('zoom-level');
+
+    if (view === 'overview') {
+      dashboard.classList.add('visible');
+      canvasEl.style.display = 'none';
+      minimap.style.display = 'none';
+      bc.style.display = 'none';
+      zc.style.display = 'none';
+      zl.style.display = 'none';
+      renderOverviewDashboard();
+    } else {
+      dashboard.classList.remove('visible');
+      canvasEl.style.display = 'block';
+      minimap.style.display = 'block';
+      bc.style.display = 'flex';
+      zc.style.display = 'flex';
+      zl.style.display = 'block';
+
+      if (view === 'dependency') {
+        // Filter to only connected nodes
+        filterState.statuses.clear();
+        filterState.statuses.add('connected');
+        document.querySelectorAll('#chips-status .filter-chip').forEach(c => {
+          if (c.textContent.includes('connected') && !c.textContent.includes('orphaned')) c.classList.add('active');
+          else c.classList.remove('active');
+        });
+      } else if (view === 'risk') {
+        // Filter to only resources with risks
+        filterState.compliance.clear();
+        filterState.compliance.add('fail');
+        filterState.compliance.add('warn');
+        document.querySelectorAll('#chips-compliance .filter-chip').forEach(c => {
+          if (c.textContent.includes('Compliant') && !c.textContent.includes('Non')) c.classList.remove('active');
+          else c.classList.add('active');
+        });
+      } else {
+        // Topology: clear view-specific filters
+        filterState.statuses.clear();
+        filterState.compliance.clear();
+        document.querySelectorAll('#chips-status .filter-chip, #chips-compliance .filter-chip').forEach(c => c.classList.remove('active'));
+      }
+      computeVisible();
+    }
+  }
+
+  // ── Overview Dashboard ──
+  function renderOverviewDashboard() {
+    const dashboard = document.getElementById('overview-dashboard');
+    const filtered = allNodes.filter(passesFilter);
+    const totalCost = filtered.reduce((s, n) => s + n._cost, 0);
+
+    // Cost by type
+    const costByType = {};
+    filtered.forEach(n => {
+      const t = n._label;
+      costByType[t] = (costByType[t] || 0) + n._cost;
+    });
+    const costEntries = Object.entries(costByType).sort((a, b) => b[1] - a[1]);
+
+    // Count by type
+    const countByType = {};
+    filtered.forEach(n => {
+      const t = n._label;
+      countByType[t] = (countByType[t] || 0) + 1;
+    });
+
+    // Count by region
+    const countByRegion = {};
+    filtered.forEach(n => {
+      countByRegion[n._region] = (countByRegion[n._region] || 0) + 1;
+    });
+
+    // Risks
+    const allRisks = [];
+    filtered.forEach(n => {
+      n._risks.forEach(r => allRisks.push({ ...r, node: n }));
+    });
+    allRisks.sort((a, b) => {
+      const order = { high: 0, medium: 1, low: 2 };
+      return (order[a.level] || 3) - (order[b.level] || 3);
+    });
+
+    let html = '<div class="dash-grid">';
+
+    // ── Treemap: cost by type ──
+    html += `<div class="dash-card"><h3>Cost Treemap — by Service Type</h3><div class="treemap-container" id="treemap-cost"></div></div>`;
+
+    // ── Bar chart: resource count by type ──
+    html += `<div class="dash-card"><h3>Resource Count by Type</h3>`;
+    const maxCount = Math.max(...Object.values(countByType), 1);
+    Object.entries(countByType).sort((a, b) => b[1] - a[1]).forEach(([type, count]) => {
+      const pct = (count / maxCount * 100).toFixed(0);
+      const color = typeColor(filtered.find(n => n._label === type)?.resourceType || 'custom');
+      html += `<div class="bar-row">
+        <span class="bar-label">${type}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}">${count}</div></div>
+      </div>`;
+    });
+    html += '</div>';
+
+    // ── Bar chart: by region ──
+    html += `<div class="dash-card"><h3>Resources by Region</h3>`;
+    const maxRegCount = Math.max(...Object.values(countByRegion), 1);
+    Object.entries(countByRegion).sort((a, b) => b[1] - a[1]).forEach(([region, count]) => {
+      const pct = (count / maxRegCount * 100).toFixed(0);
+      html += `<div class="bar-row">
+        <span class="bar-label">${region}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:#a371f7">${count}</div></div>
+      </div>`;
+    });
+    html += '</div>';
+
+    // ── Sunburst: cost breakdown ──
+    html += `<div class="dash-card"><h3>Cost Distribution</h3><div class="sunburst-container" id="sunburst-cost"></div></div>`;
+
+    // ── Risk table ──
+    html += `<div class="dash-card"><h3>Risk & Drift Findings (${allRisks.length})</h3>`;
+    if (allRisks.length === 0) {
+      html += '<p style="font-size:11px;color:#6e7681">No risks detected.</p>';
+    } else {
+      allRisks.slice(0, 20).forEach(r => {
+        html += `<div class="risk-item ${r.level}">
+          <span class="risk-badge" style="background:${r.level === 'high' ? '#f8514922' : r.level === 'medium' ? '#d2992222' : '#3fb95022'};color:${r.level === 'high' ? '#f85149' : r.level === 'medium' ? '#d29922' : '#3fb950'}">${r.level}</span>
+          <span style="flex:1;font-size:10px">${r.msg}</span>
+          <span style="font-size:9px;color:#6e7681">${r.node.label}</span>
+        </div>`;
+      });
+    }
+    html += '</div>';
+
+    // ── Orphan candidates ──
+    const orphans = filtered.filter(n => !n._connected).sort((a, b) => b._cost - a._cost);
+    html += `<div class="dash-card"><h3>Orphaned Resources (${orphans.length})</h3>`;
+    orphans.slice(0, 15).forEach(n => {
+      html += `<div class="bar-row">
+        <span class="bar-label" style="color:${n._color}">${n._icon} ${n.label.slice(0, 18)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${Math.max(20, n._cost / (totalCost || 1) * 100 * 10)}%;background:${n._color}">${n._label}</div></div>
+        <span class="bar-val">$${n._cost.toFixed(2)}/mo</span>
+      </div>`;
+    });
+    html += '</div>';
+
+    html += '</div>';
+    dashboard.innerHTML = html;
+
+    // ── Render treemap ──
+    setTimeout(() => renderTreemap(costEntries, totalCost), 50);
+    setTimeout(() => renderSunburst(costEntries, totalCost), 50);
+  }
+
+  function renderTreemap(entries, total) {
+    const container = document.getElementById('treemap-cost');
+    if (!container || entries.length === 0) return;
+    const w = container.offsetWidth;
+    const h = container.offsetHeight;
+
+    // Simple squarified treemap using d3
+    const root = d3.hierarchy({ children: entries.map(([name, value]) => ({ name, value: Math.max(value, 0.01) })) })
+      .sum(d => d.value);
+
+    d3.treemap().size([w, h]).padding(2)(root);
+
+    container.innerHTML = '';
+    root.leaves().forEach(leaf => {
+      const d = leaf.data;
+      const color = typeColor(allNodes.find(n => n._label === d.name)?.resourceType || 'custom');
+      const cell = document.createElement('div');
+      cell.className = 'treemap-cell';
+      cell.style.left = leaf.x0 + 'px';
+      cell.style.top = leaf.y0 + 'px';
+      cell.style.width = Math.max(0, leaf.x1 - leaf.x0) + 'px';
+      cell.style.height = Math.max(0, leaf.y1 - leaf.y0) + 'px';
+      cell.style.background = color;
+      const area = (leaf.x1 - leaf.x0) * (leaf.y1 - leaf.y0);
+      if (area > 1500) {
+        cell.innerHTML = `${d.name}<br><span style="font-size:8px;opacity:0.8">$${d.value.toFixed(2)}</span>`;
+      } else if (area > 400) {
+        cell.textContent = d.name.slice(0, 6);
+      }
+      container.appendChild(cell);
+    });
+  }
+
+  function renderSunburst(entries, total) {
+    const container = document.getElementById('sunburst-cost');
+    if (!container || entries.length === 0) return;
+    const size = 200;
+    const outerR = size / 2 - 10;
+    const innerR = outerR * 0.4;
+
+    let svg = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
+    let angle = 0;
+    entries.forEach(([name, value]) => {
+      const pct = value / (total || 1);
+      const sweep = pct * Math.PI * 2;
+      if (sweep < 0.01) return;
+      const color = typeColor(allNodes.find(n => n._label === name)?.resourceType || 'custom');
+
+      const x1 = size / 2 + innerR * Math.cos(angle);
+      const y1 = size / 2 + innerR * Math.sin(angle);
+      const x2 = size / 2 + outerR * Math.cos(angle);
+      const y2 = size / 2 + outerR * Math.sin(angle);
+      const x3 = size / 2 + outerR * Math.cos(angle + sweep);
+      const y3 = size / 2 + outerR * Math.sin(angle + sweep);
+      const x4 = size / 2 + innerR * Math.cos(angle + sweep);
+      const y4 = size / 2 + innerR * Math.sin(angle + sweep);
+      const large = sweep > Math.PI ? 1 : 0;
+
+      svg += `<path d="M${x1},${y1} L${x2},${y2} A${outerR},${outerR} 0 ${large},1 ${x3},${y3} L${x4},${y4} A${innerR},${innerR} 0 ${large},0 ${x1},${y1}"
+        fill="${color}" stroke="${'#06080f'}" stroke-width="1" opacity="0.85">
+        <title>${name}: $${value.toFixed(2)}/mo (${(pct * 100).toFixed(1)}%)</title>
+      </path>`;
+
+      angle += sweep;
+    });
+
+    // Center label
+    svg += `<text x="${size / 2}" y="${size / 2 - 6}" text-anchor="middle" fill="#e6edf3" font-size="16" font-weight="700">$${total.toFixed(2)}</text>`;
+    svg += `<text x="${size / 2}" y="${size / 2 + 10}" text-anchor="middle" fill="#6e7681" font-size="9">/month</text>`;
+    svg += '</svg>';
+
+    container.innerHTML = svg;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FILTER PANEL TOGGLE
+  // ═══════════════════════════════════════════════════════════════════════════
+  const toggleBtn = document.getElementById('toggle-filters');
+  toggleBtn.onclick = () => {
+    const panel = document.getElementById('filter-panel');
+    panel.classList.toggle('collapsed');
+    toggleBtn.classList.toggle('visible', panel.classList.contains('collapsed'));
+    setTimeout(() => { resizeCanvas(); draw(); }, 300);
+  };
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // KEYBOARD
+  // ═══════════════════════════════════════════════════════════════════════════
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (selectedNode) deselectNode();
+      else if (drillPath.length > 0) drillUp(drillPath.length - 1);
+    }
+    if (e.key === 'f' && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      document.getElementById('filter-search').focus();
+    }
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BOOT
+  // ═══════════════════════════════════════════════════════════════════════════
+  buildFilterChips();
+  computeVisible();
+
+  // Initial zoom-fit after simulation settles
+  setTimeout(() => zoomFit(1000), 2000);
+  </script>
+</body>
+</html>
