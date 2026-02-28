@@ -1,10 +1,13 @@
 {
-  "name": "@espada/knowledge-graph",
+  "name": "@infra-graph/core",
   "version": "1.0.0",
-  "description": "Infrastructure Knowledge Graph — persistent, queryable topology of resources, relationships, costs, and changes across all connected cloud providers",
+  "description": "Infrastructure Knowledge Graph — scan, query, and analyze cloud infrastructure across AWS, Azure, GCP, and Kubernetes. 30 tools, IQL query language, MCP server, compliance frameworks.",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "infra-graph": "./dist/bin/infra-graph.js"
+  },
   "exports": {
     ".": {
       "import": "./dist/index.js",
@@ -19,12 +22,20 @@
       "types": "./dist/storage/index.d.ts"
     },
     "./engine": {
-      "import": "./dist/engine.js",
-      "types": "./dist/engine.d.ts"
+      "import": "./dist/core/engine.js",
+      "types": "./dist/core/engine.d.ts"
     },
     "./adapters": {
       "import": "./dist/adapters/index.js",
       "types": "./dist/adapters/index.d.ts"
+    },
+    "./mcp": {
+      "import": "./dist/mcp/index.js",
+      "types": "./dist/mcp/index.d.ts"
+    },
+    "./iql": {
+      "import": "./dist/iql/index.js",
+      "types": "./dist/iql/index.d.ts"
     }
   },
   "scripts": {
@@ -33,23 +44,41 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "oxlint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "tsc"
   },
   "keywords": [
-    "espada",
     "infrastructure",
     "knowledge-graph",
+    "cloud",
+    "aws",
+    "azure",
+    "gcp",
+    "kubernetes",
+    "terraform",
+    "mcp",
+    "model-context-protocol",
     "topology",
     "blast-radius",
     "drift-detection",
-    "cloud",
-    "devops"
+    "compliance",
+    "iql",
+    "devops",
+    "infrastructure-as-code",
+    "cost-analysis",
+    "ai-tools"
   ],
   "espada": {
     "extensions": [
       "index.ts"
     ]
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saifaldin14/Espada-Auto",
+    "directory": "extensions/knowledge-graph"
+  },
+  "homepage": "https://github.com/saifaldin14/Espada-Auto/tree/main/extensions/knowledge-graph#readme",
   "dependencies": {
     "@aws-sdk/client-cloudtrail": "^3.978.0",
     "@aws-sdk/client-sts": "^3.978.0",
@@ -57,7 +86,9 @@
     "@azure/arm-resourcegraph": "^4.2.1",
     "@azure/identity": "^4.13.0",
     "@google-cloud/asset": "^5.7.1",
-    "better-sqlite3": "^11.10.0"
+    "@sinclair/typebox": "^0.34.33",
+    "better-sqlite3": "^11.10.0",
+    "commander": "^12.1.0"
   },
   "devDependencies": {
     "@aws-sdk/client-api-gateway": "^3.982.0",
@@ -87,6 +118,11 @@
   },
   "peerDependencies": {
     "espada": "*"
+  },
+  "peerDependenciesMeta": {
+    "espada": {
+      "optional": true
+    }
   },
   "files": [
     "dist",

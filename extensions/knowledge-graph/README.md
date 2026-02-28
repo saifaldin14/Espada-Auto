@@ -1,6 +1,76 @@
-# Infrastructure Knowledge Graph
+# @infra-graph/core
 
-A graph-based infrastructure topology engine for Espada. Discovers cloud resources and relationships across AWS, Azure, GCP, Kubernetes, and Terraform — then provides blast-radius analysis, drift detection, cost attribution, governance workflows, temporal snapshots, and a custom query language (IQL).
+**Infrastructure Knowledge Graph** — scan, query, and analyze cloud infrastructure across AWS, Azure, GCP, and Kubernetes. 30 AI-agent tools, a purpose-built query language (IQL), and an MCP server for Claude Desktop, Cursor, Windsurf, and any MCP-compatible client.
+
+```
+               ┌────────────────────────────────────────┐
+               │         @infra-graph/core               │
+               │                                        │
+ Cloud APIs ──▶│  Adapters ──▶ Graph Engine ──▶ Tools   │──▶ Any AI Agent
+ Terraform  ──▶│  (AWS/Azure/GCP/K8s/Terraform)         │    (via MCP)
+               │                                        │
+               │  IQL ──▶ Compliance ──▶ Cost Analysis  │──▶ CLI
+               │  RBAC ──▶ Governance ──▶ Temporal      │──▶ HTTP API
+               └────────────────────────────────────────┘
+```
+
+| Capability | Details |
+|------------|---------|
+| **Cloud Scanning** | AWS (59 resource types), Azure (57), GCP (41), Kubernetes (16), Terraform state (104 mappings) |
+| **IQL Query Language** | `FIND resources WHERE type = 'ec2' AND tag.env = 'prod'` — purpose-built with full parser |
+| **30 AI Tools** | Blast radius, SPOF detection, drift, cost attribution, compliance, remediation, supply chain |
+| **4 Compliance Frameworks** | SOC 2, HIPAA, PCI-DSS, ISO 27001 with concrete control implementations |
+| **MCP Server** | Native integration with Claude Desktop, Cursor, Windsurf, Cody, Continue |
+| **Storage Backends** | In-memory, SQLite, PostgreSQL (multi-tenant), SQLite-temporal |
+| **Enterprise Features** | RBAC, multi-tenancy, OPA policy engine, audit trail, federation, governance workflows |
+
+## Quick Start
+
+### Install
+
+```bash
+npm install -g @infra-graph/core
+```
+
+### Scan Infrastructure
+
+```bash
+# From Terraform state (no cloud credentials needed)
+infra-graph infra scan --terraform ./terraform.tfstate
+
+# From live AWS
+infra-graph infra cloud-scan --aws --aws-region us-east-1 --db ./infra.db
+
+# Multi-cloud (all at once)
+infra-graph infra cloud-scan --aws --azure --gcp --db ./infra.db
+```
+
+### Query with IQL
+
+```bash
+infra-graph infra query --db ./infra.db "FIND resources WHERE type = 'ec2' AND tag.env = 'prod'"
+```
+
+### MCP Server (Claude Desktop, Cursor, etc.)
+
+```bash
+infra-graph mcp --db ./infra.db
+```
+
+Add to `~/.claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "infra-graph": {
+      "command": "npx",
+      "args": ["@infra-graph/core", "mcp", "--db", "~/.infra-graph/graph.db"]
+    }
+  }
+}
+```
+
+Then ask your AI assistant: *"What's the blast radius if I delete this VPC?"*
 
 ## Status
 
@@ -278,9 +348,92 @@ pnpm test src/aws-adapter.test.ts  # AWS adapter (117 tests)
 | SPOF detection | Tarjan's algorithm | O(V+E) articulation point detection |
 | Governance | 7-factor risk scoring | Auto-approve ≤30, block ≥70, manual review in between |
 
+## Tools Reference (30 MCP Tools)
+
+### Core Graph
+| Tool | Description |
+|------|-------------|
+| `kg_blast_radius` | Blast radius of changing/removing a resource |
+| `kg_dependencies` | Dependency chain (upstream/downstream/both) |
+| `kg_cost` | Cost attribution by resource/provider |
+| `kg_drift` | Configuration drift detection |
+| `kg_spof_analysis` | Single Point of Failure detection (Tarjan's) |
+| `kg_path` | Shortest path between resources |
+| `kg_orphans` | Orphaned/unattached resources |
+| `kg_status` | Graph statistics |
+| `kg_export` | Export (JSON/DOT/Mermaid) |
+
+### Governance & Temporal
+| Tool | Description |
+|------|-------------|
+| `kg_audit_trail` | Change audit trail |
+| `kg_request_change` | Change request with risk scoring |
+| `kg_governance_summary` | Governance dashboard |
+| `kg_pending_approvals` | Pending approvals |
+| `kg_time_travel` | View graph at any point in time |
+| `kg_diff` | Snapshot diff |
+| `kg_node_history` | Per-resource history |
+| `kg_evolution` | Infrastructure evolution trends |
+| `kg_snapshot` | Manual snapshot |
+| `kg_list_snapshots` | Browse snapshots |
+
+### Analysis
+| Tool | Description |
+|------|-------------|
+| `kg_query` | Execute IQL queries |
+| `kg_compliance` | Compliance assessment (SOC 2/HIPAA/PCI-DSS/ISO 27001) |
+| `kg_recommendations` | Optimization recommendations |
+| `kg_agents` | Agent activity report |
+| `kg_ask` | Natural language → IQL |
+| `kg_remediation` | Generate IaC patches (Terraform/CloudFormation) |
+| `kg_supply_chain` | Supply chain security |
+| `kg_visualize` | Graph visualization (Cytoscape/D3) |
+| `kg_rbac` | RBAC policy management |
+| `kg_benchmark` | Performance benchmarks (1K/10K/100K) |
+| `kg_export_extended` | Extended export (YAML/CSV/OpenLineage) |
+
+## IQL — Infrastructure Query Language
+
+```sql
+FIND resources WHERE type = 'ec2' AND tag.env = 'prod'
+FIND DOWNSTREAM OF 'vpc-abc123'
+FIND PATH FROM 'vpc-prod' TO 'rds-primary'
+SUMMARIZE cost BY type
+FIND resources DIFF WITH '2025-01-01T00:00:00Z'
+FIND resources WHERE drifted_since('2025-06-01')
+```
+
+**Operators:** `=`, `!=`, `>`, `<`, `>=`, `<=`, `LIKE`, `IN`, `MATCHES`, `AND`, `OR`, `NOT`
+**Functions:** `tagged()`, `drifted_since()`, `has_edge()`, `created_after()`, `created_before()`
+**Aggregates:** `SUM()`, `AVG()`, `MIN()`, `MAX()`, `COUNT`
+
+## Programmatic Usage
+
+```typescript
+import { GraphEngine } from "@infra-graph/core/engine";
+import { SQLiteGraphStorage } from "@infra-graph/core/storage";
+import { buildToolRegistry } from "@infra-graph/core/mcp";
+import { parseIQL, executeQuery } from "@infra-graph/core/iql";
+
+const storage = new SQLiteGraphStorage("./infra.db");
+const engine = new GraphEngine(storage);
+
+// Execute IQL query
+const ast = parseIQL("FIND resources WHERE type = 'ec2'");
+const results = executeQuery(ast, storage);
+
+// Use tools programmatically
+const tools = buildToolRegistry({ engine, storage });
+const blast = await tools.find(t => t.name === "kg_blast_radius")!
+  .execute({ resourceId: "vpc-abc123", depth: 3 });
+
+// Build custom MCP server
+import { McpServer } from "@infra-graph/core/mcp";
+const server = new McpServer(tools);
+```
+
 ## Contributing
 
-1. Follow Espada conventions (see root `AGENTS.md`)
-2. Keep files under ~500 LOC (split/refactor as needed)
-3. Add tests for new functionality
-4. Run `pnpm lint && pnpm build && pnpm test` before committing
+1. Keep files under ~500 LOC (split/refactor as needed)
+2. Add tests for new functionality
+3. Run `pnpm lint && pnpm build && pnpm test` before committing
