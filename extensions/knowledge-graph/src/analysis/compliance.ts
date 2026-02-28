@@ -179,6 +179,42 @@ function hasRequiredTags(
   );
 }
 
+/** Check if a node has access control (IAM/security groups). */
+function hasAccessControl(ctx: ControlEvaluationContext): boolean {
+  return (
+    ctx.hasEdge("secured-by") ||
+    ctx.hasEdge("authenticated-by") ||
+    ctx.metadata.iamRole != null ||
+    ctx.metadata.securityGroups != null
+  );
+}
+
+/** Check if multi-AZ/multi-region is configured. */
+function hasHighAvailability(ctx: ControlEvaluationContext): boolean {
+  return (
+    ctx.metadata.multiAz === true ||
+    ctx.metadata.availabilityZones != null ||
+    ctx.metadata.replicaCount != null
+  );
+}
+
+/** Check if versioning is enabled (for storage/state). */
+function hasVersioning(ctx: ControlEvaluationContext): boolean {
+  return (
+    ctx.metadata.versioningEnabled === true ||
+    ctx.metadata.versioning === "Enabled"
+  );
+}
+
+/** Check if a resource has MFA or strong auth. */
+function hasStrongAuth(ctx: ControlEvaluationContext): boolean {
+  return (
+    ctx.metadata.mfaEnabled === true ||
+    ctx.metadata.mfaDelete === true ||
+    ctx.hasEdge("authenticated-by")
+  );
+}
+
 // -- SOC2 Controls --------------------------------------------------------
 
 const SOC2_CONTROLS: ComplianceControl[] = [
@@ -517,6 +553,371 @@ const ISO_27001_CONTROLS: ComplianceControl[] = [
   },
 ];
 
+// -- CIS Benchmarks -------------------------------------------------------
+
+const CIS_CONTROLS: ComplianceControl[] = [
+  {
+    id: "CIS-1.1",
+    framework: "cis",
+    section: "Identity and Access Management",
+    title: "Avoid root account usage",
+    description:
+      "IAM roles should be used instead of root credentials. Root account must have MFA.",
+    severity: "critical",
+    applicableResourceTypes: ["iam-role", "identity"],
+    evaluate: (ctx) => {
+      if (ctx.node.name.toLowerCase().includes("root")) return "fail";
+      return hasStrongAuth(ctx) ? "pass" : "warning";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "IAM role with MFA/strong auth"
+        : s === "fail"
+          ? "Root account detected — use IAM roles instead"
+          : "No MFA or strong auth detected on IAM role",
+  },
+  {
+    id: "CIS-1.4",
+    framework: "cis",
+    section: "Identity and Access Management",
+    title: "IAM access keys rotated",
+    description:
+      "IAM access keys should be rotated within 90 days.",
+    severity: "high",
+    applicableResourceTypes: ["iam-role", "identity"],
+    evaluate: (ctx) => {
+      const lastRotated = ctx.metadata.accessKeyLastRotated;
+      if (!lastRotated) return "warning";
+      const age = Date.now() - new Date(String(lastRotated)).getTime();
+      return age < 90 * 86400000 ? "pass" : "fail";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Access keys rotated within 90 days"
+        : s === "fail"
+          ? "Access keys not rotated within 90 days"
+          : "Access key rotation status unknown",
+  },
+  {
+    id: "CIS-2.1",
+    framework: "cis",
+    section: "Storage",
+    title: "S3 bucket encryption",
+    description:
+      "All storage buckets must have server-side encryption enabled.",
+    severity: "critical",
+    applicableResourceTypes: ["storage"],
+    evaluate: (ctx) => (hasEncryption(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Server-side encryption is enabled"
+        : "No server-side encryption detected on storage bucket",
+  },
+  {
+    id: "CIS-2.2",
+    framework: "cis",
+    section: "Storage",
+    title: "S3 bucket versioning",
+    description:
+      "Storage buckets should have versioning enabled for data protection.",
+    severity: "medium",
+    applicableResourceTypes: ["storage"],
+    evaluate: (ctx) => (hasVersioning(ctx) ? "pass" : "warning"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Versioning is enabled"
+        : "Versioning not enabled — risk of data loss",
+  },
+  {
+    id: "CIS-3.1",
+    framework: "cis",
+    section: "Logging",
+    title: "CloudTrail / audit logging enabled",
+    description:
+      "CloudTrail or equivalent audit logging must be enabled for all regions.",
+    severity: "critical",
+    applicableResourceTypes: [
+      "compute", "database", "storage", "function",
+      "api-gateway", "cluster", "container",
+    ],
+    evaluate: (ctx) => (hasLogging(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Audit logging is enabled"
+        : "No audit logging detected — violates CIS logging requirements",
+  },
+  {
+    id: "CIS-3.5",
+    framework: "cis",
+    section: "Logging",
+    title: "Log file encryption",
+    description:
+      "Log storage must be encrypted at rest.",
+    severity: "high",
+    applicableResourceTypes: ["storage"],
+    evaluate: (ctx) => {
+      // If this storage is a log destination, check encryption
+      const isLogDest = ctx.edgeTypes.includes("logs-to") || ctx.node.name.toLowerCase().includes("log");
+      if (!isLogDest) return "not-applicable";
+      return hasEncryption(ctx) ? "pass" : "fail";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Log storage is encrypted"
+        : s === "not-applicable"
+          ? "Not a log storage destination"
+          : "Log storage is not encrypted at rest",
+  },
+  {
+    id: "CIS-4.1",
+    framework: "cis",
+    section: "Monitoring",
+    title: "Monitoring for unauthorized API calls",
+    description:
+      "Critical infrastructure must have monitoring configured.",
+    severity: "high",
+    applicableResourceTypes: [
+      "compute", "database", "load-balancer",
+      "cluster", "api-gateway",
+    ],
+    evaluate: (ctx) => (hasMonitoring(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Monitoring is configured"
+        : "No monitoring detected — unauthorized access may go unnoticed",
+  },
+  {
+    id: "CIS-4.3",
+    framework: "cis",
+    section: "Networking",
+    title: "Security group — no unrestricted ingress",
+    description:
+      "Security groups must not allow unrestricted ingress (0.0.0.0/0 on sensitive ports).",
+    severity: "critical",
+    applicableResourceTypes: ["security-group"],
+    evaluate: (ctx) => {
+      const rules = ctx.metadata.ingressRules;
+      if (!Array.isArray(rules)) return "warning";
+      const hasOpen = rules.some((r: Record<string, unknown>) =>
+        String(r.cidr ?? "").includes("0.0.0.0/0") &&
+        (Number(r.port) === 22 || Number(r.port) === 3389 || Number(r.port) === 0));
+      return hasOpen ? "fail" : "pass";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "No unrestricted ingress on sensitive ports"
+        : s === "fail"
+          ? "Unrestricted ingress (0.0.0.0/0) on SSH/RDP/all-ports detected"
+          : "Could not evaluate security group rules",
+  },
+  {
+    id: "CIS-5.1",
+    framework: "cis",
+    section: "Networking",
+    title: "VPC flow logging",
+    description:
+      "VPC flow logs must be enabled for network monitoring.",
+    severity: "high",
+    applicableResourceTypes: ["vpc"],
+    evaluate: (ctx) =>
+      ctx.metadata.flowLogsEnabled === true || hasLogging(ctx) ? "pass" : "fail",
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "VPC flow logging is enabled"
+        : "VPC flow logging is not enabled",
+  },
+  {
+    id: "CIS-5.4",
+    framework: "cis",
+    section: "Networking",
+    title: "Default security group restricts all traffic",
+    description:
+      "The default security group in every VPC should restrict all inbound and outbound traffic.",
+    severity: "medium",
+    applicableResourceTypes: ["security-group"],
+    evaluate: (ctx) => {
+      if (!ctx.node.name.toLowerCase().includes("default")) return "not-applicable";
+      const rules = ctx.metadata.ingressRules;
+      if (!Array.isArray(rules) || rules.length === 0) return "pass";
+      return "fail";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Default security group has no permissive rules"
+        : s === "not-applicable"
+          ? "Not the default security group"
+          : "Default security group has permissive rules — should restrict all traffic",
+  },
+];
+
+// -- NIST 800-53 Controls -------------------------------------------------
+
+const NIST_800_53_CONTROLS: ComplianceControl[] = [
+  {
+    id: "AC-2",
+    framework: "nist-800-53",
+    section: "Access Control",
+    title: "Account management",
+    description:
+      "The organization manages information system accounts, including establishing, activating, modifying, reviewing, disabling, and removing accounts.",
+    severity: "high",
+    applicableResourceTypes: ["iam-role", "identity", "compute", "database"],
+    evaluate: (ctx) => (hasAccessControl(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Account management controls are present"
+        : "No IAM/access control relationship detected",
+  },
+  {
+    id: "AC-6",
+    framework: "nist-800-53",
+    section: "Access Control",
+    title: "Least privilege",
+    description:
+      "The information system enforces least privilege, allowing only authorized accesses necessary for users.",
+    severity: "critical",
+    applicableResourceTypes: ["iam-role", "identity"],
+    evaluate: (ctx) => {
+      // Flag wildcard policies or admin-level roles
+      const policy = String(ctx.metadata.policyDocument ?? "");
+      if (policy.includes("*") && policy.includes("Action")) return "fail";
+      return ctx.hasEdge("secured-by") ? "pass" : "warning";
+    },
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Least privilege appears enforced"
+        : s === "fail"
+          ? "Wildcard (*) permissions detected — violates least privilege"
+          : "Could not verify least privilege enforcement",
+  },
+  {
+    id: "AU-2",
+    framework: "nist-800-53",
+    section: "Audit and Accountability",
+    title: "Audit events",
+    description:
+      "The information system must generate audit records for defined events.",
+    severity: "high",
+    applicableResourceTypes: [
+      "compute", "database", "storage", "function",
+      "api-gateway", "cluster",
+    ],
+    evaluate: (ctx) => (hasLogging(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Audit logging is enabled"
+        : "No audit logging detected",
+  },
+  {
+    id: "AU-6",
+    framework: "nist-800-53",
+    section: "Audit and Accountability",
+    title: "Audit review, analysis, and reporting",
+    description:
+      "The organization reviews and analyzes audit records for indications of inappropriate activity.",
+    severity: "medium",
+    applicableResourceTypes: ["compute", "database", "cluster"],
+    evaluate: (ctx) => (hasMonitoring(ctx) ? "pass" : "warning"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Audit monitoring and review configured"
+        : "No audit review/monitoring relationship detected",
+  },
+  {
+    id: "CP-9",
+    framework: "nist-800-53",
+    section: "Contingency Planning",
+    title: "Information system backup",
+    description:
+      "The organization conducts backups of user-level and system-level information.",
+    severity: "high",
+    applicableResourceTypes: ["database", "storage"],
+    evaluate: (ctx) => (hasBackup(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Backup is configured"
+        : "No backup configuration detected",
+  },
+  {
+    id: "CP-10",
+    framework: "nist-800-53",
+    section: "Contingency Planning",
+    title: "Information system recovery and reconstitution",
+    description:
+      "The organization provides for the recovery and reconstitution of the system to a known state after disruption.",
+    severity: "high",
+    applicableResourceTypes: ["database", "compute", "cluster"],
+    evaluate: (ctx) => (hasHighAvailability(ctx) || hasBackup(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Recovery capabilities configured (HA/backup)"
+        : "No recovery/reconstitution capability detected",
+  },
+  {
+    id: "IA-2",
+    framework: "nist-800-53",
+    section: "Identification and Authentication",
+    title: "User identification and authentication",
+    description:
+      "The information system uniquely identifies and authenticates users.",
+    severity: "critical",
+    applicableResourceTypes: ["compute", "database", "function", "container", "api-gateway"],
+    evaluate: (ctx) => (hasAccessControl(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Authentication controls are in place"
+        : "No authentication mechanism detected",
+  },
+  {
+    id: "SC-7",
+    framework: "nist-800-53",
+    section: "System and Communications Protection",
+    title: "Boundary protection",
+    description:
+      "The information system monitors and controls communications at external boundaries and key internal boundaries.",
+    severity: "critical",
+    applicableResourceTypes: ["compute", "database", "container", "cluster"],
+    evaluate: (ctx) => (isNetworkIsolated(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Network boundary protection is in place"
+        : "Resource may be exposed without boundary protection",
+  },
+  {
+    id: "SC-28",
+    framework: "nist-800-53",
+    section: "System and Communications Protection",
+    title: "Protection of information at rest",
+    description:
+      "The information system protects the confidentiality and integrity of information at rest.",
+    severity: "critical",
+    applicableResourceTypes: ["storage", "database", "cache", "queue", "stream"],
+    evaluate: (ctx) => (hasEncryption(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "Data at rest is encrypted"
+        : "No encryption at rest — data confidentiality at risk",
+  },
+  {
+    id: "SI-4",
+    framework: "nist-800-53",
+    section: "System and Information Integrity",
+    title: "Information system monitoring",
+    description:
+      "The organization monitors the information system to detect attacks, unauthorized connections, and anomalies.",
+    severity: "high",
+    applicableResourceTypes: [
+      "compute", "database", "load-balancer",
+      "cluster", "api-gateway",
+    ],
+    evaluate: (ctx) => (hasMonitoring(ctx) || hasLogging(ctx) ? "pass" : "fail"),
+    reason: (_ctx, s) =>
+      s === "pass"
+        ? "System monitoring is configured"
+        : "No system monitoring detected",
+  },
+];
+
 // =============================================================================
 // Framework Registry
 // =============================================================================
@@ -527,6 +928,8 @@ export const COMPLIANCE_CONTROLS: ComplianceControl[] = [
   ...HIPAA_CONTROLS,
   ...PCI_DSS_CONTROLS,
   ...ISO_27001_CONTROLS,
+  ...CIS_CONTROLS,
+  ...NIST_800_53_CONTROLS,
 ];
 
 /** Get controls for a specific framework. */
@@ -542,6 +945,8 @@ export const SUPPORTED_FRAMEWORKS: ComplianceFramework[] = [
   "hipaa",
   "pci-dss",
   "iso-27001",
+  "cis",
+  "nist-800-53",
 ];
 
 // =============================================================================

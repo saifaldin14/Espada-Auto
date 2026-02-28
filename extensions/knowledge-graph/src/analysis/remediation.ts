@@ -18,7 +18,7 @@ import type {
 // =============================================================================
 
 /** Supported IaC output formats. */
-export type IaCFormat = "terraform" | "cloudformation";
+export type IaCFormat = "terraform" | "cloudformation" | "pulumi" | "opentofu";
 
 /** A single remediation patch for one drifted resource. */
 export type RemediationPatch = {
@@ -357,7 +357,207 @@ function escapeHcl(s: string): string {
     .replace(/\$\{/g, "$$$${")
     .replace(/%\{/g, "%%{"); // Escape ${ → $${ and %{ → %%{ (HCL interpolation)
 }
+// =============================================================================
+// Pulumi Patch Generation (TypeScript)
+// =============================================================================
 
+/** Map resource type → Pulumi SDK class for AWS. */
+const PULUMI_AWS_MAP: Record<string, { module: string; cls: string }> = {
+  compute: { module: "@pulumi/aws/ec2", cls: "Instance" },
+  database: { module: "@pulumi/aws/rds", cls: "Instance" },
+  storage: { module: "@pulumi/aws/s3", cls: "BucketV2" },
+  "load-balancer": { module: "@pulumi/aws/lb", cls: "LoadBalancer" },
+  "security-group": { module: "@pulumi/aws/ec2", cls: "SecurityGroup" },
+  vpc: { module: "@pulumi/aws/ec2", cls: "Vpc" },
+  subnet: { module: "@pulumi/aws/ec2", cls: "Subnet" },
+  "iam-role": { module: "@pulumi/aws/iam", cls: "Role" },
+  function: { module: "@pulumi/aws/lambda", cls: "Function" },
+  "api-gateway": { module: "@pulumi/aws/apigateway", cls: "RestApi" },
+  cache: { module: "@pulumi/aws/elasticache", cls: "Cluster" },
+  queue: { module: "@pulumi/aws/sqs", cls: "Queue" },
+  topic: { module: "@pulumi/aws/sns", cls: "Topic" },
+  dns: { module: "@pulumi/aws/route53", cls: "Record" },
+  certificate: { module: "@pulumi/aws/acm", cls: "Certificate" },
+  cdn: { module: "@pulumi/aws/cloudfront", cls: "Distribution" },
+  secret: { module: "@pulumi/aws/secretsmanager", cls: "Secret" },
+  stream: { module: "@pulumi/aws/kinesis", cls: "Stream" },
+};
+
+const PULUMI_AZURE_MAP: Record<string, { module: string; cls: string }> = {
+  compute: { module: "@pulumi/azure-native/compute", cls: "VirtualMachine" },
+  database: { module: "@pulumi/azure-native/sql", cls: "Database" },
+  storage: { module: "@pulumi/azure-native/storage", cls: "StorageAccount" },
+  "load-balancer": { module: "@pulumi/azure-native/network", cls: "LoadBalancer" },
+  vpc: { module: "@pulumi/azure-native/network", cls: "VirtualNetwork" },
+  subnet: { module: "@pulumi/azure-native/network", cls: "Subnet" },
+  function: { module: "@pulumi/azure-native/web", cls: "WebApp" },
+  cache: { module: "@pulumi/azure-native/cache", cls: "Redis" },
+  cluster: { module: "@pulumi/azure-native/containerservice", cls: "ManagedCluster" },
+};
+
+const PULUMI_GCP_MAP: Record<string, { module: string; cls: string }> = {
+  compute: { module: "@pulumi/gcp/compute", cls: "Instance" },
+  database: { module: "@pulumi/gcp/sql", cls: "DatabaseInstance" },
+  storage: { module: "@pulumi/gcp/storage", cls: "Bucket" },
+  "load-balancer": { module: "@pulumi/gcp/compute", cls: "ForwardingRule" },
+  vpc: { module: "@pulumi/gcp/compute", cls: "Network" },
+  subnet: { module: "@pulumi/gcp/compute", cls: "Subnetwork" },
+  function: { module: "@pulumi/gcp/cloudfunctions", cls: "Function" },
+  cluster: { module: "@pulumi/gcp/container", cls: "Cluster" },
+};
+
+/** Get Pulumi SDK mapping for a resource. */
+function getPulumiResourceType(
+  resourceType: GraphResourceType,
+  provider: CloudProvider,
+): { module: string; cls: string } | null {
+  if (provider === "azure") return PULUMI_AZURE_MAP[resourceType] ?? null;
+  if (provider === "gcp") return PULUMI_GCP_MAP[resourceType] ?? null;
+  return PULUMI_AWS_MAP[resourceType] ?? null;
+}
+
+/** Map field name to Pulumi property name (camelCase). */
+function fieldToPulumiProp(field: string): string | null {
+  const map: Record<string, string> = {
+    "metadata.instanceType": "instanceType",
+    "metadata.engine": "engine",
+    "metadata.engineVersion": "engineVersion",
+    "metadata.storageEncrypted": "storageEncrypted",
+    "metadata.multiAz": "multiAz",
+    "metadata.publiclyAccessible": "publiclyAccessible",
+    "metadata.versioningEnabled": "versioning",
+    "metadata.loggingEnabled": "logging",
+    "metadata.encryptionEnabled": "encryption",
+    name: "name",
+    region: "region",
+    status: "status",
+  };
+  const mapped = map[field];
+  if (mapped != null) return mapped;
+  if (field.startsWith("tags.") || field === "costMonthly") return null;
+  return field.replace("metadata.", "");
+}
+
+/** Escape a string for TypeScript. */
+function escapeTs(s: string): string {
+  return s
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, "\\n");
+}
+
+/**
+ * Generate a Pulumi TypeScript patch for a drifted resource.
+ */
+function generatePulumiPatch(
+  node: GraphNode,
+  fields: DriftedField[],
+): string {
+  const mapping = getPulumiResourceType(node.resourceType, node.provider);
+  if (!mapping) return "";
+
+  const varName = sanitizeTfName(node.name).replace(/-/g, "_");
+  const lines: string[] = [
+    `// Remediation patch for ${node.name} (${node.resourceType})`,
+    `// Drifted fields: ${fields.map((f) => f.field).join(", ")}`,
+    `import * as sdk from "${mapping.module}";`,
+    "",
+    `const ${varName} = new sdk.${mapping.cls}("${escapeTs(node.name)}", {`,
+  ];
+
+  const tagUpdates: Record<string, string> = {};
+
+  for (const field of fields) {
+    if (field.expectedValue == null) continue;
+
+    if (field.field.startsWith("tags.")) {
+      const tagKey = field.field.replace("tags.", "");
+      tagUpdates[tagKey] = field.expectedValue;
+      continue;
+    }
+
+    const prop = fieldToPulumiProp(field.field);
+    if (prop == null) continue;
+
+    const v = field.expectedValue;
+    if (v === "true" || v === "false") {
+      lines.push(`  ${prop}: ${v},`);
+    } else if (/^\d+(\.\d+)?$/.test(v)) {
+      lines.push(`  ${prop}: ${v},`);
+    } else {
+      lines.push(`  ${prop}: "${escapeTs(v)}",`);
+    }
+  }
+
+  if (Object.keys(tagUpdates).length > 0) {
+    lines.push("  tags: {");
+    for (const [key, value] of Object.entries(tagUpdates)) {
+      lines.push(`    ${key}: "${escapeTs(value)}",`);
+    }
+    lines.push("  },");
+  }
+
+  lines.push("});");
+  return lines.join("\n");
+}
+
+// =============================================================================
+// OpenTofu Patch Generation (HCL — Terraform-compatible with OpenTofu headers)
+// =============================================================================
+
+/**
+ * Generate an OpenTofu HCL patch for a drifted resource.
+ * OpenTofu is API-compatible with Terraform HCL; we reuse the same
+ * generators but add OpenTofu-specific headers and comments.
+ */
+function generateOpenTofuPatch(
+  node: GraphNode,
+  fields: DriftedField[],
+): string {
+  const tfType = getTerraformResourceType(node.resourceType, node.provider);
+  if (!tfType) return "";
+
+  const tfName = sanitizeTfName(node.name);
+  const lines: string[] = [
+    `# OpenTofu remediation patch for ${node.name} (${node.resourceType})`,
+    `# Compatible with: tofu plan / tofu apply`,
+    `# Drifted fields: ${fields.map((f) => f.field).join(", ")}`,
+    "",
+    `# Requires: terraform { required_providers { ... } }`,
+    `# OpenTofu supports all Terraform providers via the OpenTofu Registry.`,
+    "",
+    `resource "${tfType}" "${tfName}" {`,
+  ];
+
+  const tagUpdates: Record<string, string> = {};
+
+  for (const field of fields) {
+    if (field.expectedValue == null) continue;
+
+    if (field.field.startsWith("tags.")) {
+      const tagKey = field.field.replace("tags.", "");
+      tagUpdates[tagKey] = field.expectedValue;
+      continue;
+    }
+
+    const tfAttr = FIELD_TO_TERRAFORM[field.field];
+    if (tfAttr === null) continue;
+    const attrName = tfAttr ?? field.field.replace("metadata.", "");
+    const value = formatTerraformValue(field.expectedValue);
+    lines.push(`  ${attrName} = ${value}`);
+  }
+
+  if (Object.keys(tagUpdates).length > 0) {
+    lines.push("  tags = {");
+    for (const [key, value] of Object.entries(tagUpdates)) {
+      lines.push(`    ${key} = "${escapeHcl(value)}"`);
+    }
+    lines.push("  }");
+  }
+
+  lines.push("}");
+  return lines.join("\n");
+}
 // =============================================================================
 // Risk Assessment
 // =============================================================================
@@ -426,10 +626,14 @@ export function generateRemediationPlan(
     }
 
     // Check if we can generate a patch for this resource type
-    const canGenerate =
-      format === "terraform"
-        ? getTerraformResourceType(node.resourceType, node.provider) != null
-        : node.provider === "aws"; // CloudFormation is AWS-only
+    let canGenerate: boolean;
+    if (format === "terraform" || format === "opentofu") {
+      canGenerate = getTerraformResourceType(node.resourceType, node.provider) != null;
+    } else if (format === "pulumi") {
+      canGenerate = getPulumiResourceType(node.resourceType, node.provider) != null;
+    } else {
+      canGenerate = node.provider === "aws"; // CloudFormation is AWS-only
+    }
 
     if (!canGenerate) {
       unremeditable.push({
@@ -440,12 +644,18 @@ export function generateRemediationPlan(
       continue;
     }
 
-    const patchContent =
-      format === "terraform"
-        ? options?.moduleAware
-          ? generateModuleAwarePatch(node, fields, options.moduleName)
-          : generateTerraformPatch(node, fields)
-        : generateCloudFormationPatch(node, fields);
+    let patchContent: string;
+    if (format === "terraform") {
+      patchContent = options?.moduleAware
+        ? generateModuleAwarePatch(node, fields, options.moduleName)
+        : generateTerraformPatch(node, fields);
+    } else if (format === "opentofu") {
+      patchContent = generateOpenTofuPatch(node, fields);
+    } else if (format === "pulumi") {
+      patchContent = generatePulumiPatch(node, fields);
+    } else {
+      patchContent = generateCloudFormationPatch(node, fields);
+    }
 
     if (!patchContent) {
       unremeditable.push({
@@ -516,6 +726,19 @@ export function generateRemediationPlan(
   };
 }
 
+/** Map IaCFormat to markdown code fence language. */
+function patchCodeFence(format: IaCFormat): string {
+  switch (format) {
+    case "terraform":
+    case "opentofu":
+      return "hcl";
+    case "pulumi":
+      return "typescript";
+    case "cloudformation":
+      return "yaml";
+  }
+}
+
 /**
  * Format a remediation plan as a markdown report.
  */
@@ -561,7 +784,7 @@ export function formatRemediationMarkdown(plan: RemediationPlan): string {
         "",
         p.summary,
         "",
-        "```" + (p.format === "terraform" ? "hcl" : "yaml"),
+        "```" + patchCodeFence(p.format),
         p.patch,
         "```",
         "",
@@ -578,7 +801,7 @@ export function formatRemediationMarkdown(plan: RemediationPlan): string {
         "",
         p.summary,
         "",
-        "```" + (p.format === "terraform" ? "hcl" : "yaml"),
+        "```" + patchCodeFence(p.format),
         p.patch,
         "```",
         "",
@@ -727,7 +950,6 @@ function generateModuleAwarePatch(
   const tfType = getTerraformResourceType(node.resourceType, node.provider);
   if (!tfType) return "";
 
-  const tfName = sanitizeTfName(node.name);
   const modName = moduleName ?? `mod_${sanitizeTfName(node.name)}`;
   const innerPatch = generateTerraformPatch(node, fields);
   if (!innerPatch) return "";
@@ -775,7 +997,7 @@ function generateImportBlocks(
   patches: RemediationPatch[],
   format: IaCFormat,
 ): ImportBlock[] {
-  if (format !== "terraform") return [];
+  if (format !== "terraform" && format !== "opentofu") return [];
 
   return patches
     .map((patch) => {

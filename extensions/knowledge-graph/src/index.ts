@@ -561,3 +561,27 @@ export type {
   FederatedStats,
   MergeResult,
 } from "./core/federation.js";
+
+// OpenTelemetry export
+export {
+  buildGraphMetrics,
+  buildDriftMetrics,
+  buildComplianceMetrics,
+  buildScanTrace,
+  buildComplianceTrace,
+  pushMetrics,
+  pushTraces,
+  collectAndExportMetrics,
+} from "./reporting/otel-export.js";
+export type {
+  OTLPGaugeDataPoint,
+  OTLPMetric,
+  OTLPMetricsPayload,
+  OTLPSpan,
+  OTLPTracePayload,
+  OTELExportOptions,
+} from "./reporting/otel-export.js";
+
+// SaaS HTTP API server
+export { startApiServer } from "./api/server.js";
+export type { ApiServerOptions } from "./api/server.js";

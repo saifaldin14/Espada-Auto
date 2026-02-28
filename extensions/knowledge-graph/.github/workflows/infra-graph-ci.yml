@@ -1,0 +1,80 @@
+# Example: Infra Graph CI workflow
+# Copy this to your repo as .github/workflows/infra-graph.yml
+#
+# Scans your cloud infrastructure, evaluates compliance,
+# and posts results as a PR comment.
+
+name: Infrastructure Compliance
+
+on:
+  pull_request:
+    branches: [main]
+  schedule:
+    # Run daily at 6am UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+    inputs:
+      framework:
+        description: "Compliance framework"
+        type: choice
+        options:
+          - cis
+          - nist-800-53
+          - soc2
+          - hipaa
+          - pci-dss
+          - iso-27001
+        default: cis
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write
+
+jobs:
+  scan:
+    name: Infra Graph Scan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        provider: [aws]
+        # Add more providers as needed:
+        # provider: [aws, azure, gcp]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Infra Graph
+        uses: your-org/infra-graph-action@v1
+        # Or if using the local action from this repo:
+        # uses: ./extensions/knowledge-graph
+        with:
+          provider: ${{ matrix.provider }}
+          compliance-framework: ${{ github.event.inputs.framework || 'cis' }}
+          fail-on-critical: "true"
+          fail-threshold: "70"
+          drift-detection: "true"
+          output-format: terraform
+          post-pr-comment: "true"
+          # otel-endpoint: ${{ secrets.OTEL_ENDPOINT }}
+
+          # AWS credentials
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+          # Azure credentials (uncomment if scanning Azure)
+          # azure-subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          # azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          # azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+
+          # GCP credentials (uncomment if scanning GCP)
+          # gcp-credentials-json: ${{ secrets.GCP_CREDENTIALS_JSON }}
+
+      - name: Upload report artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: infra-graph-report-${{ matrix.provider }}
+          path: .infra-graph/
+          retention-days: 30

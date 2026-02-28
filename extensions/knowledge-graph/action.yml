@@ -1,0 +1,333 @@
+name: "Infra Graph — Scan & Compliance"
+description: |
+  Run infrastructure graph scanning, compliance checks, and drift detection
+  as part of your CI/CD pipeline. Posts results as PR comments and can fail
+  the build on compliance violations.
+author: "@infra-graph/core"
+
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  provider:
+    description: "Cloud provider to scan (aws, azure, gcp)"
+    required: true
+  regions:
+    description: "Comma-separated list of regions to scan (default: all configured)"
+    required: false
+    default: ""
+  compliance-framework:
+    description: "Compliance framework to evaluate (soc2, hipaa, pci-dss, iso-27001, cis, nist-800-53)"
+    required: false
+    default: "cis"
+  fail-on-critical:
+    description: "Fail the workflow if critical compliance violations are found"
+    required: false
+    default: "true"
+  fail-threshold:
+    description: "Minimum compliance score (0-100) — fail if below this"
+    required: false
+    default: "70"
+  drift-detection:
+    description: "Enable drift detection against last known state"
+    required: false
+    default: "false"
+  output-format:
+    description: "IaC remediation format (terraform, cloudformation, pulumi, opentofu)"
+    required: false
+    default: "terraform"
+  post-pr-comment:
+    description: "Post scan results as a PR comment"
+    required: false
+    default: "true"
+  otel-endpoint:
+    description: "OpenTelemetry collector endpoint for metric export"
+    required: false
+    default: ""
+  node-version:
+    description: "Node.js version to use"
+    required: false
+    default: "22"
+
+  # Cloud credentials — passed via secrets
+  aws-access-key-id:
+    description: "AWS access key ID (use secrets)"
+    required: false
+  aws-secret-access-key:
+    description: "AWS secret access key (use secrets)"
+    required: false
+  aws-region:
+    description: "Default AWS region"
+    required: false
+    default: "us-east-1"
+  azure-subscription-id:
+    description: "Azure subscription ID"
+    required: false
+  azure-client-id:
+    description: "Azure client ID"
+    required: false
+  azure-client-secret:
+    description: "Azure client secret (use secrets)"
+    required: false
+  azure-tenant-id:
+    description: "Azure tenant ID"
+    required: false
+  gcp-credentials-json:
+    description: "GCP service account key JSON (use secrets)"
+    required: false
+
+outputs:
+  compliance-score:
+    description: "Overall compliance score (0-100)"
+    value: ${{ steps.scan.outputs.compliance_score }}
+  total-nodes:
+    description: "Total infrastructure nodes discovered"
+    value: ${{ steps.scan.outputs.total_nodes }}
+  total-edges:
+    description: "Total relationships mapped"
+    value: ${{ steps.scan.outputs.total_edges }}
+  drift-count:
+    description: "Number of drifted resources (if drift detection enabled)"
+    value: ${{ steps.scan.outputs.drift_count }}
+  critical-violations:
+    description: "Number of critical compliance violations"
+    value: ${{ steps.scan.outputs.critical_violations }}
+  report-json:
+    description: "Path to the full JSON report"
+    value: ${{ steps.scan.outputs.report_path }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install @infra-graph/core
+      shell: bash
+      run: npm install -g @infra-graph/core
+
+    - name: Configure cloud credentials
+      shell: bash
+      run: |
+        # AWS
+        if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
+          export AWS_ACCESS_KEY_ID="${{ inputs.aws-access-key-id }}"
+          export AWS_SECRET_ACCESS_KEY="${{ inputs.aws-secret-access-key }}"
+          export AWS_DEFAULT_REGION="${{ inputs.aws-region }}"
+          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
+          echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION" >> "$GITHUB_ENV"
+        fi
+
+        # Azure
+        if [[ -n "${{ inputs.azure-subscription-id }}" ]]; then
+          export AZURE_SUBSCRIPTION_ID="${{ inputs.azure-subscription-id }}"
+          export AZURE_CLIENT_ID="${{ inputs.azure-client-id }}"
+          export AZURE_CLIENT_SECRET="${{ inputs.azure-client-secret }}"
+          export AZURE_TENANT_ID="${{ inputs.azure-tenant-id }}"
+          echo "AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" >> "$GITHUB_ENV"
+          echo "AZURE_CLIENT_ID=$AZURE_CLIENT_ID" >> "$GITHUB_ENV"
+          echo "AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET" >> "$GITHUB_ENV"
+          echo "AZURE_TENANT_ID=$AZURE_TENANT_ID" >> "$GITHUB_ENV"
+        fi
+
+        # GCP
+        if [[ -n "${{ inputs.gcp-credentials-json }}" ]]; then
+          echo '${{ inputs.gcp-credentials-json }}' > /tmp/gcp-key.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS" >> "$GITHUB_ENV"
+        fi
+
+    - name: Run infrastructure scan
+      id: scan
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        REPORT_DIR="${GITHUB_WORKSPACE}/.infra-graph"
+        mkdir -p "$REPORT_DIR"
+
+        SCAN_ARGS="--provider ${{ inputs.provider }}"
+        if [[ -n "${{ inputs.regions }}" ]]; then
+          SCAN_ARGS="$SCAN_ARGS --regions ${{ inputs.regions }}"
+        fi
+
+        # Run cloud scan
+        echo "::group::Infrastructure Scan"
+        infra-graph cloud-scan $SCAN_ARGS --output "$REPORT_DIR/scan.json" 2>&1 || true
+        echo "::endgroup::"
+
+        # Run compliance check
+        echo "::group::Compliance Evaluation (${{ inputs.compliance-framework }})"
+        infra-graph audit --framework "${{ inputs.compliance-framework }}" \
+          --output "$REPORT_DIR/compliance.json" 2>&1 || true
+        echo "::endgroup::"
+
+        # Parse results from scan output
+        TOTAL_NODES=0
+        TOTAL_EDGES=0
+        COMPLIANCE_SCORE=0
+        CRITICAL_VIOLATIONS=0
+        DRIFT_COUNT=0
+
+        if [[ -f "$REPORT_DIR/scan.json" ]]; then
+          TOTAL_NODES=$(jq -r '.totalNodes // 0' "$REPORT_DIR/scan.json" 2>/dev/null || echo 0)
+          TOTAL_EDGES=$(jq -r '.totalEdges // 0' "$REPORT_DIR/scan.json" 2>/dev/null || echo 0)
+        fi
+
+        if [[ -f "$REPORT_DIR/compliance.json" ]]; then
+          COMPLIANCE_SCORE=$(jq -r '.overallScore // 0' "$REPORT_DIR/compliance.json" 2>/dev/null || echo 0)
+          CRITICAL_VIOLATIONS=$(jq -r '[.results[] | select(.status == "fail" and .severity == "critical")] | length' \
+            "$REPORT_DIR/compliance.json" 2>/dev/null || echo 0)
+        fi
+
+        # Run drift detection if enabled
+        if [[ "${{ inputs.drift-detection }}" == "true" ]]; then
+          echo "::group::Drift Detection"
+          infra-graph drift --output "$REPORT_DIR/drift.json" 2>&1 || true
+          if [[ -f "$REPORT_DIR/drift.json" ]]; then
+            DRIFT_COUNT=$(jq -r '.driftedNodes | length' "$REPORT_DIR/drift.json" 2>/dev/null || echo 0)
+          fi
+          echo "::endgroup::"
+        fi
+
+        # Set outputs
+        echo "total_nodes=$TOTAL_NODES" >> "$GITHUB_OUTPUT"
+        echo "total_edges=$TOTAL_EDGES" >> "$GITHUB_OUTPUT"
+        echo "compliance_score=$COMPLIANCE_SCORE" >> "$GITHUB_OUTPUT"
+        echo "critical_violations=$CRITICAL_VIOLATIONS" >> "$GITHUB_OUTPUT"
+        echo "drift_count=$DRIFT_COUNT" >> "$GITHUB_OUTPUT"
+        echo "report_path=$REPORT_DIR" >> "$GITHUB_OUTPUT"
+
+        # Summary
+        echo "### Infra Graph Scan Results" >> "$GITHUB_STEP_SUMMARY"
+        echo "" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Provider | \`${{ inputs.provider }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Nodes Discovered | $TOTAL_NODES |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Relationships | $TOTAL_EDGES |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Compliance Framework | \`${{ inputs.compliance-framework }}\` |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Compliance Score | ${COMPLIANCE_SCORE}% |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Critical Violations | $CRITICAL_VIOLATIONS |" >> "$GITHUB_STEP_SUMMARY"
+        if [[ "${{ inputs.drift-detection }}" == "true" ]]; then
+          echo "| Drifted Resources | $DRIFT_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Export to OpenTelemetry
+      if: inputs.otel-endpoint != ''
+      shell: bash
+      run: |
+        REPORT_DIR="${GITHUB_WORKSPACE}/.infra-graph"
+        if [[ -f "$REPORT_DIR/scan.json" ]]; then
+          # Use the built-in OTEL export from JSON metrics
+          infra-graph report --format otel \
+            --otel-endpoint "${{ inputs.otel-endpoint }}" \
+            --input "$REPORT_DIR/scan.json" 2>&1 || true
+        fi
+
+    - name: Post PR Comment
+      if: inputs.post-pr-comment == 'true' && github.event_name == 'pull_request'
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const reportDir = `${process.env.GITHUB_WORKSPACE}/.infra-graph`;
+
+          const score = '${{ steps.scan.outputs.compliance_score }}';
+          const nodes = '${{ steps.scan.outputs.total_nodes }}';
+          const edges = '${{ steps.scan.outputs.total_edges }}';
+          const critical = '${{ steps.scan.outputs.critical_violations }}';
+          const drift = '${{ steps.scan.outputs.drift_count }}';
+          const framework = '${{ inputs.compliance-framework }}';
+
+          const scoreNum = parseInt(score) || 0;
+          const statusEmoji = scoreNum >= 90 ? '🟢' : scoreNum >= 70 ? '🟡' : '🔴';
+
+          let body = `## ${statusEmoji} Infra Graph — Compliance Report\n\n`;
+          body += `| Metric | Value |\n|--------|-------|\n`;
+          body += `| Provider | \`${{ inputs.provider }}\` |\n`;
+          body += `| Nodes | ${nodes} |\n`;
+          body += `| Edges | ${edges} |\n`;
+          body += `| Framework | \`${framework}\` |\n`;
+          body += `| Score | **${score}%** |\n`;
+          body += `| Critical Violations | ${critical} |\n`;
+
+          if ('${{ inputs.drift-detection }}' === 'true') {
+            body += `| Drifted Resources | ${drift} |\n`;
+          }
+
+          body += `\n<details><summary>View detailed report</summary>\n\n`;
+
+          // Try to read compliance details
+          try {
+            const compliancePath = `${reportDir}/compliance.json`;
+            if (fs.existsSync(compliancePath)) {
+              const report = JSON.parse(fs.readFileSync(compliancePath, 'utf8'));
+              const failures = (report.results || []).filter(r => r.status === 'fail');
+              if (failures.length > 0) {
+                body += `### Failed Controls\n\n`;
+                body += `| Control | Severity | Section |\n|---------|----------|---------|\n`;
+                for (const f of failures.slice(0, 20)) {
+                  body += `| ${f.controlId} | ${f.severity} | ${f.section} |\n`;
+                }
+                if (failures.length > 20) {
+                  body += `\n_...and ${failures.length - 20} more_\n`;
+                }
+              }
+            }
+          } catch {
+            // Ignore read errors
+          }
+
+          body += `\n</details>`;
+
+          // Find existing comment to update
+          const { data: comments } = await github.rest.issues.listComments({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: context.issue.number,
+          });
+
+          const botComment = comments.find(c =>
+            c.body?.includes('Infra Graph — Compliance Report')
+          );
+
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: botComment.id,
+              body,
+            });
+          } else {
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+          }
+
+    - name: Enforce compliance threshold
+      if: inputs.fail-on-critical == 'true'
+      shell: bash
+      run: |
+        SCORE="${{ steps.scan.outputs.compliance_score }}"
+        CRITICAL="${{ steps.scan.outputs.critical_violations }}"
+        THRESHOLD="${{ inputs.fail-threshold }}"
+
+        if [[ "$CRITICAL" -gt 0 ]]; then
+          echo "::error::$CRITICAL critical compliance violations detected"
+          exit 1
+        fi
+
+        if [[ "$SCORE" -lt "$THRESHOLD" ]]; then
+          echo "::error::Compliance score ($SCORE%) is below threshold ($THRESHOLD%)"
+          exit 1
+        fi
+
+        echo "✅ Compliance check passed: score=${SCORE}%, critical=${CRITICAL}"

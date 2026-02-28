@@ -36,6 +36,14 @@
     "./iql": {
       "import": "./dist/iql/index.js",
       "types": "./dist/iql/index.d.ts"
+    },
+    "./api": {
+      "import": "./dist/api/index.js",
+      "types": "./dist/api/index.d.ts"
+    },
+    "./otel": {
+      "import": "./dist/reporting/otel-export.js",
+      "types": "./dist/reporting/otel-export.d.ts"
     }
   },
   "scripts": {
