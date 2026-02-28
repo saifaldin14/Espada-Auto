@@ -149,15 +149,208 @@ The plugin registers 30 agent tools across six categories:
 
 ### Phase 2 tools
 
-| Tool | Description |
-|---|---|
-| `kg_compliance` | Compliance posture analysis |
-| `kg_recommendations` | AI-powered optimization recommendations |
-| `kg_agents` | Multi-agent infrastructure coordination |
-| `kg_ask` | Natural language infrastructure questions |
-| `kg_remediation` | Automated remediation suggestions |
-| `kg_supply_chain` | Software supply chain analysis |
-| `kg_visualize` | Generate Mermaid topology diagrams |
+#### `kg_compliance` — Compliance posture analysis
+
+Evaluates infrastructure against standard compliance frameworks and
+returns pass/fail for each control with remediation guidance.
+
+**Supported frameworks:** `soc2`, `hipaa`, `pci-dss`, `iso-27001`
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `framework` | string | No | Specific framework to evaluate (default: all) |
+| `provider` | string | No | Filter to a cloud provider: `aws`, `azure`, `gcp`, `k8s`, `custom` |
+
+**Controls evaluated:** encryption at rest, network isolation, logging
+enabled, backup configured, monitoring active, required tags present.
+
+Ask the agent:
+
+> "Run a SOC2 compliance check on my AWS resources"
+
+> "Check HIPAA compliance across all providers"
+
+> "Show me which resources fail PCI-DSS controls"
+
+---
+
+#### `kg_recommendations` — Optimization recommendations
+
+Analyzes the infrastructure graph to surface actionable recommendations
+across seven detection strategies.
+
+**Detection strategies:**
+1. **Unused resources** — resources with no connections
+2. **Idle resources** — running but underutilized
+3. **Untagged resources** — missing required tags
+4. **Reliability issues** — single points of failure, no backups
+5. **Security issues** — overly permissive access, no encryption
+6. **Right-sizing** — over-provisioned compute/storage
+7. **Architecture issues** — anti-patterns and design problems
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `provider` | string | No | Filter to a cloud provider |
+
+The report includes estimated monthly savings for cost-related
+recommendations.
+
+Ask the agent:
+
+> "What optimization recommendations do you have?"
+
+> "Show me recommendations for my AWS resources"
+
+> "Find unused resources I can clean up"
+
+---
+
+#### `kg_agents` — Multi-agent activity report
+
+Shows which AI agents are operating on your infrastructure, what they
+are doing, and whether they conflict with each other.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `agentId` | string | No | Filter to a specific agent ID |
+| `since` | string | No | ISO 8601 timestamp to filter recent activity |
+
+**Report includes:**
+- Per-agent summary: actions, resources touched, changes, cost, success rate
+- Conflict detection: concurrent-modify, contradictory-action, resource-contention
+
+Ask the agent:
+
+> "Show me all agent activity"
+
+> "What has the deploy-agent been doing since last Monday?"
+
+> "Are any agents conflicting on the same resources?"
+
+---
+
+#### `kg_ask` — Natural language infrastructure questions
+
+Ask a plain-English question about your infrastructure. The tool
+translates it to IQL (Infrastructure Query Language), executes the
+query, and returns results in a table.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `question` | string | **Yes** | Natural language question about infrastructure |
+
+The translator understands resource types (databases, servers, buckets,
+etc.), providers (AWS, Azure, GCP), statuses (running, stopped, active),
+regions, environments, and cost qualifiers.
+
+Ask the agent:
+
+> "Show all databases"
+
+> "What depends on my load balancer?"
+
+> "How much do compute resources cost?"
+
+> "List stopped instances in us-west-2"
+
+> "Find all storage in production"
+
+If the question cannot be translated, the tool suggests example queries
+to guide you.
+
+---
+
+#### `kg_remediation` — Drift remediation patches
+
+Detects configuration drift and generates IaC patches to fix it.
+Supports Terraform HCL and CloudFormation YAML output with
+dependency-aware ordering and risk assessment per patch.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `iacFormat` | string | No | `terraform` (default) or `cloudformation` |
+
+**Output includes:**
+- Auto-remediable patches (safe to apply directly)
+- Manual review patches (need human verification)
+- Unremeditable drift (requires architectural changes)
+- Dependency warnings (patches that must be applied in order)
+
+Ask the agent:
+
+> "Generate Terraform patches to fix infrastructure drift"
+
+> "Show me CloudFormation remediation for any drifted resources"
+
+> "What drift exists and how do I fix it?"
+
+---
+
+#### `kg_supply_chain` — Software supply chain security
+
+Generates a supply chain security report covering container images,
+packages (SBOM), and known vulnerabilities (CVEs) across your
+infrastructure. Parses CycloneDX and SPDX formats.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `provider` | string | No | Filter to a cloud provider |
+
+**Report includes:**
+- Total container images, packages, and vulnerabilities
+- Critical vulnerability count and details
+- Image-to-infrastructure linkage (which resources run which images)
+- CVE lookup by image
+
+Ask the agent:
+
+> "Show me the supply chain security report"
+
+> "What container vulnerabilities exist in my AWS infrastructure?"
+
+> "Find images with critical CVEs"
+
+---
+
+#### `kg_visualize` — Interactive graph visualization
+
+Exports the infrastructure graph in a visualization-ready format for
+Cytoscape.js or D3.js rendering. Returns JSON data with nodes, edges,
+styling, and layout configuration.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `vizFormat` | string | No | `cytoscape` (default) or `d3-force` |
+| `layout` | string | No | Layout strategy: `force-directed` (default), `hierarchical`, `circular`, `grid`, `concentric` |
+| `provider` | string | No | Filter to a cloud provider |
+| `highlightNodeId` | string | No | Highlight a specific node and its neighborhood |
+| `maxNodes` | number | No | Maximum nodes to include (default: 500) |
+
+The export includes cost data, metadata, and provider-based grouping.
+
+Ask the agent:
+
+> "Visualize my infrastructure graph"
+
+> "Generate a hierarchical visualization of my AWS resources"
+
+> "Show me a D3 force graph highlighting vpc-abc123"
+
+> "Export a Cytoscape graph of just my GCP resources, max 200 nodes"
 
 ### Phase 3 tools
 
@@ -166,6 +359,212 @@ The plugin registers 30 agent tools across six categories:
 | `kg_rbac` | Role-based access control for graph operations |
 | `kg_benchmark` | Performance benchmarking |
 | `kg_export_extended` | Extended export (SBOM, CSV, Terraform) |
+
+## Multi-agent governance
+
+When multiple AI agents operate on the same infrastructure, the
+Knowledge Graph provides three layers of control: **agent modeling**
+(who touches what), **cost allocation** (who spends what), and
+**change governance** (who is allowed to do what).
+
+### Agent modeling
+
+Every agent is registered as a node in the graph. Actions are tracked
+as edges to the resources they touch, with full audit logging.
+
+Ask the agent:
+
+> "Which agents are modifying my infrastructure?"
+
+> "Show me agent activity for the last 7 days"
+
+> "Are any agents conflicting on the same resources?"
+
+The `kg_agents` tool returns a structured report:
+
+| Column | Description |
+|---|---|
+| Agent | Agent name |
+| Actions | Total actions performed |
+| Resources | Unique resources touched |
+| Changes | Changes initiated |
+| Cost | API/action cost attributed |
+| Success Rate | Percentage of successful actions |
+
+Conflict detection identifies three types:
+
+- **concurrent-modify** — two agents write to the same resource
+- **contradictory-action** — agents perform opposing operations (e.g., one scales up, another scales down)
+- **resource-contention** — agents compete for the same limited resource
+
+### Cost allocation
+
+The cost engine attributes infrastructure spend to individual agents
+using four allocation methods:
+
+| Method | Logic |
+|---|---|
+| `exclusive` | Agent is the sole writer — 100% of the resource cost is allocated |
+| `proportional` | Cost split by each agent's action count (default) |
+| `equal-split` | Cost divided equally among all agents touching the resource |
+| `weighted` | Cost split by action weight |
+
+Ask the agent:
+
+> "Break down infrastructure costs per agent"
+
+> "Which agent is spending the most?"
+
+> "Show me each agent's top resources by cost"
+
+The cost report includes per-agent summaries:
+
+| Column | Description |
+|---|---|
+| Agent | Agent name |
+| Infra Cost | Monthly infrastructure cost attributed |
+| Action Cost | API/action cost incurred |
+| Total | Combined cost |
+| Resources | Number of resources allocated |
+| Cost/Action | Cost efficiency metric |
+
+#### Agent budgets
+
+Set per-agent monthly spending limits. A budget alert fires when an
+agent crosses the threshold (default: 80% utilization):
+
+| Status | Meaning |
+|---|---|
+| `under` | Below alert threshold |
+| `warning` | Above threshold, below limit |
+| `over` | Exceeded monthly budget |
+
+### Change governance
+
+The governance layer intercepts infrastructure changes, scores risk,
+and gates high-risk operations behind human approval.
+
+#### Risk scoring
+
+Every change is scored 0–100 across seven factors:
+
+| Factor | Weight | Description |
+|---|---|---|
+| Blast radius | 25 | Number of transitively affected resources |
+| Cost impact | 20 | Monthly cost at risk ($) |
+| Dependent count | 15 | Direct downstream dependents |
+| Environment | 20 | Production gets higher risk |
+| GPU/AI workload | 10 | Expensive AI resources score higher |
+| Time of day | 5 | Outside business hours gets a bump |
+| Destructive action | 5 | Deletes are riskier than updates |
+
+#### Approval flow
+
+Changes are auto-approved, blocked, or queued based on risk score
+thresholds:
+
+| Score | Default behavior |
+|---|---|
+| 0–30 | Auto-approved |
+| 31–70 | Queued for review (configurable) |
+| 71–100 | Blocked until manual approval |
+
+Protected environments (`production`, `prod`) always require manual
+approval regardless of risk score.
+
+#### CLI commands for governance
+
+```bash
+# View the full audit trail
+espada infra audit
+
+# Filter to agent-initiated changes
+espada infra audit --type agent
+
+# Filter to a specific agent
+espada infra audit --initiator "deploy-agent"
+
+# Filter by time range
+espada infra audit --since 2025-02-01T00:00:00Z --until 2025-02-28T23:59:59Z
+
+# Filter by change type
+espada infra audit --change-type node-updated
+
+# Output as JSON for programmatic use
+espada infra audit --type agent --output json
+
+# Limit results
+espada infra audit --limit 100
+```
+
+#### Agent tool commands for governance
+
+Ask the agent any of these:
+
+```text
+"Show me the audit trail for agent-initiated changes"
+→ uses kg_audit_trail with initiatorType=agent
+
+"Show all pending approval requests"
+→ uses kg_pending_approvals
+
+"Give me a governance summary for the last 30 days"
+→ uses kg_governance_summary with since=<30 days ago>
+
+"Submit a change request to scale my RDS instance"
+→ uses kg_request_change with action=scale
+
+"Who changed the production database this week?"
+→ uses kg_audit_trail with targetResourceId=<db-id>
+```
+
+#### Governance config
+
+The governor is configured with these defaults:
+
+| Setting | Default | Description |
+|---|---|---|
+| `autoApproveThreshold` | `30` | Risk score at or below this is auto-approved |
+| `blockThreshold` | `70` | Risk score above this requires manual approval |
+| `enablePolicyChecks` | `true` | Run policy pre-checks before approval |
+| `allowAgentAutoApprove` | `true` | Allow auto-approval for agent-initiated changes |
+| `maxAutoApproveBlastRadius` | `5` | Max blast radius (node count) for auto-approval |
+| `protectedEnvironments` | `["production", "prod"]` | Environments that always require manual approval |
+| `protectedResourceTypes` | `[]` | Resource types that always require manual approval |
+
+OPA/Rego policy engine integration is supported for custom policy
+evaluation, with configurable fail-open or fail-closed behavior.
+
+### End-to-end multi-agent workflow
+
+Here is a typical workflow for a company running multiple agents:
+
+```bash
+# 1. Discover infrastructure
+espada infra cloud-scan
+
+# 2. Check which agents are active and what they're touching
+#    (ask the agent)
+> "Show me all agent activity and conflicts"
+
+# 3. Review cost allocation per agent
+> "Break down infrastructure costs by agent"
+
+# 4. Check governance posture
+> "Show me the governance summary for this month"
+
+# 5. Review pending approvals
+> "List all pending approval requests"
+
+# 6. Audit agent-specific changes
+espada infra audit --type agent --since 2025-02-01T00:00:00Z
+
+# 7. Find single points of failure in the topology
+espada infra report --focus spof
+
+# 8. Export for compliance reporting
+> "Export the audit trail as JSON"
+```
 
 ## Example conversations
 
@@ -185,6 +584,14 @@ The plugin registers 30 agent tools across six categories:
 
 > "Generate a Mermaid diagram of my network topology"
 
+> "Which agents are modifying production resources?"
+
+> "Break down infrastructure costs per agent"
+
+> "Show me the governance summary and any pending approvals"
+
+> "Submit a change request to delete the orphaned S3 buckets"
+
 ## Troubleshooting
 
 **"No resources found"** — make sure your cloud credentials are
@@ -197,3 +604,8 @@ with the latest resource state.
 **Large environments** — for accounts with thousands of resources,
 enable incremental sync to reduce scan time after the initial
 full discovery.
+
+**Agent conflicts** — if `kg_agents` reports conflicts, review
+which agents have overlapping write scope and consider restricting
+agent capabilities or using governance approval gates to serialize
+their changes.
