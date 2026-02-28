@@ -4,5 +4,12 @@
   "description": "Pulumi state parsing, preview/up wrapping, drift detection",
   "version": "0.0.1",
   "entryPoint": "index.ts",
-  "dependencies": ["@espada/audit-trail"]
+  "dependencies": [
+    "@espada/audit-trail"
+  ],
+  "id": "pulumi",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

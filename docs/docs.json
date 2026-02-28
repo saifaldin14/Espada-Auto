@@ -1040,6 +1040,7 @@
           "tools/llm-task",
           "plugin",
           "plugins/aws",
+          "plugins/knowledge-graph",
           "plugins/voice-call",
           "plugins/zalouser",
           "tools/exec",

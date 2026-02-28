@@ -337,6 +337,12 @@ Full setup walkthrough (28m) by VelvetShark.
 
 <CardGroup cols={2}>
 
+<Card title="Infrastructure Knowledge Graph" icon="diagram-project" href="/plugins/knowledge-graph">
+  **@espada** • `infrastructure` `knowledge-graph` `multi-cloud`
+  
+  Multi-cloud topology discovery, blast radius analysis, drift detection, SPOF identification, and IQL queries. 30 AI tools across AWS, Azure, GCP, Kubernetes, and Terraform.
+</Card>
+
 <Card title="Home Assistant Add-on" icon="home" href="https://github.com/ngutman/espada-ha-addon">
   **@ngutman** • `homeassistant` `docker` `raspberry-pi`
   

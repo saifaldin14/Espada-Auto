@@ -4,5 +4,13 @@
   "description": "Cost estimation, budget management, Infracost integration, FinOps governance",
   "version": "0.0.1",
   "entryPoint": "index.ts",
-  "dependencies": ["@espada/audit-trail", "@espada/policy-engine"]
+  "dependencies": [
+    "@espada/audit-trail",
+    "@espada/policy-engine"
+  ],
+  "id": "cost-governance",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

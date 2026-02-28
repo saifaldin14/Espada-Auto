@@ -176,6 +176,23 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/** Safely convert a timestamp (Date, string, or nullish) to an ISO string for SQLite binding. */
+function toTs(value: unknown, fallback: string): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "string" && value.length > 0) return value;
+  return fallback;
+}
+
+/** Coerce a value to a SQLite-safe binding (string | number | bigint | Buffer | null). */
+function safe(value: unknown): string | number | bigint | Buffer | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") return value;
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "boolean") return value ? 1 : 0;
+  return JSON.stringify(value);
+}
+
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -256,19 +273,19 @@ export class SQLiteGraphStorage implements GraphStorage {
         id: node.id,
         provider: node.provider,
         resourceType: node.resourceType,
-        nativeId: node.nativeId,
-        name: node.name,
-        region: node.region,
-        account: node.account,
-        status: node.status,
-        tags: JSON.stringify(node.tags),
-        metadata: JSON.stringify(node.metadata),
-        costMonthly: node.costMonthly,
-        owner: node.owner,
-        discoveredAt: node.discoveredAt ?? ts,
-        createdAt: node.createdAt,
-        updatedAt: node.updatedAt ?? ts,
-        lastSeenAt: node.lastSeenAt ?? ts,
+        nativeId: safe(node.nativeId),
+        name: safe(node.name),
+        region: safe(node.region),
+        account: safe(node.account),
+        status: safe(node.status) ?? "active",
+        tags: JSON.stringify(node.tags ?? {}),
+        metadata: JSON.stringify(node.metadata ?? {}),
+        costMonthly: safe(node.costMonthly),
+        owner: safe(node.owner),
+        discoveredAt: toTs(node.discoveredAt, ts),
+        createdAt: toTs(node.createdAt, ts),
+        updatedAt: toTs(node.updatedAt, ts),
+        lastSeenAt: toTs(node.lastSeenAt, ts),
       });
   }
 
@@ -295,19 +312,19 @@ export class SQLiteGraphStorage implements GraphStorage {
             id: node.id,
             provider: node.provider,
             resourceType: node.resourceType,
-            nativeId: node.nativeId,
-            name: node.name,
-            region: node.region,
-            account: node.account,
-            status: node.status,
-            tags: JSON.stringify(node.tags),
-            metadata: JSON.stringify(node.metadata),
-            costMonthly: node.costMonthly,
-            owner: node.owner,
-            discoveredAt: node.discoveredAt ?? ts,
-            createdAt: node.createdAt,
-            updatedAt: node.updatedAt ?? ts,
-            lastSeenAt: node.lastSeenAt ?? ts,
+            nativeId: safe(node.nativeId),
+            name: safe(node.name),
+            region: safe(node.region),
+            account: safe(node.account),
+            status: safe(node.status) ?? "active",
+            tags: JSON.stringify(node.tags ?? {}),
+            metadata: JSON.stringify(node.metadata ?? {}),
+            costMonthly: safe(node.costMonthly),
+            owner: safe(node.owner),
+            discoveredAt: toTs(node.discoveredAt, ts),
+            createdAt: toTs(node.createdAt, ts),
+            updatedAt: toTs(node.updatedAt, ts),
+            lastSeenAt: toTs(node.lastSeenAt, ts),
           });
       }
     });
@@ -474,12 +491,12 @@ export class SQLiteGraphStorage implements GraphStorage {
 
     const rows = this.db
       .prepare(`SELECT id FROM nodes ${clause}`)
-      .all({ olderThan, provider }) as Array<{ id: string }>;
+      .all({ olderThan, provider: provider ?? null }) as Array<{ id: string }>;
 
     if (rows.length > 0) {
       this.db
         .prepare(`UPDATE nodes SET status = 'disappeared', updated_at = @now ${clause.replace("WHERE", "WHERE")}`)
-        .run({ olderThan, provider, now: now() });
+        .run({ olderThan, provider: provider ?? null, now: now() });
     }
 
     return rows.map((r) => r.id);
@@ -503,11 +520,11 @@ export class SQLiteGraphStorage implements GraphStorage {
         sourceNodeId: edge.sourceNodeId,
         targetNodeId: edge.targetNodeId,
         relationshipType: edge.relationshipType,
-        confidence: edge.confidence,
-        discoveredVia: edge.discoveredVia,
-        metadata: JSON.stringify(edge.metadata),
-        createdAt: edge.createdAt ?? ts,
-        lastSeenAt: edge.lastSeenAt ?? ts,
+        confidence: edge.confidence ?? 1.0,
+        discoveredVia: safe(edge.discoveredVia),
+        metadata: JSON.stringify(edge.metadata ?? {}),
+        createdAt: toTs(edge.createdAt, ts),
+        lastSeenAt: toTs(edge.lastSeenAt, ts),
       });
   }
 
@@ -528,11 +545,11 @@ export class SQLiteGraphStorage implements GraphStorage {
           sourceNodeId: edge.sourceNodeId,
           targetNodeId: edge.targetNodeId,
           relationshipType: edge.relationshipType,
-          confidence: edge.confidence,
-          discoveredVia: edge.discoveredVia,
-          metadata: JSON.stringify(edge.metadata),
-          createdAt: edge.createdAt ?? ts,
-          lastSeenAt: edge.lastSeenAt ?? ts,
+          confidence: edge.confidence ?? 1.0,
+          discoveredVia: safe(edge.discoveredVia),
+          metadata: JSON.stringify(edge.metadata ?? {}),
+          createdAt: toTs(edge.createdAt, ts),
+          lastSeenAt: toTs(edge.lastSeenAt, ts),
         });
       }
     });
@@ -672,15 +689,15 @@ export class SQLiteGraphStorage implements GraphStorage {
         id: change.id,
         targetId: change.targetId,
         changeType: change.changeType,
-        field: change.field,
-        previousValue: change.previousValue,
-        newValue: change.newValue,
-        detectedAt: change.detectedAt,
+        field: safe(change.field),
+        previousValue: safe(change.previousValue),
+        newValue: safe(change.newValue),
+        detectedAt: toTs(change.detectedAt, now()),
         detectedVia: change.detectedVia,
-        correlationId: change.correlationId,
-        initiator: change.initiator ?? null,
-        initiatorType: change.initiatorType ?? null,
-        metadata: JSON.stringify(change.metadata),
+        correlationId: safe(change.correlationId),
+        initiator: safe(change.initiator),
+        initiatorType: safe(change.initiatorType),
+        metadata: JSON.stringify(change.metadata ?? {}),
       });
   }
 
@@ -695,15 +712,15 @@ export class SQLiteGraphStorage implements GraphStorage {
           id: change.id,
           targetId: change.targetId,
           changeType: change.changeType,
-          field: change.field,
-          previousValue: change.previousValue,
-          newValue: change.newValue,
-          detectedAt: change.detectedAt,
+          field: safe(change.field),
+          previousValue: safe(change.previousValue),
+          newValue: safe(change.newValue),
+          detectedAt: toTs(change.detectedAt, now()),
           detectedVia: change.detectedVia,
-          correlationId: change.correlationId,
-          initiator: change.initiator ?? null,
-          initiatorType: change.initiatorType ?? null,
-          metadata: JSON.stringify(change.metadata),
+          correlationId: safe(change.correlationId),
+          initiator: safe(change.initiator),
+          initiatorType: safe(change.initiatorType),
+          metadata: JSON.stringify(change.metadata ?? {}),
         });
       }
     });
@@ -832,12 +849,12 @@ export class SQLiteGraphStorage implements GraphStorage {
         id: group.id,
         name: group.name,
         groupType: group.groupType,
-        description: group.description,
-        owner: group.owner,
-        tags: JSON.stringify(group.tags),
-        costMonthly: group.costMonthly,
-        createdAt: group.createdAt,
-        updatedAt: group.updatedAt,
+        description: safe(group.description),
+        owner: safe(group.owner),
+        tags: JSON.stringify(group.tags ?? {}),
+        costMonthly: safe(group.costMonthly),
+        createdAt: toTs(group.createdAt, now()),
+        updatedAt: toTs(group.updatedAt, now()),
       });
   }
 
@@ -909,17 +926,17 @@ export class SQLiteGraphStorage implements GraphStorage {
         provider: record.provider,
         status: record.status,
         startedAt: record.startedAt,
-        completedAt: record.completedAt,
-        nodesDiscovered: record.nodesDiscovered,
-        nodesCreated: record.nodesCreated,
-        nodesUpdated: record.nodesUpdated,
-        nodesDisappeared: record.nodesDisappeared,
-        edgesDiscovered: record.edgesDiscovered,
-        edgesCreated: record.edgesCreated,
-        edgesRemoved: record.edgesRemoved,
-        changesRecorded: record.changesRecorded,
-        errors: JSON.stringify(record.errors),
-        durationMs: record.durationMs,
+        completedAt: safe(record.completedAt),
+        nodesDiscovered: record.nodesDiscovered ?? 0,
+        nodesCreated: record.nodesCreated ?? 0,
+        nodesUpdated: record.nodesUpdated ?? 0,
+        nodesDisappeared: record.nodesDisappeared ?? 0,
+        edgesDiscovered: record.edgesDiscovered ?? 0,
+        edgesCreated: record.edgesCreated ?? 0,
+        edgesRemoved: record.edgesRemoved ?? 0,
+        changesRecorded: record.changesRecorded ?? 0,
+        errors: JSON.stringify(record.errors ?? []),
+        durationMs: record.durationMs ?? 0,
       });
   }
 

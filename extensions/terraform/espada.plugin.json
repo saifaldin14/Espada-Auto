@@ -3,5 +3,13 @@
   "displayName": "Terraform",
   "description": "Terraform state management, drift detection, and plan evaluation",
   "version": "0.0.1",
-  "dependencies": ["@espada/audit-trail", "@espada/policy-engine"]
+  "dependencies": [
+    "@espada/audit-trail",
+    "@espada/policy-engine"
+  ],
+  "id": "terraform",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

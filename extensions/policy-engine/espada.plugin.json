@@ -5,6 +5,18 @@
   "version": "1.0.0",
   "author": "Espada Team",
   "category": "security",
-  "capabilities": ["policy-evaluation", "compliance-check", "cost-governance", "access-control", "drift-response"],
-  "dependencies": ["@espada/audit-trail"]
+  "capabilities": [
+    "policy-evaluation",
+    "compliance-check",
+    "cost-governance",
+    "access-control",
+    "drift-response"
+  ],
+  "dependencies": [
+    "@espada/audit-trail"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

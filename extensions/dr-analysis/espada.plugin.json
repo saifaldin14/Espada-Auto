@@ -4,5 +4,12 @@
   "description": "DR posture scoring, recovery plan generation, and gap analysis using Knowledge Graph topology",
   "version": "0.1.0",
   "entryPoint": "index.ts",
-  "dependencies": ["knowledge-graph"]
+  "dependencies": [
+    "knowledge-graph"
+  ],
+  "id": "dr-analysis",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

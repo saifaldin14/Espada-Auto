@@ -4,5 +4,13 @@
   "description": "Infrastructure blueprint catalog with cross-provider templates, parameter validation, and deployment lifecycle",
   "version": "0.1.0",
   "entryPoint": "index.ts",
-  "dependencies": ["terraform", "knowledge-graph"]
+  "dependencies": [
+    "terraform",
+    "knowledge-graph"
+  ],
+  "id": "blueprints",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

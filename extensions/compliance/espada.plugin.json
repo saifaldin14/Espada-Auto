@@ -4,10 +4,17 @@
   "description": "Multi-framework compliance scanning, violation tracking, waiver management, and reporting (SOC2, CIS, HIPAA, PCI-DSS, GDPR, NIST 800-53).",
   "version": "1.0.0",
   "entryPoint": "index.ts",
-  "dependencies": ["knowledge-graph"],
+  "dependencies": [
+    "knowledge-graph"
+  ],
   "capabilities": {
     "tools": true,
     "cli": true,
     "gateway": true
+  },
+  "id": "compliance",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
   }
 }

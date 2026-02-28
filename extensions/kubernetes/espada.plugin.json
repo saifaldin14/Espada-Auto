@@ -4,5 +4,12 @@
   "description": "Kubernetes manifest parsing, kubectl wrapping, resource graph bridging",
   "version": "0.0.1",
   "entryPoint": "index.ts",
-  "dependencies": ["@espada/audit-trail"]
+  "dependencies": [
+    "@espada/audit-trail"
+  ],
+  "id": "kubernetes",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

@@ -4,5 +4,13 @@
   "description": "GitHub/GitLab PR automation, webhook handling, plan commenting",
   "version": "0.0.1",
   "entryPoint": "index.ts",
-  "dependencies": ["@espada/audit-trail", "@espada/policy-engine"]
+  "dependencies": [
+    "@espada/audit-trail",
+    "@espada/policy-engine"
+  ],
+  "id": "vcs",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }

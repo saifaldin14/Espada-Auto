@@ -80,7 +80,7 @@ export default {
     "Persistent, queryable topology of resources, relationships, costs, and changes across cloud providers",
   version: "1.0.0",
 
-  async register(api: EspadaPluginApi) {
+  register(api: EspadaPluginApi) {
     const config = (api.pluginConfig ?? {}) as KnowledgeGraphPluginConfig;
     const mergedConfig = {
       storage: { ...DEFAULT_CONFIG.storage, ...config.storage },
@@ -88,11 +88,16 @@ export default {
       adapters: config.adapters ?? DEFAULT_CONFIG.adapters,
     };
 
-    // -- Initialize storage --------------------------------------------------
-    const storage = createStorage(mergedConfig, api.resolvePath);
-    await storage.initialize();
+    // -- Register CLI commands (synchronous — must happen before any await) ----
+    // The infra CLI creates its own storage per-invocation, so it doesn't need
+    // the plugin-level engine/storage.
+    api.registerCli(
+      (ctx) => registerInfraCli({ program: ctx.program, logger: ctx.logger, workspaceDir: ctx.workspaceDir }),
+      { commands: ["infra"] },
+    );
 
-    // -- Initialize engine ----------------------------------------------------
+    // -- Initialize storage & engine (deferred to avoid async register) --------
+    const storage = createStorage(mergedConfig, api.resolvePath);
     const engine = new GraphEngine({
       storage,
       config: {
@@ -101,9 +106,15 @@ export default {
       },
     });
 
-    api.logger.info(
-      `Knowledge graph initialized (storage: ${mergedConfig.storage.type}, adapters: ${mergedConfig.adapters.join(", ")})`,
-    );
+    // Defer async initialization — storage.initialize() will be called when
+    // the graph CLI or tools are first used, and by the background sync service.
+    const initPromise = storage.initialize().then(() => {
+      api.logger.info(
+        `Knowledge graph initialized (storage: ${mergedConfig.storage.type}, adapters: ${mergedConfig.adapters.join(", ")})`,
+      );
+    }).catch((err: unknown) => {
+      api.logger.error(`Knowledge graph storage init failed: ${err}`);
+    });
 
     // -- Register agent tools -------------------------------------------------
     registerGraphTools(api, engine, storage);
@@ -112,21 +123,18 @@ export default {
     const governor = new ChangeGovernor(engine, storage);
     registerGovernanceTools(api, governor, storage);
 
-    // -- Register CLI commands ------------------------------------------------
+    // -- Register graph CLI (needs engine + storage) --------------------------
     api.registerCli(
       (ctx) => registerGraphCli(ctx, engine, storage),
       { commands: ["graph"] },
-    );
-
-    api.registerCli(
-      (ctx) => registerInfraCli({ program: ctx.program, logger: ctx.logger, workspaceDir: ctx.workspaceDir }),
-      { commands: ["infra"] },
     );
 
     // -- Register background sync service -------------------------------------
     api.registerService({
       id: "knowledge-graph-sync",
       async start(ctx) {
+        // Ensure storage is ready before starting sync
+        await initPromise;
         const syncInterval = (mergedConfig.sync.intervalMinutes ?? 15) * 60 * 1000;
         const fullSyncInterval = (mergedConfig.sync.fullSyncIntervalHours ?? 6) * 60 * 60 * 1000;
 

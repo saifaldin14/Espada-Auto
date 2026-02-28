@@ -3,5 +3,12 @@
   "displayName": "Enterprise Auth",
   "description": "OIDC SSO, RBAC roles/permissions, JWT sessions, MFA support",
   "version": "0.0.1",
-  "dependencies": ["@espada/audit-trail"]
+  "dependencies": [
+    "@espada/audit-trail"
+  ],
+  "id": "enterprise-auth",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
 }
