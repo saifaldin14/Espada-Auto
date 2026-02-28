@@ -60,7 +60,6 @@
     "better-sqlite3": "^11.10.0"
   },
   "devDependencies": {
-    "@espada/aws": "workspace:*",
     "@aws-sdk/client-api-gateway": "^3.982.0",
     "@aws-sdk/client-bedrock": "^3.975.0",
     "@aws-sdk/client-cloudfront": "^3.978.0",
@@ -79,6 +78,8 @@
     "@aws-sdk/client-secrets-manager": "^3.980.0",
     "@aws-sdk/client-sns": "^3.980.0",
     "@aws-sdk/client-sqs": "^3.982.0",
+    "@espada/aws": "workspace:*",
+    "@espada/azure": "workspace:*",
     "@types/better-sqlite3": "^7.6.12",
     "espada": "workspace:*",
     "typescript": "^5.4.5",

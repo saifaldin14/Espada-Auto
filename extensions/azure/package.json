@@ -170,6 +170,82 @@
     "./catalog": {
       "import": "./dist/catalog/index.js",
       "types": "./dist/catalog/index.d.ts"
+    },
+    "./eventhubs": {
+      "import": "./dist/eventhubs/index.js",
+      "types": "./dist/eventhubs/index.d.ts"
+    },
+    "./firewall": {
+      "import": "./dist/firewall/index.js",
+      "types": "./dist/firewall/index.d.ts"
+    },
+    "./appgateway": {
+      "import": "./dist/appgateway/index.js",
+      "types": "./dist/appgateway/index.d.ts"
+    },
+    "./frontdoor": {
+      "import": "./dist/frontdoor/index.js",
+      "types": "./dist/frontdoor/index.d.ts"
+    },
+    "./webapp": {
+      "import": "./dist/webapp/index.js",
+      "types": "./dist/webapp/index.d.ts"
+    },
+    "./database": {
+      "import": "./dist/database/index.js",
+      "types": "./dist/database/index.d.ts"
+    },
+    "./datafactory": {
+      "import": "./dist/datafactory/index.js",
+      "types": "./dist/datafactory/index.d.ts"
+    },
+    "./synapse": {
+      "import": "./dist/synapse/index.js",
+      "types": "./dist/synapse/index.d.ts"
+    },
+    "./springapps": {
+      "import": "./dist/springapps/index.js",
+      "types": "./dist/springapps/index.d.ts"
+    },
+    "./staticwebapps": {
+      "import": "./dist/staticwebapps/index.js",
+      "types": "./dist/staticwebapps/index.d.ts"
+    },
+    "./hybrid": {
+      "import": "./dist/hybrid/index.js",
+      "types": "./dist/hybrid/index.d.ts"
+    },
+    "./bastion": {
+      "import": "./dist/bastion/index.js",
+      "types": "./dist/bastion/index.d.ts"
+    },
+    "./trafficmanager": {
+      "import": "./dist/trafficmanager/index.js",
+      "types": "./dist/trafficmanager/index.d.ts"
+    },
+    "./signalr": {
+      "import": "./dist/signalr/index.js",
+      "types": "./dist/signalr/index.d.ts"
+    },
+    "./purview": {
+      "import": "./dist/purview/index.js",
+      "types": "./dist/purview/index.d.ts"
+    },
+    "./maps": {
+      "import": "./dist/maps/index.js",
+      "types": "./dist/maps/index.d.ts"
+    },
+    "./notificationhubs": {
+      "import": "./dist/notificationhubs/index.js",
+      "types": "./dist/notificationhubs/index.d.ts"
+    },
+    "./digitaltwins": {
+      "import": "./dist/digitaltwins/index.js",
+      "types": "./dist/digitaltwins/index.d.ts"
+    },
+    "./enterprise": {
+      "import": "./dist/enterprise/index.js",
+      "types": "./dist/enterprise/index.d.ts"
     }
   },
   "scripts": {
