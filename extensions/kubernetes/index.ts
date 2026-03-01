@@ -4,6 +4,7 @@
 
 import type { EspadaPluginApi } from "espada/plugin-sdk";
 import { createK8sTools } from "./src/tools.js";
+import { createHelmTools } from "./src/helm-tools.js";
 import { createK8sCli } from "./src/cli.js";
 
 export default {
@@ -11,6 +12,9 @@ export default {
   name: "Kubernetes Management",
   register(api: EspadaPluginApi) {
     for (const tool of createK8sTools()) {
+      api.registerTool(tool as any);
+    }
+    for (const tool of createHelmTools()) {
       api.registerTool(tool as any);
     }
 
