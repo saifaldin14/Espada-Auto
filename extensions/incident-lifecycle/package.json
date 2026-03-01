@@ -1,0 +1,17 @@
+{
+  "name": "@espada/incident-lifecycle",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Structured incident lifecycle: detect → classify → triage → remediate → rollback → post-mortem → close",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "license": "MIT"
+}

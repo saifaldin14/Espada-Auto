@@ -1,0 +1,13 @@
+{
+  "name": "incident-lifecycle",
+  "displayName": "Structured Incident Lifecycle",
+  "description": "Full incident lifecycle orchestration: detect → classify severity → triage → remediate → rollback → post-mortem → close. Composes existing remediation (AWS, K8s, Helm, Azure, Terraform) and rollback capabilities into a unified workflow.",
+  "version": "0.0.1",
+  "entryPoint": "index.ts",
+  "dependencies": [],
+  "id": "incident-lifecycle",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}
