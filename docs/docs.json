@@ -812,6 +812,14 @@
     {
       "source": "/gcp/",
       "destination": "/platforms/gcp"
+    },
+    {
+      "source": "/quickstart",
+      "destination": "/start/quickstart"
+    },
+    {
+      "source": "/quickstart/",
+      "destination": "/start/quickstart"
     }
   ],
   "navigation": {
@@ -820,6 +828,7 @@
         "group": "Start Here",
         "pages": [
           "index",
+          "start/quickstart",
           "start/getting-started",
           "start/wizard",
           "start/setup",

@@ -142,8 +142,6 @@ npm install -g espada@latest
 espada onboard --install-daemon
 ```
 
-Other install methods: [Docker](https://docs.molt.bot/install/docker) · [Nix](https://docs.molt.bot/install/nix) · [Ansible](https://docs.molt.bot/install/ansible) · [From source](https://docs.molt.bot/install)
-
 ## Quick Start
 
 If you already have an API key in your environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`), or Ollama running locally:

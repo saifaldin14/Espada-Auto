@@ -9,9 +9,7 @@ If you believe you've found a security issue in Espada, please report it private
 
 ## Operational Guidance
 
-For threat model + hardening guidance (including `espada security audit --deep` and `--fix`), see:
-
-- `https://docs.molt.bot/gateway/security`
+For threat model + hardening guidance (including `espada security audit --deep` and `--fix`)
 
 ### Web Interface Safety
 
