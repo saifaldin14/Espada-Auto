@@ -121,23 +121,70 @@ infra-graph mcp --db ./infra.db
 
 ## Install
 
-Runtime: **Node ≥22**
+**System requirements:** Node ≥22 · macOS, Linux, or Windows (WSL2)
+
+### Quick install (recommended)
+
+```bash
+curl -fsSL https://molt.bot/install.sh | bash
+```
+
+Windows (PowerShell):
+
+```powershell
+iwr -useb https://molt.bot/install.ps1 | iex
+```
+
+### Alternative: global install
 
 ```bash
 npm install -g espada@latest
 espada onboard --install-daemon
 ```
 
+Other install methods: [Docker](https://docs.molt.bot/install/docker) · [Nix](https://docs.molt.bot/install/nix) · [Ansible](https://docs.molt.bot/install/ansible) · [From source](https://docs.molt.bot/install)
+
 ## Quick Start
 
-```bash
-# Start the gateway
-espada gateway --port 18789
+If you already have an API key in your environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`), or Ollama running locally:
 
-# Send a message
+```bash
+espada quickstart
+```
+
+This will auto-detect your LLM credentials, generate a gateway token, and open a browser dashboard at `http://127.0.0.1:18789/` — **chatting in under 30 seconds**, no channel setup needed.
+
+When you're ready to extend:
+
+```bash
+# Connect messaging channels (WhatsApp, Telegram, Discord, etc.)
+espada configure --section channels
+
+# Connect cloud providers (AWS, Azure, GCP)
+espada configure --section cloud
+
+# Full configuration wizard
+espada onboard
+```
+
+### Verify
+
+```bash
+espada status          # Gateway + channel overview
+espada health          # Health snapshot from the running gateway
+espada doctor          # Check for misconfigurations
+```
+
+### Connect a chat channel
+
+```bash
+# WhatsApp (QR code login)
+espada channels login
+
+# Send a test message
 espada message send --to +1234567890 --message "Hello from Espada"
 
-# Talk to the agent
+# Talk to the agent from the CLI
 espada agent --message "List my EC2 instances in us-east-1" --thinking high
 ```
 
@@ -148,6 +195,7 @@ git clone https://github.com/saifaldin14/Espada-Auto.git
 cd Espada-Auto
 
 pnpm install
+pnpm ui:build          # auto-installs UI deps on first run
 pnpm build
 
 # Dev loop (auto-reload)
@@ -156,9 +204,13 @@ pnpm gateway:watch
 # Run tests
 pnpm test
 
-# Lint
-pnpm lint
+# Lint + format
+pnpm lint && pnpm format
 ```
+
+Run CLI commands from the repo without a global install: `pnpm espada ...`
+
+Open the dashboard: `espada dashboard` (or browse `http://127.0.0.1:18789/`).
 
 ## Chat Commands
 
@@ -184,7 +236,9 @@ Send these in any connected messaging channel:
 
 ## Configuration
 
-Minimal `~/.espada/espada.json`:
+Config lives at `~/.espada/espada.json`. The workspace (skills, prompts, memories) lives at `~/clawd`.
+
+Minimal config:
 
 ```json5
 {
@@ -194,10 +248,20 @@ Minimal `~/.espada/espada.json`:
 }
 ```
 
+Interactive configuration:
+
+```bash
+espada configure                  # Full interactive config
+espada configure --section cloud  # Cloud providers only
+espada configure --section channels  # Messaging channels only
+espada configure --section web    # Web search (Brave API key)
+```
+
 ## Security
 
 - DM pairing is enabled by default — unknown senders receive a pairing code
 - Approve senders: `espada pairing approve <channel> <code>`
+- Security audit: `espada security audit --deep`
 - Run `espada doctor` to check for security misconfigurations
 
 ## License
