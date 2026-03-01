@@ -5,6 +5,7 @@
 import type { EspadaPluginApi } from "espada/plugin-sdk";
 import { SQLiteTerraformStorage, InMemoryTerraformStorage } from "./src/storage.js";
 import { createTerraformTools } from "./src/tools.js";
+import { createTerraformCliTools } from "./src/cli-tools.js";
 import { createTerraformCli } from "./src/cli.js";
 import type { TerraformStorage } from "./src/types.js";
 import { tfInit, tfPlan, tfApply, tfDestroy, tfStateList, tfStatePull, tfVersion, isTerraformInstalled } from "./src/cli-wrapper.js";
@@ -24,6 +25,10 @@ export default {
     }
 
     for (const tool of createTerraformTools(storage)) {
+      api.registerTool(tool as any);
+    }
+
+    for (const tool of createTerraformCliTools()) {
       api.registerTool(tool as any);
     }
 

@@ -1,6 +1,7 @@
 export { parseState, parsePlan, detectDrift, buildDriftResult, buildDependencyGraph, getResourceTypes, getProviderDistribution } from "./parser.js";
 export { InMemoryTerraformStorage, SQLiteTerraformStorage, createWorkspaceFromInput } from "./storage.js";
 export { createTerraformTools } from "./tools.js";
+export { createTerraformCliTools } from "./cli-tools.js";
 export { createCodifyTools } from "./codify-tools.js";
 export { createTerraformCli } from "./cli.js";
 export { stateToGraphNodes, dependenciesToGraphEdges, syncStateToGraph, diffGraphVsState, tfResourceTypeToGraphType } from "./graph-bridge.js";
