@@ -1,0 +1,13 @@
+{
+  "name": "alerting-integration",
+  "displayName": "Alerting Integration",
+  "description": "Webhook receiver for PagerDuty, OpsGenie, and CloudWatch Alarms with routing rules and channel message dispatch.",
+  "version": "0.0.1",
+  "entryPoint": "index.ts",
+  "dependencies": [],
+  "id": "alerting-integration",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}

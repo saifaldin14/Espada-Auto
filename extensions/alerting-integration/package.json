@@ -1,0 +1,17 @@
+{
+  "name": "@espada/alerting-integration",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Alerting integration: PagerDuty, OpsGenie, and CloudWatch Alarms webhook receiver with routing rules and channel message dispatch",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "license": "MIT"
+}
