@@ -86,6 +86,20 @@ export type {
   PATEventListener,
 } from "./devops/index.js";
 
+// Deployment Strategies
+export { AzureDeploymentStrategyManager, createDeploymentStrategyManager } from "./deployment-strategies/index.js";
+export type {
+  DeploymentStrategyType,
+  BlueGreenSlotOptions,
+  BlueGreenSlotResult,
+  CanarySlotOptions,
+  CanarySlotResult,
+  TrafficManagerShiftOptions,
+  TrafficManagerShiftResult,
+  DeploymentStatus,
+  HealthCheckResult,
+} from "./deployment-strategies/index.js";
+
 // Governance
 export { AzureGuardrailsManager } from "./guardrails/index.js";
 export { AzureComplianceManager } from "./compliance/index.js";

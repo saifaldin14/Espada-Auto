@@ -66,6 +66,7 @@ import type { AzureConversationalManager } from "./conversational/index.js";
 import type { AzureIaCManager } from "./iac/index.js";
 import type { ReconciliationEngine } from "./reconciliation/index.js";
 import type { EnterpriseServices } from "./enterprise/index.js";
+import type { AzureDeploymentStrategyManager } from "./deployment-strategies/index.js";
 import type { AzureExtensionConfig } from "./config.js";
 
 export type { AzureExtensionConfig } from "./config.js";
@@ -129,6 +130,7 @@ export interface AzurePluginState {
   purviewManager: AzurePurviewManager | null;
   mapsManager: AzureMapsManager | null;
   digitalTwinsManager: AzureDigitalTwinsManager | null;
+  deploymentStrategyManager: AzureDeploymentStrategyManager | null;
   intentCompiler: IntentCompiler | null;
   conversationalManager: AzureConversationalManager | null;
   iacManager: AzureIaCManager | null;
@@ -195,6 +197,7 @@ export function createPluginState(config: AzureExtensionConfig): AzurePluginStat
     purviewManager: null,
     mapsManager: null,
     digitalTwinsManager: null,
+    deploymentStrategyManager: null,
     intentCompiler: null,
     conversationalManager: null,
     iacManager: null,
@@ -262,6 +265,7 @@ export function clearPluginState(state: AzurePluginState): void {
   state.purviewManager = null;
   state.mapsManager = null;
   state.digitalTwinsManager = null;
+  state.deploymentStrategyManager = null;
   state.intentCompiler = null;
   state.conversationalManager = null;
   state.iacManager = null;

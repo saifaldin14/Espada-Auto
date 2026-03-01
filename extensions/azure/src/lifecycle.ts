@@ -120,6 +120,11 @@ export function registerServiceLifecycle(api: EspadaPluginApi, state: AzurePlugi
       state.firewallManager = new AzureFirewallManager(state.credentialsManager, subscriptionId, retryOpts);
       state.appGatewayManager = new AzureAppGatewayManager(state.credentialsManager, subscriptionId, retryOpts);
       state.trafficManagerManager = new AzureTrafficManagerManager(state.credentialsManager, subscriptionId, retryOpts);
+
+      // Deployment Strategies (composes WebApp + Traffic Manager managers)
+      const { AzureDeploymentStrategyManager: DeployStratMgr } = await import("./deployment-strategies/index.js");
+      state.deploymentStrategyManager = new DeployStratMgr(state.webAppManager, state.trafficManagerManager);
+
       state.bastionManager = new AzureBastionManager(state.credentialsManager, subscriptionId, retryOpts);
       state.frontDoorManager = new AzureFrontDoorManager(state.credentialsManager, subscriptionId, retryOpts);
       state.dnsManager = new AzureDNSManager(state.credentialsManager, subscriptionId, retryOpts);

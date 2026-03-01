@@ -116,5 +116,6 @@ export function getAzureManagers() {
     iacManager: s?.iacManager ?? null,
     reconciliationEngine: s?.reconciliationEngine ?? null,
     enterpriseServices: s?.enterpriseServices ?? null,
+    deploymentStrategy: s?.deploymentStrategyManager ?? null,
   };
 }

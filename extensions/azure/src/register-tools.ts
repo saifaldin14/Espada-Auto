@@ -3714,4 +3714,198 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       };
     },
   });
+
+  // =========================================================================
+  // Deployment Strategy Tools (higher-level orchestration)
+  // =========================================================================
+
+  api.registerTool({
+    name: "azure_blue_green_swap",
+    label: "Azure B/G Swap",
+    description:
+      "Execute a blue/green deployment by swapping Azure Web App deployment slots. " +
+      "Validates the source slot exists, optionally health-checks it, then performs an " +
+      "atomic zero-downtime swap. The code in the source slot becomes production traffic.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        sourceSlot: { type: "string", description: "Source slot to promote (e.g. 'staging')" },
+        targetSlot: { type: "string", description: "Target slot (default: 'production')" },
+        healthCheck: { type: "boolean", description: "Run a pre-swap health check on the source slot (default: false)" },
+        healthCheckPath: { type: "string", description: "Health check URL path (default: '/')" },
+        healthCheckTimeoutMs: { type: "number", description: "Health check timeout in ms (default: 10000)" },
+      },
+      required: ["resourceGroup", "appName", "sourceSlot"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.deploymentStrategyManager) throw new Error("Deployment strategy manager not initialized");
+      const result = await state.deploymentStrategyManager.blueGreenSlotSwap({
+        resourceGroup: params.resourceGroup as string,
+        appName: params.appName as string,
+        sourceSlot: params.sourceSlot as string,
+        targetSlot: params.targetSlot as string | undefined,
+        healthCheck: params.healthCheck as boolean | undefined,
+        healthCheckPath: params.healthCheckPath as string | undefined,
+        healthCheckTimeoutMs: params.healthCheckTimeoutMs as number | undefined,
+      });
+      return {
+        content: [{ type: "text" as const, text: result.summary }],
+        details: result,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_canary_shift",
+    label: "Azure Canary",
+    description:
+      "Set canary traffic routing for an Azure Web App deployment slot. " +
+      "Routes a percentage of live traffic to a canary/staging slot while the rest " +
+      "stays on production. Use 0% to revert all traffic to production. " +
+      "Example: send 10% to 'staging' for gradual rollout validation.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        slotName: { type: "string", description: "Canary slot name (e.g. 'staging', 'canary')" },
+        percentage: { type: "number", description: "Traffic percentage to canary slot (0–100). 0 reverts to production." },
+      },
+      required: ["resourceGroup", "appName", "slotName", "percentage"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.deploymentStrategyManager) throw new Error("Deployment strategy manager not initialized");
+      const result = await state.deploymentStrategyManager.canarySlotShift({
+        resourceGroup: params.resourceGroup as string,
+        appName: params.appName as string,
+        slotName: params.slotName as string,
+        percentage: params.percentage as number,
+      });
+      return {
+        content: [{ type: "text" as const, text: result.summary }],
+        details: result,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_traffic_manager_shift",
+    label: "Azure TM Shift",
+    description:
+      "Shift traffic across Traffic Manager endpoints by updating weights (DNS-level blue/green). " +
+      "Validates the profile uses Weighted routing, then updates each endpoint's weight. " +
+      "Example: blue=900, green=100 → blue=100, green=900 for a gradual cutover.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group containing the TM profile" },
+        profileName: { type: "string", description: "Traffic Manager profile name" },
+        weights: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              endpointName: { type: "string", description: "Endpoint name" },
+              endpointType: {
+                type: "string",
+                enum: ["AzureEndpoints", "ExternalEndpoints", "NestedEndpoints"],
+                description: "Endpoint type",
+              },
+              weight: { type: "number", description: "New weight (1–1000)" },
+            },
+            required: ["endpointName", "endpointType", "weight"],
+          },
+          description: "Array of endpoint weight updates",
+        },
+      },
+      required: ["resourceGroup", "profileName", "weights"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.deploymentStrategyManager) throw new Error("Deployment strategy manager not initialized");
+      const result = await state.deploymentStrategyManager.trafficManagerShift({
+        resourceGroup: params.resourceGroup as string,
+        profileName: params.profileName as string,
+        weights: params.weights as Array<{
+          endpointName: string;
+          endpointType: "AzureEndpoints" | "ExternalEndpoints" | "NestedEndpoints";
+          weight: number;
+        }>,
+      });
+      return {
+        content: [{ type: "text" as const, text: result.summary }],
+        details: result,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_deployment_status",
+    label: "Azure Deploy Status",
+    description:
+      "Get aggregated deployment status for an Azure Web App: deployment slots, " +
+      "traffic routing percentages, and optionally Traffic Manager profile info. " +
+      "Useful for reviewing current state before or after a deployment strategy execution.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        trafficManagerProfileName: {
+          type: "string",
+          description: "Optional: Traffic Manager profile name to include in the status report",
+        },
+      },
+      required: ["resourceGroup", "appName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.deploymentStrategyManager) throw new Error("Deployment strategy manager not initialized");
+      const tmProfile = params.trafficManagerProfileName
+        ? { profileName: params.trafficManagerProfileName as string }
+        : undefined;
+      const status = await state.deploymentStrategyManager.getDeploymentStatus(
+        params.resourceGroup as string,
+        params.appName as string,
+        tmProfile,
+      );
+
+      const lines: string[] = [`📊 Deployment Status for '${status.appName}'`];
+
+      // Slots
+      if (status.slots.length > 0) {
+        lines.push("\n🔀 Deployment Slots:");
+        for (const s of status.slots) {
+          lines.push(`  • ${s.name} — ${s.state} (${s.hostName})`);
+        }
+      } else {
+        lines.push("\n🔀 No deployment slots configured.");
+      }
+
+      // Traffic routing
+      if (status.slotRouting) {
+        lines.push("\n📈 Slot Traffic Routing:");
+        lines.push(`  • production: ${status.slotRouting.productionPercentage}%`);
+        for (const r of status.slotRouting.rules) {
+          lines.push(`  • ${r.slotName}: ${r.percentage}%`);
+        }
+      } else {
+        lines.push("\n📈 All traffic → production (no slot routing rules).");
+      }
+
+      // Traffic Manager
+      if (status.trafficManager) {
+        const tm = status.trafficManager;
+        lines.push(`\n🌐 Traffic Manager '${tm.profileName}' (${tm.routingMethod}):`);
+        for (const e of tm.endpoints) {
+          lines.push(`  • ${e.name}: weight ${e.weight ?? "N/A"} → ${e.target ?? "N/A"} (${e.status ?? "Unknown"})`);
+        }
+      }
+
+      return {
+        content: [{ type: "text" as const, text: lines.join("\n") }],
+        details: status,
+      };
+    },
+  });
 }
