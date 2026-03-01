@@ -10,6 +10,9 @@ import { withAzureRetry } from "../retry.js";
 import type {
   TrafficManagerProfile,
   TrafficManagerEndpoint,
+  CreateTrafficManagerProfileOptions,
+  CreateOrUpdateEndpointOptions,
+  UpdateEndpointWeightOptions,
 } from "./types.js";
 
 export class AzureTrafficManagerManager {
@@ -157,6 +160,110 @@ export class AzureTrafficManagerManager {
       () => client.endpoints.delete(resourceGroup, profileName, endpointType, endpointName),
       this.retryOptions,
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mutating operations for deployment strategies
+  // ---------------------------------------------------------------------------
+
+  /** Create a new Traffic Manager profile. */
+  async createProfile(options: CreateTrafficManagerProfileOptions): Promise<TrafficManagerProfile> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const result = await client.profiles.createOrUpdate(
+        options.resourceGroup,
+        options.name,
+        {
+          location: "global",
+          trafficRoutingMethod: options.trafficRoutingMethod,
+          dnsConfig: {
+            relativeName: options.relativeDnsName,
+            ttl: options.ttl ?? 30,
+          },
+          monitorConfig: {
+            protocol: options.monitorProtocol ?? "HTTPS",
+            port: options.monitorPort ?? 443,
+            path: options.monitorPath ?? "/",
+          },
+          tags: options.tags,
+        },
+      );
+      return this.mapProfile(result, options.resourceGroup);
+    }, this.retryOptions);
+  }
+
+  /** Create or update an endpoint within a Traffic Manager profile. */
+  async createOrUpdateEndpoint(options: CreateOrUpdateEndpointOptions): Promise<TrafficManagerEndpoint> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const ep = await client.endpoints.createOrUpdate(
+        options.resourceGroup,
+        options.profileName,
+        options.endpointType,
+        options.endpointName,
+        {
+          target: options.target,
+          targetResourceId: options.targetResourceId,
+          weight: options.weight,
+          priority: options.priority,
+          endpointStatus: options.endpointStatus ?? "Enabled",
+          endpointLocation: options.endpointLocation,
+        },
+      );
+      return {
+        id: ep.id ?? "",
+        name: ep.name ?? "",
+        type: ep.type ?? "",
+        endpointStatus: ep.endpointStatus,
+        endpointMonitorStatus: ep.endpointMonitorStatus,
+        target: ep.target,
+        targetResourceId: ep.targetResourceId,
+        weight: ep.weight,
+        priority: ep.priority,
+        endpointLocation: ep.endpointLocation,
+        minChildEndpoints: ep.minChildEndpoints,
+        minChildEndpointsIPv4: ep.minChildEndpointsIPv4,
+        minChildEndpointsIPv6: ep.minChildEndpointsIPv6,
+      };
+    }, this.retryOptions);
+  }
+
+  /** Update the weight of a single endpoint (for traffic shifting). */
+  async updateEndpointWeight(options: UpdateEndpointWeightOptions): Promise<TrafficManagerEndpoint> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const existing = await client.endpoints.get(
+        options.resourceGroup,
+        options.profileName,
+        options.endpointType,
+        options.endpointName,
+      );
+      const ep = await client.endpoints.createOrUpdate(
+        options.resourceGroup,
+        options.profileName,
+        options.endpointType,
+        options.endpointName,
+        {
+          ...existing,
+          weight: options.weight,
+        },
+      );
+      return {
+        id: ep.id ?? "",
+        name: ep.name ?? "",
+        type: ep.type ?? "",
+        endpointStatus: ep.endpointStatus,
+        endpointMonitorStatus: ep.endpointMonitorStatus,
+        target: ep.target,
+        targetResourceId: ep.targetResourceId,
+        weight: ep.weight,
+        priority: ep.priority,
+        endpointLocation: ep.endpointLocation,
+        minChildEndpoints: ep.minChildEndpoints,
+        minChildEndpointsIPv4: ep.minChildEndpointsIPv4,
+        minChildEndpointsIPv6: ep.minChildEndpointsIPv6,
+      };
+    }, this.retryOptions);
   }
 
   // ---------------------------------------------------------------------------

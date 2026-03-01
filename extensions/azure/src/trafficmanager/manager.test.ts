@@ -22,11 +22,13 @@ describe("AzureTrafficManagerManager", () => {
     listByResourceGroup: vi.fn(),
     get: vi.fn(),
     delete: vi.fn(),
+    createOrUpdate: vi.fn(),
   };
 
   const mockEndpoints = {
     get: vi.fn(),
     delete: vi.fn(),
+    createOrUpdate: vi.fn(),
   };
 
   beforeEach(() => {
@@ -175,6 +177,138 @@ describe("AzureTrafficManagerManager", () => {
     it("should propagate delete errors", async () => {
       mockEndpoints.delete.mockRejectedValue(new Error("Delete endpoint failed"));
       await expect(manager.deleteEndpoint("rg1", "tm1", "ExternalEndpoints", "ep1")).rejects.toThrow("Delete endpoint failed");
+    });
+  });
+
+  describe("createProfile", () => {
+    it("should create a traffic manager profile", async () => {
+      mockProfiles.createOrUpdate.mockResolvedValue({
+        id: "/subscriptions/sub-123/resourceGroups/rg1/providers/Microsoft.Network/trafficManagerProfiles/tm-new",
+        name: "tm-new",
+        location: "global",
+        profileStatus: "Enabled",
+        trafficRoutingMethod: "Weighted",
+        dnsConfig: { relativeName: "tm-new", fqdn: "tm-new.trafficmanager.net", ttl: 60 },
+        monitorConfig: { protocol: "HTTPS", port: 443, path: "/health" },
+        provisioningState: "Succeeded",
+        tags: { env: "prod" },
+      });
+
+      const profile = await manager.createProfile({
+        resourceGroup: "rg1",
+        name: "tm-new",
+        trafficRoutingMethod: "Weighted",
+        relativeDnsName: "tm-new",
+        ttl: 60,
+        monitorProtocol: "HTTPS",
+        monitorPort: 443,
+        monitorPath: "/health",
+        tags: { env: "prod" },
+      });
+
+      expect(profile.name).toBe("tm-new");
+      expect(profile.trafficRoutingMethod).toBe("Weighted");
+      expect(profile.dnsConfig?.fqdn).toBe("tm-new.trafficmanager.net");
+      expect(mockProfiles.createOrUpdate).toHaveBeenCalledWith(
+        "rg1", "tm-new",
+        expect.objectContaining({
+          location: "global",
+          trafficRoutingMethod: "Weighted",
+          dnsConfig: { relativeName: "tm-new", ttl: 60 },
+          monitorConfig: { protocol: "HTTPS", port: 443, path: "/health" },
+          tags: { env: "prod" },
+        }),
+      );
+    });
+
+    it("should use sensible defaults for monitor config", async () => {
+      mockProfiles.createOrUpdate.mockResolvedValue({
+        id: "id", name: "tm-default", location: "global",
+        dnsConfig: { relativeName: "tm-default", ttl: 30 },
+        monitorConfig: { protocol: "HTTPS", port: 443, path: "/" },
+      });
+
+      await manager.createProfile({
+        resourceGroup: "rg1",
+        name: "tm-default",
+        trafficRoutingMethod: "Performance",
+        relativeDnsName: "tm-default",
+      });
+
+      expect(mockProfiles.createOrUpdate).toHaveBeenCalledWith(
+        "rg1", "tm-default",
+        expect.objectContaining({
+          dnsConfig: { relativeName: "tm-default", ttl: 30 },
+          monitorConfig: { protocol: "HTTPS", port: 443, path: "/" },
+        }),
+      );
+    });
+  });
+
+  describe("createOrUpdateEndpoint", () => {
+    it("should create an endpoint", async () => {
+      mockEndpoints.createOrUpdate.mockResolvedValue({
+        id: "/subscriptions/sub-123/resourceGroups/rg1/providers/Microsoft.Network/trafficManagerProfiles/tm1/ExternalEndpoints/ep-new",
+        name: "ep-new",
+        type: "Microsoft.Network/trafficManagerProfiles/ExternalEndpoints",
+        endpointStatus: "Enabled",
+        target: "app.example.com",
+        weight: 50,
+        priority: 1,
+      });
+
+      const ep = await manager.createOrUpdateEndpoint({
+        resourceGroup: "rg1",
+        profileName: "tm1",
+        endpointType: "ExternalEndpoints",
+        endpointName: "ep-new",
+        target: "app.example.com",
+        weight: 50,
+        priority: 1,
+      });
+
+      expect(ep.name).toBe("ep-new");
+      expect(ep.target).toBe("app.example.com");
+      expect(ep.weight).toBe(50);
+      expect(mockEndpoints.createOrUpdate).toHaveBeenCalledWith(
+        "rg1", "tm1", "ExternalEndpoints", "ep-new",
+        expect.objectContaining({
+          target: "app.example.com",
+          weight: 50,
+          priority: 1,
+          endpointStatus: "Enabled",
+        }),
+      );
+    });
+  });
+
+  describe("updateEndpointWeight", () => {
+    it("should update endpoint weight via GET then PUT", async () => {
+      mockEndpoints.get.mockResolvedValue({
+        id: "ep-id", name: "ep1", type: "ExternalEndpoints",
+        endpointStatus: "Enabled", target: "app.example.com",
+        weight: 100, priority: 1,
+      });
+      mockEndpoints.createOrUpdate.mockResolvedValue({
+        id: "ep-id", name: "ep1", type: "ExternalEndpoints",
+        endpointStatus: "Enabled", target: "app.example.com",
+        weight: 25, priority: 1,
+      });
+
+      const ep = await manager.updateEndpointWeight({
+        resourceGroup: "rg1",
+        profileName: "tm1",
+        endpointType: "ExternalEndpoints",
+        endpointName: "ep1",
+        weight: 25,
+      });
+
+      expect(ep.weight).toBe(25);
+      expect(mockEndpoints.get).toHaveBeenCalledWith("rg1", "tm1", "ExternalEndpoints", "ep1");
+      expect(mockEndpoints.createOrUpdate).toHaveBeenCalledWith(
+        "rg1", "tm1", "ExternalEndpoints", "ep1",
+        expect.objectContaining({ weight: 25 }),
+      );
     });
   });
 });

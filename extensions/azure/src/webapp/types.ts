@@ -58,6 +58,29 @@ export type DeploymentSlot = {
 };
 
 // =============================================================================
+// Deployment Slot Options
+// =============================================================================
+
+export type CreateDeploymentSlotOptions = {
+  /** Name of the slot to create (e.g. "staging", "canary"). */
+  slotName: string;
+  /** Optional: clone config from this source slot (default: production). */
+  configurationSource?: string;
+  /** Optional tags. */
+  tags?: Record<string, string>;
+};
+
+export type SlotTrafficConfig = {
+  /** Map of slot name → percentage (0–100). Sum with production must equal 100. */
+  routingRules: Array<{
+    /** Slot name (not the full "app/slot" format). */
+    slotName: string;
+    /** Percentage of traffic routed to this slot (0–100). */
+    reroutePercentage: number;
+  }>;
+};
+
+// =============================================================================
 // Web App Configuration
 // =============================================================================
 

@@ -5,4 +5,7 @@ export type {
   TrafficManagerMonitorConfig,
   TrafficManagerEndpoint,
   TrafficRoutingMethod,
+  CreateTrafficManagerProfileOptions,
+  CreateOrUpdateEndpointOptions,
+  UpdateEndpointWeightOptions,
 } from "./types.js";

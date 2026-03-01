@@ -1311,19 +1311,48 @@ output = json
         name: "aws_ec2",
         label: "AWS EC2 Management",
         description:
-          "Manage AWS EC2 instances. List, start, stop, reboot, or terminate instances. Use this tool to manage your cloud compute resources.",
+          "Manage AWS EC2 instances, launch templates, key pairs, AMIs, Auto Scaling groups, load balancers, target groups, listeners, monitoring, and tags. Use this tool to manage your cloud compute resources conversationally.",
         parameters: {
           type: "object",
           properties: {
             action: {
               type: "string",
-              enum: ["list", "start", "stop", "reboot", "terminate", "describe"],
+              enum: [
+                // Instance lifecycle
+                "list", "describe", "start", "stop", "reboot", "terminate",
+                "create", "modify_attribute", "get_status", "wait_for_state",
+                // Launch templates
+                "list_launch_templates", "create_launch_template", "delete_launch_template", "get_launch_template_versions",
+                // Key pairs
+                "list_key_pairs", "create_key_pair", "import_key_pair", "delete_key_pair",
+                // Monitoring
+                "enable_monitoring", "disable_monitoring", "get_metrics",
+                // AMIs
+                "list_amis", "create_ami", "deregister_ami", "copy_ami", "modify_ami_attribute",
+                // Auto Scaling Groups
+                "list_asgs", "create_asg", "update_asg", "delete_asg",
+                "set_desired_capacity", "get_scaling_activities",
+                "attach_target_groups", "detach_target_groups",
+                // Load Balancers
+                "list_load_balancers", "create_load_balancer", "delete_load_balancer",
+                // Target Groups
+                "list_target_groups", "create_target_group", "delete_target_group",
+                "register_targets", "deregister_targets", "get_target_health",
+                // Listeners
+                "list_listeners", "create_listener", "delete_listener",
+                // Tags
+                "add_tags", "remove_tags",
+              ],
               description: "Action to perform",
             },
             instanceIds: {
               type: "array",
               items: { type: "string" },
-              description: "Instance IDs (required for start/stop/reboot/terminate/describe)",
+              description: "Instance IDs (for instance lifecycle actions)",
+            },
+            instanceId: {
+              type: "string",
+              description: "Single instance ID (for create_ami, modify_attribute, get_metrics)",
             },
             region: {
               type: "string",
@@ -1332,11 +1361,241 @@ output = json
             state: {
               type: "string",
               enum: ["running", "stopped", "pending", "terminated"],
-              description: "Filter by state (for list action)",
+              description: "Filter by state (for list) or target state (for wait_for_state)",
             },
             force: {
               type: "boolean",
-              description: "Force stop (for stop action)",
+              description: "Force stop/delete (for stop, delete_asg)",
+            },
+            // Instance creation
+            instanceType: {
+              type: "string",
+              description: "EC2 instance type, e.g. t3.micro, m5.large (for create)",
+            },
+            imageId: {
+              type: "string",
+              description: "AMI image ID (for create, deregister_ami, copy_ami, modify_ami_attribute)",
+            },
+            minCount: {
+              type: "number",
+              description: "Min instances to launch (for create, default 1)",
+            },
+            maxCount: {
+              type: "number",
+              description: "Max instances to launch (for create, default 1)",
+            },
+            subnetId: {
+              type: "string",
+              description: "Subnet ID (for create)",
+            },
+            securityGroupIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Security group IDs (for create)",
+            },
+            keyName: {
+              type: "string",
+              description: "Key pair name (for create, create_key_pair, import_key_pair, delete_key_pair)",
+            },
+            userData: {
+              type: "string",
+              description: "User data script (for create, base64 encoded)",
+            },
+            tags: {
+              type: "object",
+              description: "Key-value tags (for create, add_tags, create_ami, etc.)",
+            },
+            // Instance attribute modification
+            attribute: {
+              type: "object",
+              description: "Attribute to modify (for modify_attribute: instanceType, userData, disableApiTermination, etc.)",
+            },
+            // Launch templates
+            launchTemplateId: {
+              type: "string",
+              description: "Launch template ID",
+            },
+            launchTemplateName: {
+              type: "string",
+              description: "Launch template name (for create_launch_template)",
+            },
+            launchTemplateData: {
+              type: "object",
+              description: "Launch template data (for create_launch_template)",
+            },
+            launchTemplateVersions: {
+              type: "array",
+              items: { type: "string" },
+              description: "Version numbers to retrieve (for get_launch_template_versions)",
+            },
+            // Key pairs
+            publicKeyMaterial: {
+              type: "string",
+              description: "Public key material (for import_key_pair)",
+            },
+            // AMI
+            name: {
+              type: "string",
+              description: "Name (for create_ami, create_load_balancer, create_target_group, create_asg, etc.)",
+            },
+            description: {
+              type: "string",
+              description: "Description (for create_ami, copy_ami)",
+            },
+            noReboot: {
+              type: "boolean",
+              description: "Don't reboot instance when creating AMI",
+            },
+            sourceImageId: {
+              type: "string",
+              description: "Source image ID (for copy_ami)",
+            },
+            sourceRegion: {
+              type: "string",
+              description: "Source region (for copy_ami)",
+            },
+            encrypted: {
+              type: "boolean",
+              description: "Enable encryption (for copy_ami)",
+            },
+            // Auto Scaling
+            asgName: {
+              type: "string",
+              description: "Auto Scaling group name",
+            },
+            desiredCapacity: {
+              type: "number",
+              description: "Desired capacity (for create_asg, update_asg, set_desired_capacity)",
+            },
+            minSize: {
+              type: "number",
+              description: "Min size (for create_asg, update_asg)",
+            },
+            maxSize: {
+              type: "number",
+              description: "Max size (for create_asg, update_asg)",
+            },
+            availabilityZones: {
+              type: "array",
+              items: { type: "string" },
+              description: "Availability zones (for create_asg)",
+            },
+            targetGroupARNs: {
+              type: "array",
+              items: { type: "string" },
+              description: "Target group ARNs (for attach/detach_target_groups, create_asg)",
+            },
+            honorCooldown: {
+              type: "boolean",
+              description: "Honor cooldown period (for set_desired_capacity)",
+            },
+            // Load Balancer
+            loadBalancerArn: {
+              type: "string",
+              description: "Load balancer ARN (for delete_load_balancer, list_listeners, create_listener)",
+            },
+            scheme: {
+              type: "string",
+              enum: ["internet-facing", "internal"],
+              description: "LB scheme (for create_load_balancer)",
+            },
+            lbType: {
+              type: "string",
+              enum: ["application", "network", "gateway"],
+              description: "Load balancer type (for create_load_balancer)",
+            },
+            subnets: {
+              type: "array",
+              items: { type: "string" },
+              description: "Subnet IDs (for create_load_balancer)",
+            },
+            // Target Group
+            targetGroupArn: {
+              type: "string",
+              description: "Target group ARN (for delete_target_group, register/deregister_targets, get_target_health)",
+            },
+            targets: {
+              type: "array",
+              items: { type: "object" },
+              description: "Targets array with {id, port?, availabilityZone?} (for register/deregister_targets)",
+            },
+            protocol: {
+              type: "string",
+              description: "Protocol: HTTP, HTTPS, TCP, etc. (for create_target_group, create_listener)",
+            },
+            port: {
+              type: "number",
+              description: "Port number (for create_target_group, create_listener)",
+            },
+            vpcId: {
+              type: "string",
+              description: "VPC ID (for create_target_group)",
+            },
+            healthCheckPath: {
+              type: "string",
+              description: "Health check path (for create_target_group)",
+            },
+            targetType: {
+              type: "string",
+              enum: ["instance", "ip", "lambda", "alb"],
+              description: "Target type (for create_target_group)",
+            },
+            // Listener
+            listenerArn: {
+              type: "string",
+              description: "Listener ARN (for delete_listener)",
+            },
+            defaultActions: {
+              type: "array",
+              items: { type: "object" },
+              description: "Default actions for listener (for create_listener)",
+            },
+            sslPolicy: {
+              type: "string",
+              description: "SSL policy (for create_listener)",
+            },
+            certificates: {
+              type: "array",
+              items: { type: "object" },
+              description: "Certificates [{certificateArn, isDefault?}] (for create_listener)",
+            },
+            // Tags
+            resourceIds: {
+              type: "array",
+              items: { type: "string" },
+              description: "Resource IDs (for add_tags, remove_tags)",
+            },
+            tagKeys: {
+              type: "array",
+              items: { type: "string" },
+              description: "Tag keys to remove (for remove_tags)",
+            },
+            // Metrics
+            metricName: {
+              type: "string",
+              description: "CloudWatch metric name (for get_metrics, e.g. CPUUtilization)",
+            },
+            period: {
+              type: "number",
+              description: "Metric period in seconds (for get_metrics)",
+            },
+            startTime: {
+              type: "string",
+              description: "ISO 8601 start time for metrics",
+            },
+            endTime: {
+              type: "string",
+              description: "ISO 8601 end time for metrics",
+            },
+            // AMI attribute
+            amiAttribute: {
+              type: "object",
+              description: "AMI attribute to modify (launchPermission, description) for modify_ami_attribute",
+            },
+            // ASG updates
+            asgUpdates: {
+              type: "object",
+              description: "Partial ASG updates (for update_asg)",
             },
           },
           required: ["action"],
@@ -1357,6 +1616,7 @@ output = json
 
           try {
             switch (action) {
+              // ── Instance Lifecycle ──────────────────────────────────────────
               case "list": {
                 const instances = await ec2Manager.listInstances({
                   region,
@@ -1452,6 +1712,778 @@ output = json
                 const result = await ec2Manager.terminateInstances(instanceIds, { region });
                 return {
                   content: [{ type: "text", text: result.success ? `Terminated instances: ${result.instanceIds.join(", ")}` : `Failed to terminate: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "create": {
+                const instanceType = params.instanceType as string | undefined;
+                const imageId = params.imageId as string | undefined;
+                if (!imageId || !instanceType) {
+                  return {
+                    content: [{ type: "text", text: "Error: imageId and instanceType required for create action" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createInstances({
+                  imageId,
+                  instanceType,
+                  minCount: (params.minCount as number) ?? 1,
+                  maxCount: (params.maxCount as number) ?? 1,
+                  keyName: params.keyName as string | undefined,
+                  securityGroupIds: params.securityGroupIds as string[] | undefined,
+                  subnetId: params.subnetId as string | undefined,
+                  userData: params.userData as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created instance(s): ${result.instanceIds.join(", ")}` : `Failed to create: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "modify_attribute": {
+                const instanceId = (params.instanceId ?? instanceIds?.[0]) as string | undefined;
+                const attribute = params.attribute as Record<string, unknown> | undefined;
+                if (!instanceId || !attribute) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceId and attribute required for modify_attribute" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.modifyInstanceAttribute(instanceId, attribute as any, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Modified attribute on ${instanceId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_status": {
+                if (!instanceIds?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceIds required for get_status" }],
+                    details: { error: "missing_instance_ids" },
+                  };
+                }
+                const statuses = await ec2Manager.getInstanceStatus(instanceIds, region);
+                const summary = statuses.map(s =>
+                  `• ${s.instanceId}: ${s.instanceState} (system: ${s.systemStatus}, instance: ${s.instanceStatus}) in ${s.availabilityZone}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Instance status:\n\n${summary}` }],
+                  details: { statuses },
+                };
+              }
+
+              case "wait_for_state": {
+                if (!instanceIds?.length || !state) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceIds and state required for wait_for_state" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const reached = await ec2Manager.waitForInstanceState(instanceIds, state, region);
+                return {
+                  content: [{ type: "text", text: reached ? `✅ Instances reached state "${state}"` : `⏱ Timed out waiting for state "${state}"` }],
+                  details: { reached, targetState: state },
+                };
+              }
+
+              // ── Launch Templates ────────────────────────────────────────────
+              case "list_launch_templates": {
+                const templates = await ec2Manager.listLaunchTemplates({ region });
+                if (templates.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No launch templates found." }],
+                    details: { count: 0, templates: [] },
+                  };
+                }
+                const summary = templates.map(t =>
+                  `• ${t.launchTemplateId} (${t.launchTemplateName}) — v${t.latestVersionNumber}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${templates.length} launch templates:\n\n${summary}` }],
+                  details: { count: templates.length, templates },
+                };
+              }
+
+              case "create_launch_template": {
+                const ltName = params.launchTemplateName as string ?? params.name as string;
+                const ltData = params.launchTemplateData as Record<string, unknown> | undefined;
+                if (!ltName || !ltData) {
+                  return {
+                    content: [{ type: "text", text: "Error: launchTemplateName and launchTemplateData required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createLaunchTemplate({
+                  name: ltName,
+                  ...ltData,
+                  region,
+                } as any);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created launch template: ${result.launchTemplate?.launchTemplateId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_launch_template": {
+                const ltId = params.launchTemplateId as string | undefined;
+                if (!ltId) {
+                  return {
+                    content: [{ type: "text", text: "Error: launchTemplateId required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteLaunchTemplate(ltId, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted launch template: ${ltId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_launch_template_versions": {
+                const ltId = params.launchTemplateId as string | undefined;
+                if (!ltId) {
+                  return {
+                    content: [{ type: "text", text: "Error: launchTemplateId required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const versions = await ec2Manager.getLaunchTemplateVersions(ltId, {
+                  versions: params.launchTemplateVersions as string[] | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: `Found ${versions.length} version(s) for launch template ${ltId}` }],
+                  details: { count: versions.length, versions },
+                };
+              }
+
+              // ── Key Pairs ──────────────────────────────────────────────────
+              case "list_key_pairs": {
+                const keyPairs = await ec2Manager.listKeyPairs({ region });
+                if (keyPairs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No key pairs found." }],
+                    details: { count: 0, keyPairs: [] },
+                  };
+                }
+                const summary = keyPairs.map(k =>
+                  `• ${k.keyName} (${k.keyPairId}) — ${k.keyType ?? "unknown type"}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${keyPairs.length} key pairs:\n\n${summary}` }],
+                  details: { count: keyPairs.length, keyPairs },
+                };
+              }
+
+              case "create_key_pair": {
+                const kpName = params.keyName as string ?? params.name as string;
+                if (!kpName) {
+                  return {
+                    content: [{ type: "text", text: "Error: keyName required for create_key_pair" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createKeyPair({
+                  name: kpName,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created key pair: ${result.keyPair?.keyName}\n⚠️ Save the private key — it cannot be retrieved again.` : `Failed: ${result.error}` }],
+                  details: { success: result.success, keyPair: result.keyPair, error: result.error },
+                };
+              }
+
+              case "import_key_pair": {
+                const kpName = params.keyName as string ?? params.name as string;
+                const pubKey = params.publicKeyMaterial as string | undefined;
+                if (!kpName || !pubKey) {
+                  return {
+                    content: [{ type: "text", text: "Error: keyName and publicKeyMaterial required for import_key_pair" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.importKeyPair(kpName, pubKey, {
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Imported key pair: ${result.keyPair?.keyName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_key_pair": {
+                const kpName = params.keyName as string | undefined;
+                if (!kpName) {
+                  return {
+                    content: [{ type: "text", text: "Error: keyName required for delete_key_pair" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteKeyPair(kpName, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted key pair: ${kpName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ── Monitoring & Metrics ────────────────────────────────────────
+              case "enable_monitoring": {
+                if (!instanceIds?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceIds required for enable_monitoring" }],
+                    details: { error: "missing_instance_ids" },
+                  };
+                }
+                const result = await ec2Manager.enableMonitoring(instanceIds, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Enabled detailed monitoring for: ${result.instanceIds.join(", ")}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "disable_monitoring": {
+                if (!instanceIds?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceIds required for disable_monitoring" }],
+                    details: { error: "missing_instance_ids" },
+                  };
+                }
+                const result = await ec2Manager.disableMonitoring(instanceIds, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Disabled detailed monitoring for: ${result.instanceIds.join(", ")}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_metrics": {
+                const instanceId = (params.instanceId ?? instanceIds?.[0]) as string | undefined;
+                if (!instanceId) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceId required for get_metrics" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const metrics = await ec2Manager.getInstanceMetrics(instanceId, {
+                  period: params.period as number | undefined,
+                  startTime: params.startTime ? new Date(params.startTime as string) : undefined,
+                  endTime: params.endTime ? new Date(params.endTime as string) : undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: `Metrics for ${instanceId}:\n${JSON.stringify(metrics, null, 2)}` }],
+                  details: { instanceId, metrics },
+                };
+              }
+
+              // ── AMI Management ──────────────────────────────────────────────
+              case "list_amis": {
+                const amis = await ec2Manager.listAMIs({
+                  owners: ["self"],
+                  region,
+                });
+                if (amis.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No AMIs found." }],
+                    details: { count: 0, amis: [] },
+                  };
+                }
+                const summary = amis.map(a =>
+                  `• ${a.imageId} (${a.name ?? "unnamed"}) — ${a.state} — ${a.architecture ?? "unknown arch"}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${amis.length} AMIs:\n\n${summary}` }],
+                  details: { count: amis.length, amis },
+                };
+              }
+
+              case "create_ami": {
+                const instId = (params.instanceId ?? instanceIds?.[0]) as string | undefined;
+                const amiName = params.name as string | undefined;
+                if (!instId || !amiName) {
+                  return {
+                    content: [{ type: "text", text: "Error: instanceId and name required for create_ami" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createAMI(instId, amiName, {
+                  description: params.description as string | undefined,
+                  noReboot: params.noReboot as boolean | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created AMI: ${result.imageId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "deregister_ami": {
+                const imgId = params.imageId as string | undefined;
+                if (!imgId) {
+                  return {
+                    content: [{ type: "text", text: "Error: imageId required for deregister_ami" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deregisterAMI(imgId, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deregistered AMI: ${imgId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "copy_ami": {
+                const srcImgId = params.sourceImageId as string | undefined;
+                const srcRegion = params.sourceRegion as string | undefined;
+                const copyName = params.name as string | undefined;
+                if (!srcImgId || !srcRegion || !copyName) {
+                  return {
+                    content: [{ type: "text", text: "Error: sourceImageId, sourceRegion, and name required for copy_ami" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.copyAMI(srcImgId, srcRegion, copyName, {
+                  description: params.description as string | undefined,
+                  encrypted: params.encrypted as boolean | undefined,
+                  destinationRegion: region,
+                  tags: params.tags as Record<string, string> | undefined,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Copied AMI → new image: ${result.imageId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "modify_ami_attribute": {
+                const imgId = params.imageId as string | undefined;
+                const amiAttr = params.amiAttribute as Record<string, unknown> | undefined;
+                if (!imgId || !amiAttr) {
+                  return {
+                    content: [{ type: "text", text: "Error: imageId and amiAttribute required for modify_ami_attribute" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.modifyAMIAttribute(imgId, amiAttr as any, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Modified AMI attribute on ${imgId}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ── Auto Scaling Groups ─────────────────────────────────────────
+              case "list_asgs": {
+                const asgs = await ec2Manager.listAutoScalingGroups({ region });
+                if (asgs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No Auto Scaling groups found." }],
+                    details: { count: 0, asgs: [] },
+                  };
+                }
+                const summary = asgs.map(a =>
+                  `• ${a.autoScalingGroupName} — desired: ${a.desiredCapacity}, min: ${a.minSize}, max: ${a.maxSize}, instances: ${a.instances.length}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${asgs.length} Auto Scaling groups:\n\n${summary}` }],
+                  details: { count: asgs.length, asgs },
+                };
+              }
+
+              case "create_asg": {
+                const asgName = params.asgName as string ?? params.name as string;
+                if (!asgName) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName required for create_asg" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createAutoScalingGroup({
+                  name: asgName,
+                  minSize: (params.minSize as number) ?? 1,
+                  maxSize: (params.maxSize as number) ?? 1,
+                  desiredCapacity: (params.desiredCapacity as number) ?? 1,
+                  launchTemplate: params.launchTemplateId
+                    ? { launchTemplateId: params.launchTemplateId as string }
+                    : undefined,
+                  availabilityZones: params.availabilityZones as string[] | undefined,
+                  targetGroupARNs: params.targetGroupARNs as string[] | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created Auto Scaling group: ${asgName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "update_asg": {
+                const asgName = params.asgName as string ?? params.name as string;
+                if (!asgName) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName required for update_asg" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const updates = (params.asgUpdates as Record<string, unknown>) ?? {};
+                if (params.minSize !== undefined) updates.minSize = params.minSize;
+                if (params.maxSize !== undefined) updates.maxSize = params.maxSize;
+                if (params.desiredCapacity !== undefined) updates.desiredCapacity = params.desiredCapacity;
+                const result = await ec2Manager.updateAutoScalingGroup(asgName, updates as any, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Updated Auto Scaling group: ${asgName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_asg": {
+                const asgName = params.asgName as string ?? params.name as string;
+                if (!asgName) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName required for delete_asg" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteAutoScalingGroup(asgName, {
+                  forceDelete: force,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted Auto Scaling group: ${asgName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "set_desired_capacity": {
+                const asgName = params.asgName as string ?? params.name as string;
+                const capacity = params.desiredCapacity as number | undefined;
+                if (!asgName || capacity === undefined) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName and desiredCapacity required for set_desired_capacity" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.setDesiredCapacity(asgName, capacity, {
+                  honorCooldown: params.honorCooldown as boolean | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Set desired capacity of ${asgName} to ${capacity}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_scaling_activities": {
+                const asgName = params.asgName as string ?? params.name as string;
+                if (!asgName) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName required for get_scaling_activities" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const activities = await ec2Manager.getScalingActivities(asgName, { region });
+                const summary = activities.slice(0, 10).map(a =>
+                  `• ${a.statusCode} — ${a.description} (${a.cause.substring(0, 80)}${a.cause.length > 80 ? "…" : ""})`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Scaling activities for ${asgName} (showing ${Math.min(activities.length, 10)} of ${activities.length}):\n\n${summary}` }],
+                  details: { count: activities.length, activities },
+                };
+              }
+
+              case "attach_target_groups": {
+                const asgName = params.asgName as string ?? params.name as string;
+                const tgArns = params.targetGroupARNs as string[] | undefined;
+                if (!asgName || !tgArns?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName and targetGroupARNs required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.attachTargetGroups(asgName, tgArns, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Attached ${tgArns.length} target group(s) to ${asgName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "detach_target_groups": {
+                const asgName = params.asgName as string ?? params.name as string;
+                const tgArns = params.targetGroupARNs as string[] | undefined;
+                if (!asgName || !tgArns?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: asgName and targetGroupARNs required" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.detachTargetGroups(asgName, tgArns, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Detached ${tgArns.length} target group(s) from ${asgName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ── Load Balancers ──────────────────────────────────────────────
+              case "list_load_balancers": {
+                const lbs = await ec2Manager.listLoadBalancers({ region });
+                if (lbs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No load balancers found." }],
+                    details: { count: 0, loadBalancers: [] },
+                  };
+                }
+                const summary = lbs.map(lb =>
+                  `• ${lb.loadBalancerName} (${lb.type ?? "unknown"}) — ${lb.state ?? "unknown"} — ${lb.dnsName ?? "no DNS"}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${lbs.length} load balancers:\n\n${summary}` }],
+                  details: { count: lbs.length, loadBalancers: lbs },
+                };
+              }
+
+              case "create_load_balancer": {
+                const lbName = params.name as string | undefined;
+                if (!lbName) {
+                  return {
+                    content: [{ type: "text", text: "Error: name required for create_load_balancer" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createLoadBalancer({
+                  name: lbName,
+                  subnets: params.subnets as string[] | undefined,
+                  securityGroups: params.securityGroupIds as string[] | undefined,
+                  scheme: params.scheme as "internet-facing" | "internal" | undefined,
+                  type: params.lbType as "application" | "network" | "gateway" | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created load balancer: ${result.loadBalancer?.loadBalancerName} — DNS: ${result.loadBalancer?.dnsName ?? "pending"}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_load_balancer": {
+                const lbArn = params.loadBalancerArn as string | undefined;
+                if (!lbArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: loadBalancerArn required for delete_load_balancer" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteLoadBalancer(lbArn, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted load balancer` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ── Target Groups ───────────────────────────────────────────────
+              case "list_target_groups": {
+                const tgs = await ec2Manager.listTargetGroups({ region });
+                if (tgs.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No target groups found." }],
+                    details: { count: 0, targetGroups: [] },
+                  };
+                }
+                const summary = tgs.map(t =>
+                  `• ${t.targetGroupName} (${t.targetType ?? "instance"}) — ${t.protocol}:${t.port} — ${t.healthCheckPath ?? "/"}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${tgs.length} target groups:\n\n${summary}` }],
+                  details: { count: tgs.length, targetGroups: tgs },
+                };
+              }
+
+              case "create_target_group": {
+                const tgName = params.name as string | undefined;
+                if (!tgName) {
+                  return {
+                    content: [{ type: "text", text: "Error: name required for create_target_group" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createTargetGroup({
+                  name: tgName,
+                  protocol: params.protocol as "HTTP" | "HTTPS" | "TCP" | "TCP_UDP" | "UDP" | "TLS" | undefined,
+                  port: params.port as number | undefined,
+                  vpcId: params.vpcId as string | undefined,
+                  targetType: params.targetType as "instance" | "ip" | "lambda" | "alb" | undefined,
+                  healthCheckPath: params.healthCheckPath as string | undefined,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created target group: ${result.targetGroup?.targetGroupName}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_target_group": {
+                const tgArn = params.targetGroupArn as string | undefined;
+                if (!tgArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: targetGroupArn required for delete_target_group" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteTargetGroup(tgArn, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted target group` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "register_targets": {
+                const tgArn = params.targetGroupArn as string | undefined;
+                const tgTargets = params.targets as Array<{ id: string; port?: number; availabilityZone?: string }> | undefined;
+                if (!tgArn || !tgTargets?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: targetGroupArn and targets required for register_targets" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.registerTargets(tgArn, tgTargets, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Registered ${tgTargets.length} target(s)` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "deregister_targets": {
+                const tgArn = params.targetGroupArn as string | undefined;
+                const tgTargets = params.targets as Array<{ id: string; port?: number; availabilityZone?: string }> | undefined;
+                if (!tgArn || !tgTargets?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: targetGroupArn and targets required for deregister_targets" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deregisterTargets(tgArn, tgTargets, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deregistered ${tgTargets.length} target(s)` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "get_target_health": {
+                const tgArn = params.targetGroupArn as string | undefined;
+                if (!tgArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: targetGroupArn required for get_target_health" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const health = await ec2Manager.getTargetHealth(tgArn, undefined, region);
+                const summary = health.map(h =>
+                  `• ${h.target.id}:${h.target.port ?? "default"} — ${h.targetHealth.state}${h.targetHealth.reason ? ` (${h.targetHealth.reason})` : ""}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Target health for ${tgArn}:\n\n${summary || "(no targets)"}` }],
+                  details: { health },
+                };
+              }
+
+              // ── Listeners ──────────────────────────────────────────────────
+              case "list_listeners": {
+                const lbArn = params.loadBalancerArn as string | undefined;
+                const listeners = await ec2Manager.listListeners({
+                  loadBalancerArn: lbArn,
+                  listenerArns: params.listenerArn ? [params.listenerArn as string] : undefined,
+                  region,
+                });
+                if (listeners.length === 0) {
+                  return {
+                    content: [{ type: "text", text: "No listeners found." }],
+                    details: { count: 0, listeners: [] },
+                  };
+                }
+                const summary = listeners.map(l =>
+                  `• ${l.listenerArn.split("/").pop()} — ${l.protocol}:${l.port}`
+                ).join("\n");
+                return {
+                  content: [{ type: "text", text: `Found ${listeners.length} listeners:\n\n${summary}` }],
+                  details: { count: listeners.length, listeners },
+                };
+              }
+
+              case "create_listener": {
+                const lbArn = params.loadBalancerArn as string | undefined;
+                const listenPort = params.port as number | undefined;
+                const listenProtocol = params.protocol as string | undefined;
+                const defActions = params.defaultActions as Array<Record<string, unknown>> | undefined;
+                if (!lbArn || !listenPort || !listenProtocol || !defActions?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: loadBalancerArn, port, protocol, and defaultActions required for create_listener" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.createListener({
+                  loadBalancerArn: lbArn,
+                  protocol: listenProtocol as any,
+                  port: listenPort,
+                  defaultActions: defActions as any,
+                  sslPolicy: params.sslPolicy as string | undefined,
+                  certificates: params.certificates as any,
+                  tags: params.tags as Record<string, string> | undefined,
+                  region,
+                });
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Created listener on ${listenProtocol}:${listenPort}` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "delete_listener": {
+                const lArn = params.listenerArn as string | undefined;
+                if (!lArn) {
+                  return {
+                    content: [{ type: "text", text: "Error: listenerArn required for delete_listener" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.deleteListener(lArn, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Deleted listener` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              // ── Tags ───────────────────────────────────────────────────────
+              case "add_tags": {
+                const resIds = params.resourceIds as string[] | undefined;
+                const tagMap = params.tags as Record<string, string> | undefined;
+                if (!resIds?.length || !tagMap) {
+                  return {
+                    content: [{ type: "text", text: "Error: resourceIds and tags required for add_tags" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.addTags(resIds, tagMap, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Added tags to ${resIds.length} resource(s)` : `Failed: ${result.error}` }],
+                  details: result,
+                };
+              }
+
+              case "remove_tags": {
+                const resIds = params.resourceIds as string[] | undefined;
+                const tKeys = params.tagKeys as string[] | undefined;
+                if (!resIds?.length || !tKeys?.length) {
+                  return {
+                    content: [{ type: "text", text: "Error: resourceIds and tagKeys required for remove_tags" }],
+                    details: { error: "missing_params" },
+                  };
+                }
+                const result = await ec2Manager.removeTags(resIds, tKeys, region);
+                return {
+                  content: [{ type: "text", text: result.success ? `✅ Removed tags from ${resIds.length} resource(s)` : `Failed: ${result.error}` }],
                   details: result,
                 };
               }

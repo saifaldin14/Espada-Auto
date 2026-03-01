@@ -26,8 +26,11 @@ describe("AzureWebAppManager", () => {
     restart: vi.fn(),
     delete: vi.fn(),
     getConfiguration: vi.fn(),
+    updateConfiguration: vi.fn(),
     listSlots: vi.fn(),
     beginSwapSlotAndWait: vi.fn(),
+    beginCreateOrUpdateSlotAndWait: vi.fn(),
+    deleteSlot: vi.fn(),
   };
 
   const mockAppServicePlans = {
@@ -216,6 +219,114 @@ describe("AzureWebAppManager", () => {
       expect(mockWebApps.beginSwapSlotAndWait).toHaveBeenCalledWith(
         "rg1", "webapp1", "staging", { targetSlot: "production", preserveVnet: true },
       );
+    });
+  });
+
+  describe("createDeploymentSlot", () => {
+    it("should create a deployment slot", async () => {
+      mockWebApps.get.mockResolvedValue({ location: "eastus" });
+      mockWebApps.beginCreateOrUpdateSlotAndWait.mockResolvedValue({
+        id: "/subscriptions/sub-123/resourceGroups/rg1/providers/Microsoft.Web/sites/webapp1/slots/staging",
+        name: "webapp1/staging",
+        location: "eastus",
+        state: "Running",
+        defaultHostName: "webapp1-staging.azurewebsites.net",
+        tags: { env: "staging" },
+      });
+
+      const slot = await manager.createDeploymentSlot("rg1", "webapp1", {
+        slotName: "staging",
+        tags: { env: "staging" },
+      });
+
+      expect(slot.name).toBe("webapp1/staging");
+      expect(slot.state).toBe("Running");
+      expect(slot.defaultHostName).toBe("webapp1-staging.azurewebsites.net");
+      expect(mockWebApps.beginCreateOrUpdateSlotAndWait).toHaveBeenCalledWith(
+        "rg1", "webapp1", "staging",
+        expect.objectContaining({ location: "eastus", tags: { env: "staging" } }),
+      );
+    });
+
+    it("should clone config when configurationSource is specified", async () => {
+      mockWebApps.get.mockResolvedValue({ location: "eastus" });
+      mockWebApps.beginCreateOrUpdateSlotAndWait.mockResolvedValue({
+        id: "slot-id", name: "webapp1/canary", location: "eastus",
+        state: "Running", defaultHostName: "webapp1-canary.azurewebsites.net",
+      });
+
+      await manager.createDeploymentSlot("rg1", "webapp1", {
+        slotName: "canary",
+        configurationSource: "staging",
+      });
+
+      // First call creates the slot, second call clones config
+      expect(mockWebApps.beginCreateOrUpdateSlotAndWait).toHaveBeenCalledTimes(2);
+      expect(mockWebApps.beginCreateOrUpdateSlotAndWait).toHaveBeenLastCalledWith(
+        "rg1", "webapp1", "canary",
+        expect.objectContaining({
+          cloningInfo: {
+            sourceWebAppId: expect.stringContaining("/slots/staging"),
+          },
+        }),
+      );
+    });
+  });
+
+  describe("deleteDeploymentSlot", () => {
+    it("should delete a deployment slot", async () => {
+      mockWebApps.deleteSlot.mockResolvedValue(undefined);
+      await expect(manager.deleteDeploymentSlot("rg1", "webapp1", "staging")).resolves.toBeUndefined();
+      expect(mockWebApps.deleteSlot).toHaveBeenCalledWith("rg1", "webapp1", "staging");
+    });
+  });
+
+  describe("setSlotTrafficPercentage", () => {
+    it("should update traffic routing rules", async () => {
+      mockWebApps.getConfiguration.mockResolvedValue({ linuxFxVersion: "NODE|18" });
+      mockWebApps.updateConfiguration.mockResolvedValue(undefined);
+
+      await manager.setSlotTrafficPercentage("rg1", "webapp1", {
+        routingRules: [
+          { slotName: "staging", reroutePercentage: 20 },
+          { slotName: "canary", reroutePercentage: 5 },
+        ],
+      });
+
+      expect(mockWebApps.updateConfiguration).toHaveBeenCalledWith(
+        "rg1", "webapp1",
+        expect.objectContaining({
+          experiments: {
+            rampUpRules: [
+              { name: "staging", actionHostName: "webapp1-staging.azurewebsites.net", reroutePercentage: 20 },
+              { name: "canary", actionHostName: "webapp1-canary.azurewebsites.net", reroutePercentage: 5 },
+            ],
+          },
+        }),
+      );
+    });
+  });
+
+  describe("getSlotTrafficPercentage", () => {
+    it("should return current routing rules", async () => {
+      mockWebApps.getConfiguration.mockResolvedValue({
+        experiments: {
+          rampUpRules: [
+            { name: "staging", reroutePercentage: 30 },
+          ],
+        },
+      });
+
+      const config = await manager.getSlotTrafficPercentage("rg1", "webapp1");
+      expect(config.routingRules).toHaveLength(1);
+      expect(config.routingRules[0].slotName).toBe("staging");
+      expect(config.routingRules[0].reroutePercentage).toBe(30);
+    });
+
+    it("should return empty rules when none configured", async () => {
+      mockWebApps.getConfiguration.mockResolvedValue({});
+      const config = await manager.getSlotTrafficPercentage("rg1", "webapp1");
+      expect(config.routingRules).toEqual([]);
     });
   });
 

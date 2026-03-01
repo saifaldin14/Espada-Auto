@@ -9,7 +9,7 @@
 import type { AzureCredentialsManager } from "../credentials/manager.js";
 import type { AzureRetryOptions } from "../types.js";
 import { withAzureRetry } from "../retry.js";
-import type { WebApp, AppServicePlan, DeploymentSlot, WebAppConfig } from "./types.js";
+import type { WebApp, AppServicePlan, DeploymentSlot, WebAppConfig, CreateDeploymentSlotOptions, SlotTrafficConfig } from "./types.js";
 
 export class AzureWebAppManager {
   private credentialsManager: AzureCredentialsManager;
@@ -255,6 +255,116 @@ export class AzureWebAppManager {
       }),
       this.retryOptions,
     );
+  }
+
+  /** Create a deployment slot for a web app. */
+  async createDeploymentSlot(
+    resourceGroup: string,
+    appName: string,
+    options: CreateDeploymentSlotOptions,
+  ): Promise<DeploymentSlot> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const result = await client.webApps.beginCreateOrUpdateSlotAndWait(
+        resourceGroup,
+        appName,
+        options.slotName,
+        {
+          location: (await client.webApps.get(resourceGroup, appName)).location ?? "",
+          tags: options.tags,
+        },
+      );
+
+      // If a configuration source is specified, clone its settings
+      if (options.configurationSource) {
+        await client.webApps.beginCreateOrUpdateSlotAndWait(
+          resourceGroup,
+          appName,
+          options.slotName,
+          {
+            location: result.location ?? "",
+            cloningInfo: {
+              sourceWebAppId: `/subscriptions/${this.subscriptionId}/resourceGroups/${resourceGroup}/providers/Microsoft.Web/sites/${appName}${options.configurationSource !== "production" ? `/slots/${options.configurationSource}` : ""}`,
+            },
+          },
+        );
+      }
+
+      return {
+        id: result.id ?? "",
+        name: result.name ?? "",
+        resourceGroup,
+        location: result.location ?? "",
+        state: result.state ?? "Unknown",
+        defaultHostName: result.defaultHostName ?? "",
+        tags: result.tags as Record<string, string>,
+      };
+    }, this.retryOptions);
+  }
+
+  /** Delete a deployment slot. */
+  async deleteDeploymentSlot(
+    resourceGroup: string,
+    appName: string,
+    slotName: string,
+  ): Promise<void> {
+    const client = await this.getClient();
+    await withAzureRetry(
+      () => client.webApps.deleteSlot(resourceGroup, appName, slotName),
+      this.retryOptions,
+    );
+  }
+
+  /**
+   * Set traffic routing percentages for deployment slots.
+   *
+   * This configures "Testing in Production" (TiP) — Azure routes a percentage
+   * of live traffic to the specified slot(s) while the rest goes to production.
+   * Use this for gradual (canary / blue-green) traffic shifting.
+   */
+  async setSlotTrafficPercentage(
+    resourceGroup: string,
+    appName: string,
+    config: SlotTrafficConfig,
+  ): Promise<void> {
+    const client = await this.getClient();
+    await withAzureRetry(async () => {
+      // The routing rules are set via the site config's experiments property
+      const siteConfig = await client.webApps.getConfiguration(resourceGroup, appName);
+      const experiments = {
+        rampUpRules: config.routingRules.map(rule => ({
+          name: rule.slotName,
+          actionHostName: `${appName}-${rule.slotName}.azurewebsites.net`,
+          reroutePercentage: rule.reroutePercentage,
+        })),
+      };
+      await client.webApps.updateConfiguration(resourceGroup, appName, {
+        ...siteConfig,
+        experiments,
+      });
+    }, this.retryOptions);
+  }
+
+  /**
+   * Get current slot traffic routing percentages.
+   *
+   * Returns the ramp-up rules (Testing in Production) for the web app.
+   */
+  async getSlotTrafficPercentage(
+    resourceGroup: string,
+    appName: string,
+  ): Promise<SlotTrafficConfig> {
+    const client = await this.getClient();
+    return withAzureRetry(async () => {
+      const config = await client.webApps.getConfiguration(resourceGroup, appName);
+      const rules = config.experiments?.rampUpRules ?? [];
+      return {
+        routingRules: rules.map(rule => ({
+          slotName: rule.name ?? "",
+          reroutePercentage: rule.reroutePercentage ?? 0,
+        })),
+      };
+    }, this.retryOptions);
   }
 }
 

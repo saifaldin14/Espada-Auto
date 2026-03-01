@@ -3359,4 +3359,359 @@ export function registerAgentTools(api: EspadaPluginApi, state: AzurePluginState
       }
     },
   });
+
+  // -------------------------------------------------------------------------
+  // Deployment Strategy tools — Blue/Green & Traffic Shifting
+  // -------------------------------------------------------------------------
+
+  api.registerTool({
+    name: "azure_create_deployment_slot",
+    label: "Azure Create Slot",
+    description:
+      "Create a deployment slot on an Azure Web App for blue/green or canary deployments. " +
+      "Optionally clone configuration from an existing slot.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        slotName: { type: "string", description: "Slot name (e.g. staging, canary, blue)" },
+        configurationSource: {
+          type: "string",
+          description: "Clone config from this slot (default: production). Use slot name or 'production'.",
+        },
+        tags: { type: "object", description: "Key-value tags for the slot" },
+      },
+      required: ["resourceGroup", "appName", "slotName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const slot = await state.webAppManager.createDeploymentSlot(
+        params.resourceGroup as string,
+        params.appName as string,
+        {
+          slotName: params.slotName as string,
+          configurationSource: params.configurationSource as string | undefined,
+          tags: params.tags as Record<string, string> | undefined,
+        },
+      );
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ Created deployment slot '${slot.name}'` +
+            `\n• Host: ${slot.defaultHostName}` +
+            `\n• State: ${slot.state}` +
+            `\n• Location: ${slot.location}`,
+        }],
+        details: slot,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_delete_deployment_slot",
+    label: "Azure Delete Slot",
+    description: "Delete a deployment slot from an Azure Web App",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        slotName: { type: "string", description: "Slot name to delete" },
+      },
+      required: ["resourceGroup", "appName", "slotName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      await state.webAppManager.deleteDeploymentSlot(
+        params.resourceGroup as string,
+        params.appName as string,
+        params.slotName as string,
+      );
+      return {
+        content: [{ type: "text" as const, text: `✅ Deleted deployment slot '${params.slotName}' from '${params.appName}'` }],
+        details: { action: "delete_slot", slotName: params.slotName, appName: params.appName },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_swap_deployment_slots",
+    label: "Azure Swap Slots",
+    description:
+      "Swap two deployment slots on an Azure Web App (blue/green deploy). " +
+      "This is the core operation for zero-downtime deployments: deploy to a staging slot, " +
+      "validate, then swap it into production.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        sourceSlot: { type: "string", description: "Source slot name (e.g. staging)" },
+        targetSlot: {
+          type: "string",
+          description: "Target slot name (default: production). Use 'production' for the main slot.",
+        },
+      },
+      required: ["resourceGroup", "appName", "sourceSlot"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const targetSlot = (params.targetSlot as string) ?? "production";
+      await state.webAppManager.swapSlots(
+        params.resourceGroup as string,
+        params.appName as string,
+        params.sourceSlot as string,
+        targetSlot,
+      );
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ Swapped slot '${params.sourceSlot}' → '${targetSlot}' on '${params.appName}'` +
+            `\n\nThe code from '${params.sourceSlot}' is now serving production traffic.`,
+        }],
+        details: {
+          action: "swap_slots",
+          sourceSlot: params.sourceSlot,
+          targetSlot,
+          appName: params.appName,
+        },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_set_slot_traffic",
+    label: "Azure Slot Traffic",
+    description:
+      "Set traffic routing percentages for Web App deployment slots (Testing in Production). " +
+      "Route a percentage of live traffic to a staging/canary slot for gradual rollout. " +
+      "Example: send 10% to 'staging' while 90% stays on production.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+        routingRules: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              slotName: { type: "string", description: "Slot name" },
+              reroutePercentage: { type: "number", description: "Traffic percentage (0–100)" },
+            },
+            required: ["slotName", "reroutePercentage"],
+          },
+          description: "Array of { slotName, reroutePercentage } rules",
+        },
+      },
+      required: ["resourceGroup", "appName", "routingRules"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const rules = params.routingRules as Array<{ slotName: string; reroutePercentage: number }>;
+      await state.webAppManager.setSlotTrafficPercentage(
+        params.resourceGroup as string,
+        params.appName as string,
+        { routingRules: rules },
+      );
+      const summary = rules.map(r => `• ${r.slotName}: ${r.reroutePercentage}%`).join("\n");
+      const productionPct = 100 - rules.reduce((sum, r) => sum + r.reroutePercentage, 0);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ Updated traffic routing for '${params.appName}':\n• production: ${productionPct}%\n${summary}`,
+        }],
+        details: { action: "set_slot_traffic", rules, productionPercentage: productionPct },
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_get_slot_traffic",
+    label: "Azure Get Traffic",
+    description: "Get current traffic routing percentages for Web App deployment slots",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        appName: { type: "string", description: "Web App name" },
+      },
+      required: ["resourceGroup", "appName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.webAppManager) throw new Error("Web App manager not initialized");
+      const config = await state.webAppManager.getSlotTrafficPercentage(
+        params.resourceGroup as string,
+        params.appName as string,
+      );
+      if (config.routingRules.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `All traffic for '${params.appName}' is routed to production (no slot routing rules).` }],
+          details: { routingRules: [], productionPercentage: 100 },
+        };
+      }
+      const summary = config.routingRules.map(r => `• ${r.slotName}: ${r.reroutePercentage}%`).join("\n");
+      const productionPct = 100 - config.routingRules.reduce((sum, r) => sum + r.reroutePercentage, 0);
+      return {
+        content: [{
+          type: "text" as const,
+          text: `Traffic routing for '${params.appName}':\n• production: ${productionPct}%\n${summary}`,
+        }],
+        details: { routingRules: config.routingRules, productionPercentage: productionPct },
+      };
+    },
+  });
+
+  // --- Traffic Manager deployment strategy tools ---
+
+  api.registerTool({
+    name: "azure_create_traffic_manager_profile",
+    label: "Azure Create TM",
+    description:
+      "Create a Traffic Manager profile for DNS-level traffic routing (blue/green, weighted, priority, geographic). " +
+      "Use 'Weighted' routing method for gradual traffic shifting between environments.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group name" },
+        name: { type: "string", description: "Profile name" },
+        trafficRoutingMethod: {
+          type: "string",
+          enum: ["Performance", "Priority", "Weighted", "Geographic", "MultiValue", "Subnet"],
+          description: "Routing method (use 'Weighted' for blue/green traffic shifting)",
+        },
+        relativeDnsName: {
+          type: "string",
+          description: "DNS relative name — profile will be accessible at <name>.trafficmanager.net",
+        },
+        ttl: { type: "number", description: "DNS TTL in seconds (default: 30, lower = faster failover)" },
+        monitorProtocol: { type: "string", enum: ["HTTP", "HTTPS", "TCP"], description: "Health probe protocol (default: HTTPS)" },
+        monitorPort: { type: "number", description: "Health probe port (default: 443)" },
+        monitorPath: { type: "string", description: "Health probe path (default: /)" },
+        tags: { type: "object", description: "Key-value tags" },
+      },
+      required: ["resourceGroup", "name", "trafficRoutingMethod", "relativeDnsName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const profile = await state.trafficManagerManager.createProfile({
+        resourceGroup: params.resourceGroup as string,
+        name: params.name as string,
+        trafficRoutingMethod: params.trafficRoutingMethod as "Weighted",
+        relativeDnsName: params.relativeDnsName as string,
+        ttl: params.ttl as number | undefined,
+        monitorProtocol: params.monitorProtocol as "HTTP" | "HTTPS" | "TCP" | undefined,
+        monitorPort: params.monitorPort as number | undefined,
+        monitorPath: params.monitorPath as string | undefined,
+        tags: params.tags as Record<string, string> | undefined,
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ Created Traffic Manager profile '${profile.name}'` +
+            `\n• DNS: ${profile.dnsConfig?.fqdn ?? `${params.relativeDnsName}.trafficmanager.net`}` +
+            `\n• Routing: ${profile.trafficRoutingMethod}` +
+            `\n• Status: ${profile.profileStatus ?? "Enabled"}`,
+        }],
+        details: profile,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_create_traffic_manager_endpoint",
+    label: "Azure Create TM EP",
+    description:
+      "Create or update an endpoint in a Traffic Manager profile. " +
+      "For blue/green: add two endpoints (blue & green) with different weights.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group containing the TM profile" },
+        profileName: { type: "string", description: "Traffic Manager profile name" },
+        endpointType: {
+          type: "string",
+          enum: ["AzureEndpoints", "ExternalEndpoints", "NestedEndpoints"],
+          description: "Endpoint type",
+        },
+        endpointName: { type: "string", description: "Endpoint name (e.g. blue-webapp, green-webapp)" },
+        target: { type: "string", description: "Target FQDN (for ExternalEndpoints)" },
+        targetResourceId: { type: "string", description: "Azure resource ID (for AzureEndpoints)" },
+        weight: { type: "number", description: "Traffic weight 1–1000 (for Weighted routing)" },
+        priority: { type: "number", description: "Priority 1–1000 (for Priority routing)" },
+        endpointStatus: { type: "string", enum: ["Enabled", "Disabled"], description: "Endpoint status" },
+        endpointLocation: { type: "string", description: "Geographic location" },
+      },
+      required: ["resourceGroup", "profileName", "endpointType", "endpointName"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const ep = await state.trafficManagerManager.createOrUpdateEndpoint({
+        resourceGroup: params.resourceGroup as string,
+        profileName: params.profileName as string,
+        endpointType: params.endpointType as "AzureEndpoints",
+        endpointName: params.endpointName as string,
+        target: params.target as string | undefined,
+        targetResourceId: params.targetResourceId as string | undefined,
+        weight: params.weight as number | undefined,
+        priority: params.priority as number | undefined,
+        endpointStatus: params.endpointStatus as "Enabled" | "Disabled" | undefined,
+        endpointLocation: params.endpointLocation as string | undefined,
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ ${ep.id ? "Updated" : "Created"} endpoint '${ep.name}'` +
+            `\n• Target: ${ep.target ?? ep.targetResourceId ?? "N/A"}` +
+            `\n• Weight: ${ep.weight ?? "N/A"}` +
+            `\n• Status: ${ep.endpointStatus ?? "Enabled"}`,
+        }],
+        details: ep,
+      };
+    },
+  });
+
+  api.registerTool({
+    name: "azure_update_traffic_manager_weight",
+    label: "Azure Update TM Wt",
+    description:
+      "Update the weight of a Traffic Manager endpoint for gradual traffic shifting. " +
+      "In a blue/green setup, shift traffic by adjusting weights: " +
+      "e.g. blue=900, green=100 → blue=500, green=500 → blue=100, green=900.",
+    parameters: {
+      type: "object",
+      properties: {
+        resourceGroup: { type: "string", description: "Resource group containing the TM profile" },
+        profileName: { type: "string", description: "Traffic Manager profile name" },
+        endpointType: {
+          type: "string",
+          enum: ["AzureEndpoints", "ExternalEndpoints", "NestedEndpoints"],
+          description: "Endpoint type",
+        },
+        endpointName: { type: "string", description: "Endpoint name to update" },
+        weight: { type: "number", description: "New weight (1–1000)" },
+      },
+      required: ["resourceGroup", "profileName", "endpointType", "endpointName", "weight"],
+    },
+    async execute(_toolCallId: string, params: Record<string, unknown>) {
+      if (!state.trafficManagerManager) throw new Error("Traffic Manager not initialized");
+      const ep = await state.trafficManagerManager.updateEndpointWeight({
+        resourceGroup: params.resourceGroup as string,
+        profileName: params.profileName as string,
+        endpointType: params.endpointType as "AzureEndpoints",
+        endpointName: params.endpointName as string,
+        weight: params.weight as number,
+      });
+      return {
+        content: [{
+          type: "text" as const,
+          text: `✅ Updated weight for '${ep.name}' to ${ep.weight}` +
+            `\n• Target: ${ep.target ?? ep.targetResourceId ?? "N/A"}` +
+            `\n• Status: ${ep.endpointStatus ?? "Enabled"}`,
+        }],
+        details: ep,
+      };
+    },
+  });
 }
