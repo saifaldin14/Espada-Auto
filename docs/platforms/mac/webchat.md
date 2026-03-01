@@ -13,14 +13,6 @@ agent (with a session switcher for other sessions).
 - **Remote mode**: forwards the Gateway control port over SSH and uses that
   tunnel as the data plane.
 
-## Launch & debugging
-
-- Manual: Lobster menu → “Open Chat”.
-- Auto‑open for testing:
-  ```bash
-  dist/Espada.app/Contents/MacOS/Espada --webchat
-  ```
-- Logs: `./scripts/clawlog.sh` (subsystem `bot.molt`, category `WebChatSwiftUI`).
 
 ## How it’s wired
 

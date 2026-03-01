@@ -43,7 +43,6 @@ sudo install -m 644 -o root -g wheel /tmp/bot.molt.plist /Library/Preferences/Lo
 ```
 
 - No reboot is required; logd notices the file quickly, but only new log lines will include private payloads.
-- View the richer output with the existing helper, e.g. `./scripts/clawlog.sh --category WebChat --last 5m`.
 
 ## Disable after debugging
 - Remove the override: `sudo rm /Library/Preferences/Logging/Subsystems/bot.molt.plist`.

@@ -686,10 +686,6 @@ Look for missing requirements in the output.
 Monitor gateway logs to see hook execution:
 
 ```bash
-# macOS
-./scripts/clawlog.sh -f
-
-# Other platforms
 tail -f ~/.espada/gateway.log
 ```
 
@@ -803,11 +799,6 @@ Look for missing:
    ```
 
 2. Restart your gateway process so hooks reload.
-
-3. Check gateway logs for errors:
-   ```bash
-   ./scripts/clawlog.sh | grep hook
-   ```
 
 ### Handler Errors
 
