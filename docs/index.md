@@ -8,7 +8,7 @@ read_when:
 > *"EXFOLIATE! EXFOLIATE!"* — A space lobster, probably
 
 <p align="center">
-  <img src="whatsapp-clawd.jpg" alt="Espada" width="420" />
+  <img src="whatsapp-espada.jpg" alt="Espada" width="420" />
 </p>
 
 <p align="center">
@@ -21,11 +21,11 @@ read_when:
   <a href="https://github.com/espada/espada">GitHub</a> ·
   <a href="https://github.com/espada/espada/releases">Releases</a> ·
   <a href="/">Docs</a> ·
-  <a href="/start/clawd">Espada assistant setup</a>
+  <a href="/start/espada">Espada assistant setup</a>
 </p>
 
 Espada bridges WhatsApp (via WhatsApp Web / Baileys), Telegram (Bot API / grammY), Discord (Bot API / channels.discord.js), and iMessage (imsg CLI) to coding agents like [Pi](https://github.com/badlogic/pi-mono). Plugins add Mattermost (Bot API + WebSocket) and more.
-Espada also powers [Clawd](https://clawd.me), the space‑lobster assistant.
+Espada also powers [Espada](https://espada.me), the space‑lobster assistant.
 
 ## Start here
 
@@ -161,7 +161,7 @@ Example:
       groups: { "*": { requireMention: true } }
     }
   },
-  messages: { groupChat: { mentionPatterns: ["@clawd"] } }
+  messages: { groupChat: { mentionPatterns: ["@espada"] } }
 }
 ```
 
@@ -177,7 +177,7 @@ Example:
   - [Updating / rollback](/install/updating)
   - [Pairing (DM + nodes)](/start/pairing)
   - [Nix mode](/install/nix)
-  - [Espada assistant setup (Clawd)](/start/clawd)
+  - [Espada assistant setup (Espada)](/start/espada)
   - [Skills](/tools/skills)
   - [Skills config](/tools/skills-config)
   - [Workspace templates](/reference/templates/AGENTS)
@@ -224,7 +224,7 @@ Example:
 
 - **Peter Steinberger** ([@steipete](https://twitter.com/steipete)) — Creator, lobster whisperer
 - **Mario Zechner** ([@badlogicc](https://twitter.com/badlogicgames)) — Pi creator, security pen-tester
-- **Clawd** — The space lobster who demanded a better name
+- **Espada** — The space lobster who demanded a better name
 
 ## Core Contributors
 

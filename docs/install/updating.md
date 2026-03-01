@@ -36,7 +36,7 @@ Notes:
 - Snapshot your tailoring:
   - Config: `~/.espada/espada.json`
   - Credentials: `~/.espada/credentials/`
-  - Workspace: `~/clawd`
+  - Workspace: `~/espada`
 
 ## Update (global install)
 
@@ -216,4 +216,4 @@ git pull
 
 - Run `espada doctor` again and read the output carefully (it often tells you the fix).
 - Check: [Troubleshooting](/gateway/troubleshooting)
-- Ask in Discord: https://channels.discord.gg/clawd
+- Ask in Discord: https://channels.discord.gg/espada

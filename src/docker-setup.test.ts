@@ -62,7 +62,7 @@ describe("docker-setup.sh", () => {
       DOCKER_STUB_LOG: logPath,
       ESPADA_GATEWAY_TOKEN: "test-token",
       ESPADA_CONFIG_DIR: join(rootDir, "config"),
-      ESPADA_WORKSPACE_DIR: join(rootDir, "clawd"),
+      ESPADA_WORKSPACE_DIR: join(rootDir, "espada"),
     };
     delete env.ESPADA_DOCKER_APT_PACKAGES;
     delete env.ESPADA_EXTRA_MOUNTS;
@@ -113,7 +113,7 @@ describe("docker-setup.sh", () => {
       ESPADA_DOCKER_APT_PACKAGES: "ffmpeg build-essential",
       ESPADA_GATEWAY_TOKEN: "test-token",
       ESPADA_CONFIG_DIR: join(rootDir, "config"),
-      ESPADA_WORKSPACE_DIR: join(rootDir, "clawd"),
+      ESPADA_WORKSPACE_DIR: join(rootDir, "espada"),
       ESPADA_EXTRA_MOUNTS: "",
       ESPADA_HOME_VOLUME: "",
     };

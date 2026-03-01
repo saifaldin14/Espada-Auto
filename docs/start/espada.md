@@ -4,7 +4,7 @@ read_when:
   - Onboarding a new assistant instance
   - Reviewing safety/permission implications
 ---
-# Building a personal assistant with Espada (Clawd-style)
+# Building a personal assistant with Espada (Espada-style)
 
 Espada is a WhatsApp + Telegram + Discord + iMessage gateway for **Pi** agents. Plugins add Mattermost. This guide is the "personal assistant" setup: one dedicated WhatsApp number that behaves like your always-on agent.
 
@@ -50,7 +50,7 @@ You want this:
 Your Phone (personal)          Second Phone (assistant)
 ┌─────────────────┐           ┌─────────────────┐
 │  Your WhatsApp  │  ──────▶  │  Assistant WA   │
-│  +1-555-YOU     │  message  │  +1-555-CLAWD   │
+│  +1-555-YOU     │  message  │  +1-555-ESPADA   │
 └─────────────────┘           └────────┬────────┘
                                        │ linked via QR
                                        ▼
@@ -91,11 +91,11 @@ When onboarding finishes, we auto-open the dashboard with your gateway token and
 
 ## Give the agent a workspace (AGENTS)
 
-Clawd reads operating instructions and “memory” from its workspace directory.
+Espada reads operating instructions and “memory” from its workspace directory.
 
-By default, Espada uses `~/clawd` as the agent workspace, and will create it (plus starter `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`) automatically on setup/first agent run. `BOOTSTRAP.md` is only created when the workspace is brand new (it should not come back after you delete it).
+By default, Espada uses `~/espada` as the agent workspace, and will create it (plus starter `AGENTS.md`, `SOUL.md`, `TOOLS.md`, `IDENTITY.md`, `USER.md`) automatically on setup/first agent run. `BOOTSTRAP.md` is only created when the workspace is brand new (it should not come back after you delete it).
 
-Tip: treat this folder like Clawd’s “memory” and make it a git repo (ideally private) so your `AGENTS.md` + memory files are backed up. If git is installed, brand-new workspaces are auto-initialized.
+Tip: treat this folder like Espada’s “memory” and make it a git repo (ideally private) so your `AGENTS.md` + memory files are backed up. If git is installed, brand-new workspaces are auto-initialized.
 
 ```bash
 espada setup
@@ -109,7 +109,7 @@ Optional: choose a different workspace with `agents.defaults.workspace` (support
 ```json5
 {
   agent: {
-    workspace: "~/clawd"
+    workspace: "~/espada"
   }
 }
 ```
@@ -138,7 +138,7 @@ Example:
   logging: { level: "info" },
   agent: {
     model: "anthropic/claude-opus-4-5",
-    workspace: "~/clawd",
+    workspace: "~/espada",
     thinkingDefault: "high",
     timeoutSeconds: 1800,
     // Start with 0; enable later.
@@ -154,7 +154,7 @@ Example:
   },
   routing: {
     groupChat: {
-      mentionPatterns: ["@clawd", "clawd"]
+      mentionPatterns: ["@espada", "espada"]
     }
   },
   session: {

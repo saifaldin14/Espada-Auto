@@ -10,7 +10,7 @@ Automatically saves session context to memory when you issue `/new`.
 
 **Events**: `command:new`
 **What it does**: Creates a dated memory file with LLM-generated slug based on conversation content.
-**Output**: `<workspace>/memory/YYYY-MM-DD-slug.md` (defaults to `~/clawd`)
+**Output**: `<workspace>/memory/YYYY-MM-DD-slug.md` (defaults to `~/espada`)
 
 **Enable**:
 

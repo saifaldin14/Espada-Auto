@@ -126,7 +126,7 @@ describe("web auto-reply", () => {
 
     setLoadConfigMock(() => ({
       messages: {
-        groupChat: { mentionPatterns: ["@clawd"] },
+        groupChat: { mentionPatterns: ["@espada"] },
       },
       session: { store: storePath },
     }));
@@ -209,7 +209,7 @@ describe("web auto-reply", () => {
       },
       messages: {
         groupChat: {
-          mentionPatterns: ["\\bclawd\\b"],
+          mentionPatterns: ["\\bespada\\b"],
         },
       },
     }));
@@ -248,9 +248,9 @@ describe("web auto-reply", () => {
 
     expect(resolver).not.toHaveBeenCalled();
 
-    // Text-based mentionPatterns still work (user can type "clawd" explicitly).
+    // Text-based mentionPatterns still work (user can type "espada" explicitly).
     await capturedOnMessage?.({
-      body: "clawd ping",
+      body: "espada ping",
       from: "123@g.us",
       conversationId: "123@g.us",
       chatId: "123@g.us",

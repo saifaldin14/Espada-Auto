@@ -7,8 +7,8 @@ export function normalizeSlackSlashCommandName(raw: string) {
 export function resolveSlackSlashCommandConfig(
   raw?: SlackSlashCommandConfig,
 ): Required<SlackSlashCommandConfig> {
-  const normalizedName = normalizeSlackSlashCommandName(raw?.name?.trim() || "clawd");
-  const name = normalizedName || "clawd";
+  const normalizedName = normalizeSlackSlashCommandName(raw?.name?.trim() || "espada");
+  const name = normalizedName || "espada";
   return {
     enabled: raw?.enabled === true,
     name,

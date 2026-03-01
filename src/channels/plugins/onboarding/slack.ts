@@ -54,7 +54,7 @@ function buildSlackManifest(botName: string) {
       },
       slash_commands: [
         {
-          command: "/clawd",
+          command: "/espada",
           description: "Send a message to Espada",
           should_escape: false,
         },

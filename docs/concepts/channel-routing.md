@@ -80,7 +80,7 @@ Example:
 {
   agents: {
     list: [
-      { id: "support", name: "Support", workspace: "~/clawd-support" }
+      { id: "support", name: "Support", workspace: "~/espada-support" }
     ]
   },
   bindings: [

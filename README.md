@@ -236,7 +236,7 @@ Send these in any connected messaging channel:
 
 ## Configuration
 
-Config lives at `~/.espada/espada.json`. The workspace (skills, prompts, memories) lives at `~/clawd`.
+Config lives at `~/.espada/espada.json`. The workspace (skills, prompts, memories) lives at `~/espada`.
 
 Minimal config:
 

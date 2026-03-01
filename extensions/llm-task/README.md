@@ -4,7 +4,7 @@ Adds an **optional** agent tool `llm-task` for running **JSON-only** LLM tasks
 (drafting, summarizing, classifying) with optional JSON Schema validation.
 
 Designed to be called from workflow engines (for example, Lobster via
-`clawd.invoke --each`) without adding new Espada code per workflow.
+`espada.invoke --each`) without adding new Espada code per workflow.
 
 ## Enable
 

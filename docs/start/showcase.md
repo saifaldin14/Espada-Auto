@@ -9,7 +9,7 @@ summary: "Community-built projects and integrations powered by Espada"
 Real projects from the community. See what people are building with Espada.
 
 <Info>
-**Want to be featured?** Share your project in [#showcase on Discord](https://discord.gg/clawd) or [tag @espada on X](https://x.com/espada).
+**Want to be featured?** Share your project in [#showcase on Discord](https://discord.gg/espada) or [tag @espada on X](https://x.com/espada).
 </Info>
 
 ## 🎥 Espada in Action
@@ -134,28 +134,28 @@ Full setup walkthrough (28m) by VelvetShark.
   <img src="/assets/showcase/papla-tts.jpg" alt="Telegram voice note output from TTS" />
 </Card>
 
-<Card title="CodexMonitor" icon="eye" href="https://clawdhub.com/odrobnik/codexmonitor">
+<Card title="CodexMonitor" icon="eye" href="https://espadahub.com/odrobnik/codexmonitor">
   **@odrobnik** • `devtools` `codex` `brew`
 
   Homebrew-installed helper to list/inspect/watch local OpenAI Codex sessions (CLI + VS Code).
 
-  <img src="/assets/showcase/codexmonitor.png" alt="CodexMonitor on ClawdHub" />
+  <img src="/assets/showcase/codexmonitor.png" alt="CodexMonitor on EspadaHub" />
 </Card>
 
-<Card title="Bambu 3D Printer Control" icon="print" href="https://clawdhub.com/tobiasbischoff/bambu-cli">
+<Card title="Bambu 3D Printer Control" icon="print" href="https://espadahub.com/tobiasbischoff/bambu-cli">
   **@tobiasbischoff** • `hardware` `3d-printing` `skill`
 
   Control and troubleshoot BambuLab printers: status, jobs, camera, AMS, calibration, and more.
 
-  <img src="/assets/showcase/bambu-cli.png" alt="Bambu CLI skill on ClawdHub" />
+  <img src="/assets/showcase/bambu-cli.png" alt="Bambu CLI skill on EspadaHub" />
 </Card>
 
-<Card title="Vienna Transport (Wiener Linien)" icon="train" href="https://clawdhub.com/hjanuschka/wienerlinien">
+<Card title="Vienna Transport (Wiener Linien)" icon="train" href="https://espadahub.com/hjanuschka/wienerlinien">
   **@hjanuschka** • `travel` `transport` `skill`
 
   Real-time departures, disruptions, elevator status, and routing for Vienna's public transport.
 
-  <img src="/assets/showcase/wienerlinien.png" alt="Wiener Linien skill on ClawdHub" />
+  <img src="/assets/showcase/wienerlinien.png" alt="Wiener Linien skill on EspadaHub" />
 </Card>
 
 <Card title="ParentPay School Meals" icon="utensils" href="#">
@@ -164,7 +164,7 @@ Full setup walkthrough (28m) by VelvetShark.
   Automated UK school meal booking via ParentPay. Uses mouse coordinates for reliable table cell clicking.
 </Card>
 
-<Card title="R2 Upload (Send Me My Files)" icon="cloud-arrow-up" href="https://clawdhub.com/skills/r2-upload">
+<Card title="R2 Upload (Send Me My Files)" icon="cloud-arrow-up" href="https://espadahub.com/skills/r2-upload">
   **@julianengel** • `files` `r2` `presigned-urls`
 
   Upload to Cloudflare R2/S3 and generate secure presigned download links. Perfect for remote Espada instances.
@@ -188,7 +188,7 @@ Full setup walkthrough (28m) by VelvetShark.
 <Card title="Kev's Dream Team (14+ Agents)" icon="robot" href="https://github.com/adam91holt/orchestrated-ai-articles">
   **@adam91holt** • `multi-agent` `orchestration` `architecture` `manifesto`
 
-  14+ agents under one gateway with Opus 4.5 orchestrator delegating to Codex workers. Comprehensive [technical write-up](https://github.com/adam91holt/orchestrated-ai-articles) covering the Dream Team roster, model selection, sandboxing, webhooks, heartbeats, and delegation flows. [Clawdspace](https://github.com/adam91holt/clawdspace) for agent sandboxing. [Blog post](https://adams-ai-journey.ghost.io/2026-the-year-of-the-orchestrator/).
+  14+ agents under one gateway with Opus 4.5 orchestrator delegating to Codex workers. Comprehensive [technical write-up](https://github.com/adam91holt/orchestrated-ai-articles) covering the Dream Team roster, model selection, sandboxing, webhooks, heartbeats, and delegation flows. [Espadaspace](https://github.com/adam91holt/espadaspace) for agent sandboxing. [Blog post](https://adams-ai-journey.ghost.io/2026-the-year-of-the-orchestrator/).
 </Card>
 
 <Card title="Linear CLI" icon="terminal" href="https://github.com/Finesssee/linear-cli">
@@ -260,7 +260,7 @@ Full setup walkthrough (28m) by VelvetShark.
 <Card title="Jira Skill Builder" icon="diagram-project" href="https://x.com/jdrhyne/status/2008336434827002232">
   **@jdrhyne** • `automation` `jira` `skill` `devtools`
 
-  Espada connected to Jira, then generated a new skill on the fly (before it existed on ClawdHub).
+  Espada connected to Jira, then generated a new skill on the fly (before it existed on EspadaHub).
 </Card>
 
 <Card title="Todoist Skill via Telegram" icon="list-check" href="https://x.com/iamsubhrajyoti/status/2009949389884920153">
@@ -319,16 +319,16 @@ Full setup walkthrough (28m) by VelvetShark.
 
 <CardGroup cols={2}>
 
-<Card title="Clawdia Phone Bridge" icon="phone" href="https://github.com/alejandroOPI/clawdia-bridge">
+<Card title="Espadaia Phone Bridge" icon="phone" href="https://github.com/alejandroOPI/espadaia-bridge">
   **@alejandroOPI** • `voice` `vapi` `bridge`
   
   Vapi voice assistant ↔ Espada HTTP bridge. Near real-time phone calls with your agent.
 </Card>
 
-<Card title="OpenRouter Transcription" icon="microphone" href="https://clawdhub.com/obviyus/openrouter-transcribe">
+<Card title="OpenRouter Transcription" icon="microphone" href="https://espadahub.com/obviyus/openrouter-transcribe">
   **@obviyus** • `transcription` `multilingual` `skill`
 
-  Multi-lingual audio transcription via OpenRouter (Gemini, etc). Available on ClawdHub.
+  Multi-lingual audio transcription via OpenRouter (Gemini, etc). Available on EspadaHub.
 </Card>
 
 </CardGroup>
@@ -349,8 +349,8 @@ Full setup walkthrough (28m) by VelvetShark.
   Espada gateway running on Home Assistant OS with SSH tunnel support and persistent state.
 </Card>
 
-<Card title="Home Assistant Skill" icon="toggle-on" href="https://clawdhub.com/skills/homeassistant">
-  **ClawdHub** • `homeassistant` `skill` `automation`
+<Card title="Home Assistant Skill" icon="toggle-on" href="https://espadahub.com/skills/homeassistant">
+  **EspadaHub** • `homeassistant` `skill` `automation`
   
   Control and automate Home Assistant devices via natural language.
 </Card>
@@ -361,8 +361,8 @@ Full setup walkthrough (28m) by VelvetShark.
   Batteries-included nixified Espada configuration for reproducible deployments.
 </Card>
 
-<Card title="CalDAV Calendar" icon="calendar" href="https://clawdhub.com/skills/caldav-calendar">
-  **ClawdHub** • `calendar` `caldav` `skill`
+<Card title="CalDAV Calendar" icon="calendar" href="https://espadahub.com/skills/caldav-calendar">
+  **EspadaHub** • `calendar` `caldav` `skill`
   
   Calendar skill using khal/vdirsyncer. Self-hosted calendar integration.
 </Card>
@@ -411,7 +411,7 @@ Have something to share? We'd love to feature it!
 
 <Steps>
   <Step title="Share It">
-    Post in [#showcase on Discord](https://discord.gg/clawd) or [tweet @espada](https://x.com/espada)
+    Post in [#showcase on Discord](https://discord.gg/espada) or [tweet @espada](https://x.com/espada)
   </Step>
   <Step title="Include Details">
     Tell us what it does, link to the repo/demo, share a screenshot if you have one

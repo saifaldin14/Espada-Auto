@@ -350,12 +350,12 @@
       "destination": "/nodes/camera"
     },
     {
-      "source": "/clawd",
-      "destination": "/start/clawd"
+      "source": "/espada",
+      "destination": "/start/espada"
     },
     {
-      "source": "/clawdhub",
-      "destination": "/tools/clawdhub"
+      "source": "/espadahub",
+      "destination": "/tools/espadahub"
     },
     {
       "source": "/configuration",
@@ -824,7 +824,7 @@
           "start/wizard",
           "start/setup",
           "start/pairing",
-          "start/clawd",
+          "start/espada",
           "start/showcase",
           "start/hubs",
           "start/onboarding",
@@ -1059,7 +1059,7 @@
           "tools/reactions",
           "tools/skills",
           "tools/skills-config",
-          "tools/clawdhub"
+          "tools/espadahub"
         ]
       },
       {

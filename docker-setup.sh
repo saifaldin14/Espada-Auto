@@ -22,10 +22,10 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 mkdir -p "${ESPADA_CONFIG_DIR:-$HOME/.espada}"
-mkdir -p "${ESPADA_WORKSPACE_DIR:-$HOME/clawd}"
+mkdir -p "${ESPADA_WORKSPACE_DIR:-$HOME/espada}"
 
 export ESPADA_CONFIG_DIR="${ESPADA_CONFIG_DIR:-$HOME/.espada}"
-export ESPADA_WORKSPACE_DIR="${ESPADA_WORKSPACE_DIR:-$HOME/clawd}"
+export ESPADA_WORKSPACE_DIR="${ESPADA_WORKSPACE_DIR:-$HOME/espada}"
 export ESPADA_GATEWAY_PORT="${ESPADA_GATEWAY_PORT:-18789}"
 export ESPADA_BRIDGE_PORT="${ESPADA_BRIDGE_PORT:-18790}"
 export ESPADA_GATEWAY_BIND="${ESPADA_GATEWAY_BIND:-lan}"
@@ -63,7 +63,7 @@ YAML
   if [[ -n "$home_volume" ]]; then
     printf '      - %s:/home/node\n' "$home_volume" >>"$EXTRA_COMPOSE_FILE"
     printf '      - %s:/home/node/.espada\n' "$ESPADA_CONFIG_DIR" >>"$EXTRA_COMPOSE_FILE"
-    printf '      - %s:/home/node/clawd\n' "$ESPADA_WORKSPACE_DIR" >>"$EXTRA_COMPOSE_FILE"
+    printf '      - %s:/home/node/espada\n' "$ESPADA_WORKSPACE_DIR" >>"$EXTRA_COMPOSE_FILE"
   fi
 
   for mount in "${mounts[@]}"; do
@@ -78,7 +78,7 @@ YAML
   if [[ -n "$home_volume" ]]; then
     printf '      - %s:/home/node\n' "$home_volume" >>"$EXTRA_COMPOSE_FILE"
     printf '      - %s:/home/node/.espada\n' "$ESPADA_CONFIG_DIR" >>"$EXTRA_COMPOSE_FILE"
-    printf '      - %s:/home/node/clawd\n' "$ESPADA_WORKSPACE_DIR" >>"$EXTRA_COMPOSE_FILE"
+    printf '      - %s:/home/node/espada\n' "$ESPADA_WORKSPACE_DIR" >>"$EXTRA_COMPOSE_FILE"
   fi
 
   for mount in "${mounts[@]}"; do

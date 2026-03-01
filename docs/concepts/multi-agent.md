@@ -41,7 +41,7 @@ reach other host locations unless sandboxing is enabled. See
 
 - Config: `~/.espada/espada.json` (or `ESPADA_CONFIG_PATH`)
 - State dir: `~/.espada` (or `ESPADA_STATE_DIR`)
-- Workspace: `~/clawd` (or `~/clawd-<agentId>`)
+- Workspace: `~/espada` (or `~/espada-<agentId>`)
 - Agent dir: `~/.espada/agents/<agentId>/agent` (or `agents.list[].agentDir`)
 - Sessions: `~/.espada/agents/<agentId>/sessions`
 
@@ -51,7 +51,7 @@ If you do nothing, Espada runs a single agent:
 
 - `agentId` defaults to **`main`**.
 - Sessions are keyed as `agent:main:<mainKey>`.
-- Workspace defaults to `~/clawd` (or `~/clawd-<profile>` when `ESPADA_PROFILE` is set).
+- Workspace defaults to `~/espada` (or `~/espada-<profile>` when `ESPADA_PROFILE` is set).
 - State defaults to `~/.espada/agents/main/agent`.
 
 ## Agent helper
@@ -92,8 +92,8 @@ Example:
 {
   agents: {
     list: [
-      { id: "alex", workspace: "~/clawd-alex" },
-      { id: "mia", workspace: "~/clawd-mia" }
+      { id: "alex", workspace: "~/espada-alex" },
+      { id: "mia", workspace: "~/espada-mia" }
     ]
   },
   bindings: [
@@ -149,13 +149,13 @@ multiple phone numbers without mixing sessions.
         id: "home",
         default: true,
         name: "Home",
-        workspace: "~/clawd-home",
+        workspace: "~/espada-home",
         agentDir: "~/.espada/agents/home/agent",
       },
       {
         id: "work",
         name: "Work",
-        workspace: "~/clawd-work",
+        workspace: "~/espada-work",
         agentDir: "~/.espada/agents/work/agent",
       },
     ],
@@ -213,13 +213,13 @@ Split by channel: route WhatsApp to a fast everyday agent and Telegram to an Opu
       {
         id: "chat",
         name: "Everyday",
-        workspace: "~/clawd-chat",
+        workspace: "~/espada-chat",
         model: "anthropic/claude-sonnet-4-5"
       },
       {
         id: "opus",
         name: "Deep Work",
-        workspace: "~/clawd-opus",
+        workspace: "~/espada-opus",
         model: "anthropic/claude-opus-4-5"
       }
     ]
@@ -243,8 +243,8 @@ Keep WhatsApp on the fast agent, but route one DM to Opus:
 {
   agents: {
     list: [
-      { id: "chat", name: "Everyday", workspace: "~/clawd-chat", model: "anthropic/claude-sonnet-4-5" },
-      { id: "opus", name: "Deep Work", workspace: "~/clawd-opus", model: "anthropic/claude-opus-4-5" }
+      { id: "chat", name: "Everyday", workspace: "~/espada-chat", model: "anthropic/claude-sonnet-4-5" },
+      { id: "opus", name: "Deep Work", workspace: "~/espada-opus", model: "anthropic/claude-opus-4-5" }
     ]
   },
   bindings: [
@@ -268,7 +268,7 @@ and a tighter tool policy:
       {
         id: "family",
         name: "Family",
-        workspace: "~/clawd-family",
+        workspace: "~/espada-family",
         identity: { name: "Family Bot" },
         groupChat: {
           mentionPatterns: ["@family", "@familybot", "@Family Bot"]
@@ -312,7 +312,7 @@ Starting with v2026.1.6, each agent can have its own sandbox and tool restrictio
     list: [
       {
         id: "personal",
-        workspace: "~/clawd-personal",
+        workspace: "~/espada-personal",
         sandbox: {
           mode: "off",  // No sandbox for personal agent
         },
@@ -320,7 +320,7 @@ Starting with v2026.1.6, each agent can have its own sandbox and tool restrictio
       },
       {
         id: "family",
-        workspace: "~/clawd-family",
+        workspace: "~/espada-family",
         sandbox: {
           mode: "all",     // Always sandboxed
           scope: "agent",  // One container per agent

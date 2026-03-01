@@ -59,7 +59,7 @@ The hook uses your configured LLM provider to generate slugs, so it works with a
 
 No additional configuration required. The hook automatically:
 
-- Uses your workspace directory (`~/clawd` by default)
+- Uses your workspace directory (`~/espada` by default)
 - Uses your configured LLM for slug generation
 - Falls back to timestamp slugs if LLM is unavailable
 

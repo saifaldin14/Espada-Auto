@@ -7,7 +7,7 @@ read_when:
 
 Espada reads an optional **JSON5** config from `~/.espada/espada.json` (comments + trailing commas allowed).
 
-If the file is missing, Espada uses safe-ish defaults (embedded Pi agent + per-sender sessions + workspace `~/clawd`). You usually only need a config to:
+If the file is missing, Espada uses safe-ish defaults (embedded Pi agent + per-sender sessions + workspace `~/espada`). You usually only need a config to:
 - restrict who can trigger the bot (`channels.whatsapp.allowFrom`, `channels.telegram.allowFrom`, etc.)
 - control group allowlists + mention behavior (`channels.whatsapp.groups`, `channels.telegram.groups`, `channels.discord.guilds`, `agents.list[].groupChat`)
 - customize message prefixes (`messages`)
@@ -61,7 +61,7 @@ Example (via `gateway call`):
 ```bash
 espada gateway call config.get --params '{}' # capture payload.hash
 espada gateway call config.apply --params '{
-  "raw": "{\\n  agents: { defaults: { workspace: \\"~/clawd\\" } }\\n}\\n",
+  "raw": "{\\n  agents: { defaults: { workspace: \\"~/espada\\" } }\\n}\\n",
   "baseHash": "<hash-from-config.get>",
   "sessionKey": "agent:main:whatsapp:dm:+15555550123",
   "restartDelayMs": 1000
@@ -101,7 +101,7 @@ espada gateway call config.patch --params '{
 
 ```json5
 {
-  agents: { defaults: { workspace: "~/clawd" } },
+  agents: { defaults: { workspace: "~/espada" } },
   channels: { whatsapp: { allowFrom: ["+15555550123"] } }
 }
 ```
@@ -118,11 +118,11 @@ To prevent the bot from responding to WhatsApp @-mentions in groups (only respon
 ```json5
 {
   agents: {
-    defaults: { workspace: "~/clawd" },
+    defaults: { workspace: "~/espada" },
     list: [
       {
         id: "main",
-        groupChat: { mentionPatterns: ["@clawd", "reisponde"] }
+        groupChat: { mentionPatterns: ["@espada", "reisponde"] }
       }
     ]
   },
@@ -168,7 +168,7 @@ Split your config into multiple files using the `$include` directive. This is us
 {
   defaults: { sandbox: { mode: "all", scope: "session" } },
   list: [
-    { id: "main", workspace: "~/clawd" }
+    { id: "main", workspace: "~/espada" }
   ]
 }
 ```
@@ -590,7 +590,7 @@ Group messages default to **require mention** (either metadata mention or regex 
   },
   agents: {
     list: [
-      { id: "main", groupChat: { mentionPatterns: ["@clawd", "espada", "clawd"] } }
+      { id: "main", groupChat: { mentionPatterns: ["@espada", "espada", "espada"] } }
     ]
   }
 }
@@ -652,7 +652,7 @@ To respond **only** to specific text triggers (ignoring native @-mentions):
         id: "main",
         groupChat: {
           // Only these text patterns will trigger responses
-          mentionPatterns: ["reisponde", "@clawd"]
+          mentionPatterns: ["reisponde", "@espada"]
         }
       }
     ]
@@ -723,7 +723,7 @@ Inbound messages are routed to an agent via bindings.
   - `default`: optional; when multiple are set, the first wins and a warning is logged.
     If none are set, the **first entry** in the list is the default agent.
   - `name`: display name for the agent.
-  - `workspace`: default `~/clawd-<agentId>` (for `main`, falls back to `agents.defaults.workspace`).
+  - `workspace`: default `~/espada-<agentId>` (for `main`, falls back to `agents.defaults.workspace`).
   - `agentDir`: default `~/.espada/agents/<agentId>/agent`.
   - `model`: per-agent default model, overrides `agents.defaults.model` for that agent.
     - string form: `"provider/model"`, overrides only `agents.defaults.model.primary`
@@ -779,7 +779,7 @@ Full access (no sandbox):
     list: [
       {
         id: "personal",
-        workspace: "~/clawd-personal",
+        workspace: "~/espada-personal",
         sandbox: { mode: "off" }
       }
     ]
@@ -794,7 +794,7 @@ Read-only tools + read-only workspace:
     list: [
       {
         id: "family",
-        workspace: "~/clawd-family",
+        workspace: "~/espada-family",
         sandbox: {
           mode: "all",
           scope: "agent",
@@ -817,7 +817,7 @@ No filesystem access (messaging/session tools enabled):
     list: [
       {
         id: "public",
-        workspace: "~/clawd-public",
+        workspace: "~/espada-public",
         sandbox: {
           mode: "all",
           scope: "agent",
@@ -839,8 +839,8 @@ Example: two WhatsApp accounts → two agents:
 {
   agents: {
     list: [
-      { id: "home", default: true, workspace: "~/clawd-home" },
-      { id: "work", workspace: "~/clawd-work" }
+      { id: "home", default: true, workspace: "~/espada-home" },
+      { id: "work", workspace: "~/espada-work" }
     ]
   },
   bindings: [
@@ -1083,11 +1083,11 @@ Multi-account support lives under `channels.discord.accounts` (see the multi-acc
         policy: "pairing",                    // pairing | allowlist | open | disabled
         allowFrom: ["1234567890", "steipete"], // optional DM allowlist ("open" requires ["*"])
         groupEnabled: false,                 // enable group DMs
-        groupChannels: ["clawd-dm"]          // optional group DM allowlist
+        groupChannels: ["espada-dm"]          // optional group DM allowlist
       },
       guilds: {
         "123456789012345678": {               // guild id (preferred) or slug
-          slug: "friends-of-clawd",
+          slug: "friends-of-espada",
           requireMention: false,              // per-guild default
           reactionNotifications: "own",       // off | own | all | allowlist
           users: ["987654321098765432"],      // optional per-guild user allowlist
@@ -1214,7 +1214,7 @@ Slack runs in Socket Mode and requires both a bot token and app token:
       },
       slashCommand: {
         enabled: true,
-        name: "clawd",
+        name: "espada",
         sessionPrefix: "slack:slash",
         ephemeral: true
       },
@@ -1356,11 +1356,11 @@ exec ssh -T gateway-host imsg "$@"
 
 Sets the **single global workspace directory** used by the agent for file operations.
 
-Default: `~/clawd`.
+Default: `~/espada`.
 
 ```json5
 {
-  agents: { defaults: { workspace: "~/clawd" } }
+  agents: { defaults: { workspace: "~/espada" } }
 }
 ```
 
@@ -1560,14 +1560,14 @@ Notes:
 
 Defaults for Talk mode (macOS/iOS/Android). Voice IDs fall back to `ELEVENLABS_VOICE_ID` or `SAG_VOICE_ID` when unset.
 `apiKey` falls back to `ELEVENLABS_API_KEY` (or the gateway’s shell profile) when unset.
-`voiceAliases` lets Talk directives use friendly names (e.g. `"voice":"Clawd"`).
+`voiceAliases` lets Talk directives use friendly names (e.g. `"voice":"Espada"`).
 
 ```json5
 {
   talk: {
     voiceId: "elevenlabs_voice_id",
     voiceAliases: {
-      Clawd: "EXAVITQu4vr4xnSDxMaL",
+      Espada: "EXAVITQu4vr4xnSDxMaL",
       Roger: "CwhRBWXzGAHq8TQ4Fs17"
     },
     modelId: "eleven_v3",
@@ -2757,9 +2757,9 @@ Example:
 }
 ```
 
-### `browser` (clawd-managed browser)
+### `browser` (espada-managed browser)
 
-Espada can start a **dedicated, isolated** Chrome/Brave/Edge/Chromium instance for clawd and expose a small loopback control service.
+Espada can start a **dedicated, isolated** Chrome/Brave/Edge/Chromium instance for espada and expose a small loopback control service.
 Profiles can point at a **remote** Chromium-based browser via `profiles.<name>.cdpUrl`. Remote
 profiles are attach-only (start/stop/reset are disabled).
 
@@ -2783,7 +2783,7 @@ Defaults:
     // cdpUrl: "http://127.0.0.1:18792", // legacy single-profile override
     defaultProfile: "chrome",
     profiles: {
-      clawd: { cdpPort: 18800, color: "#FF4500" },
+      espada: { cdpPort: 18800, color: "#FF4500" },
       work: { cdpPort: 18801, color: "#0066CC" },
       remote: { cdpUrl: "http://10.0.0.42:9222", color: "#00AA00" }
     },
@@ -3096,8 +3096,8 @@ If you need the backend to receive the prefixed path, set
 
 The Gateway serves a directory of HTML/CSS/JS over HTTP so iOS/Android nodes can simply `canvas.navigate` to it.
 
-Default root: `~/clawd/canvas`  
-Default port: `18793` (chosen to avoid the clawd browser CDP port `18792`)  
+Default root: `~/espada/canvas`  
+Default port: `18793` (chosen to avoid the espada browser CDP port `18792`)  
 The server listens on the **gateway bind host** (LAN or Tailnet) so nodes can reach it.
 
 The server:
@@ -3114,7 +3114,7 @@ Disable live reload (and file watching) if the directory is large or you hit `EM
 ```json5
 {
   canvasHost: {
-    root: "~/clawd/canvas",
+    root: "~/espada/canvas",
     port: 18793,
     liveReload: true
   }

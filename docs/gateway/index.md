@@ -31,7 +31,7 @@ pnpm gateway:watch
   - OpenAI Chat Completions (HTTP): [`/v1/chat/completions`](/gateway/openai-http-api).
   - OpenResponses (HTTP): [`/v1/responses`](/gateway/openresponses-http-api).
   - Tools Invoke (HTTP): [`/tools/invoke`](/gateway/tools-invoke-http-api).
-- Starts a Canvas file server by default on `canvasHost.port` (default `18793`), serving `http://<gateway-host>:18793/__espada__/canvas/` from `~/clawd/canvas`. Disable with `canvasHost.enabled=false` or `ESPADA_SKIP_CANVAS_HOST=1`.
+- Starts a Canvas file server by default on `canvasHost.port` (default `18793`), serving `http://<gateway-host>:18793/__espada__/canvas/` from `~/espada/canvas`. Disable with `canvasHost.enabled=false` or `ESPADA_SKIP_CANVAS_HOST=1`.
 - Logs to stdout; use launchd/systemd to keep it alive and rotate logs.
 - Pass `--verbose` to mirror debug logging (handshakes, req/res, events) from the log file into stdio when troubleshooting.
 - `--force` uses `lsof` to find listeners on the chosen port, sends SIGTERM, logs what it killed, then starts the gateway (fails fast if `lsof` is missing).
@@ -85,7 +85,7 @@ Defaults (can be overridden via env/flags/config):
 - `ESPADA_GATEWAY_PORT=19001` (Gateway WS + HTTP)
 - browser control service port = `19003` (derived: `gateway.port+2`, loopback only)
 - `canvasHost.port=19005` (derived: `gateway.port+4`)
-- `agents.defaults.workspace` default becomes `~/clawd-dev` when you run `setup`/`onboard` under `--dev`.
+- `agents.defaults.workspace` default becomes `~/espada-dev` when you run `setup`/`onboard` under `--dev`.
 
 Derived ports (rules of thumb):
 - Base port = `gateway.port` (or `ESPADA_GATEWAY_PORT` / `--port`)

@@ -18,7 +18,7 @@ export function registerSetupCommand(program: Command) {
     )
     .option(
       "--workspace <dir>",
-      "Agent workspace directory (default: ~/clawd; stored as agents.defaults.workspace)",
+      "Agent workspace directory (default: ~/espada; stored as agents.defaults.workspace)",
     )
     .option("--wizard", "Run the interactive onboarding wizard", false)
     .option("--non-interactive", "Run the wizard without prompts", false)

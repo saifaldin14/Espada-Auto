@@ -5,7 +5,7 @@ read_when:
 ---
 # Group messages (WhatsApp web channel)
 
-Goal: let Clawd sit in WhatsApp groups, wake up only when pinged, and keep that thread separate from the personal DM session.
+Goal: let Espada sit in WhatsApp groups, wake up only when pinged, and keep that thread separate from the personal DM session.
 
 Note: `agents.list[].groupChat.mentionPatterns` is now used by Telegram/Discord/Slack/iMessage as well; this doc focuses on WhatsApp-specific behavior. For multi-agent setups, set `agents.list[].groupChat.mentionPatterns` per agent (or use `messages.groupChat.mentionPatterns` as a global fallback).
 
@@ -67,7 +67,7 @@ Only the owner number (from `channels.whatsapp.allowFrom`, or the bot’s own E.
 
 ## Testing / verification
 - Manual smoke:
-  - Send an `@clawd` ping in the group and confirm a reply that references the sender name.
+  - Send an `@espada` ping in the group and confirm a reply that references the sender name.
   - Send a second ping and verify the history block is included then cleared on the next turn.
 - Check gateway logs (run with `--verbose`) to see `inbound web message` entries showing `from: <groupJid>` and the `[from: …]` suffix.
 

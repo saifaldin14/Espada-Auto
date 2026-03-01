@@ -242,7 +242,7 @@ export async function createCanvasHostHandler(
     };
   }
 
-  const rootDir = resolveUserPath(opts.rootDir ?? path.join(os.homedir(), "clawd", "canvas"));
+  const rootDir = resolveUserPath(opts.rootDir ?? path.join(os.homedir(), "espada", "canvas"));
   const rootReal = await prepareCanvasRoot(rootDir);
 
   const liveReload = opts.liveReload !== false;

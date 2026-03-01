@@ -14,7 +14,7 @@ Examples below are aligned with the current config schema. For the exhaustive re
 ### Absolute minimum
 ```json5
 {
-  agent: { workspace: "~/clawd" },
+  agent: { workspace: "~/espada" },
   channels: { whatsapp: { allowFrom: ["+15555550123"] } }
 }
 ```
@@ -25,12 +25,12 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
 ```json5
 {
   identity: {
-    name: "Clawd",
+    name: "Espada",
     theme: "helpful assistant",
     emoji: "🦞"
   },
   agent: {
-    workspace: "~/clawd",
+    workspace: "~/espada",
     model: { primary: "anthropic/claude-sonnet-4-5" }
   },
   channels: {
@@ -102,7 +102,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
   // Routing + queue
   routing: {
     groupChat: {
-      mentionPatterns: ["@clawd", "espada"],
+      mentionPatterns: ["@espada", "espada"],
       historyLimit: 50
     },
     queue: {
@@ -190,7 +190,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
       dm: { enabled: true, allowFrom: ["steipete"] },
       guilds: {
         "123456789012345678": {
-          slug: "friends-of-clawd",
+          slug: "friends-of-espada",
           requireMention: false,
           channels: {
             general: { allow: true },
@@ -210,7 +210,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
       dm: { enabled: true, allowFrom: ["U123"] },
       slashCommand: {
         enabled: true,
-        name: "clawd",
+        name: "espada",
         sessionPrefix: "slack:slash",
         ephemeral: true
       }
@@ -220,7 +220,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
   // Agent runtime
   agents: {
     defaults: {
-      workspace: "~/clawd",
+      workspace: "~/espada",
       userTimezone: "America/Chicago",
       model: {
         primary: "anthropic/claude-sonnet-4-5",
@@ -425,7 +425,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
 ### Multi-platform setup
 ```json5
 {
-  agent: { workspace: "~/clawd" },
+  agent: { workspace: "~/espada" },
   channels: {
     whatsapp: { allowFrom: ["+15555550123"] },
     telegram: {
@@ -462,7 +462,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
     }
   },
   agent: {
-    workspace: "~/clawd",
+    workspace: "~/espada",
     model: {
       primary: "anthropic/claude-sonnet-4-5",
       fallbacks: ["anthropic/claude-opus-4-5"]
@@ -500,7 +500,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
     }
   },
   agent: {
-    workspace: "~/clawd",
+    workspace: "~/espada",
     model: {
       primary: "anthropic/claude-opus-4-5",
       fallbacks: ["minimax/MiniMax-M2.1"]
@@ -517,7 +517,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
     theme: "professional assistant"
   },
   agent: {
-    workspace: "~/work-clawd",
+    workspace: "~/work-espada",
     elevated: { enabled: false }
   },
   channels: {
@@ -537,7 +537,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
 ```json5
 {
   agent: {
-    workspace: "~/clawd",
+    workspace: "~/espada",
     model: { primary: "lmstudio/minimax-m2.1-gs32" }
   },
   models: {

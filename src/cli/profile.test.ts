@@ -5,13 +5,7 @@ import { applyCliProfileEnv, parseCliProfileArgs } from "./profile.js";
 
 describe("parseCliProfileArgs", () => {
   it("leaves gateway --dev for subcommands", () => {
-    const res = parseCliProfileArgs([
-      "node",
-      "espada",
-      "gateway",
-      "--dev",
-      "--allow-unconfigured",
-    ]);
+    const res = parseCliProfileArgs(["node", "espada", "gateway", "--dev", "--allow-unconfigured"]);
     if (!res.ok) throw new Error(res.error);
     expect(res.profile).toBeNull();
     expect(res.argv).toEqual(["node", "espada", "gateway", "--dev", "--allow-unconfigured"]);
@@ -102,9 +96,9 @@ describe("formatCliCommand", () => {
   });
 
   it("returns command unchanged when --profile is already present", () => {
-    expect(
-      formatCliCommand("espada --profile work doctor --fix", { ESPADA_PROFILE: "work" }),
-    ).toBe("espada --profile work doctor --fix");
+    expect(formatCliCommand("espada --profile work doctor --fix", { ESPADA_PROFILE: "work" })).toBe(
+      "espada --profile work doctor --fix",
+    );
   });
 
   it("returns command unchanged when --dev is already present", () => {
@@ -120,15 +114,13 @@ describe("formatCliCommand", () => {
   });
 
   it("trims whitespace from profile", () => {
-    expect(formatCliCommand("espada doctor --fix", { ESPADA_PROFILE: "  jbclawd  " })).toBe(
-      "espada --profile jbclawd doctor --fix",
+    expect(formatCliCommand("espada doctor --fix", { ESPADA_PROFILE: "  jbespada  " })).toBe(
+      "espada --profile jbespada doctor --fix",
     );
   });
 
   it("handles command with no args after espada", () => {
-    expect(formatCliCommand("espada", { ESPADA_PROFILE: "test" })).toBe(
-      "espada --profile test",
-    );
+    expect(formatCliCommand("espada", { ESPADA_PROFILE: "test" })).toBe("espada --profile test");
   });
 
   it("handles pnpm wrapper", () => {

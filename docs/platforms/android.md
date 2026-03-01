@@ -117,7 +117,7 @@ If you want the node to show real HTML/CSS/JS that the agent can edit on disk, p
 
 Note: nodes use the standalone canvas host on `canvasHost.port` (default `18793`).
 
-1) Create `~/clawd/canvas/index.html` on the gateway host.
+1) Create `~/espada/canvas/index.html` on the gateway host.
 
 2) Navigate the node to it (LAN):
 

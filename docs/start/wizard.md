@@ -106,7 +106,7 @@ Tip: `--json` does **not** imply non-interactive mode. Use `--non-interactive` (
    - More detail: [/concepts/oauth](/concepts/oauth)
 
 3) **Workspace**
-   - Default `~/clawd` (configurable).
+   - Default `~/espada` (configurable).
    - Seeds the workspace files needed for the agent bootstrap ritual.
    - Full workspace layout + backup guide: [Agent workspace](/concepts/agent-workspace)
 
@@ -174,7 +174,7 @@ What it sets:
 - `agents.list[].agentDir`
 
 Notes:
-- Default workspaces follow `~/clawd-<agentId>`.
+- Default workspaces follow `~/espada-<agentId>`.
 - Add `bindings` to route inbound messages (the wizard can do this).
 - Non-interactive flags: `--model`, `--agent-dir`, `--bind`, `--non-interactive`.
 
@@ -266,7 +266,7 @@ Add agent (non‑interactive) example:
 
 ```bash
 espada agents add work \
-  --workspace ~/clawd-work \
+  --workspace ~/espada-work \
   --model openai/gpt-5.2 \
   --bind whatsapp:biz \
   --non-interactive \

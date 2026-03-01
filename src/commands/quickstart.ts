@@ -50,7 +50,7 @@ import {
 export type QuickstartOptions = {
   /** Skip opening the dashboard in a browser. */
   skipOpen?: boolean;
-  /** Explicit workspace directory (default: ~/clawd). */
+  /** Explicit workspace directory (default: ~/espada). */
   workspace?: string;
   /** Explicit gateway port (default: 18789). */
   port?: number;

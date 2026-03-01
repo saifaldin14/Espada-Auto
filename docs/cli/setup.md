@@ -17,7 +17,7 @@ Related:
 
 ```bash
 espada setup
-espada setup --workspace ~/clawd
+espada setup --workspace ~/espada
 ```
 
 To run the wizard via setup:

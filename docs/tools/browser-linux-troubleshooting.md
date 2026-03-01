@@ -9,7 +9,7 @@ read_when: "Browser control fails on Linux, especially with snap Chromium"
 
 Espada's browser control server fails to launch Chrome/Brave/Edge/Chromium with the error:
 ```
-{"error":"Error: Failed to start Chrome CDP on port 18800 for profile \"clawd\"."}
+{"error":"Error: Failed to start Chrome CDP on port 18800 for profile \"espada\"."}
 ```
 
 ### Root Cause
@@ -67,19 +67,19 @@ If you must use snap Chromium, configure Espada to attach to a manually-started 
 ```bash
 chromium-browser --headless --no-sandbox --disable-gpu \
   --remote-debugging-port=18800 \
-  --user-data-dir=$HOME/.espada/browser/clawd/user-data \
+  --user-data-dir=$HOME/.espada/browser/espada/user-data \
   about:blank &
 ```
 
 3. Optionally create a systemd user service to auto-start Chrome:
 ```ini
-# ~/.config/systemd/user/clawd-browser.service
+# ~/.config/systemd/user/espada-browser.service
 [Unit]
-Description=Clawd Browser (Chrome CDP)
+Description=Espada Browser (Chrome CDP)
 After=network.target
 
 [Service]
-ExecStart=/snap/bin/chromium --headless --no-sandbox --disable-gpu --remote-debugging-port=18800 --user-data-dir=%h/.espada/browser/clawd/user-data about:blank
+ExecStart=/snap/bin/chromium --headless --no-sandbox --disable-gpu --remote-debugging-port=18800 --user-data-dir=%h/.espada/browser/espada/user-data about:blank
 Restart=on-failure
 RestartSec=5
 
@@ -87,7 +87,7 @@ RestartSec=5
 WantedBy=default.target
 ```
 
-Enable with: `systemctl --user enable --now clawd-browser.service`
+Enable with: `systemctl --user enable --now espada-browser.service`
 
 ### Verifying the Browser Works
 
@@ -119,11 +119,11 @@ You’re using the `chrome` profile (extension relay). It expects the Espada
 browser extension to be attached to a live tab.
 
 Fix options:
-1. **Use the managed browser:** `espada browser start --browser-profile clawd`
-   (or set `browser.defaultProfile: "clawd"`).
+1. **Use the managed browser:** `espada browser start --browser-profile espada`
+   (or set `browser.defaultProfile: "espada"`).
 2. **Use the extension relay:** install the extension, open a tab, and click the
    Espada extension icon to attach it.
 
 Notes:
 - The `chrome` profile uses your **system default Chromium browser** when possible.
-- Local `clawd` profiles auto-assign `cdpPort`/`cdpUrl`; only set those for remote CDP.
+- Local `espada` profiles auto-assign `cdpPort`/`cdpUrl`; only set those for remote CDP.

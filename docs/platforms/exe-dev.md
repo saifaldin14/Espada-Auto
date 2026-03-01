@@ -50,7 +50,7 @@ Then connect:
 ssh <vm-name>.exe.xyz
 ```
 
-Tip: keep this VM **stateful**. Espada stores state under `~/.espada/` and `~/clawd/`.
+Tip: keep this VM **stateful**. Espada stores state under `~/.espada/` and `~/espada/`.
 
 ## 2) Install prerequisites (on the VM)
 

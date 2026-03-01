@@ -10,7 +10,7 @@ services:
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
     volumes:
       - ${ESPADA_CONFIG_DIR}:/home/node/.espada
-      - ${ESPADA_WORKSPACE_DIR}:/home/node/clawd
+      - ${ESPADA_WORKSPACE_DIR}:/home/node/espada
     ports:
       - "${ESPADA_GATEWAY_PORT:-18789}:18789"
       - "${ESPADA_BRIDGE_PORT:-18790}:18790"
@@ -38,7 +38,7 @@ services:
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE}
     volumes:
       - ${ESPADA_CONFIG_DIR}:/home/node/.espada
-      - ${ESPADA_WORKSPACE_DIR}:/home/node/clawd
+      - ${ESPADA_WORKSPACE_DIR}:/home/node/espada
     stdin_open: true
     tty: true
     init: true

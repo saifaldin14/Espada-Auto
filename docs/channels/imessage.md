@@ -60,7 +60,7 @@ If you want the bot to send from a **separate iMessage identity** (and keep your
 
 1) Create a dedicated Apple ID (example: `my-cool-bot@icloud.com`).
    - Apple may require a phone number for verification / 2FA.
-2) Create a macOS user (example: `clawdshome`) and sign into it.
+2) Create a macOS user (example: `espadashome`) and sign into it.
 3) Open Messages in that macOS user and sign into iMessage using the bot Apple ID.
 4) Enable Remote Login (System Settings → General → Sharing → Remote Login).
 5) Install `imsg`:

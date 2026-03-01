@@ -51,7 +51,7 @@ describe("gateway e2e", () => {
       const token = `test-${randomUUID()}`;
       process.env.ESPADA_GATEWAY_TOKEN = token;
 
-      const workspaceDir = path.join(tempHome, "clawd");
+      const workspaceDir = path.join(tempHome, "espada");
       await fs.mkdir(workspaceDir, { recursive: true });
 
       const nonceA = randomUUID();

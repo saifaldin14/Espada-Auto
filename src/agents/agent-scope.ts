@@ -143,7 +143,7 @@ export function resolveAgentWorkspaceDir(cfg: EspadaConfig, agentId: string) {
     if (fallback) return resolveUserPath(fallback);
     return DEFAULT_AGENT_WORKSPACE_DIR;
   }
-  return path.join(os.homedir(), `clawd-${id}`);
+  return path.join(os.homedir(), `espada-${id}`);
 }
 
 export function resolveAgentDir(cfg: EspadaConfig, agentId: string) {

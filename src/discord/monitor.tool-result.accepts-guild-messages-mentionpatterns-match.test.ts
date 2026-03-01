@@ -61,7 +61,7 @@ describe("discord tool result dispatch", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-opus-4-5",
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },
@@ -74,7 +74,7 @@ describe("discord tool result dispatch", () => {
       },
       messages: {
         responsePrefix: "PFX",
-        groupChat: { mentionPatterns: ["\\bclawd\\b"] },
+        groupChat: { mentionPatterns: ["\\bespada\\b"] },
       },
     } as ReturnType<typeof import("../config/config.js").loadConfig>;
 
@@ -112,7 +112,7 @@ describe("discord tool result dispatch", () => {
       {
         message: {
           id: "m2",
-          content: "clawd: hello",
+          content: "espada: hello",
           channelId: "c1",
           timestamp: new Date().toISOString(),
           type: MessageType.Default,
@@ -141,7 +141,7 @@ describe("discord tool result dispatch", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-opus-4-5",
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },
@@ -154,7 +154,7 @@ describe("discord tool result dispatch", () => {
       },
       messages: {
         responsePrefix: "PFX",
-        groupChat: { mentionPatterns: ["\\bclawd\\b"] },
+        groupChat: { mentionPatterns: ["\\bespada\\b"] },
       },
     } as ReturnType<typeof import("../config/config.js").loadConfig>;
 
@@ -192,7 +192,7 @@ describe("discord tool result dispatch", () => {
       {
         message: {
           id: "m2",
-          content: "clawd: hello",
+          content: "espada: hello",
           channelId: "c1",
           timestamp: new Date().toISOString(),
           type: MessageType.Default,
@@ -221,7 +221,7 @@ describe("discord tool result dispatch", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-opus-4-5",
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },
@@ -335,7 +335,7 @@ describe("discord tool result dispatch", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-opus-4-5",
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },
@@ -446,7 +446,7 @@ describe("discord tool result dispatch", () => {
     });
 
     const cfg = {
-      agent: { model: "anthropic/claude-opus-4-5", workspace: "/tmp/clawd" },
+      agent: { model: "anthropic/claude-opus-4-5", workspace: "/tmp/espada" },
       session: { store: "/tmp/espada-sessions.json" },
       channels: {
         discord: {
@@ -553,7 +553,7 @@ describe("discord tool result dispatch", () => {
       agents: {
         defaults: {
           model: "anthropic/claude-opus-4-5",
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },

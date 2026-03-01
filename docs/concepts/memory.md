@@ -24,7 +24,7 @@ The default workspace layout uses two memory layers:
   - **Only load in the main, private session** (never in group contexts).
 
 These files live under the workspace (`agents.defaults.workspace`, default
-`~/clawd`). See [Agent workspace](/concepts/agent-workspace) for the full layout.
+`~/espada`). See [Agent workspace](/concepts/agent-workspace) for the full layout.
 
 ## When to write memory
 

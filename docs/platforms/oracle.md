@@ -273,11 +273,11 @@ Most npm packages work fine. For binaries, look for `linux-arm64` or `aarch64` r
 
 All state lives in:
 - `~/.espada/` — config, credentials, session data
-- `~/clawd/` — workspace (SOUL.md, memory, artifacts)
+- `~/espada/` — workspace (SOUL.md, memory, artifacts)
 
 Back up periodically:
 ```bash
-tar -czvf espada-backup.tar.gz ~/.espada ~/clawd
+tar -czvf espada-backup.tar.gz ~/.espada ~/espada
 ```
 
 ---

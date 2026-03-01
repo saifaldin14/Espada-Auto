@@ -23,7 +23,7 @@ nav:
   - title: "Home"
     url: "/"
   - title: "Espada Assistant"
-    url: "/start/clawd/"
+    url: "/start/espada/"
   - title: "Gateway"
     url: "/gateway/"
   - title: "Remote"

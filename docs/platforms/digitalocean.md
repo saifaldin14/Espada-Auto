@@ -181,11 +181,11 @@ htop
 
 All state lives in:
 - `~/.espada/` — config, credentials, session data
-- `~/clawd/` — workspace (SOUL.md, memory, etc.)
+- `~/espada/` — workspace (SOUL.md, memory, etc.)
 
 These survive reboots. Back them up periodically:
 ```bash
-tar -czvf espada-backup.tar.gz ~/.espada ~/clawd
+tar -czvf espada-backup.tar.gz ~/.espada ~/espada
 ```
 
 ---

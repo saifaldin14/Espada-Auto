@@ -279,7 +279,7 @@ Highlights:
 Initialize config + workspace.
 
 Options:
-- `--workspace <dir>`: agent workspace path (default `~/clawd`).
+- `--workspace <dir>`: agent workspace path (default `~/espada`).
 - `--wizard`: run the onboarding wizard.
 - `--non-interactive`: run wizard without prompts.
 - `--mode <local|remote>`: wizard mode.
@@ -414,7 +414,7 @@ Options:
 - `--json`: output JSON (no styling).
 - `-v`, `--verbose`: include missing requirements detail.
 
-Tip: use `npx clawdhub` to search, install, and sync skills.
+Tip: use `npx espadahub` to search, install, and sync skills.
 
 ### `pairing`
 Approve DM pairing requests across channels.

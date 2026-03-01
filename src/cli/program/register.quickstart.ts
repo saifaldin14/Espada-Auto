@@ -15,7 +15,7 @@ export function registerQuickstartCommand(program: Command) {
       () =>
         `\n${theme.muted("Docs:")} ${formatDocsLink("/start/getting-started", "docs.molt.bot/start/getting-started")}\n`,
     )
-    .option("--workspace <dir>", "Agent workspace directory (default: ~/clawd)")
+    .option("--workspace <dir>", "Agent workspace directory (default: ~/espada)")
     .option("--port <port>", "Gateway port (default: 18789)")
     .option("--skip-open", "Don't open the dashboard in the browser")
     .option("--json", "Output JSON summary instead of human-friendly text")

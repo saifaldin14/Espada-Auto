@@ -187,4 +187,4 @@ Notes:
   - Slack: `agent:<agentId>:slack:slash:<userId>` (prefix configurable via `channels.slack.slashCommand.sessionPrefix`)
   - Telegram: `telegram:slash:<userId>` (targets the chat session via `CommandTargetSessionKey`)
 - **`/stop`** targets the active chat session so it can abort the current run.
-- **Slack:** `channels.slack.slashCommand` is still supported for a single `/clawd`-style command. If you enable `commands.native`, you must create one Slack slash command per built-in command (same names as `/help`). Command argument menus for Slack are delivered as ephemeral Block Kit buttons.
+- **Slack:** `channels.slack.slashCommand` is still supported for a single `/espada`-style command. If you enable `commands.native`, you must create one Slack slash command per built-in command (same names as `/help`). Command argument menus for Slack are delivered as ephemeral Block Kit buttons.

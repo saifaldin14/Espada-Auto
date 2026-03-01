@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 IMAGE_NAME="${ESPADA_IMAGE:-espada:local}"
 CONFIG_DIR="${ESPADA_CONFIG_DIR:-$HOME/.espada}"
-WORKSPACE_DIR="${ESPADA_WORKSPACE_DIR:-$HOME/clawd}"
+WORKSPACE_DIR="${ESPADA_WORKSPACE_DIR:-$HOME/espada}"
 PROFILE_FILE="${ESPADA_PROFILE_FILE:-$HOME/.profile}"
 
 PROFILE_MOUNT=()
@@ -27,7 +27,7 @@ docker run --rm -t \
   -e ESPADA_LIVE_MODEL_TIMEOUT_MS="${ESPADA_LIVE_MODEL_TIMEOUT_MS:-}" \
   -e ESPADA_LIVE_REQUIRE_PROFILE_KEYS="${ESPADA_LIVE_REQUIRE_PROFILE_KEYS:-}" \
   -v "$CONFIG_DIR":/home/node/.espada \
-  -v "$WORKSPACE_DIR":/home/node/clawd \
+  -v "$WORKSPACE_DIR":/home/node/espada \
   "${PROFILE_MOUNT[@]}" \
   "$IMAGE_NAME" \
   -lc "set -euo pipefail; [ -f \"$HOME/.profile\" ] && source \"$HOME/.profile\" || true; cd /app && pnpm test:live"

@@ -521,11 +521,11 @@ run_profile() {
 }
 
 if [[ "$MODELS_MODE" == "openai" || "$MODELS_MODE" == "both" ]]; then
-  run_profile "e2e-openai" "18789" "/tmp/clawd-e2e-openai" "openai"
+  run_profile "e2e-openai" "18789" "/tmp/espada-e2e-openai" "openai"
 fi
 
 if [[ "$MODELS_MODE" == "anthropic" || "$MODELS_MODE" == "both" ]]; then
-  run_profile "e2e-anthropic" "18799" "/tmp/clawd-e2e-anthropic" "anthropic"
+  run_profile "e2e-anthropic" "18799" "/tmp/espada-e2e-anthropic" "anthropic"
 fi
 
 echo "OK"

@@ -16,16 +16,16 @@ Related:
 
 ```bash
 espada agents list
-espada agents add work --workspace ~/clawd-work
-espada agents set-identity --workspace ~/clawd --from-identity
-espada agents set-identity --agent main --avatar avatars/clawd.png
+espada agents add work --workspace ~/espada-work
+espada agents set-identity --workspace ~/espada --from-identity
+espada agents set-identity --agent main --avatar avatars/espada.png
 espada agents delete work
 ```
 
 ## Identity files
 
 Each agent workspace can include an `IDENTITY.md` at the workspace root:
-- Example path: `~/clawd/IDENTITY.md`
+- Example path: `~/espada/IDENTITY.md`
 - `set-identity --from-identity` reads from the workspace root (or an explicit `--identity-file`)
 
 Avatar paths resolve relative to the workspace root.
@@ -41,13 +41,13 @@ Avatar paths resolve relative to the workspace root.
 Load from `IDENTITY.md`:
 
 ```bash
-espada agents set-identity --workspace ~/clawd --from-identity
+espada agents set-identity --workspace ~/espada --from-identity
 ```
 
 Override fields explicitly:
 
 ```bash
-espada agents set-identity --agent main --name "Clawd" --emoji "🦞" --avatar avatars/clawd.png
+espada agents set-identity --agent main --name "Espada" --emoji "🦞" --avatar avatars/espada.png
 ```
 
 Config sample:
@@ -59,10 +59,10 @@ Config sample:
       {
         id: "main",
         identity: {
-          name: "Clawd",
+          name: "Espada",
           theme: "space lobster",
           emoji: "🦞",
-          avatar: "avatars/clawd.png"
+          avatar: "avatars/espada.png"
         }
       }
     ]

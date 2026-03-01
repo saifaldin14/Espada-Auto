@@ -11,7 +11,7 @@ This guide migrates a Espada Gateway from one machine to another **without redoi
 The migration is simple conceptually:
 
 - Copy the **state directory** (`$ESPADA_STATE_DIR`, default: `~/.espada/`) — this includes config, auth, sessions, and channel state.
-- Copy your **workspace** (`~/clawd/` by default) — this includes your agent files (memory, prompts, etc.).
+- Copy your **workspace** (`~/espada/` by default) — this includes your agent files (memory, prompts, etc.).
 
 But there are common footguns around **profiles**, **permissions**, and **partial copies**.
 
@@ -40,7 +40,7 @@ Look for mentions of `ESPADA_STATE_DIR` / profile in the output. If you run mult
 
 Common defaults:
 
-- `~/clawd/` (recommended workspace)
+- `~/espada/` (recommended workspace)
 - a custom folder you created
 
 Your workspace is where files like `MEMORY.md`, `USER.md`, and `memory/*.md` live.
@@ -80,7 +80,7 @@ espada gateway stop
 cd ~
 tar -czf espada-state.tgz .espada
 
-tar -czf clawd-workspace.tgz clawd
+tar -czf espada-workspace.tgz espada
 ```
 
 If you have multiple profiles/state dirs (e.g. `~/.moltbot-main`, `~/.espada-work`), archive each.
@@ -98,7 +98,7 @@ At this stage, it’s OK if onboarding creates a fresh `~/.espada/` — you will
 Copy **both**:
 
 - `$ESPADA_STATE_DIR` (default `~/.espada/`)
-- your workspace (default `~/clawd/`)
+- your workspace (default `~/espada/`)
 
 Common approaches:
 

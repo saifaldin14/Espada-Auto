@@ -3,7 +3,7 @@ set -euo pipefail
 
 INSTALL_URL="${ESPADA_INSTALL_URL:-https://molt.bot/install.sh}"
 DEFAULT_PACKAGE="espada"
-if [[ -z "${ESPADA_INSTALL_PACKAGE:-}" && "$INSTALL_URL" == *"clawd.bot"* ]]; then
+if [[ -z "${ESPADA_INSTALL_PACKAGE:-}" && "$INSTALL_URL" == *"espada.bot"* ]]; then
   DEFAULT_PACKAGE="espada"
 elif [[ -z "${ESPADA_INSTALL_PACKAGE:-}" && "$INSTALL_URL" == *"molt.bot"* ]]; then
   DEFAULT_PACKAGE="espada"

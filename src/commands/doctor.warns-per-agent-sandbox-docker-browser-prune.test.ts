@@ -348,7 +348,7 @@ describe("doctor command", () => {
           list: [
             {
               id: "work",
-              workspace: "~/clawd-work",
+              workspace: "~/espada-work",
               sandbox: {
                 mode: "all",
                 scope: "shared",
@@ -395,7 +395,7 @@ describe("doctor command", () => {
       parsed: {},
       valid: true,
       config: {
-        agents: { defaults: { workspace: "/Users/steipete/clawd" } },
+        agents: { defaults: { workspace: "/Users/steipete/espada" } },
       },
       issues: [],
       legacyIssues: [],

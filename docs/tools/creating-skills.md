@@ -8,9 +8,9 @@ A skill is a directory containing a `SKILL.md` file (which provides instructions
 ## Step-by-Step: Your First Skill
 
 ### 1. Create the Directory
-Skills live in your workspace, usually `~/clawd/skills/`. Create a new folder for your skill:
+Skills live in your workspace, usually `~/espada/skills/`. Create a new folder for your skill:
 ```bash
-mkdir -p ~/clawd/skills/hello-world
+mkdir -p ~/espada/skills/hello-world
 ```
 
 ### 2. Define the `SKILL.md`
@@ -38,4 +38,4 @@ Ask your agent to "refresh skills" or restart the gateway. Espada will discover 
 - **Test Locally**: Use `espada agent --message "use my new skill"` to test.
 
 ## Shared Skills
-You can also browse and contribute skills to [ClawdHub](https://clawdhub.com).
+You can also browse and contribute skills to [EspadaHub](https://espadahub.com).

@@ -8,33 +8,33 @@ read_when:
 
 ## First run (recommended)
 
-Espada uses a dedicated workspace directory for the agent. Default: `~/clawd` (configurable via `agents.defaults.workspace`).
+Espada uses a dedicated workspace directory for the agent. Default: `~/espada` (configurable via `agents.defaults.workspace`).
 
 1) Create the workspace (if it doesn’t already exist):
 
 ```bash
-mkdir -p ~/clawd
+mkdir -p ~/espada
 ```
 
 2) Copy the default workspace templates into the workspace:
 
 ```bash
-cp docs/reference/templates/AGENTS.md ~/clawd/AGENTS.md
-cp docs/reference/templates/SOUL.md ~/clawd/SOUL.md
-cp docs/reference/templates/TOOLS.md ~/clawd/TOOLS.md
+cp docs/reference/templates/AGENTS.md ~/espada/AGENTS.md
+cp docs/reference/templates/SOUL.md ~/espada/SOUL.md
+cp docs/reference/templates/TOOLS.md ~/espada/TOOLS.md
 ```
 
 3) Optional: if you want the personal assistant skill roster, replace AGENTS.md with this file:
 
 ```bash
-cp docs/reference/AGENTS.default.md ~/clawd/AGENTS.md
+cp docs/reference/AGENTS.default.md ~/espada/AGENTS.md
 ```
 
 4) Optional: choose a different workspace by setting `agents.defaults.workspace` (supports `~`):
 
 ```json5
 {
-  agents: { defaults: { workspace: "~/clawd" } }
+  agents: { defaults: { workspace: "~/espada" } }
 }
 ```
 
@@ -68,13 +68,13 @@ cp docs/reference/AGENTS.default.md ~/clawd/AGENTS.md
 - Keep environment-specific notes in `TOOLS.md` (Notes for Skills).
 
 ## Backup tip (recommended)
-If you treat this workspace as Clawd’s “memory”, make it a git repo (ideally private) so `AGENTS.md` and your memory files are backed up.
+If you treat this workspace as Espada’s “memory”, make it a git repo (ideally private) so `AGENTS.md` and your memory files are backed up.
 
 ```bash
-cd ~/clawd
+cd ~/espada
 git init
 git add AGENTS.md
-git commit -m "Add Clawd workspace"
+git commit -m "Add Espada workspace"
 # Optional: add a private remote + push
 ```
 
@@ -108,6 +108,6 @@ git commit -m "Add Clawd workspace"
 - Run installs from the Skills tab; it hides the button if a binary is already present.
 - Keep heartbeats enabled so the assistant can schedule reminders, monitor inboxes, and trigger camera captures.
 - Canvas UI runs full-screen with native overlays. Avoid placing critical controls in the top-left/top-right/bottom edges; add explicit gutters in the layout and don’t rely on safe-area insets.
-- For browser-driven verification, use `espada browser` (tabs/status/screenshot) with the clawd-managed Chrome profile.
+- For browser-driven verification, use `espada browser` (tabs/status/screenshot) with the espada-managed Chrome profile.
 - For DOM inspection, use `espada browser eval|query|dom|snapshot` (and `--json`/`--out` when you need machine output).
 - For interactions, use `espada browser click|type|hover|drag|select|upload|press|wait|navigate|back|evaluate|run` (click/type require snapshot refs; use `evaluate` for CSS selectors).

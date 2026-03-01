@@ -131,7 +131,7 @@ describe("config identity defaults", () => {
                     theme: "space lobster",
                     emoji: "🦞",
                   },
-                  groupChat: { mentionPatterns: ["@clawd"] },
+                  groupChat: { mentionPatterns: ["@espada"] },
                 },
               ],
             },
@@ -150,7 +150,7 @@ describe("config identity defaults", () => {
       const cfg = loadConfig();
 
       expect(cfg.messages?.responsePrefix).toBe("✅");
-      expect(cfg.agents?.list?.[0]?.groupChat?.mentionPatterns).toEqual(["@clawd"]);
+      expect(cfg.agents?.list?.[0]?.groupChat?.mentionPatterns).toEqual(["@espada"]);
     });
   });
 
@@ -327,7 +327,7 @@ describe("config identity defaults", () => {
                 {
                   id: "main",
                   identity: {
-                    name: "Clawd",
+                    name: "Espada",
                     theme: "space lobster",
                     emoji: "🦞",
                   },

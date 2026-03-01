@@ -32,8 +32,8 @@ jobs:
 
       - name: Run installer docker tests
         env:
-          ESPADA_INSTALL_URL: https://clawd.bot/install.sh
-          ESPADA_INSTALL_CLI_URL: https://clawd.bot/install-cli.sh
+          ESPADA_INSTALL_URL: https://espada.bot/install.sh
+          ESPADA_INSTALL_CLI_URL: https://espada.bot/install-cli.sh
           ESPADA_NO_ONBOARD: "1"
           ESPADA_INSTALL_SMOKE_SKIP_CLI: "1"
           ESPADA_INSTALL_SMOKE_SKIP_NONROOT: ${{ github.event_name == 'pull_request' && '1' || '0' }}

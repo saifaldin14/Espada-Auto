@@ -308,7 +308,7 @@ These run `pnpm test:live` inside the repo Docker image, mounting your local con
 Useful env vars:
 
 - `ESPADA_CONFIG_DIR=...` (default: `~/.espada`) mounted to `/home/node/.espada`
-- `ESPADA_WORKSPACE_DIR=...` (default: `~/clawd`) mounted to `/home/node/clawd`
+- `ESPADA_WORKSPACE_DIR=...` (default: `~/espada`) mounted to `/home/node/espada`
 - `ESPADA_PROFILE_FILE=...` (default: `~/.profile`) mounted to `/home/node/.profile` and sourced before running tests
 - `ESPADA_LIVE_GATEWAY_MODELS=...` / `ESPADA_LIVE_MODELS=...` to narrow the run
 - `ESPADA_LIVE_REQUIRE_PROFILE_KEYS=1` to ensure creds come from the profile store (not env)

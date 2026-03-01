@@ -38,7 +38,7 @@ Minimal config:
    - `channel_rename`
    - `pin_added`, `pin_removed`
 6) Invite the bot to channels you want it to read.
-7) Slash Commands → create `/clawd` if you use `channels.slack.slashCommand`. If you enable native commands, add one slash command per built-in command (same names as `/help`). Native defaults to off for Slack unless you set `channels.slack.commands.native: true` (global `commands.native` is `"auto"` which leaves Slack off).
+7) Slash Commands → create `/espada` if you use `channels.slack.slashCommand`. If you enable native commands, add one slash command per built-in command (same names as `/help`). Native defaults to off for Slack unless you set `channels.slack.commands.native: true` (global `commands.native` is `"auto"` which leaves Slack off).
 8) App Home → enable the **Messages Tab** so users can DM the bot.
 
 Use the manifest below so scopes and events stay in sync.
@@ -169,7 +169,7 @@ user scopes if you plan to configure a user token.
     },
     "slash_commands": [
       {
-        "command": "/clawd",
+        "command": "/espada",
         "description": "Send a message to Espada",
         "should_escape": false
       }
@@ -329,7 +329,7 @@ Slack uses Socket Mode only (no HTTP webhook server). Provide both tokens:
     },
     "slashCommand": {
       "enabled": true,
-      "name": "clawd",
+      "name": "espada",
       "sessionPrefix": "slack:slash",
       "ephemeral": true
     },

@@ -13,9 +13,9 @@ export function resolveDefaultAgentWorkspaceDir(
 ): string {
   const profile = env.ESPADA_PROFILE?.trim();
   if (profile && profile.toLowerCase() !== "default") {
-    return path.join(homedir(), `clawd-${profile}`);
+    return path.join(homedir(), `espada-${profile}`);
   }
-  return path.join(homedir(), "clawd");
+  return path.join(homedir(), "espada");
 }
 
 export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();

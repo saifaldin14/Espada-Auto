@@ -61,7 +61,7 @@ describe("discord native commands", () => {
         defaults: {
           model: "anthropic/claude-opus-4-5",
           humanDelay: { mode: "off" },
-          workspace: "/tmp/clawd",
+          workspace: "/tmp/espada",
         },
       },
       session: { store: "/tmp/espada-sessions.json" },

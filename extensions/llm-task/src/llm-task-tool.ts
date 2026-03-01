@@ -65,7 +65,7 @@ export function createLlmTaskTool(api: EspadaPluginApi) {
   return {
     name: "llm-task",
     description:
-      "Run a generic JSON-only LLM task and return schema-validated JSON. Designed for orchestration from Lobster workflows via clawd.invoke.",
+      "Run a generic JSON-only LLM task and return schema-validated JSON. Designed for orchestration from Lobster workflows via espada.invoke.",
     parameters: Type.Object({
       prompt: Type.String({ description: "Task instruction for the LLM." }),
       input: Type.Optional(Type.Unknown({ description: "Optional input payload for the task." })),

@@ -72,7 +72,7 @@ Example: map input items into tool calls:
 
 ```bash
 gog.gmail.search --query 'newer_than:1d' \
-  | clawd.invoke --tool message --action send --each --item-key message --args-json '{"provider":"telegram","to":"..."}'
+  | espada.invoke --tool message --action send --each --item-key message --args-json '{"provider":"telegram","to":"..."}'
 ```
 
 ## JSON-only LLM steps (llm-task)
@@ -104,7 +104,7 @@ Enable the tool:
 Use it in a pipeline:
 
 ```lobster
-clawd.invoke --tool llm-task --action json --args-json '{
+espada.invoke --tool llm-task --action json --args-json '{
   "prompt": "Given the input email, return intent and draft.",
   "input": { "subject": "Hello", "body": "Can you help?" },
   "schema": {
@@ -198,12 +198,12 @@ tools, include the core tools or groups you want in the allowlist too.
 Without Lobster:
 ```
 User: "Check my email and draft replies"
-→ clawd calls gmail.list
+→ espada calls gmail.list
 → LLM summarizes
 → User: "draft replies to #2 and #5"
 → LLM drafts
 → User: "send #2"
-→ clawd calls gmail.send
+→ espada calls gmail.send
 (repeat daily, no memory of what was triaged)
 ```
 
@@ -314,7 +314,7 @@ OpenProse pairs well with Lobster: use `/prose` to orchestrate multi-agent prep,
 ## Safety
 
 - **Local subprocess only** — no network calls from the plugin itself.
-- **No secrets** — Lobster doesn't manage OAuth; it calls clawd tools that do.
+- **No secrets** — Lobster doesn't manage OAuth; it calls espada tools that do.
 - **Sandbox-aware** — disabled when the tool context is sandboxed.
 - **Hardened** — `lobsterPath` must be absolute if specified; timeouts and output caps enforced.
 

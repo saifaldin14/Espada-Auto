@@ -22,7 +22,7 @@ case "$STATUS" in
         termux-toast "Auth expired - opening console..."
         termux-open-url "https://console.anthropic.com/settings/api-keys"
         sleep 2
-        termux-notification -t "Espada Re-Auth" -c "After getting key, run: ssh $SERVER '~/espada/scripts/mobile-reauth.sh'" --id clawd-auth
+        termux-notification -t "Espada Re-Auth" -c "After getting key, run: ssh $SERVER '~/espada/scripts/mobile-reauth.sh'" --id espada-auth
         ;;
     *)
         termux-toast "Connection error"

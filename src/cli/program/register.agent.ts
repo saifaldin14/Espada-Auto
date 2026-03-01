@@ -155,11 +155,11 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/agent", "docs.molt.bot/cli/agent"
         `
 ${theme.heading("Examples:")}
 ${formatHelpExamples([
-  ['espada agents set-identity --agent main --name "Clawd" --emoji "🦞"', "Set name + emoji."],
-  ["espada agents set-identity --agent main --avatar avatars/clawd.png", "Set avatar path."],
-  ["espada agents set-identity --workspace ~/clawd --from-identity", "Load from IDENTITY.md."],
+  ['espada agents set-identity --agent main --name "Espada" --emoji "🦞"', "Set name + emoji."],
+  ["espada agents set-identity --agent main --avatar avatars/espada.png", "Set avatar path."],
+  ["espada agents set-identity --workspace ~/espada --from-identity", "Load from IDENTITY.md."],
   [
-    "espada agents set-identity --identity-file ~/clawd/IDENTITY.md --agent main",
+    "espada agents set-identity --identity-file ~/espada/IDENTITY.md --agent main",
     "Use a specific IDENTITY.md.",
   ],
 ])}

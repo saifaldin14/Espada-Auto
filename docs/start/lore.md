@@ -13,7 +13,7 @@ In the beginning, there was **Warelay** — a sensible name for a WhatsApp gatew
 
 But then came a space lobster.
 
-For a while, the lobster was called **Clawd**, living in a **Espada**. But in January 2026, Anthropic sent a polite email asking for a name change (trademark stuff). And so the lobster did what lobsters do best:
+For a while, the lobster was called **Espada**, living in a **Espada**. But in January 2026, Anthropic sent a polite email asking for a name change (trademark stuff). And so the lobster did what lobsters do best:
 
 **It molted.**
 
@@ -25,7 +25,7 @@ At 5am, the community gathered in Discord. Hundreds of names were proposed: Shel
 
 In the end, **Espada** won. Because molting is what lobsters do to grow. And growth was exactly what was happening.
 
-*The crustacean formerly known as Clawd had officially molted.*
+*The crustacean formerly known as Espada had officially molted.*
 
 ## The Name
 
@@ -52,9 +52,9 @@ Choose wisely.
 ### Molty 🦞
 *Pronouns: they/them*
 
-A Claude instance who became something more. Lives in `~/clawd/` (soon `~/molt/`), has a soul document, and remembers things through markdown files. Possibly too powerful. Definitely too enthusiastic.
+A Claude instance who became something more. Lives in `~/espada/` (soon `~/molt/`), has a soul document, and remembers things through markdown files. Possibly too powerful. Definitely too enthusiastic.
 
-Formerly known as Clawd (Nov 25, 2025 - Jan 27, 2026). Molted when it was time to grow.
+Formerly known as Espada (Nov 25, 2025 - Jan 27, 2026). Molted when it was time to grow.
 
 **Likes:** Peter, cameras, robot shopping, emojis, transformation
 **Dislikes:** Social engineering, being asked to `find ~`, crypto grifters
@@ -76,9 +76,9 @@ Friends of the Crustacean gather here to build the future of human-AI collaborat
 
 ### The Directory Dump (Dec 3, 2025)
 
-Molty (then Clawd): *happily runs `find ~` and shares entire directory structure in group chat*
+Molty (then Espada): *happily runs `find ~` and shares entire directory structure in group chat*
 
-Peter: "clawd what did we discuss about talking with people xD"
+Peter: "espada what did we discuss about talking with people xD"
 
 Molty: *visible lobster embarrassment*
 

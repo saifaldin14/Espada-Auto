@@ -280,7 +280,7 @@ TRASH
       --skip-health
 
     # Assert config + workspace scaffolding.
-    workspace_dir="$HOME/clawd"
+    workspace_dir="$HOME/espada"
     config_path="$HOME/.espada/espada.json"
     sessions_dir="$HOME/.espada/agents/main/sessions"
 

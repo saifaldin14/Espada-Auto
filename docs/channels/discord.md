@@ -258,12 +258,12 @@ Outbound Discord API calls retry on rate limits (429) using Discord `retry_after
         policy: "pairing", // pairing | allowlist | open | disabled
         allowFrom: ["123456789012345678", "steipete"],
         groupEnabled: false,
-        groupChannels: ["clawd-dm"]
+        groupChannels: ["espada-dm"]
       },
       guilds: {
         "*": { requireMention: true },
         "123456789012345678": {
-          slug: "friends-of-clawd",
+          slug: "friends-of-espada",
           requireMention: false,
           reactionNotifications: "own",
           users: ["987654321098765432", "steipete"],

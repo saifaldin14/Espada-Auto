@@ -45,22 +45,22 @@ You can gate them via `metadata.espada.requires.config` on the plugin’s config
 entry. See [Plugins](/plugin) for discovery/config and [Tools](/tools) for the
 tool surface those skills teach.
 
-## ClawdHub (install + sync)
+## EspadaHub (install + sync)
 
-ClawdHub is the public skills registry for Espada. Browse at
-https://clawdhub.com. Use it to discover, install, update, and back up skills.
-Full guide: [ClawdHub](/tools/clawdhub).
+EspadaHub is the public skills registry for Espada. Browse at
+https://espadahub.com. Use it to discover, install, update, and back up skills.
+Full guide: [EspadaHub](/tools/espadahub).
 
 Common flows:
 
 - Install a skill into your workspace:
-  - `clawdhub install <skill-slug>`
+  - `espadahub install <skill-slug>`
 - Update all installed skills:
-  - `clawdhub update --all`
+  - `espadahub update --all`
 - Sync (scan + publish updates):
-  - `clawdhub sync --all`
+  - `espadahub sync --all`
 
-By default, `clawdhub` installs into `./skills` under your current working
+By default, `espadahub` installs into `./skills` under your current working
 directory (or falls back to the configured Espada workspace). Espada picks
 that up as `<workspace>/skills` on the next session.
 
@@ -262,6 +262,6 @@ See [Skills config](/tools/skills-config) for the full configuration schema.
 
 ## Looking for more skills?
 
-Browse https://clawdhub.com.
+Browse https://espadahub.com.
 
 ---

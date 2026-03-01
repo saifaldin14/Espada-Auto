@@ -26,15 +26,15 @@ Related:
 
 ```bash
 espada browser --browser-profile chrome tabs
-espada browser --browser-profile clawd start
-espada browser --browser-profile clawd open https://example.com
-espada browser --browser-profile clawd snapshot
+espada browser --browser-profile espada start
+espada browser --browser-profile espada open https://example.com
+espada browser --browser-profile espada snapshot
 ```
 
 ## Profiles
 
 Profiles are named browser routing configs. In practice:
-- `clawd`: launches/attaches to a dedicated Espada-managed Chrome instance (isolated user data dir).
+- `espada`: launches/attaches to a dedicated Espada-managed Chrome instance (isolated user data dir).
 - `chrome`: controls your existing Chrome tab(s) via the Chrome extension relay.
 
 ```bash

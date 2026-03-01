@@ -172,8 +172,8 @@ Upstream updates may introduce Swift 6.2 / macOS 26 SDK incompatibilities. Use a
 ### Analyze-Mode Investigation
 ```bash
 # Gather context with parallel agents
-morph-mcp_warpgrep_codebase_search search_string="Find deprecated FileManager.default and Thread.isMainThread usages in Swift files" repo_path="/Volumes/Main SSD/Developer/clawdis"
-morph-mcp_warpgrep_codebase_search search_string="Locate Peekaboo submodule and macOS app Swift files with concurrency issues" repo_path="/Volumes/Main SSD/Developer/clawdis"
+morph-mcp_warpgrep_codebase_search search_string="Find deprecated FileManager.default and Thread.isMainThread usages in Swift files" repo_path="/Volumes/Main SSD/Developer/espada"
+morph-mcp_warpgrep_codebase_search search_string="Locate Peekaboo submodule and macOS app Swift files with concurrency issues" repo_path="/Volumes/Main SSD/Developer/espada"
 ```
 
 ### Common Swift 6.2 Fixes
@@ -205,7 +205,7 @@ cd src/canvas-host/a2ui
 grep -r "Thread\.isMainThread\|FileManager\.default" . --include="*.swift"
 
 # Fix and rebuild submodule
-cd /Volumes/Main SSD/Developer/clawdis
+cd /Volumes/Main SSD/Developer/espada
 pnpm canvas:a2ui:bundle
 ```
 
@@ -287,7 +287,7 @@ pnpm install 2>&1 | grep -i patch
 **Search-Mode Investigation:**
 ```bash
 # Exhaustive search for deprecated APIs
-morph-mcp_warpgrep_codebase_search search_string="Find all Swift files using deprecated FileManager.default or Thread.isMainThread" repo_path="/Volumes/Main SSD/Developer/clawdis"
+morph-mcp_warpgrep_codebase_search search_string="Find all Swift files using deprecated FileManager.default or Thread.isMainThread" repo_path="/Volumes/Main SSD/Developer/espada"
 ```
 
 **Quick Fix Commands:**

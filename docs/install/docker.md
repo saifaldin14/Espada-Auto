@@ -54,7 +54,7 @@ After it finishes:
 
 It writes config/workspace on the host:
 - `~/.espada/`
-- `~/clawd`
+- `~/espada`
 
 Running on a VPS? See [Hetzner (Docker VPS)](/platforms/hetzner).
 

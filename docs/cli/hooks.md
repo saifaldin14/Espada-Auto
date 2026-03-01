@@ -232,7 +232,7 @@ Saves session context to memory when you issue `/new`.
 espada hooks enable session-memory
 ```
 
-**Output:** `~/clawd/memory/YYYY-MM-DD-slug.md`
+**Output:** `~/espada/memory/YYYY-MM-DD-slug.md`
 
 **See:** [session-memory documentation](/hooks#session-memory)
 

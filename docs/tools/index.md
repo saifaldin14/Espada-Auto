@@ -233,7 +233,7 @@ Notes:
 - See [Firecrawl](/tools/firecrawl) for the optional anti-bot fallback.
 
 ### `browser`
-Control the dedicated clawd browser.
+Control the dedicated espada browser.
 
 Core actions:
 - `status`, `start`, `stop`, `tabs`, `open`, `focus`, `close`
