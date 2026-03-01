@@ -13,7 +13,7 @@ export function registerQuickstartCommand(program: Command) {
     .addHelpText(
       "after",
       () =>
-        `\n${theme.muted("Docs:")} ${formatDocsLink("/start/quickstart", "docs.molt.bot/start/quickstart")}\n`,
+        `\n${theme.muted("Docs:")} ${formatDocsLink("/start/quickstart", "docs.espada.dev/start/quickstart")}\n`,
     )
     .option("--workspace <dir>", "Agent workspace directory (default: ~/espada)")
     .option("--port <port>", "Gateway port (default: 18789)")

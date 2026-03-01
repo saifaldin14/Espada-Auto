@@ -90,7 +90,7 @@ export function registerBrowserExtensionCommands(
             `- “Load unpacked” → select: ${displayPath}`,
             `- Pin “Espada Browser Relay”, then click it on the tab (badge shows ON)`,
             "",
-            `${theme.muted("Docs:")} ${formatDocsLink("/tools/chrome-extension", "docs.molt.bot/tools/chrome-extension")}`,
+            `${theme.muted("Docs:")} ${formatDocsLink("/tools/chrome-extension", "docs.espada.dev/tools/chrome-extension")}`,
           ].join("\n"),
         ),
       );
@@ -107,7 +107,7 @@ export function registerBrowserExtensionCommands(
           danger(
             [
               `Chrome extension is not installed. Run: "${formatCliCommand("espada browser extension install")}"`,
-              `Docs: ${formatDocsLink("/tools/chrome-extension", "docs.molt.bot/tools/chrome-extension")}`,
+              `Docs: ${formatDocsLink("/tools/chrome-extension", "docs.espada.dev/tools/chrome-extension")}`,
             ].join("\n"),
           ),
         );

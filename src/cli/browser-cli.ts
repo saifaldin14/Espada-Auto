@@ -31,7 +31,7 @@ export function registerBrowserCli(program: Command) {
           true,
         )}\n\n${theme.muted("Docs:")} ${formatDocsLink(
           "/cli/browser",
-          "docs.molt.bot/cli/browser",
+          "docs.espada.dev/cli/browser",
         )}\n`,
     )
     .action(() => {

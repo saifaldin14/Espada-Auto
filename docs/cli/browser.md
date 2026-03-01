@@ -53,7 +53,7 @@ espada browser --browser-profile work tabs
 
 ```bash
 espada browser tabs
-espada browser open https://docs.molt.bot
+espada browser open https://docs.espada.dev
 espada browser focus <targetId>
 espada browser close <targetId>
 ```

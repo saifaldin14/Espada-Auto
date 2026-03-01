@@ -125,7 +125,7 @@ export async function runNonInteractiveOnboardingLocal(params: {
 
   if (!opts.json) {
     runtime.log(
-      `Tip: run \`${formatCliCommand("espada configure --section web")}\` to store your Brave API key for web_search. Docs: https://docs.molt.bot/tools/web`,
+      `Tip: run \`${formatCliCommand("espada configure --section web")}\` to store your Brave API key for web_search. Docs: https://docs.espada.dev/tools/web`,
     );
   }
 }

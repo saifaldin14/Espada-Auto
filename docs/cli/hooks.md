@@ -85,7 +85,7 @@ Details:
   Source: espada-bundled
   Path: /path/to/espada/hooks/bundled/session-memory/HOOK.md
   Handler: /path/to/espada/hooks/bundled/session-memory/handler.ts
-  Homepage: https://docs.molt.bot/hooks#session-memory
+  Homepage: https://docs.espada.dev/hooks#session-memory
   Events: command:new
 
 Requirements:

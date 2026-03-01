@@ -139,7 +139,9 @@ export async function promptGatewayConfig(
   let tailscaleResetOnExit = false;
   if (tailscaleMode !== "off") {
     note(
-      ["Docs:", "https://docs.molt.bot/gateway/tailscale", "https://docs.molt.bot/web"].join("\n"),
+      ["Docs:", "https://docs.espada.dev/gateway/tailscale", "https://docs.espada.dev/web"].join(
+        "\n",
+      ),
       "Tailscale",
     );
     tailscaleResetOnExit = Boolean(

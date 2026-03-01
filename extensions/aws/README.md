@@ -718,7 +718,7 @@ aws iam get-user-policy --user-name YourUserName --policy-name YourPolicyName
 
 For issues or questions:
 1. Check this README
-2. Review the [Espada documentation](https://docs.molt.bot)
+2. Review the [Espada documentation](https://docs.espada.dev)
 3. Open an issue on GitHub
 4. Contact the Espada team
 

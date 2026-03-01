@@ -100,7 +100,7 @@ async function promptWebToolsConfig(
     [
       "Web search lets your agent look things up online using the `web_search` tool.",
       "It requires a Brave Search API key (you can store it in the config or set BRAVE_API_KEY in the Gateway environment).",
-      "Docs: https://docs.molt.bot/tools/web",
+      "Docs: https://docs.espada.dev/tools/web",
     ].join("\n"),
     "Web search",
   );
@@ -136,7 +136,7 @@ async function promptWebToolsConfig(
         [
           "No key stored yet, so web_search will stay unavailable.",
           "Store a key here or set BRAVE_API_KEY in the Gateway environment.",
-          "Docs: https://docs.molt.bot/tools/web",
+          "Docs: https://docs.espada.dev/tools/web",
         ].join("\n"),
         "Web search",
       );
@@ -189,7 +189,7 @@ export async function runConfigureWizard(
           [
             ...snapshot.issues.map((iss) => `- ${iss.path}: ${iss.message}`),
             "",
-            "Docs: https://docs.molt.bot/gateway/configuration",
+            "Docs: https://docs.espada.dev/gateway/configuration",
           ].join("\n"),
           "Config issues",
         );
@@ -378,8 +378,7 @@ export async function runConfigureWizard(
         const wsUrl =
           nextConfig.gateway?.mode === "remote" && remoteUrl ? remoteUrl : localLinks.wsUrl;
         const token = nextConfig.gateway?.auth?.token ?? process.env.ESPADA_GATEWAY_TOKEN;
-        const password =
-          nextConfig.gateway?.auth?.password ?? process.env.ESPADA_GATEWAY_PASSWORD;
+        const password = nextConfig.gateway?.auth?.password ?? process.env.ESPADA_GATEWAY_PASSWORD;
         await waitForGatewayReachable({
           url: wsUrl,
           token,
@@ -393,8 +392,8 @@ export async function runConfigureWizard(
           note(
             [
               "Docs:",
-              "https://docs.molt.bot/gateway/health",
-              "https://docs.molt.bot/gateway/troubleshooting",
+              "https://docs.espada.dev/gateway/health",
+              "https://docs.espada.dev/gateway/troubleshooting",
             ].join("\n"),
             "Health check help",
           );
@@ -518,8 +517,8 @@ export async function runConfigureWizard(
             note(
               [
                 "Docs:",
-                "https://docs.molt.bot/gateway/health",
-                "https://docs.molt.bot/gateway/troubleshooting",
+                "https://docs.espada.dev/gateway/health",
+                "https://docs.espada.dev/gateway/troubleshooting",
               ].join("\n"),
               "Health check help",
             );
@@ -577,7 +576,7 @@ export async function runConfigureWizard(
         `Web UI: ${links.httpUrl}`,
         `Gateway WS: ${links.wsUrl}`,
         gatewayStatusLine,
-        "Docs: https://docs.molt.bot/web/control-ui",
+        "Docs: https://docs.espada.dev/web/control-ui",
       ].join("\n"),
       "Control UI",
     );

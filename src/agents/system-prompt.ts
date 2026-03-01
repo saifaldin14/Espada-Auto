@@ -116,7 +116,7 @@ function buildDocsSection(params: { docsPath?: string; isMinimal: boolean; readT
   return [
     "## Documentation",
     `Espada docs: ${docsPath}`,
-    "Mirror: https://docs.molt.bot",
+    "Mirror: https://docs.espada.dev",
     "Source: https://github.com/espada/espada",
     "Community: https://discord.com/invite/espada",
     "Find new skills: https://espadahub.com",

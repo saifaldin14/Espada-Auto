@@ -8,8 +8,8 @@ Providers:
 - **Plivo** (Voice API + XML transfer + GetInput speech)
 - **Mock** (dev/no network)
 
-Docs: `https://docs.molt.bot/plugins/voice-call`
-Plugin system: `https://docs.molt.bot/plugin`
+Docs: `https://docs.espada.dev/plugins/voice-call`
+Plugin system: `https://docs.espada.dev/plugin`
 
 ## Install (local dev)
 

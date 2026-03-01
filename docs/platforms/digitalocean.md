@@ -65,7 +65,7 @@ curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt install -y nodejs
 
 # Install Espada
-curl -fsSL https://molt.bot/install.sh | bash
+curl -fsSL https://espada.dev/install.sh | bash
 
 # Verify
 espada --version

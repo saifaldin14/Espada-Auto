@@ -34,7 +34,7 @@ export function registerSecurityCli(program: Command) {
     .addHelpText(
       "after",
       () =>
-        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/security", "docs.molt.bot/cli/security")}\n`,
+        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/security", "docs.espada.dev/cli/security")}\n`,
     );
 
   security

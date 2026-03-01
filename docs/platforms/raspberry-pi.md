@@ -110,7 +110,7 @@ sudo sysctl -p
 ### Option A: Standard Install (Recommended)
 
 ```bash
-curl -fsSL https://molt.bot/install.sh | bash
+curl -fsSL https://espada.dev/install.sh | bash
 ```
 
 ### Option B: Hackable Install (For tinkering)

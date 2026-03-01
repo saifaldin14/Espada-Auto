@@ -168,9 +168,7 @@ function formatElevatedUnavailableMessage(params: {
   lines.push("- agents.list[].tools.elevated.enabled");
   lines.push("- agents.list[].tools.elevated.allowFrom.<provider>");
   if (params.sessionKey) {
-    lines.push(
-      `See: ${formatCliCommand(`espada sandbox explain --session ${params.sessionKey}`)}`,
-    );
+    lines.push(`See: ${formatCliCommand(`espada sandbox explain --session ${params.sessionKey}`)}`);
   }
   return lines.join("\n");
 }
@@ -189,7 +187,7 @@ export async function handleBashChatCommand(params: {
 }): Promise<ReplyPayload> {
   if (params.cfg.commands?.bash !== true) {
     return {
-      text: "⚠️ bash is disabled. Set commands.bash=true to enable. Docs: https://docs.molt.bot/tools/slash-commands#config",
+      text: "⚠️ bash is disabled. Set commands.bash=true to enable. Docs: https://docs.espada.dev/tools/slash-commands#config",
     };
   }
 

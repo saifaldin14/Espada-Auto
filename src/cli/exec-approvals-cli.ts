@@ -233,7 +233,7 @@ export function registerExecApprovalsCli(program: Command) {
     .addHelpText(
       "after",
       () =>
-        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/approvals", "docs.molt.bot/cli/approvals")}\n`,
+        `\n${theme.muted("Docs:")} ${formatDocsLink("/cli/approvals", "docs.espada.dev/cli/approvals")}\n`,
     );
 
   const getCmd = approvals
@@ -337,7 +337,7 @@ export function registerExecApprovalsCli(program: Command) {
         )}\n${formatExample(
           'espada approvals allowlist remove "~/Projects/**/bin/rg"',
           "Remove an allowlist pattern.",
-        )}\n\n${theme.muted("Docs:")} ${formatDocsLink("/cli/approvals", "docs.molt.bot/cli/approvals")}\n`,
+        )}\n\n${theme.muted("Docs:")} ${formatDocsLink("/cli/approvals", "docs.espada.dev/cli/approvals")}\n`,
     );
 
   const allowlistAdd = allowlist

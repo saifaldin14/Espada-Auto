@@ -90,7 +90,7 @@ If you override any of these in config or env, you must keep them unique per ins
 
 ```bash
 ESPADA_CONFIG_PATH=~/.espada/main.json \
-ESPADA_STATE_DIR=~/.moltbot-main \
+ESPADA_STATE_DIR=~/.espada-main \
 espada gateway --port 18789
 
 ESPADA_CONFIG_PATH=~/.espada/rescue.json \

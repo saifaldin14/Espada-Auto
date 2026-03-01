@@ -2,7 +2,7 @@
 
 Small persona swap hook for Espada.
 
-Docs: https://docs.molt.bot/hooks/soul-evil
+Docs: https://docs.espada.dev/hooks/soul-evil
 
 ## Setup
 

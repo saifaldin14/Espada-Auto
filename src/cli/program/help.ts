@@ -82,7 +82,7 @@ export function configureProgramHelp(program: Command, ctx: ProgramContext) {
 
   program.addHelpText("afterAll", ({ command }) => {
     if (command !== program) return "";
-    const docs = formatDocsLink("/cli", "docs.molt.bot/cli");
+    const docs = formatDocsLink("/cli", "docs.espada.dev/cli");
     return `\n${theme.heading("Examples:")}\n${fmtExamples}\n\n${theme.muted("Docs:")} ${docs}\n`;
   });
 }

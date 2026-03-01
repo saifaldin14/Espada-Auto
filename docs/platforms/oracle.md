@@ -97,7 +97,7 @@ tailscale status
 ## 5) Install Espada
 
 ```bash
-curl -fsSL https://molt.bot/install.sh | bash
+curl -fsSL https://espada.dev/install.sh | bash
 source ~/.bashrc
 ```
 

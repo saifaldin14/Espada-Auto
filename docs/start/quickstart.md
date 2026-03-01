@@ -23,7 +23,7 @@ Goal: **zero to first chat in under 30 seconds** — no channel setup, no wizard
 
 ```bash
 # Install Espada (if not already installed)
-curl -fsSL https://molt.bot/install.sh | bash
+curl -fsSL https://espada.dev/install.sh | bash
 
 # Auto-detect credentials and open the dashboard
 espada quickstart

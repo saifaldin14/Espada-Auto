@@ -83,7 +83,7 @@ tar -czf espada-state.tgz .espada
 tar -czf espada-workspace.tgz espada
 ```
 
-If you have multiple profiles/state dirs (e.g. `~/.moltbot-main`, `~/.espada-work`), archive each.
+If you have multiple profiles/state dirs (e.g. `~/.espada-main`, `~/.espada-work`), archive each.
 
 ### Step 1 — Install Espada on the new machine
 

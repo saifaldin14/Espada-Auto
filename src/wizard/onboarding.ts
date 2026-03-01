@@ -70,7 +70,7 @@ async function requireRiskAcknowledgement(params: {
       "espada security audit --deep",
       "espada security audit --fix",
       "",
-      "Must read: https://docs.molt.bot/gateway/security",
+      "Must read: https://docs.espada.dev/gateway/security",
     ].join("\n"),
     "Security",
   );
@@ -103,7 +103,7 @@ export async function runOnboardingWizard(
         [
           ...snapshot.issues.map((iss) => `- ${iss.path}: ${iss.message}`),
           "",
-          "Docs: https://docs.molt.bot/gateway/configuration",
+          "Docs: https://docs.espada.dev/gateway/configuration",
         ].join("\n"),
         "Config issues",
       );
