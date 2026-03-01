@@ -44,9 +44,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Run Infra Graph
-        uses: your-org/infra-graph-action@v1
-        # Or if using the local action from this repo:
-        # uses: ./extensions/knowledge-graph
+        uses: ./extensions/knowledge-graph
         with:
           provider: ${{ matrix.provider }}
           compliance-framework: ${{ github.event.inputs.framework || 'cis' }}
@@ -57,7 +55,7 @@ jobs:
           post-pr-comment: "true"
           # otel-endpoint: ${{ secrets.OTEL_ENDPOINT }}
 
-          # AWS credentials
+          # AWS credentials — set these in your repo's Settings > Secrets
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1

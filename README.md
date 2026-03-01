@@ -36,11 +36,12 @@ Espada is a local-first gateway that connects to your messaging channels and let
 ## What Can It Do?
 
 - **Cloud Infrastructure Management** — Manage EC2 instances, S3 buckets, Lambda functions, and more across AWS, Azure, and GCP
+- **Infrastructure Knowledge Graph** — Unified multi-cloud graph with IQL queries, compliance scanning, blast radius analysis, and 31 AI agent tools
 - **Container Orchestration** — Deploy and manage Docker containers and Kubernetes clusters
 - **Infrastructure as Code** — Execute Terraform plans and CloudFormation stacks
 - **Multi-Channel Inbox** — Receive and respond across all connected messaging channels simultaneously
 - **Multi-Agent Routing** — Route different channels/accounts to isolated agents with separate workspaces
-- **Security & Compliance** — AWS GuardDuty, IAM policy management, security scanning, and guardrails
+- **Security & Compliance** — SOC 2, HIPAA, PCI-DSS, ISO 27001, NIST 800-53, CIS compliance frameworks with auto-remediation
 - **Cost Management** — Track cloud spending, set budgets, and get optimization recommendations
 - **Backup & Recovery** — Automated backup management and disaster recovery operations
 - **Voice Interface** — Voice Wake and Talk Mode for hands-free infrastructure management (macOS/iOS/Android)
@@ -75,6 +76,48 @@ The AWS extension (`extensions/aws/`) provides comprehensive AWS infrastructure 
 - **Backup** — Automated backup plans and recovery operations
 - **Cost Management** — Spending analysis and optimization
 - **Infrastructure Catalog** — Pre-built architecture templates
+
+### Infrastructure Knowledge Graph (`@infra-graph/core`)
+
+The knowledge graph extension (`extensions/knowledge-graph/`) builds a unified graph of your entire cloud infrastructure — scanning, querying, and analyzing resources across AWS, Azure, GCP, and Kubernetes.
+
+<p align="center">
+  <img src="extensions/knowledge-graph/docs/overview.svg" alt="Infrastructure Knowledge Graph" width="800">
+</p>
+
+**Key capabilities:**
+
+- **Multi-Cloud Discovery** — 5 adapters (AWS with 21 sub-modules, Azure with 23, GCP, Kubernetes, Terraform) plus cross-cloud relationship detection
+- **IQL Query Language** — Purpose-built infrastructure query language with full lexer/parser/executor: `FIND compute WHERE status = "running" AND tags.env = "prod"`
+- **31 AI Agent Tools** — Blast radius, SPOF detection, drift, cost attribution, compliance, remediation, supply chain security, anomaly detection, and more
+- **6 Compliance Frameworks** — SOC 2, HIPAA, PCI-DSS, ISO 27001, NIST 800-53, CIS Benchmarks with 30+ concrete controls and auto-generated remediation patches
+- **MCP Server** — Expose all 31 tools to Claude Desktop, Cursor, Windsurf, or any MCP-compatible AI client
+- **REST API** — 10 endpoints with Bearer auth, rate limiting, CORS, and NDJSON streaming for large topologies
+- **22 CLI Commands** — `espada graph` (13 commands) and `espada infra` (9 commands) for scanning, querying, compliance, and reporting
+- **Enterprise Features** — RBAC (4 roles, 9 permissions), multi-tenancy (4 isolation modes), OPA policy engine (15 condition types), governance with 7-factor risk scoring, federation
+- **Temporal & Time Travel** — Point-in-time snapshots, graph diffing, evolution tracking, temporal IQL queries (`FIND * AT "2024-01-15"`)
+- **4 Storage Backends** — InMemory, SQLite (WAL, 18 indexes), PostgreSQL (JSONB, GIN, materialized views), SQLite-Temporal
+- **Observability** — OTEL metrics and traces (push/pull), 3 Grafana dashboards, continuous monitoring with CloudTrail/Azure/GCP event sources
+- **GitHub Action** — CI/CD compliance scanning with PR comments, threshold enforcement, and OTEL export
+
+```bash
+# Scan from Terraform state
+espada infra scan --terraform ./terraform.tfstate
+
+# Live multi-cloud scan
+espada infra cloud-scan --aws --azure --gcp --db ./infra.db
+
+# Query with IQL
+espada infra query --db ./infra.db "FIND database WHERE tags.env = 'prod'"
+
+# Run compliance
+espada infra compliance --db ./infra.db --framework hipaa
+
+# Start MCP server for AI assistants
+infra-graph mcp --db ./infra.db
+```
+
+> **30,000+ LOC** · **1,422 tests** · See [`extensions/knowledge-graph/README.md`](extensions/knowledge-graph/README.md) for full documentation.
 
 ## Install
 
