@@ -94,20 +94,15 @@ export type OTELExportOptions = {
 // Helpers
 // =============================================================================
 
-const SCOPE_NAME = "infra-graph";
-const SCOPE_VERSION = "1.0.0";
+import { VERSION } from "../index.js";
 
-/** Generate a random hex string of given byte length. */
+const SCOPE_NAME = "infra-graph";
+const SCOPE_VERSION = VERSION;
+
+/** Generate a random hex string of given byte length (crypto-quality). */
 function randomHex(bytes: number): string {
   const buf = new Uint8Array(bytes);
-  // Use crypto if available, else fallback to Math.random
-  if (typeof globalThis.crypto?.getRandomValues === "function") {
-    globalThis.crypto.getRandomValues(buf);
-  } else {
-    for (let i = 0; i < bytes; i++) {
-      buf[i] = Math.floor(Math.random() * 256);
-    }
-  }
+  globalThis.crypto.getRandomValues(buf);
   return Array.from(buf)
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
@@ -525,6 +520,20 @@ export function buildComplianceTrace(
 // Push to Collector
 // =============================================================================
 
+/** Normalize collector endpoint — strip trailing slashes, validate URL. */
+function normalizeEndpoint(raw: string): string {
+  const ep = raw.replace(/\/+$/, "");
+  try {
+    const parsed = new URL(ep);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error(`Unsupported protocol: ${parsed.protocol}`);
+    }
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+  } catch {
+    throw new Error(`Invalid OTLP collector endpoint: ${ep}`);
+  }
+}
+
 /**
  * Push OTLP metrics to an OpenTelemetry collector via HTTP.
  * Uses the standard /v1/metrics endpoint.
@@ -533,7 +542,7 @@ export async function pushMetrics(
   payload: OTLPMetricsPayload,
   opts: OTELExportOptions,
 ): Promise<{ ok: boolean; status: number; body: string }> {
-  const endpoint = opts.collectorEndpoint ?? "http://localhost:4318";
+  const endpoint = normalizeEndpoint(opts.collectorEndpoint ?? "http://localhost:4318");
   const url = `${endpoint}/v1/metrics`;
   return pushOTLP(url, payload, opts.collectorApiKey, opts.timeoutMs);
 }
@@ -546,17 +555,18 @@ export async function pushTraces(
   payload: OTLPTracePayload,
   opts: OTELExportOptions,
 ): Promise<{ ok: boolean; status: number; body: string }> {
-  const endpoint = opts.collectorEndpoint ?? "http://localhost:4318";
+  const endpoint = normalizeEndpoint(opts.collectorEndpoint ?? "http://localhost:4318");
   const url = `${endpoint}/v1/traces`;
   return pushOTLP(url, payload, opts.collectorApiKey, opts.timeoutMs);
 }
 
-/** Internal: POST JSON to an OTLP endpoint. */
+/** Internal: POST JSON to an OTLP endpoint with retry + backoff. */
 async function pushOTLP(
   url: string,
   payload: unknown,
   apiKey?: string,
   timeoutMs = 10_000,
+  maxRetries = 2,
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -565,15 +575,36 @@ async function pushOTLP(
     headers["Authorization"] = `Bearer ${apiKey}`;
   }
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+  const jsonBody = JSON.stringify(payload);
+  let lastError: Error | undefined;
 
-  const body = await res.text();
-  return { ok: res.ok, status: res.status, body };
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers,
+        body: jsonBody,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      const body = await res.text();
+      // Retry on 5xx or 429 (rate limit)
+      if ((res.status >= 500 || res.status === 429) && attempt < maxRetries) {
+        const backoffMs = Math.min(1000 * 2 ** attempt, 8000);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+      return { ok: res.ok, status: res.status, body };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < maxRetries) {
+        const backoffMs = Math.min(1000 * 2 ** attempt, 8000);
+        await new Promise((r) => setTimeout(r, backoffMs));
+        continue;
+      }
+    }
+  }
+  return { ok: false, status: 0, body: lastError?.message ?? "OTLP push failed" };
 }
 
 // =============================================================================

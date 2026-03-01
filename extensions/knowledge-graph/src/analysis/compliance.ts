@@ -54,16 +54,20 @@ export type ComplianceControl = {
 
 /** Context passed to control evaluation functions. */
 export type ControlEvaluationContext = {
+  /** The graph node being evaluated. */
   node: GraphNode;
-  /** Tags on the node. */
+  /** Tags attached to the node (key-value pairs from cloud provider). */
   tags: Record<string, string>;
-  /** Metadata on the node. */
+  /** Provider-specific metadata (e.g. encryption settings, IAM config). */
   metadata: Record<string, unknown>;
-  /** Nodes connected to this node (neighbors). */
+  /** Nodes connected to this node via graph edges (immediate neighbors). */
   neighbors: GraphNode[];
-  /** Whether the node has edges of specific relationship types. */
+  /**
+   * Check whether the node has at least one edge of the given relationship type.
+   * Common types: "runs-in", "secured-by", "logs-to", "encrypts-with", "monitors".
+   */
   hasEdge: (relType: string) => boolean;
-  /** Edge relationship types connected to this node. */
+  /** All unique relationship types on edges connected to this node. */
   edgeTypes: string[];
 };
 
@@ -133,24 +137,56 @@ function hasEncryption(ctx: ControlEvaluationContext): boolean {
   );
 }
 
-/** Check if a node is in a private subnet / VPC. */
+/**
+ * Check if a node is in a private subnet / VPC.
+ * Strict mode: if no network-related metadata or edges exist, assume
+ * the isolation status is unknown and return false so the control
+ * doesn't silently pass with no evidence.
+ */
 function isNetworkIsolated(ctx: ControlEvaluationContext): boolean {
   const hasPublicExposure =
     ctx.metadata.publicIp != null ||
     ctx.metadata.publiclyAccessible === true;
-  return (
+
+  // Explicit public exposure always fails
+  if (hasPublicExposure) return false;
+
+  // Positive evidence of isolation (VPC, firewall, private subnet)
+  if (
     ctx.hasEdge("runs-in") ||
     ctx.hasEdge("secured-by") ||
-    !hasPublicExposure
-  );
+    ctx.metadata.vpcId != null ||
+    ctx.metadata.subnetId != null ||
+    ctx.metadata.privateIp != null
+  ) {
+    return true;
+  }
+
+  // No evidence either way — treat as not-isolated (strict)
+  return false;
 }
 
-/** Check if a node has logging enabled. */
+/** Check if a node has any form of logging enabled (access or audit). */
 function hasLogging(ctx: ControlEvaluationContext): boolean {
   return (
     ctx.hasEdge("logs-to") ||
     ctx.metadata.loggingEnabled === true ||
-    ctx.metadata.auditLogging === true
+    ctx.metadata.auditLogging === true ||
+    ctx.metadata.accessLogging === true
+  );
+}
+
+/**
+ * Check if audit-grade logging is enabled (HIPAA/PCI-DSS controls).
+ * Audit logging provides tamper-evident records of who accessed what
+ * and when, which is stricter than general access/application logging.
+ */
+function hasAuditLogging(ctx: ControlEvaluationContext): boolean {
+  return (
+    ctx.metadata.auditLogging === true ||
+    ctx.metadata.cloudTrailEnabled === true ||
+    ctx.metadata.queryLogging === true ||
+    (ctx.hasEdge("logs-to") && ctx.metadata.logType === "audit")
   );
 }
 
@@ -360,7 +396,7 @@ const HIPAA_CONTROLS: ComplianceControl[] = [
     section: "Audit Controls",
     title: "Audit logging",
     description:
-      "Systems containing ePHI must have audit logging enabled.",
+      "Systems containing ePHI must have audit-grade logging enabled (not just access logs).",
     severity: "high",
     applicableResourceTypes: [
       "compute",
@@ -369,11 +405,18 @@ const HIPAA_CONTROLS: ComplianceControl[] = [
       "function",
       "api-gateway",
     ],
-    evaluate: (ctx) => (hasLogging(ctx) ? "pass" : "fail"),
+    evaluate: (ctx) => {
+      if (hasAuditLogging(ctx)) return "pass";
+      // General logging present but not audit-grade — flag as warning
+      if (hasLogging(ctx)) return "warning";
+      return "fail";
+    },
     reason: (_ctx, s) =>
       s === "pass"
         ? "Audit logging is enabled"
-        : "No audit logging detected",
+        : s === "warning"
+          ? "Logging is enabled but audit-grade logging not confirmed"
+          : "No audit logging detected",
   },
   {
     id: "164.308(a)(7)",
@@ -436,7 +479,7 @@ const PCI_DSS_CONTROLS: ComplianceControl[] = [
     section: "Track and Monitor",
     title: "Audit trail",
     description:
-      "Systems must log all access to cardholder data environments.",
+      "Systems must log all access to cardholder data environments with audit-grade logs.",
     severity: "high",
     applicableResourceTypes: [
       "compute",
@@ -444,11 +487,17 @@ const PCI_DSS_CONTROLS: ComplianceControl[] = [
       "storage",
       "api-gateway",
     ],
-    evaluate: (ctx) => (hasLogging(ctx) ? "pass" : "fail"),
+    evaluate: (ctx) => {
+      if (hasAuditLogging(ctx)) return "pass";
+      if (hasLogging(ctx)) return "warning";
+      return "fail";
+    },
     reason: (_ctx, s) =>
       s === "pass"
         ? "Audit logging is enabled"
-        : "No audit logging — violates PCI monitoring requirements",
+        : s === "warning"
+          ? "Logging present but audit-grade trail not confirmed — verify PCI compliance"
+          : "No audit logging — violates PCI monitoring requirements",
   },
   {
     id: "PCI-6.5",
@@ -954,37 +1003,77 @@ export const SUPPORTED_FRAMEWORKS: ComplianceFramework[] = [
 // =============================================================================
 
 /**
- * Build the evaluation context for a node.
+ * Batch-load evaluation contexts for all nodes, avoiding N+1 queries.
+ * Fetches edges for every node in parallel, deduplicates neighbor lookups,
+ * and returns a Map from nodeId → ControlEvaluationContext.
  */
-async function buildControlContext(
-  node: GraphNode,
+async function batchBuildContexts(
+  nodes: GraphNode[],
   storage: GraphStorage,
-): Promise<ControlEvaluationContext> {
-  const edges = await storage.getEdgesForNode(node.id, "both");
-  const edgeTypes = [...new Set(edges.map((e) => e.relationshipType))];
-  const neighborIds = new Set<string>();
-  for (const e of edges) {
-    if (e.sourceNodeId !== node.id) neighborIds.add(e.sourceNodeId);
-    if (e.targetNodeId !== node.id) neighborIds.add(e.targetNodeId);
-  }
-  const neighbors: GraphNode[] = [];
-  for (const nid of neighborIds) {
-    const n = await storage.getNode(nid);
-    if (n) neighbors.push(n);
+): Promise<Map<string, ControlEvaluationContext>> {
+  // Phase 1: fetch edges for all nodes in parallel
+  const edgesByNode = new Map<string, Awaited<ReturnType<GraphStorage["getEdgesForNode"]>>>();
+  await Promise.all(
+    nodes.map(async (node) => {
+      const edges = await storage.getEdgesForNode(node.id, "both");
+      edgesByNode.set(node.id, edges);
+    }),
+  );
+
+  // Phase 2: collect unique neighbor IDs across all nodes
+  const allNeighborIds = new Set<string>();
+  for (const [nodeId, edges] of edgesByNode) {
+    for (const e of edges) {
+      if (e.sourceNodeId !== nodeId) allNeighborIds.add(e.sourceNodeId);
+      if (e.targetNodeId !== nodeId) allNeighborIds.add(e.targetNodeId);
+    }
   }
 
-  return {
-    node,
-    tags: node.tags,
-    metadata: node.metadata,
-    neighbors,
-    hasEdge: (relType: string) => (edgeTypes as string[]).includes(relType),
-    edgeTypes,
-  };
+  // Phase 3: batch-fetch neighbor nodes (skip nodes already in the set)
+  const neighborMap = new Map<string, GraphNode>();
+  // Nodes already in the query set can be used directly
+  for (const n of nodes) neighborMap.set(n.id, n);
+
+  const missingIds = [...allNeighborIds].filter((id) => !neighborMap.has(id));
+  if (missingIds.length > 0) {
+    const fetched = await Promise.all(
+      missingIds.map((id) => storage.getNode(id)),
+    );
+    for (const n of fetched) {
+      if (n) neighborMap.set(n.id, n);
+    }
+  }
+
+  // Phase 4: assemble contexts
+  const contextMap = new Map<string, ControlEvaluationContext>();
+  for (const node of nodes) {
+    const edges = edgesByNode.get(node.id) ?? [];
+    const edgeTypes = [...new Set(edges.map((e) => e.relationshipType))];
+    const neighborIds = new Set<string>();
+    for (const e of edges) {
+      if (e.sourceNodeId !== node.id) neighborIds.add(e.sourceNodeId);
+      if (e.targetNodeId !== node.id) neighborIds.add(e.targetNodeId);
+    }
+    const neighbors = [...neighborIds]
+      .map((id) => neighborMap.get(id))
+      .filter((n): n is GraphNode => n != null);
+
+    contextMap.set(node.id, {
+      node,
+      tags: node.tags,
+      metadata: node.metadata,
+      neighbors,
+      hasEdge: (relType: string) => (edgeTypes as string[]).includes(relType),
+      edgeTypes,
+    });
+  }
+
+  return contextMap;
 }
 
 /**
  * Evaluate a single framework against all applicable resources.
+ * Uses batch context loading to avoid N+1 storage queries.
  */
 export async function evaluateFramework(
   framework: ComplianceFramework,
@@ -995,12 +1084,14 @@ export async function evaluateFramework(
   const nodes = await storage.queryNodes(filter ?? {});
   const results: ControlResult[] = [];
 
+  // Batch-load contexts for all nodes once (avoids repeated per-node queries)
+  const contextMap = await batchBuildContexts(nodes, storage);
+
   for (const control of controls) {
     const applicable = nodes.filter((n) =>
       control.applicableResourceTypes.includes(n.resourceType),
     );
     if (applicable.length === 0) {
-      // Control has no applicable resources in the graph
       results.push({
         controlId: control.id,
         framework: control.framework,
@@ -1019,7 +1110,7 @@ export async function evaluateFramework(
 
     for (const node of applicable) {
       try {
-        const ctx = await buildControlContext(node, storage);
+        const ctx = contextMap.get(node.id)!;
         const status = control.evaluate(ctx);
         results.push({
           controlId: control.id,

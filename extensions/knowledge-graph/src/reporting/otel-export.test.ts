@@ -494,6 +494,76 @@ describe("pushMetrics", () => {
     const [, opts] = mockFetch.mock.calls[0];
     expect(opts.signal).toBeDefined();
   });
+
+  it("normalizes endpoint URL with trailing slash", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: () => Promise.resolve(""),
+    });
+    globalThis.fetch = mockFetch;
+
+    await pushMetrics(buildGraphMetrics(makeStats()), {
+      collectorEndpoint: "http://collector:4318/",
+    });
+
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("http://collector:4318/v1/metrics");
+  });
+
+  it("rejects invalid endpoint URL", async () => {
+    await expect(
+      pushMetrics(buildGraphMetrics(makeStats()), {
+        collectorEndpoint: "not://valid",
+      }),
+    ).rejects.toThrow(/Invalid OTLP collector endpoint|Unsupported protocol/);
+  });
+
+  it("retries on 5xx errors with backoff", async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn().mockImplementation(() => {
+      callCount++;
+      if (callCount <= 2) {
+        return Promise.resolve({
+          ok: false,
+          status: 503,
+          text: () => Promise.resolve("Service unavailable"),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        text: () => Promise.resolve("{}"),
+      });
+    });
+    globalThis.fetch = mockFetch;
+
+    const result = await pushMetrics(buildGraphMetrics(makeStats()), {
+      collectorEndpoint: "http://collector:4318",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.status).toBe(200);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  }, 15_000);
+
+  it("returns last error after exhausting retries", async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: () => Promise.resolve("Down"),
+    });
+    globalThis.fetch = mockFetch;
+
+    const result = await pushMetrics(buildGraphMetrics(makeStats()), {
+      collectorEndpoint: "http://collector:4318",
+    });
+
+    // After 3 attempts (1 + 2 retries), returns the last 503
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(503);
+    expect(mockFetch).toHaveBeenCalledTimes(3);
+  }, 15_000);
 });
 
 describe("pushTraces", () => {

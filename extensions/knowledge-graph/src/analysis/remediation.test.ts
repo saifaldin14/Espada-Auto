@@ -701,4 +701,44 @@ describe("Drift Auto-Remediation (P2.21)", () => {
       }
     });
   });
+
+  // ===========================================================================
+  // Edge cases: resource name sanitization
+  // ===========================================================================
+
+  describe("name sanitization", () => {
+    it("handles resources with leading hyphens in names", () => {
+      const node = makeGraphNode("-hyphen-start", {
+        resourceType: "compute",
+        provider: "aws",
+        name: "-my-server",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("status", "stopped", "running")] },
+        ]),
+        "terraform",
+      );
+      // The generated patch should not have a leading hyphen in the TF name
+      const patch = plan.autoRemediable[0]?.patch ?? "";
+      expect(patch).not.toMatch(/resource\s+"[^"]+"\s+"-/);
+    });
+
+    it("handles resources with numeric leading characters", () => {
+      const node = makeGraphNode("123-server", {
+        resourceType: "compute",
+        provider: "aws",
+        name: "123-server",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("status", "stopped", "running")] },
+        ]),
+        "terraform",
+      );
+      const patch = plan.autoRemediable[0]?.patch ?? "";
+      // Should not start with a digit
+      expect(patch).not.toMatch(/resource\s+"[^"]+"\s+"[0-9]/);
+    });
+  });
 });

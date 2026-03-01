@@ -30,6 +30,7 @@ import {
   type ComplianceFramework,
 } from "../analysis/compliance.js";
 import type { GraphStorage, CloudProvider, NodeFilter } from "../types.js";
+import { VERSION } from "../index.js";
 
 // =============================================================================
 // Types
@@ -45,6 +46,10 @@ export type ApiServerOptions = {
   bodyTimeout?: number;
   /** Allowed CORS origins (default: "*"). Set to a specific origin in production. */
   corsOrigin?: string;
+  /** Max requests per IP per rate-limit window (default: 100). Set to 0 to disable. */
+  rateLimit?: number;
+  /** Rate-limit window in ms (default: 60000 = 1 minute). */
+  rateLimitWindow?: number;
 };
 
 export type ApiServerHandle = {
@@ -64,18 +69,66 @@ type RouteHandler = (
 // Helpers
 // =============================================================================
 
-function json(res: ServerResponse, data: unknown, status = 200, corsOrigin = "*"): void {
-  res.writeHead(status, {
-    "Content-Type": "application/json",
+/** Standard security + CORS headers applied to every response. */
+function securityHeaders(corsOrigin: string): Record<string, string> {
+  return {
     "Access-Control-Allow-Origin": corsOrigin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Cache-Control": "no-store",
+  };
+}
+
+function json(res: ServerResponse, data: unknown, status = 200, corsOrigin = "*"): void {
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    ...securityHeaders(corsOrigin),
   });
   res.end(JSON.stringify(data));
 }
 
 function error(res: ServerResponse, message: string, status = 400, corsOrigin = "*"): void {
   json(res, { error: message }, status, corsOrigin);
+}
+
+// =============================================================================
+// Rate Limiter (sliding-window, per-IP)
+// =============================================================================
+
+class RateLimiter {
+  private windows = new Map<string, number[]>();
+  constructor(
+    private maxRequests: number,
+    private windowMs: number,
+  ) {}
+
+  /** Returns true if the request is allowed. */
+  allow(ip: string): boolean {
+    if (this.maxRequests <= 0) return true;
+    const now = Date.now();
+    const cutoff = now - this.windowMs;
+    let timestamps = this.windows.get(ip);
+    if (!timestamps) {
+      timestamps = [];
+      this.windows.set(ip, timestamps);
+    }
+    // Trim expired entries
+    while (timestamps.length > 0 && timestamps[0]! < cutoff) timestamps.shift();
+    if (timestamps.length >= this.maxRequests) return false;
+    timestamps.push(now);
+    return true;
+  }
+
+  /** Periodic cleanup of stale entries. */
+  cleanup(): void {
+    const cutoff = Date.now() - this.windowMs;
+    for (const [ip, ts] of this.windows) {
+      while (ts.length > 0 && ts[0]! < cutoff) ts.shift();
+      if (ts.length === 0) this.windows.delete(ip);
+    }
+  }
 }
 
 async function readBody(req: IncomingMessage, timeoutMs = 30_000): Promise<unknown> {
@@ -139,6 +192,10 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
   const log = (msg: string) => console.log(`[infra-graph-api] ${msg}`);
   const corsOrigin = opts.corsOrigin ?? "*";
   const bodyTimeout = opts.bodyTimeout ?? 30_000;
+  const rateLimiter = new RateLimiter(opts.rateLimit ?? 100, opts.rateLimitWindow ?? 60_000);
+  // Periodically clean up stale rate-limit entries
+  const rlCleanupTimer = setInterval(() => rateLimiter.cleanup(), 60_000);
+  rlCleanupTimer.unref(); // don't prevent node from exiting
 
   // Validate port
   if (!Number.isFinite(opts.port) || opts.port < 0 || opts.port > 65535) {
@@ -193,7 +250,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     const stats = await engine.getStats();
     json(res, {
       status: "ok",
-      version: "1.0.0",
+      version: VERSION,
       nodes: stats.totalNodes,
       edges: stats.totalEdges,
       storage: opts.postgres ? "postgres" : opts.db ? "sqlite" : "in-memory",
@@ -261,9 +318,29 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     const url = new URL(req.url!, `http://${req.headers.host}`);
     const provider = url.searchParams.get("provider") as CloudProvider | null;
     const filter: NodeFilter = provider ? { provider } : {};
+    const stream = url.searchParams.get("stream") === "true";
 
     const topo = await engine.getTopology(filter);
-    json(res, topo, 200, corsOrigin);
+
+    if (stream) {
+      // NDJSON streaming for large topologies (10K+ nodes):
+      // Each line is a self-contained JSON object, allowing clients
+      // to process results incrementally without buffering the full payload.
+      res.writeHead(200, {
+        "Content-Type": "application/x-ndjson",
+        "Transfer-Encoding": "chunked",
+        ...securityHeaders(corsOrigin),
+      });
+      for (const node of topo.nodes) {
+        res.write(JSON.stringify({ type: "node", data: node }) + "\n");
+      }
+      for (const edge of topo.edges) {
+        res.write(JSON.stringify({ type: "edge", data: edge }) + "\n");
+      }
+      res.end();
+    } else {
+      json(res, topo, 200, corsOrigin);
+    }
   });
 
   // ─── GET /v1/graph/stats ───────────────────────────────────────
@@ -328,7 +405,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     if (format === "json") {
       json(res, JSON.parse(output.content), 200, corsOrigin);
     } else {
-      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.writeHead(200, { "Content-Type": "text/plain", ...securityHeaders(corsOrigin) });
       res.end(output.content);
     }
   });
@@ -352,12 +429,24 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
   const server = createServer(async (req, res) => {
     // CORS preflight
     if (req.method === "OPTIONS") {
-      res.writeHead(204, {
-        "Access-Control-Allow-Origin": corsOrigin,
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
-      });
+      res.writeHead(204, securityHeaders(corsOrigin));
       res.end();
+      return;
+    }
+
+    // Rate limiting (by IP)
+    const clientIp = req.socket.remoteAddress ?? "unknown";
+    if (!rateLimiter.allow(clientIp)) {
+      error(res, "Too many requests", 429, corsOrigin);
+      return;
+    }
+
+    // Content-Length fast-reject for oversized bodies
+    const MAX_BODY = 10 * 1024 * 1024;
+    const contentLength = req.headers["content-length"];
+    if (contentLength && parseInt(contentLength, 10) > MAX_BODY) {
+      error(res, "Request body too large", 413, corsOrigin);
+      req.destroy();
       return;
     }
 
@@ -387,18 +476,24 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     }
   });
 
-  // Graceful shutdown with connection draining
-  const close = (): Promise<void> =>
-    new Promise((resolve, reject) => {
-      log("Shutting down…");
-      server.close((err) => (err ? reject(err) : resolve()));
-    });
+  // Set aggressive timeouts to defend against slow clients
+  server.headersTimeout = 60_000;
+  server.requestTimeout = 60_000;
 
+  // Graceful shutdown with connection draining
   const shutdown = () => {
     close().then(() => process.exit(0)).catch(() => process.exit(1));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
+
+  const close = (): Promise<void> =>
+    new Promise((resolve, reject) => {
+      log("Shutting down…");
+      // Detach signal handlers to avoid listener leak on repeated start/stop
+      process.removeListener("SIGINT", shutdown);
+      process.removeListener("SIGTERM", shutdown);      clearInterval(rlCleanupTimer);      server.close((err) => (err ? reject(err) : resolve()));
+    });
 
   // Return a promise that resolves when the server is listening
   return new Promise<ApiServerHandle>((resolve, reject) => {

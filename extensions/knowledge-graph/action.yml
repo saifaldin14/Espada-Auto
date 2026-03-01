@@ -124,6 +124,7 @@ runs:
         # Azure
         if [[ -n "${{ inputs.azure-subscription-id }}" ]]; then
           echo "::add-mask::${{ inputs.azure-client-secret }}"
+          echo "::add-mask::${{ inputs.azure-client-id }}"
           echo "AZURE_SUBSCRIPTION_ID=${{ inputs.azure-subscription-id }}" >> "$GITHUB_ENV"
           echo "AZURE_CLIENT_ID=${{ inputs.azure-client-id }}" >> "$GITHUB_ENV"
           echo "AZURE_CLIENT_SECRET=${{ inputs.azure-client-secret }}" >> "$GITHUB_ENV"
@@ -133,7 +134,9 @@ runs:
         # GCP — write key to a temp file with restricted permissions
         if [[ -n "${{ inputs.gcp-credentials-json }}" ]]; then
           GCP_KEY_FILE="$(mktemp)"
-          echo '${{ inputs.gcp-credentials-json }}' > "$GCP_KEY_FILE"
+          cat <<'GCPEOF' > "$GCP_KEY_FILE"
+        ${{ inputs.gcp-credentials-json }}
+        GCPEOF
           chmod 600 "$GCP_KEY_FILE"
           echo "GOOGLE_APPLICATION_CREDENTIALS=$GCP_KEY_FILE" >> "$GITHUB_ENV"
           echo "INFRA_GRAPH_GCP_KEY_FILE=$GCP_KEY_FILE" >> "$GITHUB_ENV"
@@ -154,14 +157,22 @@ runs:
         fi
 
         # Run cloud scan
+        SCAN_FAILED=0
         echo "::group::Infrastructure Scan"
-        infra-graph cloud-scan "${SCAN_ARGS[@]}" --output "$REPORT_DIR/scan.json" 2>&1 || true
+        if ! infra-graph cloud-scan "${SCAN_ARGS[@]}" --output "$REPORT_DIR/scan.json" 2>&1; then
+          echo "::warning::Infrastructure scan failed — results may be incomplete"
+          SCAN_FAILED=1
+        fi
         echo "::endgroup::"
 
         # Run compliance check
+        COMPLIANCE_FAILED=0
         echo "::group::Compliance Evaluation (${{ inputs.compliance-framework }})"
-        infra-graph audit --framework "${{ inputs.compliance-framework }}" \
-          --output "$REPORT_DIR/compliance.json" 2>&1 || true
+        if ! infra-graph audit --framework "${{ inputs.compliance-framework }}" \
+          --output "$REPORT_DIR/compliance.json" 2>&1; then
+          echo "::warning::Compliance evaluation failed — results may be incomplete"
+          COMPLIANCE_FAILED=1
+        fi
         echo "::endgroup::"
 
         # Parse results from scan output
@@ -185,7 +196,9 @@ runs:
         # Run drift detection if enabled
         if [[ "${{ inputs.drift-detection }}" == "true" ]]; then
           echo "::group::Drift Detection"
-          infra-graph drift --output "$REPORT_DIR/drift.json" 2>&1 || true
+          if ! infra-graph drift --output "$REPORT_DIR/drift.json" 2>&1; then
+            echo "::warning::Drift detection failed — results may be incomplete"
+          fi
           if [[ -f "$REPORT_DIR/drift.json" ]]; then
             DRIFT_COUNT=$(jq -r '.driftedNodes | length' "$REPORT_DIR/drift.json" 2>/dev/null || echo 0)
           fi
@@ -224,7 +237,7 @@ runs:
           # Use the built-in OTEL export from JSON metrics
           infra-graph report --format otel \
             --otel-endpoint "${{ inputs.otel-endpoint }}" \
-            --input "$REPORT_DIR/scan.json" 2>&1 || true
+            --input "$REPORT_DIR/scan.json" 2>&1 || echo "::warning::OTEL export failed"
         fi
 
     - name: Post PR Comment

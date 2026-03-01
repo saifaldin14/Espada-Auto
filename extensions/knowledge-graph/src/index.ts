@@ -4,6 +4,9 @@
  * Re-exports the public API for use by other extensions and the plugin system.
  */
 
+/** Package version (keep in sync with package.json). */
+export const VERSION = "1.0.0";
+
 // Core types
 export type {
   GraphNode,

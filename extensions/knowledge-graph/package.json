@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Infrastructure Knowledge Graph — scan, query, and analyze cloud infrastructure across AWS, Azure, GCP, and Kubernetes. 30 tools, IQL query language, MCP server, compliance frameworks.",
   "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
@@ -133,8 +136,7 @@
     }
   },
   "files": [
-    "dist",
-    "src"
+    "dist"
   ],
   "license": "MIT"
 }

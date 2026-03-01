@@ -505,4 +505,138 @@ describe("Compliance Framework (P2.17)", () => {
       expect(fws).toContain("nist-800-53");
     });
   });
+
+  // ===========================================================================
+  // Strict network isolation (M1)
+  // ===========================================================================
+
+  describe("strict isNetworkIsolated", () => {
+    it("fails for compute node with no network metadata or edges", async () => {
+      // Node with no VPC/subnet/IP metadata and no runs-in/secured-by edges
+      // should fail network isolation checks (strict mode)
+      await storage.upsertNode(
+        makeNode("orphan-server", {
+          resourceType: "compute",
+          metadata: {},
+        }),
+      );
+
+      const result = await evaluateFramework("soc2", storage);
+      const cc66 = result.results.find(
+        r => r.controlId === "CC6.6" && r.nodeId === "orphan-server",
+      );
+      expect(cc66).toBeDefined();
+      expect(cc66!.status).toBe("fail");
+    });
+
+    it("passes for compute node with vpcId metadata", async () => {
+      await storage.upsertNode(
+        makeNode("vpc-server", {
+          resourceType: "compute",
+          metadata: { vpcId: "vpc-123" },
+        }),
+      );
+
+      const result = await evaluateFramework("soc2", storage);
+      const cc66 = result.results.find(
+        r => r.controlId === "CC6.6" && r.nodeId === "vpc-server",
+      );
+      expect(cc66).toBeDefined();
+      expect(cc66!.status).toBe("pass");
+    });
+
+    it("passes for compute node with runs-in edge", async () => {
+      await storage.upsertNode(
+        makeNode("edge-server", {
+          resourceType: "compute",
+          metadata: {},
+        }),
+      );
+      await storage.upsertNode(
+        makeNode("vpc-1", {
+          resourceType: "vpc",
+          metadata: {},
+        }),
+      );
+      await storage.upsertEdge(makeEdge("e-runs", "edge-server", "vpc-1", "runs-in"));
+
+      const result = await evaluateFramework("soc2", storage);
+      const cc66 = result.results.find(
+        r => r.controlId === "CC6.6" && r.nodeId === "edge-server",
+      );
+      expect(cc66).toBeDefined();
+      expect(cc66!.status).toBe("pass");
+    });
+  });
+
+  // ===========================================================================
+  // Access logging vs audit logging distinction (M2)
+  // ===========================================================================
+
+  describe("audit vs access logging", () => {
+    it("HIPAA 164.312(b) warns when only access logging is present", async () => {
+      await storage.upsertNode(
+        makeNode("db-access-only", {
+          resourceType: "database",
+          metadata: { accessLogging: true },
+        }),
+      );
+
+      const result = await evaluateFramework("hipaa", storage);
+      const auditCtrl = result.results.find(
+        r => r.controlId === "164.312(b)" && r.nodeId === "db-access-only",
+      );
+      expect(auditCtrl).toBeDefined();
+      // Access logging alone should give a warning, not a pass
+      expect(auditCtrl!.status).toBe("warning");
+    });
+
+    it("HIPAA 164.312(b) passes with audit logging enabled", async () => {
+      await storage.upsertNode(
+        makeNode("db-audit", {
+          resourceType: "database",
+          metadata: { auditLogging: true },
+        }),
+      );
+
+      const result = await evaluateFramework("hipaa", storage);
+      const auditCtrl = result.results.find(
+        r => r.controlId === "164.312(b)" && r.nodeId === "db-audit",
+      );
+      expect(auditCtrl).toBeDefined();
+      expect(auditCtrl!.status).toBe("pass");
+    });
+
+    it("PCI-10.2 warns when only generic logging present", async () => {
+      await storage.upsertNode(
+        makeNode("db-generic-log", {
+          resourceType: "database",
+          metadata: { loggingEnabled: true },
+        }),
+      );
+
+      const result = await evaluateFramework("pci-dss", storage);
+      const pciAudit = result.results.find(
+        r => r.controlId === "PCI-10.2" && r.nodeId === "db-generic-log",
+      );
+      expect(pciAudit).toBeDefined();
+      expect(pciAudit!.status).toBe("warning");
+    });
+
+    it("PCI-10.2 passes with cloudTrailEnabled", async () => {
+      await storage.upsertNode(
+        makeNode("db-cloudtrail", {
+          resourceType: "database",
+          metadata: { cloudTrailEnabled: true },
+        }),
+      );
+
+      const result = await evaluateFramework("pci-dss", storage);
+      const pciAudit = result.results.find(
+        r => r.controlId === "PCI-10.2" && r.nodeId === "db-cloudtrail",
+      );
+      expect(pciAudit).toBeDefined();
+      expect(pciAudit!.status).toBe("pass");
+    });
+  });
 });

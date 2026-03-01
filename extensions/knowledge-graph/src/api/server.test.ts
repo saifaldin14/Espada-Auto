@@ -13,13 +13,15 @@ import { startApiServer, type ApiServerHandle } from "./server.js";
 let handle: ApiServerHandle | null = null;
 
 async function startTestServer(
-  overrides: { apiKey?: string; port?: number; corsOrigin?: string } = {},
+  overrides: { apiKey?: string; port?: number; corsOrigin?: string; rateLimit?: number; rateLimitWindow?: number } = {},
 ): Promise<ApiServerHandle> {
   handle = await startApiServer({
     port: overrides.port ?? 0, // random free port
     host: "127.0.0.1",
     apiKey: overrides.apiKey,
     corsOrigin: overrides.corsOrigin,
+    rateLimit: overrides.rateLimit,
+    rateLimitWindow: overrides.rateLimitWindow,
   });
   return handle;
 }
@@ -208,6 +210,24 @@ describe("API Server", () => {
       expect(r.status).toBe(200);
       const body = r.body as Record<string, unknown>;
       expect(body).toBeTruthy();
+    });
+
+    it("streams NDJSON when ?stream=true", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const res = await fetch(`${base}/v1/graph/topology?stream=true`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+      const text = await res.text();
+      // Empty graph produces empty body; each line (if any) must be valid JSON
+      if (text.trim()) {
+        for (const line of text.trim().split("\n")) {
+          const parsed = JSON.parse(line);
+          expect(["node", "edge"]).toContain(parsed.type);
+          expect(parsed.data).toBeDefined();
+        }
+      }
     });
   });
 
@@ -424,6 +444,137 @@ describe("API Server", () => {
       await expect(
         startApiServer({ port: NaN, host: "127.0.0.1" }),
       ).rejects.toThrow(/Invalid port/);
+    });
+  });
+
+  // ─── Security headers ─────────────────────────────────────────────
+
+  describe("security headers", () => {
+    it("includes X-Content-Type-Options, X-Frame-Options, Cache-Control", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const r = await req(base, "/health");
+
+      expect(r.status).toBe(200);
+      expect(r.headers["x-content-type-options"]).toBe("nosniff");
+      expect(r.headers["x-frame-options"]).toBe("DENY");
+      expect(r.headers["cache-control"]).toBe("no-store");
+    });
+
+    it("includes security headers on error responses", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const r = await req(base, "/nonexistent");
+
+      expect(r.status).toBe(404);
+      expect(r.headers["x-content-type-options"]).toBe("nosniff");
+    });
+
+    it("includes security headers on text/plain export responses", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const res = await fetch(`${base}/v1/export/dot`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(res.headers.get("x-frame-options")).toBe("DENY");
+    });
+  });
+
+  // ─── Rate limiting ────────────────────────────────────────────────
+
+  describe("rate limiting", () => {
+    it("returns 429 after exceeding the limit", async () => {
+      const h = await startTestServer({ rateLimit: 3, rateLimitWindow: 60_000 });
+      const base = getBaseUrl(h);
+
+      // First 3 requests should succeed
+      for (let i = 0; i < 3; i++) {
+        const r = await req(base, "/health");
+        expect(r.status).toBe(200);
+      }
+
+      // 4th request should be rate-limited
+      const r = await req(base, "/health");
+      expect(r.status).toBe(429);
+      const body = r.body as Record<string, unknown>;
+      expect(body.error).toContain("Too many requests");
+    });
+
+    it("allows unlimited requests when rateLimit=0", async () => {
+      const h = await startTestServer({ rateLimit: 0 });
+      const base = getBaseUrl(h);
+
+      for (let i = 0; i < 10; i++) {
+        const r = await req(base, "/health");
+        expect(r.status).toBe(200);
+      }
+    });
+  });
+
+  // ─── Cost endpoint ────────────────────────────────────────────────
+
+  describe("GET /v1/cost", () => {
+    it("returns cost data on empty graph", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const r = await req(base, "/v1/cost");
+
+      expect(r.status).toBe(200);
+    });
+  });
+
+  // ─── Drift endpoint ───────────────────────────────────────────────
+
+  describe("GET /v1/drift", () => {
+    it("returns drift data on empty graph", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const r = await req(base, "/v1/drift");
+
+      expect(r.status).toBe(200);
+      const body = r.body as Record<string, unknown>;
+      expect(body.driftedCount).toBe(0);
+      expect(body.disappearedCount).toBe(0);
+    });
+  });
+
+  // ─── Mermaid export ───────────────────────────────────────────────
+
+  describe("GET /v1/export/mermaid", () => {
+    it("returns mermaid format topology", async () => {
+      const h = await startTestServer();
+      const base = getBaseUrl(h);
+      const res = await fetch(`${base}/v1/export/mermaid`);
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/plain");
+      const text = await res.text();
+      // Mermaid output should be a string (may be empty for empty graph)
+      expect(typeof text).toBe("string");
+    });
+  });
+
+  // ─── Content-Length fast-reject ────────────────────────────────────
+
+  describe("body size fast-reject", () => {
+    it("rejects requests with Content-Length > 10MB via raw HTTP", async () => {
+      const h = await startTestServer();
+      const addr = h.server.address();
+      if (typeof addr === "string" || !addr) throw new Error("No address");
+
+      // Use raw http to send a mismatched Content-Length without client-side validation
+      const result = await new Promise<number>((resolve, reject) => {
+        const req = http.request(
+          { hostname: "127.0.0.1", port: addr.port, path: "/v1/scan", method: "POST",
+            headers: { "Content-Type": "application/json", "Content-Length": String(11 * 1024 * 1024) } },
+          (res) => resolve(res.statusCode ?? 0),
+        );
+        req.on("error", reject);
+        req.end("{}");
+      });
+
+      expect(result).toBe(413);
     });
   });
 });

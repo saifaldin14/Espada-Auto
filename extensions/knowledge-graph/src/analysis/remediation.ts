@@ -22,30 +22,33 @@ export type IaCFormat = "terraform" | "cloudformation" | "pulumi" | "opentofu";
 
 /** A single remediation patch for one drifted resource. */
 export type RemediationPatch = {
-  /** Target resource node ID. */
+  /** Target resource node ID in the knowledge graph. */
   nodeId: string;
-  /** Resource name. */
+  /** Human-readable resource name (e.g. "my-rds-instance"). */
   resourceName: string;
-  /** Resource type. */
+  /** Cloud resource type (compute, database, storage, etc.). */
   resourceType: GraphResourceType;
-  /** Provider. */
+  /** Cloud provider that owns this resource (aws, gcp, azure). */
   provider: CloudProvider;
-  /** Changes being remediated. */
+  /** List of fields that drifted from the expected (IaC) state. */
   driftedFields: DriftedField[];
-  /** Generated IaC patch. */
+  /** Generated IaC patch content (HCL, YAML, or TypeScript). */
   patch: string;
-  /** Format of the patch. */
+  /** IaC format the patch is written in. */
   format: IaCFormat;
-  /** Risk level of applying this patch. */
+  /** Estimated risk level of applying this patch (low = safe, high = destructive). */
   risk: "low" | "medium" | "high";
-  /** Human-readable summary. */
+  /** One-line human-readable summary of what the patch does. */
   summary: string;
 };
 
 /** A single drifted field with before/after values. */
 export type DriftedField = {
+  /** Dot-path to the drifted field (e.g. "encryption.enabled", "tags.Environment"). */
   field: string;
+  /** Value defined in IaC / last known state, or null if the field was absent. */
   expectedValue: string | null;
+  /** Current live value discovered by the scanner, or null if the field was removed. */
   actualValue: string | null;
 };
 
@@ -196,7 +199,7 @@ function getTerraformResourceType(
 function sanitizeTfName(name: string): string {
   return name
     .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .replace(/^[0-9]/, "_$&")
+    .replace(/^[0-9-]/, "_$&")
     .toLowerCase();
 }
 
