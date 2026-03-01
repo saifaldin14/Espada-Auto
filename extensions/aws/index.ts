@@ -13849,6 +13849,10 @@ Use this tool to:
                 "get_ecr_lifecycle_policy", "set_ecr_lifecycle_policy", "delete_ecr_lifecycle_policy",
                 "get_ecr_authorization_token",
                 "get_container_logs",
+                "register_scalable_target", "deregister_scalable_target", "list_scalable_targets",
+                "put_scaling_policy", "delete_scaling_policy", "list_scaling_policies",
+                "get_container_insights",
+                "tag_ecs_resource", "untag_ecs_resource", "tag_eks_resource", "untag_eks_resource",
               ],
               description: "The container operation to perform",
             },
@@ -13862,6 +13866,11 @@ Use this tool to:
             repositoryName: { type: "string", description: "ECR repository name" },
             imageIds: { type: "array", items: { type: "object" }, description: "ECR image identifiers" },
             desiredCount: { type: "number", description: "Desired task/replica count" },
+            resourceArn: { type: "string", description: "ARN of the resource to tag/untag or scale" },
+            resourceId: { type: "string", description: "Application Auto Scaling resource ID (e.g. service/cluster/service-name)" },
+            policyName: { type: "string", description: "Scaling policy name" },
+            tags: { type: "object", description: "Key-value tags to apply" },
+            tagKeys: { type: "array", items: { type: "string" }, description: "Tag keys to remove" },
             name: { type: "string", description: "Resource name" },
             config: { type: "object", description: "Creation/update configuration" },
             region: { type: "string", description: "AWS region override" },
@@ -13931,6 +13940,339 @@ Use this tool to:
                 const result = await containerManager.getContainerLogs({ cluster: params.clusterName as string, taskId: params.taskArn as string, containerName: params.name as string });
                 return { content: [{ type: "text", text: result.success ? `Retrieved container logs` : `Error: ${result.error}` }], details: result };
               }
+
+              // =================================================================
+              // ECS Cluster — update
+              // =================================================================
+              case "update_ecs_cluster": {
+                const result = await containerManager.updateECSCluster(
+                  params.clusterName as string,
+                  (params.config as any)?.settings,
+                  (params.config as any)?.configuration,
+                );
+                return { content: [{ type: "text", text: result.success ? `✅ ECS cluster updated: ${result.data?.clusterName}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // ECS Service — get / create / update / delete / deploy / rollback
+              // =================================================================
+              case "get_ecs_service": {
+                const result = await containerManager.getECSService(params.clusterName as string, params.serviceName as string);
+                return { content: [{ type: "text", text: result.success ? `Service: ${result.data?.serviceName} (${result.data?.status})` : `Error: ${result.error}` }], details: result };
+              }
+              case "create_ecs_service": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.createECSService({
+                  cluster: params.clusterName as string,
+                  serviceName: params.serviceName as string ?? cfg.serviceName,
+                  taskDefinition: params.taskDefinition as string ?? cfg.taskDefinition,
+                  desiredCount: params.desiredCount as number ?? cfg.desiredCount,
+                  ...cfg,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ECS service created: ${result.data?.serviceName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "update_ecs_service": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.updateECSService({
+                  cluster: params.clusterName as string,
+                  service: params.serviceName as string,
+                  desiredCount: params.desiredCount as number | undefined,
+                  taskDefinition: params.taskDefinition as string | undefined,
+                  ...cfg,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ECS service updated: ${result.data?.serviceName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_ecs_service": {
+                const force = (params.config as any)?.force ?? false;
+                const result = await containerManager.deleteECSService(params.clusterName as string, params.serviceName as string, force);
+                return { content: [{ type: "text", text: result.success ? `✅ ECS service deleted` : `Error: ${result.error}` }], details: result };
+              }
+              case "deploy_service": {
+                const result = await containerManager.deployService(
+                  params.clusterName as string,
+                  params.serviceName as string,
+                  params.taskDefinition as string,
+                  (params.config as any)?.forceNewDeployment ?? true,
+                );
+                return { content: [{ type: "text", text: result.success ? `✅ Rolling deployment initiated for ${params.serviceName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "rollback_service": {
+                const result = await containerManager.rollbackService({
+                  cluster: params.clusterName as string,
+                  service: params.serviceName as string,
+                  taskDefinition: params.taskDefinition as string | undefined,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ Rollback initiated: ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // ECS Task — list / get / run / stop
+              // =================================================================
+              case "list_ecs_tasks": {
+                const result = await containerManager.listECSTasks({
+                  cluster: params.clusterName as string,
+                  serviceName: params.serviceName as string | undefined,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: `Found ${result.length} task(s)` }], details: result };
+              }
+              case "get_ecs_task": {
+                const result = await containerManager.getECSTask(params.clusterName as string, params.taskArn as string);
+                return { content: [{ type: "text", text: result.success ? `Task: ${result.data?.taskArn} (${result.data?.lastStatus})` : `Error: ${result.error}` }], details: result };
+              }
+              case "run_ecs_task": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.runECSTask({
+                  cluster: params.clusterName as string,
+                  taskDefinition: params.taskDefinition as string,
+                  count: params.desiredCount as number | undefined,
+                  ...cfg,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "stop_ecs_task": {
+                const reason = (params.config as any)?.reason as string | undefined;
+                const result = await containerManager.stopECSTask(params.clusterName as string, params.taskArn as string, reason);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // ECS Task Definitions — list / get / register / deregister
+              // =================================================================
+              case "list_task_definitions": {
+                const result = await containerManager.listTaskDefinitions(params.config as any);
+                return { content: [{ type: "text", text: `Found ${result.length} task definition(s)` }], details: result };
+              }
+              case "get_task_definition": {
+                const result = await containerManager.getTaskDefinition(params.taskDefinition as string);
+                return { content: [{ type: "text", text: result.success ? `Task definition: ${result.data?.family}:${result.data?.revision}` : `Error: ${result.error}` }], details: result };
+              }
+              case "register_task_definition": {
+                const result = await containerManager.registerTaskDefinition(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "deregister_task_definition": {
+                const result = await containerManager.deregisterTaskDefinition(params.taskDefinition as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // ECS Container Instances — list / drain
+              // =================================================================
+              case "list_container_instances": {
+                const result = await containerManager.listContainerInstances({
+                  cluster: params.clusterName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: `Found ${result.length} container instance(s)` }], details: result };
+              }
+              case "drain_container_instance": {
+                const result = await containerManager.drainContainerInstance(params.clusterName as string, params.containerInstanceArn as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // EKS Cluster — create / update / update version / delete
+              // =================================================================
+              case "create_eks_cluster": {
+                const result = await containerManager.createEKSCluster(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "update_eks_cluster": {
+                const result = await containerManager.updateEKSCluster({
+                  name: params.clusterName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "update_eks_cluster_version": {
+                const version = (params.config as any)?.version as string;
+                const result = await containerManager.updateEKSClusterVersion(params.clusterName as string, version);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_eks_cluster": {
+                const result = await containerManager.deleteEKSCluster(params.clusterName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // EKS Node Groups — list / get / create / update / update version / delete
+              // =================================================================
+              case "list_eks_node_groups": {
+                const result = await containerManager.listEKSNodeGroups({
+                  clusterName: params.clusterName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: `Found ${result.length} node group(s)` }], details: result };
+              }
+              case "get_eks_node_group": {
+                const result = await containerManager.getEKSNodeGroup(params.clusterName as string, params.nodeGroupName as string);
+                return { content: [{ type: "text", text: result.success ? `Node group: ${result.data?.nodegroupName} (${result.data?.status})` : `Error: ${result.error}` }], details: result };
+              }
+              case "create_eks_node_group": {
+                const result = await containerManager.createEKSNodeGroup({
+                  clusterName: params.clusterName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "update_eks_node_group": {
+                const result = await containerManager.updateEKSNodeGroup({
+                  clusterName: params.clusterName as string,
+                  nodegroupName: params.nodeGroupName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "update_eks_node_group_version": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.updateEKSNodeGroupVersion(
+                  params.clusterName as string,
+                  params.nodeGroupName as string,
+                  cfg.version,
+                  cfg.releaseVersion,
+                  cfg.launchTemplate,
+                );
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_eks_node_group": {
+                const result = await containerManager.deleteEKSNodeGroup(params.clusterName as string, params.nodeGroupName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // EKS Fargate Profiles — list / create / delete
+              // =================================================================
+              case "list_eks_fargate_profiles": {
+                const result = await containerManager.listEKSFargateProfiles({
+                  clusterName: params.clusterName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: `Found ${result.length} Fargate profile(s)` }], details: result };
+              }
+              case "create_eks_fargate_profile": {
+                const result = await containerManager.createEKSFargateProfile({
+                  clusterName: params.clusterName as string,
+                  fargateProfileName: params.fargateProfileName as string,
+                  ...(params.config as any),
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_eks_fargate_profile": {
+                const result = await containerManager.deleteEKSFargateProfile(params.clusterName as string, params.fargateProfileName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // ECR — get repository / delete images / scan findings / lifecycle / auth
+              // =================================================================
+              case "get_ecr_repository": {
+                const result = await containerManager.getECRRepository(params.repositoryName as string);
+                return { content: [{ type: "text", text: result.success ? `Repository: ${result.data?.repositoryName} (${result.data?.repositoryUri})` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_ecr_images": {
+                const result = await containerManager.deleteECRImages(
+                  params.repositoryName as string,
+                  params.imageIds as { imageDigest?: string; imageTag?: string }[],
+                );
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_ecr_image_scan_findings": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.getECRImageScanFindings({
+                  repositoryName: params.repositoryName as string,
+                  imageId: cfg.imageId ?? { imageTag: cfg.imageTag, imageDigest: cfg.imageDigest },
+                  registryId: cfg.registryId,
+                  maxResults: cfg.maxResults,
+                });
+                return { content: [{ type: "text", text: result.success ? `Scan findings retrieved` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_ecr_lifecycle_policy": {
+                const result = await containerManager.getECRLifecyclePolicy(params.repositoryName as string);
+                return { content: [{ type: "text", text: result.success ? `Lifecycle policy retrieved for ${result.data?.repositoryName}` : `Error: ${result.error}` }], details: result };
+              }
+              case "set_ecr_lifecycle_policy": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.setECRLifecyclePolicy({
+                  repositoryName: params.repositoryName as string,
+                  lifecyclePolicyText: cfg.lifecyclePolicyText,
+                  registryId: cfg.registryId,
+                });
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_ecr_lifecycle_policy": {
+                const result = await containerManager.deleteECRLifecyclePolicy(params.repositoryName as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "get_ecr_authorization_token": {
+                const result = await containerManager.getECRAuthorizationToken();
+                return { content: [{ type: "text", text: result.success ? `✅ Authorization token(s) retrieved (${result.data?.length} endpoint(s))` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // Auto Scaling — register/deregister targets, scaling policies
+              // =================================================================
+              case "register_scalable_target": {
+                const result = await containerManager.registerScalableTarget(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "deregister_scalable_target": {
+                const result = await containerManager.deregisterScalableTarget(params.resourceId as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_scalable_targets": {
+                const resourceIds = (params.config as any)?.resourceIds as string[] | undefined;
+                const result = await containerManager.listScalableTargets(resourceIds);
+                return { content: [{ type: "text", text: `Found ${result.length} scalable target(s)` }], details: result };
+              }
+              case "put_scaling_policy": {
+                const result = await containerManager.putScalingPolicy(params.config as any);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "delete_scaling_policy": {
+                const result = await containerManager.deleteScalingPolicy(params.policyName as string, params.resourceId as string);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "list_scaling_policies": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.listScalingPolicies(params.resourceId as string | undefined, cfg.policyNames);
+                return { content: [{ type: "text", text: `Found ${result.length} scaling policy/policies` }], details: result };
+              }
+
+              // =================================================================
+              // Container Insights
+              // =================================================================
+              case "get_container_insights": {
+                const cfg = (params.config as any) ?? {};
+                const result = await containerManager.getContainerInsights({
+                  cluster: params.clusterName as string,
+                  serviceName: params.serviceName as string | undefined,
+                  taskId: params.taskArn as string | undefined,
+                  ...cfg,
+                });
+                return { content: [{ type: "text", text: result.success ? `Retrieved ${result.data?.length ?? 0} metric data point(s)` : `Error: ${result.error}` }], details: result };
+              }
+
+              // =================================================================
+              // Tagging — ECS & EKS
+              // =================================================================
+              case "tag_ecs_resource": {
+                const result = await containerManager.tagECSResource(params.resourceArn as string, params.tags as Record<string, string>);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "untag_ecs_resource": {
+                const result = await containerManager.untagECSResource(params.resourceArn as string, params.tagKeys as string[]);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "tag_eks_resource": {
+                const result = await containerManager.tagEKSResource(params.resourceArn as string, params.tags as Record<string, string>);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+              case "untag_eks_resource": {
+                const result = await containerManager.untagEKSResource(params.resourceArn as string, params.tagKeys as string[]);
+                return { content: [{ type: "text", text: result.success ? `✅ ${result.message}` : `Error: ${result.error}` }], details: result };
+              }
+
               default:
                 return { content: [{ type: "text", text: `Unknown container action: ${action}` }], details: { error: "unknown_action" } };
             }

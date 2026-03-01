@@ -39,8 +39,8 @@ export function formatCliBannerLine(version: string, options: BannerOptions = {}
   const tagline = pickTagline(options);
   const rich = options.richTty ?? isRich();
   const cliName = resolveCliName(options.argv ?? process.argv, options.env);
-  const title = cliName === "espada" ? "⚔️ Espada" : cliName === "espada" ? "⚔️ Espada (espada)" : "⚔️ Espada (espada)";
-  const prefix = "🦞 ";
+  const title =
+    cliName === "espada" ? "Espada" : cliName === "espada" ? "Espada (espada)" : "Espada (espada)";
   const columns = options.columns ?? process.stdout.columns ?? 120;
   const plainFullLine = `${title} ${version} (${commitLabel}) — ${tagline}`;
   const fitsOnOneLine = visibleWidth(plainFullLine) <= columns;
@@ -53,14 +53,14 @@ export function formatCliBannerLine(version: string, options: BannerOptions = {}
     const line1 = `${theme.heading(title)} ${theme.info(version)} ${theme.muted(
       `(${commitLabel})`,
     )}`;
-    const line2 = `${" ".repeat(prefix.length)}${theme.accentDim(tagline)}`;
+    const line2 = `${theme.accentDim(tagline)}`;
     return `${line1}\n${line2}`;
   }
   if (fitsOnOneLine) {
     return plainFullLine;
   }
   const line1 = `${title} ${version} (${commitLabel})`;
-  const line2 = `${" ".repeat(prefix.length)}${tagline}`;
+  const line2 = `${tagline}`;
   return `${line1}\n${line2}`;
 }
 

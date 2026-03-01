@@ -1,4 +1,4 @@
-# ⚔️ Espada — Software Infrastructure Automation Platform
+# Espada — Software Infrastructure Automation Platform
 
 **Espada** is a software infrastructure automation platform powered by conversational AI. It manages cloud infrastructure, containers, and deployments through natural language commands sent via messaging channels.
 

@@ -97,3 +97,78 @@ export async function kubectlRolloutStatus(
 export async function kubectlGetNamespaces(options: KubectlOptions = {}): Promise<string> {
   return runKubectl(["get", "namespaces", "-o", "json"], options);
 }
+
+/** Run `kubectl delete <resource> <name>`. */
+export async function kubectlDelete(
+  resource: string,
+  name: string,
+  options: KubectlOptions & { force?: boolean; gracePeriod?: number } = {},
+): Promise<string> {
+  const args = ["delete", resource, name];
+  if (options.force) args.push("--force");
+  if (options.gracePeriod !== undefined) args.push(`--grace-period=${options.gracePeriod}`);
+  return runKubectl(args, options);
+}
+
+/** Run `kubectl logs <pod>`. */
+export async function kubectlLogs(
+  pod: string,
+  options: KubectlOptions & {
+    container?: string;
+    previous?: boolean;
+    tail?: number;
+    since?: string;
+    sinceTime?: string;
+    timestamps?: boolean;
+  } = {},
+): Promise<string> {
+  const args = ["logs", pod];
+  if (options.container) args.push("-c", options.container);
+  if (options.previous) args.push("--previous");
+  if (options.tail !== undefined) args.push(`--tail=${options.tail}`);
+  if (options.since) args.push(`--since=${options.since}`);
+  if (options.sinceTime) args.push(`--since-time=${options.sinceTime}`);
+  if (options.timestamps) args.push("--timestamps");
+  return runKubectl(args, options);
+}
+
+/** Run `kubectl scale <resource>/<name> --replicas=<count>`. */
+export async function kubectlScale(
+  resource: string,
+  name: string,
+  replicas: number,
+  options: KubectlOptions = {},
+): Promise<string> {
+  return runKubectl(["scale", `${resource}/${name}`, `--replicas=${replicas}`], options);
+}
+
+/** Run `kubectl rollout restart <resource>/<name>`. */
+export async function kubectlRolloutRestart(
+  resource: string,
+  name: string,
+  options: KubectlOptions = {},
+): Promise<string> {
+  return runKubectl(["rollout", "restart", `${resource}/${name}`], options);
+}
+
+/** Run `kubectl rollout undo <resource>/<name>`. */
+export async function kubectlRolloutUndo(
+  resource: string,
+  name: string,
+  options: KubectlOptions & { toRevision?: number } = {},
+): Promise<string> {
+  const args = ["rollout", "undo", `${resource}/${name}`];
+  if (options.toRevision !== undefined) args.push(`--to-revision=${options.toRevision}`);
+  return runKubectl(args, options);
+}
+
+/** Run `kubectl rollout history <resource>/<name>`. */
+export async function kubectlRolloutHistory(
+  resource: string,
+  name: string,
+  options: KubectlOptions & { revision?: number } = {},
+): Promise<string> {
+  const args = ["rollout", "history", `${resource}/${name}`];
+  if (options.revision !== undefined) args.push(`--revision=${options.revision}`);
+  return runKubectl(args, options);
+}
