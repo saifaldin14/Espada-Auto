@@ -117,30 +117,7 @@ espada infra compliance --db ./infra.db --framework hipaa
 infra-graph mcp --db ./infra.db
 ```
 
-> **30,000+ LOC** · **1,422 tests** · See [`extensions/knowledge-graph/README.md`](extensions/knowledge-graph/README.md) for full documentation.
-
-## Install
-
-**System requirements:** Node ≥22 · macOS, Linux, or Windows (WSL2)
-
-### Quick install (recommended)
-
-```bash
-curl -fsSL https://molt.bot/install.sh | bash
-```
-
-Windows (PowerShell):
-
-```powershell
-iwr -useb https://molt.bot/install.ps1 | iex
-```
-
-### Alternative: global install
-
-```bash
-npm install -g espada@latest
-espada onboard --install-daemon
-```
+> See [`extensions/knowledge-graph/README.md`](extensions/knowledge-graph/README.md) for full documentation.
 
 ## Quick Start
 
