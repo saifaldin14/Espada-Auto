@@ -1,0 +1,17 @@
+{
+  "name": "@espada/incident-view",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "description": "Cross-cloud unified incident view — normalises AWS CloudWatch, Azure Monitor, and GCP Cloud Monitoring alerts into a single incident pipeline",
+  "dependencies": {},
+  "devDependencies": {
+    "espada": "workspace:*",
+    "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "espada": "*"
+  },
+  "license": "MIT"
+}

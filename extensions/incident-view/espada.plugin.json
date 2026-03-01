@@ -1,0 +1,13 @@
+{
+  "name": "incident-view",
+  "displayName": "Cross-Cloud Unified Incident View",
+  "description": "Normalises alerts and alarms from AWS, Azure, and GCP into a unified incident pipeline with correlation, triage, and timeline analysis",
+  "version": "0.0.1",
+  "entryPoint": "index.ts",
+  "dependencies": [],
+  "id": "incident-view",
+  "configSchema": {
+    "type": "object",
+    "properties": {}
+  }
+}
