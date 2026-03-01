@@ -507,4 +507,4 @@ espada sandbox explain                     # Debug sandbox/tool policy
 
 ## License
 
-[MIT](LICENSE)
+Proprietary — All Rights Reserved. See [LICENSE](LICENSE) for details.
