@@ -17,7 +17,8 @@
  *   GET  /health            — health check
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { GraphEngine } from "../core/engine.js";
 import { InMemoryGraphStorage } from "../storage/memory-store.js";
 import { SQLiteGraphStorage } from "../storage/sqlite-store.js";
@@ -40,6 +41,16 @@ export type ApiServerOptions = {
   db?: string;
   postgres?: string;
   apiKey?: string;
+  /** Request body read timeout in ms (default: 30000). */
+  bodyTimeout?: number;
+  /** Allowed CORS origins (default: "*"). Set to a specific origin in production. */
+  corsOrigin?: string;
+};
+
+export type ApiServerHandle = {
+  server: Server;
+  storage: GraphStorage;
+  close: () => Promise<void>;
 };
 
 type RouteHandler = (
@@ -53,28 +64,36 @@ type RouteHandler = (
 // Helpers
 // =============================================================================
 
-function json(res: ServerResponse, data: unknown, status = 200): void {
+function json(res: ServerResponse, data: unknown, status = 200, corsOrigin = "*"): void {
   res.writeHead(status, {
     "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": corsOrigin,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
   });
   res.end(JSON.stringify(data));
 }
 
-function error(res: ServerResponse, message: string, status = 400): void {
-  json(res, { error: message }, status);
+function error(res: ServerResponse, message: string, status = 400, corsOrigin = "*"): void {
+  json(res, { error: message }, status, corsOrigin);
 }
 
-async function readBody(req: IncomingMessage): Promise<unknown> {
+async function readBody(req: IncomingMessage, timeoutMs = 30_000): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     const MAX_BODY = 10 * 1024 * 1024; // 10MB
+
+    // Protect against slow-loris: abort if body isn't received in time
+    const timer = setTimeout(() => {
+      req.destroy();
+      reject(new Error("Request body read timeout"));
+    }, timeoutMs);
+
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
       if (size > MAX_BODY) {
+        clearTimeout(timer);
         req.destroy();
         reject(new Error("Request body too large"));
         return;
@@ -82,12 +101,16 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
       chunks.push(chunk);
     });
     req.on("end", () => {
+      clearTimeout(timer);
       const raw = Buffer.concat(chunks).toString("utf-8");
       if (!raw.trim()) { resolve({}); return; }
       try { resolve(JSON.parse(raw)); }
       catch { reject(new Error("Invalid JSON body")); }
     });
-    req.on("error", reject);
+    req.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
   });
 }
 
@@ -112,14 +135,28 @@ function matchRoute(
 // Server
 // =============================================================================
 
-export async function startApiServer(opts: ApiServerOptions): Promise<void> {
+export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerHandle> {
   const log = (msg: string) => console.log(`[infra-graph-api] ${msg}`);
+  const corsOrigin = opts.corsOrigin ?? "*";
+  const bodyTimeout = opts.bodyTimeout ?? 30_000;
+
+  // Validate port
+  if (!Number.isFinite(opts.port) || opts.port < 0 || opts.port > 65535) {
+    throw new Error(`Invalid port: ${opts.port}. Must be 0-65535.`);
+  }
 
   // Initialize storage
   let storage: GraphStorage;
   if (opts.postgres) {
-    const { PostgresGraphStorage } = await import("../storage/postgres-store.js");
-    storage = new PostgresGraphStorage({ connectionString: opts.postgres });
+    try {
+      const { PostgresGraphStorage } = await import("../storage/postgres-store.js");
+      storage = new PostgresGraphStorage({ connectionString: opts.postgres });
+    } catch (err) {
+      throw new Error(
+        `Failed to load PostgreSQL storage driver: ${err instanceof Error ? err.message : String(err)}. ` +
+        `Ensure the pg dependency is installed.`
+      );
+    }
   } else if (opts.db) {
     storage = new SQLiteGraphStorage(opts.db);
   } else {
@@ -129,11 +166,16 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
 
   const engine = new GraphEngine({ storage });
 
-  // Auth middleware
+  // Timing-safe auth middleware — prevents timing side-channel attacks
   const authenticate = (req: IncomingMessage): boolean => {
     if (!opts.apiKey) return true;
     const key = req.headers["x-api-key"] ?? req.headers.authorization?.replace("Bearer ", "");
-    return key === opts.apiKey;
+    if (typeof key !== "string" || key.length === 0) return false;
+    // Use timing-safe comparison to prevent timing attacks
+    const expected = Buffer.from(opts.apiKey, "utf-8");
+    const received = Buffer.from(key, "utf-8");
+    if (expected.length !== received.length) return false;
+    return timingSafeEqual(expected, received);
   };
 
   // ─── Route Definitions ─────────────────────────────────────────
@@ -155,13 +197,17 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
       nodes: stats.totalNodes,
       edges: stats.totalEdges,
       storage: opts.postgres ? "postgres" : opts.db ? "sqlite" : "in-memory",
-    });
+    }, 200, corsOrigin);
   });
 
   // ─── POST /v1/scan — trigger cloud scan ─────────────────────────
   route("POST", "/v1/scan", async (_req, res, _params, body) => {
-    const b = body as { providers?: string[]; region?: string };
-    const providers = b.providers ?? [];
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      error(res, "Request body must be a JSON object", 400, corsOrigin);
+      return;
+    }
+    const b = body as Record<string, unknown>;
+    const providers = Array.isArray(b.providers) ? b.providers.filter((p): p is string => typeof p === "string") : [];
 
     try {
       const records = await engine.sync({ providers: providers as CloudProvider[] });
@@ -177,26 +223,35 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
           nodesDeleted: r.nodesDisappeared,
           duration: r.durationMs,
         })),
-      });
+      }, 200, corsOrigin);
     } catch (err) {
-      error(res, `Scan failed: ${err instanceof Error ? err.message : String(err)}`, 500);
+      log(`Scan failed: ${err instanceof Error ? err.message : String(err)}`);
+      error(res, "Scan failed — check server logs for details", 500, corsOrigin);
     }
   });
 
   // ─── POST /v1/query — execute IQL ──────────────────────────────
   route("POST", "/v1/query", async (_req, res, _params, body) => {
-    const b = body as { query?: string };
-    if (!b.query) { error(res, "Missing 'query' field"); return; }
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      error(res, "Request body must be a JSON object", 400, corsOrigin);
+      return;
+    }
+    const b = body as Record<string, unknown>;
+    if (typeof b.query !== "string" || !b.query) {
+      error(res, "Missing 'query' field (must be a string)", 400, corsOrigin);
+      return;
+    }
 
     try {
       const ast = parseIQL(b.query);
       const result = await executeQuery(ast, { storage });
-      json(res, { query: b.query, result });
+      json(res, { query: b.query, result }, 200, corsOrigin);
     } catch (err) {
       if (err instanceof IQLSyntaxError) {
-        error(res, `IQL syntax error: ${err.message}`, 400);
+        error(res, `IQL syntax error: ${err.message}`, 400, corsOrigin);
       } else {
-        error(res, `Query failed: ${err instanceof Error ? err.message : String(err)}`, 500);
+        log(`Query failed: ${err instanceof Error ? err.message : String(err)}`);
+        error(res, "Query execution failed — check server logs", 500, corsOrigin);
       }
     }
   });
@@ -208,24 +263,24 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
     const filter: NodeFilter = provider ? { provider } : {};
 
     const topo = await engine.getTopology(filter);
-    json(res, topo);
+    json(res, topo, 200, corsOrigin);
   });
 
   // ─── GET /v1/graph/stats ───────────────────────────────────────
   route("GET", "/v1/graph/stats", async (_req, res) => {
     const stats = await engine.getStats();
-    json(res, stats);
+    json(res, stats, 200, corsOrigin);
   });
 
   // ─── GET /v1/compliance/:framework ─────────────────────────────
   route("GET", "/v1/compliance/:framework", async (_req, res, params) => {
     const fw = params.framework as ComplianceFramework;
     if (!SUPPORTED_FRAMEWORKS.includes(fw)) {
-      error(res, `Unknown framework '${fw}'. Supported: ${SUPPORTED_FRAMEWORKS.join(", ")}`, 400);
+      error(res, `Unknown framework '${fw}'. Supported: ${SUPPORTED_FRAMEWORKS.join(", ")}`, 400, corsOrigin);
       return;
     }
     const report = await runComplianceAssessment([fw], storage);
-    json(res, report);
+    json(res, report, 200, corsOrigin);
   });
 
   // ─── GET /v1/cost ──────────────────────────────────────────────
@@ -234,7 +289,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
     const provider = url.searchParams.get("provider") as CloudProvider | null;
     const filter = provider ? { provider } : {};
     const costs = await engine.getCostByFilter(filter);
-    json(res, costs);
+    json(res, costs, 200, corsOrigin);
   });
 
   // ─── GET /v1/drift ─────────────────────────────────────────────
@@ -256,14 +311,14 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
         name: n.name,
         resourceType: n.resourceType,
       })),
-    });
+    }, 200, corsOrigin);
   });
 
   // ─── GET /v1/export/:format ────────────────────────────────────
   route("GET", "/v1/export/:format", async (req, res, params) => {
     const format = params.format as "json" | "dot" | "mermaid";
     if (!["json", "dot", "mermaid"].includes(format)) {
-      error(res, "Format must be json, dot, or mermaid", 400);
+      error(res, "Format must be json, dot, or mermaid", 400, corsOrigin);
       return;
     }
     const url = new URL(req.url!, `http://${req.headers.host}`);
@@ -271,7 +326,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
     const options = provider ? { filter: { provider } } : undefined;
     const output = await exportTopology(storage, format, options);
     if (format === "json") {
-      json(res, JSON.parse(output.content));
+      json(res, JSON.parse(output.content), 200, corsOrigin);
     } else {
       res.writeHead(200, { "Content-Type": "text/plain" });
       res.end(output.content);
@@ -286,9 +341,9 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
 
     // Store as a graph change if it has enough info
     if (event.source && event.type) {
-      json(res, { accepted: true, eventType: event.type });
+      json(res, { accepted: true, eventType: event.type }, 200, corsOrigin);
     } else {
-      json(res, { accepted: true, note: "Event stored for processing" });
+      json(res, { accepted: true, note: "Event stored for processing" }, 200, corsOrigin);
     }
   });
 
@@ -298,7 +353,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
     // CORS preflight
     if (req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": corsOrigin,
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
       });
@@ -308,7 +363,7 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
 
     // Auth check
     if (!authenticate(req)) {
-      error(res, "Unauthorized", 401);
+      error(res, "Unauthorized", 401, corsOrigin);
       return;
     }
 
@@ -317,44 +372,54 @@ export async function startApiServer(opts: ApiServerOptions): Promise<void> {
     const matched = matchRoute(method, url, routes);
 
     if (!matched) {
-      error(res, `Not found: ${method} ${url}`, 404);
+      error(res, `Not found: ${method} ${url}`, 404, corsOrigin);
       return;
     }
 
     try {
-      const body = method === "POST" ? await readBody(req) : {};
+      const body = method === "POST" ? await readBody(req, bodyTimeout) : {};
       await matched.handler(req, res, matched.params, body);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       log(`Error handling ${method} ${url}: ${message}`);
-      error(res, `Internal error: ${message}`, 500);
+      // Don't leak internal error details to the client
+      error(res, "Internal server error", 500, corsOrigin);
     }
   });
 
-  // Graceful shutdown
+  // Graceful shutdown with connection draining
+  const close = (): Promise<void> =>
+    new Promise((resolve, reject) => {
+      log("Shutting down…");
+      server.close((err) => (err ? reject(err) : resolve()));
+    });
+
   const shutdown = () => {
-    log("Shutting down…");
-    server.close();
-    process.exit(0);
+    close().then(() => process.exit(0)).catch(() => process.exit(1));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  server.listen(opts.port, opts.host, () => {
-    log(`API server listening on http://${opts.host}:${opts.port}`);
-    log(`Storage: ${opts.postgres ? "PostgreSQL" : opts.db ? `SQLite (${opts.db})` : "in-memory"}`);
-    log(`Auth: ${opts.apiKey ? "API key required" : "open (no auth)"}`);
-    log("");
-    log("Endpoints:");
-    log("  GET  /health                    — Health check");
-    log("  POST /v1/scan                   — Trigger cloud scan");
-    log("  POST /v1/query                  — Execute IQL query");
-    log("  GET  /v1/graph/topology         — Get graph topology");
-    log("  GET  /v1/graph/stats            — Get graph statistics");
-    log("  GET  /v1/compliance/:framework  — Compliance assessment");
-    log("  GET  /v1/cost                   — Cost attribution");
-    log("  GET  /v1/drift                  — Drift detection");
-    log("  GET  /v1/export/:format         — Export (json/dot/mermaid)");
-    log("  POST /v1/webhook                — Inbound webhook");
+  // Return a promise that resolves when the server is listening
+  return new Promise<ApiServerHandle>((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(opts.port, opts.host, () => {
+      log(`API server listening on http://${opts.host}:${opts.port}`);
+      log(`Storage: ${opts.postgres ? "PostgreSQL" : opts.db ? `SQLite (${opts.db})` : "in-memory"}`);
+      log(`Auth: ${opts.apiKey ? "API key required" : "open (no auth)"}`);
+      log("");
+      log("Endpoints:");
+      log("  GET  /health                    — Health check");
+      log("  POST /v1/scan                   — Trigger cloud scan");
+      log("  POST /v1/query                  — Execute IQL query");
+      log("  GET  /v1/graph/topology         — Get graph topology");
+      log("  GET  /v1/graph/stats            — Get graph statistics");
+      log("  GET  /v1/compliance/:framework  — Compliance assessment");
+      log("  GET  /v1/cost                   — Cost attribution");
+      log("  GET  /v1/drift                  — Drift detection");
+      log("  GET  /v1/export/:format         — Export (json/dot/mermaid)");
+      log("  POST /v1/webhook                — Inbound webhook");
+      resolve({ server, storage, close });
+    });
   });
 }

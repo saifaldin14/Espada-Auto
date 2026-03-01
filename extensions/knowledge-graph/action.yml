@@ -114,31 +114,29 @@ runs:
       run: |
         # AWS
         if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
-          export AWS_ACCESS_KEY_ID="${{ inputs.aws-access-key-id }}"
-          export AWS_SECRET_ACCESS_KEY="${{ inputs.aws-secret-access-key }}"
-          export AWS_DEFAULT_REGION="${{ inputs.aws-region }}"
-          echo "AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID" >> "$GITHUB_ENV"
-          echo "AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY" >> "$GITHUB_ENV"
-          echo "AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION" >> "$GITHUB_ENV"
+          echo "::add-mask::${{ inputs.aws-access-key-id }}"
+          echo "::add-mask::${{ inputs.aws-secret-access-key }}"
+          echo "AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }}" >> "$GITHUB_ENV"
+          echo "AWS_DEFAULT_REGION=${{ inputs.aws-region }}" >> "$GITHUB_ENV"
         fi
 
         # Azure
         if [[ -n "${{ inputs.azure-subscription-id }}" ]]; then
-          export AZURE_SUBSCRIPTION_ID="${{ inputs.azure-subscription-id }}"
-          export AZURE_CLIENT_ID="${{ inputs.azure-client-id }}"
-          export AZURE_CLIENT_SECRET="${{ inputs.azure-client-secret }}"
-          export AZURE_TENANT_ID="${{ inputs.azure-tenant-id }}"
-          echo "AZURE_SUBSCRIPTION_ID=$AZURE_SUBSCRIPTION_ID" >> "$GITHUB_ENV"
-          echo "AZURE_CLIENT_ID=$AZURE_CLIENT_ID" >> "$GITHUB_ENV"
-          echo "AZURE_CLIENT_SECRET=$AZURE_CLIENT_SECRET" >> "$GITHUB_ENV"
-          echo "AZURE_TENANT_ID=$AZURE_TENANT_ID" >> "$GITHUB_ENV"
+          echo "::add-mask::${{ inputs.azure-client-secret }}"
+          echo "AZURE_SUBSCRIPTION_ID=${{ inputs.azure-subscription-id }}" >> "$GITHUB_ENV"
+          echo "AZURE_CLIENT_ID=${{ inputs.azure-client-id }}" >> "$GITHUB_ENV"
+          echo "AZURE_CLIENT_SECRET=${{ inputs.azure-client-secret }}" >> "$GITHUB_ENV"
+          echo "AZURE_TENANT_ID=${{ inputs.azure-tenant-id }}" >> "$GITHUB_ENV"
         fi
 
-        # GCP
+        # GCP — write key to a temp file with restricted permissions
         if [[ -n "${{ inputs.gcp-credentials-json }}" ]]; then
-          echo '${{ inputs.gcp-credentials-json }}' > /tmp/gcp-key.json
-          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-key.json
-          echo "GOOGLE_APPLICATION_CREDENTIALS=$GOOGLE_APPLICATION_CREDENTIALS" >> "$GITHUB_ENV"
+          GCP_KEY_FILE="$(mktemp)"
+          echo '${{ inputs.gcp-credentials-json }}' > "$GCP_KEY_FILE"
+          chmod 600 "$GCP_KEY_FILE"
+          echo "GOOGLE_APPLICATION_CREDENTIALS=$GCP_KEY_FILE" >> "$GITHUB_ENV"
+          echo "INFRA_GRAPH_GCP_KEY_FILE=$GCP_KEY_FILE" >> "$GITHUB_ENV"
         fi
 
     - name: Run infrastructure scan
@@ -150,14 +148,14 @@ runs:
         REPORT_DIR="${GITHUB_WORKSPACE}/.infra-graph"
         mkdir -p "$REPORT_DIR"
 
-        SCAN_ARGS="--provider ${{ inputs.provider }}"
+        SCAN_ARGS=("--provider" "${{ inputs.provider }}")
         if [[ -n "${{ inputs.regions }}" ]]; then
-          SCAN_ARGS="$SCAN_ARGS --regions ${{ inputs.regions }}"
+          SCAN_ARGS+=("--regions" "${{ inputs.regions }}")
         fi
 
         # Run cloud scan
         echo "::group::Infrastructure Scan"
-        infra-graph cloud-scan $SCAN_ARGS --output "$REPORT_DIR/scan.json" 2>&1 || true
+        infra-graph cloud-scan "${SCAN_ARGS[@]}" --output "$REPORT_DIR/scan.json" 2>&1 || true
         echo "::endgroup::"
 
         # Run compliance check
@@ -331,3 +329,13 @@ runs:
         fi
 
         echo "✅ Compliance check passed: score=${SCORE}%, critical=${CRITICAL}"
+
+    - name: Cleanup credentials
+      if: always()
+      shell: bash
+      run: |
+        # Remove GCP key file if it was created
+        if [[ -n "${INFRA_GRAPH_GCP_KEY_FILE:-}" && -f "${INFRA_GRAPH_GCP_KEY_FILE}" ]]; then
+          rm -f "${INFRA_GRAPH_GCP_KEY_FILE}"
+          echo "Cleaned up GCP key file"
+        fi

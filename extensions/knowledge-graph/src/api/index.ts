@@ -1,4 +1,4 @@
 /**
  * API module exports.
  */
-export { startApiServer, type ApiServerOptions } from "./server.js";
+export { startApiServer, type ApiServerOptions, type ApiServerHandle } from "./server.js";

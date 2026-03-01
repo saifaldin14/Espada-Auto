@@ -519,4 +519,186 @@ describe("Drift Auto-Remediation (P2.21)", () => {
       expect(md).toContain("import {");
     });
   });
+
+  // ===========================================================================
+  // Pulumi IaC Format
+  // ===========================================================================
+
+  describe("Pulumi format", () => {
+    it("generates Pulumi TypeScript patches for AWS compute", () => {
+      const node = makeGraphNode("ec2-1", {
+        resourceType: "compute",
+        provider: "aws",
+        nativeId: "i-0123456789",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceType", "t3.small", "t3.medium")] },
+        ]),
+        "pulumi",
+      );
+
+      expect(plan.format).toBe("pulumi");
+      const allPatches = [...plan.autoRemediable, ...plan.manualReview];
+      expect(allPatches.length).toBeGreaterThan(0);
+
+      // Should contain TypeScript/Pulumi SDK reference
+      const patchContent = allPatches.map(p => p.patch).join("\n");
+      expect(patchContent).toContain("pulumi");
+    });
+
+    it("generates Pulumi patches for Azure resources", () => {
+      const node = makeGraphNode("vm-1", {
+        resourceType: "compute",
+        provider: "azure",
+        nativeId: "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm1",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("status", "running", "stopped")] },
+        ]),
+        "pulumi",
+      );
+
+      expect(plan.format).toBe("pulumi");
+      expect(plan.totalPatches).toBeGreaterThan(0);
+    });
+
+    it("generates Pulumi patches for GCP resources", () => {
+      const node = makeGraphNode("gce-1", {
+        resourceType: "compute",
+        provider: "gcp",
+        nativeId: "projects/myproj/zones/us-central1-a/instances/gce1",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.machineType", "n1-standard-1", "n1-standard-2")] },
+        ]),
+        "pulumi",
+      );
+
+      expect(plan.format).toBe("pulumi");
+      expect(plan.totalPatches).toBeGreaterThan(0);
+    });
+
+    it("formats Pulumi patches as TypeScript code fences in markdown", () => {
+      const node = makeGraphNode("db-pulumi", { resourceType: "database", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceClass", "db.t3.micro", "db.t3.small")] },
+        ]),
+        "pulumi",
+      );
+
+      const md = formatRemediationMarkdown(plan);
+      expect(md).toContain("typescript");
+    });
+
+    it("handles multiple drifted nodes in a single plan", () => {
+      const n1 = makeGraphNode("ec2-a", { resourceType: "compute", provider: "aws" });
+      const n2 = makeGraphNode("db-a", { resourceType: "database", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node: n1, changes: [makeDriftChange("status", "running", "stopped")] },
+          { node: n2, changes: [makeDriftChange("metadata.storageEncrypted", "true", "false")] },
+        ]),
+        "pulumi",
+      );
+
+      expect(plan.totalPatches).toBe(2);
+    });
+  });
+
+  // ===========================================================================
+  // OpenTofu IaC Format
+  // ===========================================================================
+
+  describe("OpenTofu format", () => {
+    it("generates OpenTofu patches (HCL like Terraform)", () => {
+      const node = makeGraphNode("ec2-ot", {
+        resourceType: "compute",
+        provider: "aws",
+        nativeId: "i-0123456789",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceType", "t3.small", "t3.medium")] },
+        ]),
+        "opentofu",
+      );
+
+      expect(plan.format).toBe("opentofu");
+      expect(plan.totalPatches).toBeGreaterThan(0);
+      // OpenTofu uses HCL syntax similar to Terraform
+      const allPatches = [...plan.autoRemediable, ...plan.manualReview];
+      const patchContent = allPatches.map(p => p.patch).join("\n");
+      expect(patchContent).toContain("resource");
+    });
+
+    it("generates import blocks for OpenTofu when requested", () => {
+      const node = makeGraphNode("db-ot", {
+        resourceType: "database",
+        provider: "aws",
+        nativeId: "arn:aws:rds:us-east-1:123:db:mydb",
+      });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("metadata.instanceClass", "db.t3.micro", "db.t3.small")] },
+        ]),
+        "opentofu",
+        { generateImports: true },
+      );
+
+      expect(plan.importBlocks!.length).toBeGreaterThan(0);
+      const importContent = plan.importBlocks!.map(b => b.block).join("\n");
+      expect(importContent).toContain("import");
+    });
+
+    it("includes hcl code fence in markdown output", () => {
+      const node = makeGraphNode("ec2-ot-md", { resourceType: "compute", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([
+          { node, changes: [makeDriftChange("status", "running", "stopped")] },
+        ]),
+        "opentofu",
+      );
+
+      const md = formatRemediationMarkdown(plan);
+      expect(md).toContain("hcl");
+    });
+
+    it("handles disappeared nodes in OpenTofu plan", () => {
+      const disappeared = makeGraphNode("deleted-1", { resourceType: "compute", provider: "aws" });
+      const plan = generateRemediationPlan(
+        makeDriftResult([], [disappeared]),
+        "opentofu",
+      );
+
+      // Disappeared nodes are listed in unremeditable, not as patches
+      expect(plan.totalDriftedResources).toBeGreaterThanOrEqual(0);
+      // The plan should still generate successfully
+      expect(plan.format).toBe("opentofu");
+    });
+  });
+
+  // ===========================================================================
+  // IaCFormat type coverage
+  // ===========================================================================
+
+  describe("IaCFormat", () => {
+    it("supports all four formats", () => {
+      const formats: IaCFormat[] = ["terraform", "cloudformation", "pulumi", "opentofu"];
+      for (const format of formats) {
+        const node = makeGraphNode(`test-${format}`, { resourceType: "compute", provider: "aws" });
+        const plan = generateRemediationPlan(
+          makeDriftResult([
+            { node, changes: [makeDriftChange("status", "a", "b")] },
+          ]),
+          format,
+        );
+        expect(plan.format).toBe(format);
+        expect(plan.totalPatches).toBeGreaterThanOrEqual(1);
+      }
+    });
+  });
 });

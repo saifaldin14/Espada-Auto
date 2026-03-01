@@ -584,4 +584,4 @@ export type {
 
 // SaaS HTTP API server
 export { startApiServer } from "./api/server.js";
-export type { ApiServerOptions } from "./api/server.js";
+export type { ApiServerOptions, ApiServerHandle } from "./api/server.js";

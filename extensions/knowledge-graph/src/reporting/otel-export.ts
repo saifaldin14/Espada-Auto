@@ -86,6 +86,8 @@ export type OTELExportOptions = {
   collectorEndpoint?: string;
   /** Optional API key header for collector auth. */
   collectorApiKey?: string;
+  /** Fetch timeout in ms (default: 10000). */
+  timeoutMs?: number;
 };
 
 // =============================================================================
@@ -533,7 +535,7 @@ export async function pushMetrics(
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const endpoint = opts.collectorEndpoint ?? "http://localhost:4318";
   const url = `${endpoint}/v1/metrics`;
-  return pushOTLP(url, payload, opts.collectorApiKey);
+  return pushOTLP(url, payload, opts.collectorApiKey, opts.timeoutMs);
 }
 
 /**
@@ -546,7 +548,7 @@ export async function pushTraces(
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const endpoint = opts.collectorEndpoint ?? "http://localhost:4318";
   const url = `${endpoint}/v1/traces`;
-  return pushOTLP(url, payload, opts.collectorApiKey);
+  return pushOTLP(url, payload, opts.collectorApiKey, opts.timeoutMs);
 }
 
 /** Internal: POST JSON to an OTLP endpoint. */
@@ -554,6 +556,7 @@ async function pushOTLP(
   url: string,
   payload: unknown,
   apiKey?: string,
+  timeoutMs = 10_000,
 ): Promise<{ ok: boolean; status: number; body: string }> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -566,6 +569,7 @@ async function pushOTLP(
     method: "POST",
     headers,
     body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(timeoutMs),
   });
 
   const body = await res.text();
