@@ -27,7 +27,7 @@ describe("config discord", () => {
                 enabled: true,
                 dm: {
                   enabled: true,
-                  allowFrom: ["steipete"],
+                  allowFrom: ["espada-admin"],
                   groupEnabled: true,
                   groupChannels: ["espada-dm"],
                 },
@@ -40,7 +40,7 @@ describe("config discord", () => {
                   "123": {
                     slug: "friends-of-espada",
                     requireMention: false,
-                    users: ["steipete"],
+                    users: ["espada-admin"],
                     channels: {
                       general: { allow: true },
                     },

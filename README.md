@@ -507,4 +507,4 @@ espada sandbox explain                     # Debug sandbox/tool policy
 
 ## License
 
-Proprietary — All Rights Reserved. See [LICENSE](LICENSE) for details.
+Espada is a new product built by Saif Al-Din Ali. It incorporates foundational components from OpenClaw (MIT License, by Peter Steinberger). Espada itself — including all architecture, integrations, and original work — is **Proprietary — All Rights Reserved**. See [LICENSE](LICENSE) for full details.

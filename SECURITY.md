@@ -4,7 +4,7 @@ If you believe you've found a security issue in Espada, please report it private
 
 ## Reporting
 
-- Email: `steipete@gmail.com`
+- Email: `thesaifaldin@gmail.com`
 - What to include: reproduction steps, impact assessment, and (if possible) a minimal PoC.
 
 ## Operational Guidance

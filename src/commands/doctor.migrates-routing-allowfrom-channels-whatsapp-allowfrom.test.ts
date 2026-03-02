@@ -389,7 +389,7 @@ describe("doctor command", () => {
     findLegacyGatewayServices.mockResolvedValueOnce([
       {
         platform: "darwin",
-        label: "com.steipete.espada.gateway",
+        label: "com.espada.gateway.legacy",
         detail: "loaded",
       },
     ]);

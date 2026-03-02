@@ -256,7 +256,7 @@ Outbound Discord API calls retry on rate limits (429) using Discord `retry_after
       dm: {
         enabled: true,
         policy: "pairing", // pairing | allowlist | open | disabled
-        allowFrom: ["123456789012345678", "steipete"],
+        allowFrom: ["123456789012345678", "espada-admin"],
         groupEnabled: false,
         groupChannels: ["espada-dm"]
       },
@@ -266,7 +266,7 @@ Outbound Discord API calls retry on rate limits (429) using Discord `retry_after
           slug: "friends-of-espada",
           requireMention: false,
           reactionNotifications: "own",
-          users: ["987654321098765432", "steipete"],
+          users: ["987654321098765432", "espada-admin"],
           channels: {
             general: { allow: true },
             help: {

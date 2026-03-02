@@ -187,7 +187,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
     discord: {
       enabled: true,
       token: "YOUR_DISCORD_BOT_TOKEN",
-      dm: { enabled: true, allowFrom: ["steipete"] },
+      dm: { enabled: true, allowFrom: ["espada-admin"] },
       guilds: {
         "123456789012345678": {
           slug: "friends-of-espada",
@@ -301,7 +301,7 @@ Save to `~/.espada/espada.json` and you can DM the bot from that number.
       allowFrom: {
         whatsapp: ["+15555550123"],
         telegram: ["123456789"],
-        discord: ["steipete"],
+        discord: ["espada-admin"],
         slack: ["U123"],
         signal: ["+15555550123"],
         imessage: ["user@example.com"],

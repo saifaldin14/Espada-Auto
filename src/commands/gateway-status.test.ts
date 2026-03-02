@@ -204,16 +204,16 @@ describe("gateway-status command", () => {
 
     const originalUser = process.env.USER;
     try {
-      process.env.USER = "steipete";
+      process.env.USER = "espada-admin";
       loadConfig.mockReturnValueOnce({
         gateway: {
           mode: "remote",
-          remote: { url: "ws://peters-mac-studio-1.sheep-coho.ts.net:18789", token: "rtok" },
+          remote: { url: "ws://espada-studio-1.example.ts.net:18789", token: "rtok" },
         },
       });
       resolveSshConfig.mockResolvedValueOnce({
-        user: "steipete",
-        host: "peters-mac-studio-1.sheep-coho.ts.net",
+        user: "espada-admin",
+        host: "espada-studio-1.example.ts.net",
         port: 2222,
         identityFiles: ["/tmp/id_ed25519"],
       });
@@ -230,7 +230,7 @@ describe("gateway-status command", () => {
         target: string;
         identity?: string;
       };
-      expect(call.target).toBe("steipete@peters-mac-studio-1.sheep-coho.ts.net:2222");
+      expect(call.target).toBe("espada-admin@espada-studio-1.example.ts.net:2222");
       expect(call.identity).toBe("/tmp/id_ed25519");
     } finally {
       process.env.USER = originalUser;

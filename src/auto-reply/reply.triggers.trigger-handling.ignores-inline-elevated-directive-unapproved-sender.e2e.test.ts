@@ -148,7 +148,7 @@ describe("trigger handling", () => {
             workspace: join(home, "espada"),
           },
         },
-        tools: { elevated: { allowFrom: { discord: ["steipete"] } } },
+        tools: { elevated: { allowFrom: { discord: ["espada-admin"] } } },
         session: { store: join(home, "sessions.json") },
       };
 
@@ -159,8 +159,8 @@ describe("trigger handling", () => {
           To: "user:123",
           Provider: "discord",
           SenderName: "Saif Al-Din Ali",
-          SenderUsername: "steipete",
-          SenderTag: "steipete",
+          SenderUsername: "espada-admin",
+          SenderTag: "espada-admin",
           CommandAuthorized: true,
         },
         {},
@@ -197,7 +197,7 @@ describe("trigger handling", () => {
           From: "discord:123",
           To: "user:123",
           Provider: "discord",
-          SenderName: "steipete",
+          SenderName: "espada-admin",
         },
         {},
         cfg,
