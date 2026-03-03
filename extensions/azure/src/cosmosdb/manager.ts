@@ -21,7 +21,7 @@ export class AzureCosmosDBManager {
   constructor(credentialsManager: AzureCredentialsManager, subscriptionId: string, retryOptions?: AzureRetryOptions) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "cosmosdb", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

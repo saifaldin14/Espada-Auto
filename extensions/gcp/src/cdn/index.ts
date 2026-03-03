@@ -50,7 +50,7 @@ export class GcpCDNManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "cdn", projectId: this.projectId };
   }
 
   /** List all backend buckets in the project. */

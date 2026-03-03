@@ -19,7 +19,7 @@ export class AzureFunctionsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "functions", subscriptionId: this.subscriptionId };
   }
 
   private async getWebClient() {

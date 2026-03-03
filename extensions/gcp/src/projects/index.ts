@@ -49,7 +49,7 @@ export class GcpProjectManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "projects", projectId: this.projectId };
   }
 
   /** Map CRM v3 raw response to our GcpProject type. */

@@ -58,7 +58,7 @@ export class GcpAIManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "ai", projectId: this.projectId };
   }
 
   /** List AI models, optionally in a specific location. */

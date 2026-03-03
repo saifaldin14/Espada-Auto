@@ -331,6 +331,7 @@ export class DynamoDBManager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "dynamodb",
     });
   }
 

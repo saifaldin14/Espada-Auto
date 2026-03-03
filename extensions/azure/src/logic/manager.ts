@@ -21,7 +21,7 @@ export class AzureLogicAppsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "logic", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

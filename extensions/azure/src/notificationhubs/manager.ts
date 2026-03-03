@@ -26,7 +26,7 @@ export class AzureNotificationHubsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "notificationhubs", subscriptionId: this.subscriptionId };
   }
 
   // ---------------------------------------------------------------------------

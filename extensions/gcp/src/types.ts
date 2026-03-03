@@ -91,6 +91,10 @@ export type GcpRetryOptions = {
   minDelayMs?: number;
   maxDelayMs?: number;
   jitterFactor?: number;
+  /** Service name for circuit breaker isolation (e.g. "compute", "storage") */
+  service?: string;
+  /** Project ID for per-project circuit breaker scoping */
+  projectId?: string;
 };
 
 export type GcpPluginConfig = {

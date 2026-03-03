@@ -21,7 +21,7 @@ export class AzureCDNManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "cdn", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

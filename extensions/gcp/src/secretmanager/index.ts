@@ -59,7 +59,7 @@ export class GcpSecretManagerManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "secretmanager", projectId: this.projectId };
   }
 
   /** List all secrets in the project. */

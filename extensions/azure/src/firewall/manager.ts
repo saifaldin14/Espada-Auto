@@ -27,7 +27,7 @@ export class AzureFirewallManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "firewall", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

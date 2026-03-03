@@ -88,7 +88,7 @@ export class AzureActivityLogManager {
       }
 
       return events;
-    });
+    }, { service: "activitylog", subscriptionId: this.subscriptionId });
   }
 
   /**

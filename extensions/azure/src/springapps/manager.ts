@@ -26,7 +26,7 @@ export class AzureSpringAppsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "springapps", subscriptionId: this.subscriptionId };
   }
 
   private extractResourceGroup(resourceId?: string): string {

@@ -98,7 +98,7 @@ export class GcpCloudSQLManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "sql", projectId: this.projectId };
   }
 
   /** List all Cloud SQL instances in the project. */

@@ -21,7 +21,7 @@ export class AzureRedisManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "redis", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

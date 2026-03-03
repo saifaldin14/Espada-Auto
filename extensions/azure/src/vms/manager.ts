@@ -36,7 +36,7 @@ export class AzureVMManager {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
     this.defaultRegion = defaultRegion ?? "eastus";
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "vms", subscriptionId: this.subscriptionId };
   }
 
   private async getComputeClient() {

@@ -27,7 +27,7 @@ export class AzureTrafficManagerManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "trafficmanager", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

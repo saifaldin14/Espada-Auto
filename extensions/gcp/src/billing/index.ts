@@ -70,7 +70,7 @@ export class GcpBillingManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "billing", projectId: this.projectId };
   }
 
   /** List all billing accounts accessible to the caller. */

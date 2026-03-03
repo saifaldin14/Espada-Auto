@@ -21,7 +21,7 @@ export class AzureBackupManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "backup", subscriptionId: this.subscriptionId };
   }
 
   async listVaults(resourceGroup?: string): Promise<RecoveryServicesVault[]> {

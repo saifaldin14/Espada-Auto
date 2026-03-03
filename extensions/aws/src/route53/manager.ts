@@ -251,6 +251,7 @@ export class Route53Manager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "route53",
     });
   }
 

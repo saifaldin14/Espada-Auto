@@ -72,7 +72,7 @@ export class GcpTasksManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "tasks", projectId: this.projectId };
   }
 
   /** List all task queues in a specific location. */

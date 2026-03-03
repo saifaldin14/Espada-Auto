@@ -15,7 +15,7 @@ export class AzureSubscriptionManager {
 
   constructor(credentialsManager: AzureCredentialsManager, retryOptions?: AzureRetryOptions) {
     this.credentialsManager = credentialsManager;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "subscriptions", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

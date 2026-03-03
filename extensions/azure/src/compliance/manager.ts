@@ -36,7 +36,7 @@ export class AzureComplianceManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "compliance", subscriptionId: this.subscriptionId };
   }
 
   listFrameworks(): ComplianceFramework[] {

@@ -244,6 +244,7 @@ export class SNSManager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "sns",
     });
   }
 

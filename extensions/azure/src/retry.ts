@@ -11,7 +11,7 @@ import type { AzureRetryOptions } from "./types.js";
 // Configuration
 // =============================================================================
 
-export type RetryConfig = Required<AzureRetryOptions>;
+export type RetryConfig = Required<Pick<AzureRetryOptions, "maxAttempts" | "minDelayMs" | "maxDelayMs" | "jitterFactor">>;
 
 export const AZURE_RETRY_DEFAULTS: RetryConfig = {
   maxAttempts: 3,
@@ -114,53 +114,97 @@ export function getAzureRetryAfterMs(error: unknown): number | null {
   return null;
 }
 
+// ── Concurrency limiter (lightweight bulkhead for cloud API calls) ──
+const MAX_CONCURRENT_AZURE_CALLS = 20;
+let _active = 0;
+const _waiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (_active < MAX_CONCURRENT_AZURE_CALLS) {
+    _active++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => _waiters.push(() => { _active++; resolve(); }));
+}
+
+function releaseSlot(): void {
+  _active--;
+  if (_waiters.length > 0) _waiters.shift()!();
+}
+
 // =============================================================================
 // Retry Execution
 // =============================================================================
 
 /**
- * Execute a function with Azure-specific retry logic.
+ * Execute a function with Azure-specific retry logic and optional circuit breaker protection.
+ *
+ * When `options.service` is provided, the call is wrapped in a per-service
+ * circuit breaker. If the service's circuit is open, the call is rejected
+ * immediately without burning retry attempts.
  */
 export async function withAzureRetry<T>(
   fn: () => Promise<T>,
   options?: AzureRetryOptions,
 ): Promise<T> {
-  const config: RetryConfig = {
-    maxAttempts: options?.maxAttempts ?? AZURE_RETRY_DEFAULTS.maxAttempts,
-    minDelayMs: options?.minDelayMs ?? AZURE_RETRY_DEFAULTS.minDelayMs,
-    maxDelayMs: options?.maxDelayMs ?? AZURE_RETRY_DEFAULTS.maxDelayMs,
-    jitterFactor: options?.jitterFactor ?? AZURE_RETRY_DEFAULTS.jitterFactor,
+  const doRetry = async () => {
+    const config: RetryConfig = {
+      maxAttempts: options?.maxAttempts ?? AZURE_RETRY_DEFAULTS.maxAttempts,
+      minDelayMs: options?.minDelayMs ?? AZURE_RETRY_DEFAULTS.minDelayMs,
+      maxDelayMs: options?.maxDelayMs ?? AZURE_RETRY_DEFAULTS.maxDelayMs,
+      jitterFactor: options?.jitterFactor ?? AZURE_RETRY_DEFAULTS.jitterFactor,
+    };
+
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        if (attempt >= config.maxAttempts) break;
+        if (!shouldRetryAzureError(error)) break;
+
+        const retryAfterMs = getAzureRetryAfterMs(error);
+        let delayMs: number;
+
+        if (retryAfterMs !== null) {
+          delayMs = Math.min(retryAfterMs, config.maxDelayMs);
+        } else {
+          const baseDelay = config.minDelayMs * 2 ** (attempt - 1);
+          const cappedDelay = Math.min(baseDelay, config.maxDelayMs);
+          const jitter = cappedDelay * config.jitterFactor * (Math.random() * 2 - 1);
+          delayMs = Math.max(config.minDelayMs, cappedDelay + jitter);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw lastError;
   };
 
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+  if (options?.service) {
+    const { withAzureCircuitBreaker } = await import("./circuit-breaker.js");
+    await acquireSlot();
     try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-
-      if (attempt >= config.maxAttempts) break;
-      if (!shouldRetryAzureError(error)) break;
-
-      // Calculate delay with exponential backoff + jitter
-      const retryAfterMs = getAzureRetryAfterMs(error);
-      let delayMs: number;
-
-      if (retryAfterMs !== null) {
-        delayMs = retryAfterMs;
-      } else {
-        const baseDelay = config.minDelayMs * 2 ** (attempt - 1);
-        const cappedDelay = Math.min(baseDelay, config.maxDelayMs);
-        const jitter = cappedDelay * config.jitterFactor * (Math.random() * 2 - 1);
-        delayMs = Math.max(config.minDelayMs, cappedDelay + jitter);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return await withAzureCircuitBreaker(
+        options.service,
+        doRetry,
+        { subscriptionId: options.subscriptionId },
+      );
+    } finally {
+      releaseSlot();
     }
   }
 
-  throw lastError;
+  await acquireSlot();
+  try {
+    return await doRetry();
+  } finally {
+    releaseSlot();
+  }
 }
 
 /**

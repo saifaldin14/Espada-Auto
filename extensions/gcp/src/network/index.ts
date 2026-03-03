@@ -94,7 +94,7 @@ export class GcpNetworkManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "network", projectId: this.projectId };
   }
 
   /** List all VPC networks in the project. */

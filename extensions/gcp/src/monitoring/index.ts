@@ -77,7 +77,7 @@ export class GcpMonitoringManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "monitoring", projectId: this.projectId };
   }
 
   /** Map raw API response to our GcpAlertPolicy shape. */

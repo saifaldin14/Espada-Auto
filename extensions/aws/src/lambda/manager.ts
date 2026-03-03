@@ -133,7 +133,7 @@ export class LambdaManager {
    * Execute an AWS API call with retry logic for transient failures
    */
   private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
-    return withAWSRetry(fn, { ...this.retryOptions, label });
+    return withAWSRetry(fn, { ...this.retryOptions, label, service: "lambda", region: this.defaultRegion });
   }
 
   // --------------------------------------------------------------------------

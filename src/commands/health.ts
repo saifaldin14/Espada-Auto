@@ -8,6 +8,8 @@ import { loadConfig } from "../config/config.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
 import { buildGatewayConnectionDetails, callGateway } from "../gateway/call.js";
 import { info } from "../globals.js";
+import { circuitBreakerRegistry } from "../infra/circuit-breaker.js";
+import { bulkheadRegistry } from "../infra/bulkhead.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import {
@@ -67,6 +69,31 @@ export type HealthSummary = {
       updatedAt: number | null;
       age: number | null;
     }>;
+  };
+  /** Circuit breaker health summary. Present when breakers are registered. */
+  circuitBreakers?: {
+    total: number;
+    open: string[];
+    halfOpen: string[];
+    closed: string[];
+    hasOpenCircuits: boolean;
+  };
+  /** Bulkhead partition summary. Present when partitions are registered. */
+  bulkheads?: Array<{
+    name: string;
+    active: number;
+    queued: number;
+    maxConcurrency: number;
+    completed: number;
+    rejected: number;
+  }>;
+  /** Cloud extension circuit breaker health (AWS, Azure, GCP). */
+  cloudCircuitBreakers?: {
+    total: number;
+    open: string[];
+    halfOpen: string[];
+    closed: string[];
+    hasOpenCircuits: boolean;
   };
 };
 
@@ -497,6 +524,86 @@ export async function getHealthSnapshot(params?: {
       recent: sessions.recent,
     },
   };
+
+  // ── Circuit breaker health ──
+  if (circuitBreakerRegistry.size > 0) {
+    const hs = circuitBreakerRegistry.healthSummary();
+    summary.circuitBreakers = {
+      total: hs.total,
+      open: hs.open,
+      halfOpen: hs.halfOpen,
+      closed: hs.closed,
+      hasOpenCircuits: hs.hasOpenCircuits,
+    };
+  }
+
+  // ── Bulkhead health ──
+  if (bulkheadRegistry.size > 0) {
+    summary.bulkheads = bulkheadRegistry.snapshots().map((s) => ({
+      name: s.name,
+      active: s.activeCount,
+      queued: s.queuedCount,
+      maxConcurrency: s.maxConcurrency,
+      completed: s.completedCount,
+      rejected: s.rejectedCount,
+    }));
+  }
+
+  // ── Cloud extension circuit breaker health ──
+  // Lazy-import each provider's breaker health; gracefully skip if not installed.
+  const cloudOpen: string[] = [];
+  const cloudHalfOpen: string[] = [];
+  const cloudClosed: string[] = [];
+
+  // Dynamic import paths built at runtime to avoid rootDir constraints.
+  // Extensions are separate packages outside src/, so we can't use static
+  // import paths — TypeScript would reject them as outside rootDir.
+  const extBase = new URL("../../extensions", import.meta.url).pathname;
+
+  type CloudHealthSummary = { total: number; open: string[]; halfOpen: string[]; closed: string[] };
+
+  const tryCloudHealth = async (loader: () => Promise<CloudHealthSummary>) => {
+    try {
+      const h = await loader();
+      cloudOpen.push(...h.open);
+      cloudHalfOpen.push(...h.halfOpen);
+      cloudClosed.push(...h.closed);
+    } catch {
+      // Extension not installed or no breakers registered — skip.
+    }
+  };
+
+  await Promise.all([
+    tryCloudHealth(async () => {
+      const m = (await import(/* @vite-ignore */ `${extBase}/aws/src/circuit-breaker.js`)) as {
+        getAWSCircuitBreakerHealthSummary: () => CloudHealthSummary;
+      };
+      return m.getAWSCircuitBreakerHealthSummary();
+    }),
+    tryCloudHealth(async () => {
+      const m = (await import(/* @vite-ignore */ `${extBase}/azure/src/circuit-breaker.js`)) as {
+        getAzureCircuitBreakerHealthSummary: () => CloudHealthSummary;
+      };
+      return m.getAzureCircuitBreakerHealthSummary();
+    }),
+    tryCloudHealth(async () => {
+      const m = (await import(/* @vite-ignore */ `${extBase}/gcp/src/circuit-breaker.js`)) as {
+        getGcpCircuitBreakerHealthSummary: () => CloudHealthSummary;
+      };
+      return m.getGcpCircuitBreakerHealthSummary();
+    }),
+  ]);
+
+  const cloudTotal = cloudOpen.length + cloudHalfOpen.length + cloudClosed.length;
+  if (cloudTotal > 0) {
+    summary.cloudCircuitBreakers = {
+      total: cloudTotal,
+      open: cloudOpen,
+      halfOpen: cloudHalfOpen,
+      closed: cloudClosed,
+      hasOpenCircuits: cloudOpen.length > 0,
+    };
+  }
 
   return summary;
 }

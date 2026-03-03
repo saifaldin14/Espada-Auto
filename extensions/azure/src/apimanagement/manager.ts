@@ -21,7 +21,7 @@ export class AzureAPIManagementManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "apimanagement", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

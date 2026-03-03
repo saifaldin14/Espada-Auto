@@ -21,7 +21,7 @@ export class AzureKeyVaultManager {
   constructor(credentialsManager: AzureCredentialsManager, subscriptionId: string, retryOptions?: AzureRetryOptions) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "keyvault", subscriptionId: this.subscriptionId };
   }
 
   private async getManagementClient() {

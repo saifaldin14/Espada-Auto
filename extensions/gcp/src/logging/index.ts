@@ -61,7 +61,7 @@ export class GcpLoggingManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "logging", projectId: this.projectId };
   }
 
   /** List log entries matching a filter. */

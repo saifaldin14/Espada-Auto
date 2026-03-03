@@ -24,6 +24,7 @@ import {
 import type { NormalizedOutboundPayload } from "./payloads.js";
 import { normalizeReplyPayloadsForDelivery } from "./payloads.js";
 import type { OutboundChannel } from "./targets.js";
+import { recordChannelFailure, recordChannelSuccess } from "./circuit-breaker-channel.js";
 
 export type { NormalizedOutboundPayload } from "./payloads.js";
 export { normalizeOutboundPayloads } from "./payloads.js";
@@ -345,7 +346,10 @@ export async function deliverOutboundPayloads(params: {
           results.push(await handler.sendMedia(caption, url));
         }
       }
+      // Record successful payload delivery for the channel circuit breaker.
+      recordChannelSuccess(channel, accountId);
     } catch (err) {
+      recordChannelFailure(channel, err, accountId);
       if (!params.bestEffort) throw err;
       params.onError?.(err, payloadSummary);
     }

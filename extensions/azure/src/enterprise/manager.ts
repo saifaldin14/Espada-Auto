@@ -21,7 +21,14 @@ export class AzureEnterpriseManager {
     private readonly credentials: AzureCredentialsManager,
     private readonly subscriptionId: string,
     private readonly retryOptions?: AzureRetryOptions,
-  ) {}
+  ) {
+    if (this.retryOptions) {
+      (this.retryOptions as any).service ??= "enterprise";
+      (this.retryOptions as any).subscriptionId ??= this.subscriptionId;
+    } else {
+      (this as any).retryOptions = { service: "enterprise", subscriptionId: this.subscriptionId };
+    }
+  }
 
   /**
    * List management groups in the tenant hierarchy

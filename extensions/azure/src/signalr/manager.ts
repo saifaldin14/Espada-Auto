@@ -27,7 +27,7 @@ export class AzureSignalRManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "signalr", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

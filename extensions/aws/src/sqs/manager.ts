@@ -228,6 +228,7 @@ export class SQSManager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "sqs",
     });
   }
 

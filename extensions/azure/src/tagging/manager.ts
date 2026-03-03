@@ -93,7 +93,7 @@ export class AzureTaggingManager {
       } else if (operation.action === "delete") {
         await (client as any).tagsOperations.deleteAtScope(operation.resourceId); // SDK typing gap
       }
-    });
+    }, { service: "tagging", subscriptionId: this.subscriptionId });
   }
 
   /**
@@ -108,7 +108,7 @@ export class AzureTaggingManager {
     return withAzureRetry(async () => {
       const result = await (client as any).tagsOperations.getAtScope(resourceId); // SDK typing gap
       return (result.properties?.tags ?? {}) as AzureTagSet;
-    });
+    }, { service: "tagging", subscriptionId: this.subscriptionId });
   }
 }
 

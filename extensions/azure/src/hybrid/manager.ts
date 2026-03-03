@@ -44,7 +44,7 @@ export class AzureHybridManager {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
     this.defaultRegion = defaultRegion ?? "eastus";
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "hybrid", subscriptionId: this.subscriptionId };
   }
 
   // ── SDK Client Factories (lazy dynamic import) ──────────────────────

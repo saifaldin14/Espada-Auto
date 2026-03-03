@@ -28,7 +28,7 @@ export class AzureDataFactoryManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "datafactory", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

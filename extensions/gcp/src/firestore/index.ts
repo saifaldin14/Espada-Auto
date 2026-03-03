@@ -94,7 +94,7 @@ export class GcpFirestoreManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "firestore", projectId: this.projectId };
   }
 
   /** List all Firestore databases in the project. */

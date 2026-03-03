@@ -18,6 +18,18 @@ export type {
 } from "./types.js";
 
 export { withAzureRetry, createAzureRetryRunner, shouldRetryAzureError, formatErrorMessage } from "./retry.js";
+export {
+  getAzureServiceBreaker,
+  isAzureServiceAvailable,
+  withAzureCircuitBreaker,
+  getAzureCircuitBreakerSnapshots,
+  getAzureCircuitBreakerHealthSummary,
+  resetAllAzureBreakers,
+  CircuitOpenError as AzureCircuitOpenError,
+  type CircuitState as AzureCircuitState,
+  type CircuitBreakerConfig as AzureCircuitBreakerConfig,
+  type CircuitBreakerSnapshot as AzureCircuitBreakerSnapshot,
+} from "./circuit-breaker.js";
 export { emitAzureDiagnosticEvent, onAzureDiagnosticEvent, instrumentedAzureCall, enableAzureDiagnostics, disableAzureDiagnostics } from "./diagnostics.js";
 export { createAzureProgress, withAzureProgress, createMultiStepProgress, waitWithProgress } from "./progress.js";
 

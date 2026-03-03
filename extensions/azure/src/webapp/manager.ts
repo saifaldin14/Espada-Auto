@@ -23,7 +23,7 @@ export class AzureWebAppManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "webapp", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

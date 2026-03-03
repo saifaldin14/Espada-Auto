@@ -276,7 +276,7 @@ export class GcpCredentialsManager {
     this.projectId = options.projectId ?? "";
     this.method = options.credentialMethod ?? "default";
     this.serviceAccountKeyFile = options.serviceAccountKeyFile;
-    this.retryOptions = options.retry ?? {};
+    this.retryOptions = { ...(options.retry ?? {}), service: "credentials", projectId: this.projectId };
     this.cache = new CredentialCache();
   }
 

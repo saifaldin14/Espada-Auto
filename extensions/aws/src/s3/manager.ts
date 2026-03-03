@@ -174,7 +174,7 @@ export class S3Manager {
    * Execute an AWS API call with retry logic for transient failures
    */
   private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
-    return withAWSRetry(fn, { ...this.retryOptions, label });
+    return withAWSRetry(fn, { ...this.retryOptions, label, service: "s3", region: this.defaultRegion });
   }
 
   // --------------------------------------------------------------------------
@@ -1060,7 +1060,8 @@ export class S3Manager {
       });
     }
 
-    const url = await getSignedUrl(client, command, { expiresIn });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- S3Client/presigner version mismatch
+    const url = await getSignedUrl(client as any, command, { expiresIn });
 
     return {
       url,

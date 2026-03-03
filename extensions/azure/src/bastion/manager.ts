@@ -22,7 +22,7 @@ export class AzureBastionManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "bastion", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

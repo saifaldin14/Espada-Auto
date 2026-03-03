@@ -171,10 +171,12 @@ export class AWSEC2Manager {
   // ===========================================================================
 
   /**
-   * Execute an AWS API call with retry logic for transient failures
+   * Execute an AWS API call with circuit breaker + retry logic for transient failures.
+   * The circuit breaker wraps around the retry loop: if EC2's circuit is open,
+   * the call is rejected immediately without burning retry attempts.
    */
   private async withRetry<T>(fn: () => Promise<T>, label?: string): Promise<T> {
-    return withAWSRetry(fn, { ...this.retryOptions, label });
+    return withAWSRetry(fn, { ...this.retryOptions, label, service: "ec2", region: this.defaultRegion });
   }
 
   private async getEC2Client(region?: string): Promise<EC2Client> {

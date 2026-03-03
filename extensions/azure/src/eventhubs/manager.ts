@@ -27,7 +27,7 @@ export class AzureEventHubsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "eventhubs", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

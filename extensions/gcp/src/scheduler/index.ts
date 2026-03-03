@@ -71,7 +71,7 @@ export class GcpSchedulerManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "scheduler", projectId: this.projectId };
   }
 
   /** List all scheduler jobs in a specific location. */

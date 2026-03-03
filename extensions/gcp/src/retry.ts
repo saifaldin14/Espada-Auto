@@ -11,7 +11,7 @@ import type { GcpRetryOptions } from "./types.js";
 // Configuration
 // =============================================================================
 
-export type RetryConfig = Required<GcpRetryOptions>;
+export type RetryConfig = Required<Pick<GcpRetryOptions, "maxAttempts" | "minDelayMs" | "maxDelayMs" | "jitterFactor">>;
 
 export const GCP_RETRY_DEFAULTS: RetryConfig = {
   maxAttempts: 3,
@@ -120,52 +120,97 @@ export function getGcpRetryAfterMs(error: unknown): number | null {
   return null;
 }
 
+// ── Concurrency limiter (lightweight bulkhead for cloud API calls) ──
+const MAX_CONCURRENT_GCP_CALLS = 20;
+let _active = 0;
+const _waiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (_active < MAX_CONCURRENT_GCP_CALLS) {
+    _active++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => _waiters.push(() => { _active++; resolve(); }));
+}
+
+function releaseSlot(): void {
+  _active--;
+  if (_waiters.length > 0) _waiters.shift()!();
+}
+
 // =============================================================================
 // Retry Execution
 // =============================================================================
 
 /**
- * Execute a function with GCP-specific retry logic.
+ * Execute a function with GCP-specific retry logic and optional circuit breaker protection.
+ *
+ * When `options.service` is provided, the call is wrapped in a per-service
+ * circuit breaker. If the service's circuit is open, the call is rejected
+ * immediately without burning retry attempts.
  */
 export async function withGcpRetry<T>(
   fn: () => Promise<T>,
   options?: GcpRetryOptions,
 ): Promise<T> {
-  const config: RetryConfig = {
-    maxAttempts: options?.maxAttempts ?? GCP_RETRY_DEFAULTS.maxAttempts,
-    minDelayMs: options?.minDelayMs ?? GCP_RETRY_DEFAULTS.minDelayMs,
-    maxDelayMs: options?.maxDelayMs ?? GCP_RETRY_DEFAULTS.maxDelayMs,
-    jitterFactor: options?.jitterFactor ?? GCP_RETRY_DEFAULTS.jitterFactor,
+  const doRetry = async () => {
+    const config: RetryConfig = {
+      maxAttempts: options?.maxAttempts ?? GCP_RETRY_DEFAULTS.maxAttempts,
+      minDelayMs: options?.minDelayMs ?? GCP_RETRY_DEFAULTS.minDelayMs,
+      maxDelayMs: options?.maxDelayMs ?? GCP_RETRY_DEFAULTS.maxDelayMs,
+      jitterFactor: options?.jitterFactor ?? GCP_RETRY_DEFAULTS.jitterFactor,
+    };
+
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+
+        if (attempt >= config.maxAttempts) break;
+        if (!shouldRetryGcpError(error)) break;
+
+        const retryAfterMs = getGcpRetryAfterMs(error);
+        let delayMs: number;
+
+        if (retryAfterMs !== null) {
+          delayMs = Math.min(retryAfterMs, config.maxDelayMs);
+        } else {
+          const baseDelay = config.minDelayMs * 2 ** (attempt - 1);
+          const cappedDelay = Math.min(baseDelay, config.maxDelayMs);
+          const jitter = cappedDelay * config.jitterFactor * (Math.random() * 2 - 1);
+          delayMs = Math.max(config.minDelayMs, cappedDelay + jitter);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+
+    throw lastError;
   };
 
-  let lastError: unknown;
-
-  for (let attempt = 1; attempt <= config.maxAttempts; attempt++) {
+  if (options?.service) {
+    const { withGcpCircuitBreaker } = await import("./circuit-breaker.js");
+    await acquireSlot();
     try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-
-      if (attempt >= config.maxAttempts) break;
-      if (!shouldRetryGcpError(error)) break;
-
-      const retryAfterMs = getGcpRetryAfterMs(error);
-      let delayMs: number;
-
-      if (retryAfterMs !== null) {
-        delayMs = retryAfterMs;
-      } else {
-        const baseDelay = config.minDelayMs * 2 ** (attempt - 1);
-        const cappedDelay = Math.min(baseDelay, config.maxDelayMs);
-        const jitter = cappedDelay * config.jitterFactor * (Math.random() * 2 - 1);
-        delayMs = Math.max(config.minDelayMs, cappedDelay + jitter);
-      }
-
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return await withGcpCircuitBreaker(
+        options.service,
+        doRetry,
+        { projectId: options.projectId },
+      );
+    } finally {
+      releaseSlot();
     }
   }
 
-  throw lastError;
+  await acquireSlot();
+  try {
+    return await doRetry();
+  } finally {
+    releaseSlot();
+  }
 }
 
 /**

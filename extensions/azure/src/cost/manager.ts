@@ -21,7 +21,7 @@ export class AzureCostManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "cost", subscriptionId: this.subscriptionId };
   }
 
   private async getCostClient() {

@@ -21,7 +21,7 @@ export class AzureIAMManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "iam", subscriptionId: this.subscriptionId };
   }
 
   private async getAuthClient() {

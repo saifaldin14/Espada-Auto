@@ -28,7 +28,7 @@ export class AzureMonitorManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "monitor", subscriptionId: this.subscriptionId };
   }
 
   private async getMonitorClient() {

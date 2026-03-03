@@ -21,7 +21,7 @@ export class AzureSecurityManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "security", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

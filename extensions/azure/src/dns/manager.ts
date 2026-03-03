@@ -21,7 +21,7 @@ export class AzureDNSManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "dns", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

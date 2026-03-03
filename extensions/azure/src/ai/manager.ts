@@ -21,7 +21,7 @@ export class AzureAIManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "ai", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

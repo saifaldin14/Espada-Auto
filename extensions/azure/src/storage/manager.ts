@@ -15,7 +15,7 @@ export class AzureStorageManager {
   constructor(credentialsManager: AzureCredentialsManager, subscriptionId: string, retryOptions?: AzureRetryOptions) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "storage", subscriptionId: this.subscriptionId };
   }
 
   private async getStorageClient() {

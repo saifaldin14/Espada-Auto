@@ -26,7 +26,7 @@ export class AzureSynapseManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "synapse", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

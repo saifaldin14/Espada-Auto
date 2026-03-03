@@ -26,7 +26,7 @@ export class AzureDigitalTwinsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "digitaltwins", subscriptionId: this.subscriptionId };
   }
 
   private extractResourceGroup(resourceId?: string): string {

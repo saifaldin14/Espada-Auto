@@ -56,7 +56,7 @@ export class GcpAppEngineManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "appengine", projectId: this.projectId };
   }
 
   /** Get the App Engine application for the project. */

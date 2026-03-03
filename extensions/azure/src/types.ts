@@ -93,6 +93,10 @@ export type AzureRetryOptions = {
   minDelayMs?: number;
   maxDelayMs?: number;
   jitterFactor?: number;
+  /** Service name for circuit breaker isolation (e.g. "vms", "storage") */
+  service?: string;
+  /** Subscription ID for per-subscription circuit breaker scoping */
+  subscriptionId?: string;
 };
 
 export type AzurePluginConfig = {

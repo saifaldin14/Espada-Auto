@@ -74,7 +74,7 @@ export class GcpPubSubManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "pubsub", projectId: this.projectId };
   }
 
   /** List all topics in the project. */

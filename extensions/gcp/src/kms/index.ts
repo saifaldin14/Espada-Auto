@@ -55,7 +55,7 @@ export class GcpKMSManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "kms", projectId: this.projectId };
   }
 
   /** List all key rings in a given location. */

@@ -25,7 +25,7 @@ export class AzurePurviewManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "purview", subscriptionId: this.subscriptionId };
   }
 
   private extractResourceGroup(resourceId?: string): string {

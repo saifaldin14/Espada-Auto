@@ -361,6 +361,7 @@ export class CognitoManager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "cognito",
     });
   }
 

@@ -85,6 +85,8 @@ import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
 import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
 import { detectAndLoadPromptImages } from "./images.js";
+import { createRunBudget, type TimeoutBudget } from "../../../infra/timeout-budget.js";
+import { bulkheadRegistry } from "../../../infra/bulkhead.js";
 
 export function injectHistoryImagesIntoMessages(
   messages: AgentMessage[],
@@ -136,6 +138,10 @@ export async function runEmbeddedAttempt(
   const resolvedWorkspace = resolveUserPath(params.workspaceDir);
   const prevCwd = process.cwd();
   const runAbortController = new AbortController();
+
+  // Create or inherit timeout budget for cascading deadline propagation.
+  const budget: TimeoutBudget =
+    params.budget ?? createRunBudget(params.timeoutMs, params.abortSignal, `run:${params.runId}`);
 
   log.debug(
     `embedded run start: runId=${params.runId} sessionId=${params.sessionId} provider=${params.provider} model=${params.modelId} thinking=${params.thinkLevel} messageChannel=${params.messageChannel ?? params.messageProvider ?? "unknown"}`,
@@ -514,6 +520,15 @@ export async function runEmbeddedAttempt(
         );
       }
 
+      // Wrap streamFn with the LLM bulkhead so concurrent LLM calls across
+      // sessions are bounded by the global concurrency limit.
+      {
+        const innerStreamFn = activeSession.agent.streamFn;
+        const llmBulkhead = bulkheadRegistry.get("llm");
+        activeSession.agent.streamFn = (model, context, options) =>
+          llmBulkhead.execute(() => (innerStreamFn ?? streamSimple)(model, context, options));
+      }
+
       try {
         const prior = await sanitizeSessionHistory({
           messages: activeSession.messages,
@@ -637,27 +652,34 @@ export async function runEmbeddedAttempt(
 
       let abortWarnTimer: NodeJS.Timeout | undefined;
       const isProbeSession = params.sessionId?.startsWith("probe-") ?? false;
-      const abortTimer = setTimeout(
-        () => {
-          if (!isProbeSession) {
-            log.warn(
-              `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
-            );
-          }
-          abortRun(true);
-          if (!abortWarnTimer) {
-            abortWarnTimer = setTimeout(() => {
-              if (!activeSession.isStreaming) return;
-              if (!isProbeSession) {
-                log.warn(
-                  `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
-                );
-              }
-            }, 10_000);
-          }
-        },
-        Math.max(1, params.timeoutMs),
-      );
+
+      // Use the TimeoutBudget's signal for timeout enforcement instead of a
+      // raw setTimeout.  The budget carries a shared deadline that child
+      // operations can derive sub-budgets from via budget.child().
+      const onBudgetExpired = () => {
+        if (!isProbeSession) {
+          log.warn(
+            `embedded run timeout: runId=${params.runId} sessionId=${params.sessionId} timeoutMs=${params.timeoutMs}`,
+          );
+        }
+        abortRun(true);
+        if (!abortWarnTimer) {
+          abortWarnTimer = setTimeout(() => {
+            if (!activeSession.isStreaming) return;
+            if (!isProbeSession) {
+              log.warn(
+                `embedded run abort still streaming: runId=${params.runId} sessionId=${params.sessionId}`,
+              );
+            }
+          }, 10_000);
+        }
+      };
+
+      if (budget.signal.aborted) {
+        onBudgetExpired();
+      } else {
+        budget.signal.addEventListener("abort", onBudgetExpired, { once: true });
+      }
 
       let messagesSnapshot: AgentMessage[] = [];
       let sessionIdUsed = activeSession.sessionId;
@@ -832,8 +854,9 @@ export async function runEmbeddedAttempt(
             });
         }
       } finally {
-        clearTimeout(abortTimer);
+        budget.signal.removeEventListener("abort", onBudgetExpired);
         if (abortWarnTimer) clearTimeout(abortWarnTimer);
+        budget.dispose();
         unsubscribe();
         clearActiveEmbeddedRun(params.sessionId, queueHandle);
         params.abortSignal?.removeEventListener?.("abort", onAbort);

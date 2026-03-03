@@ -22,7 +22,7 @@ export class AzureResourceManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "resources", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

@@ -21,7 +21,7 @@ export class AzureEventGridManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "eventgrid", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

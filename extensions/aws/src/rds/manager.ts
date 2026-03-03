@@ -132,6 +132,8 @@ export class RDSManager {
     return withAWSRetry(fn, {
       ...this.retryOptions,
       label: label || this.retryOptions.label,
+      service: "rds",
+      region: this.defaultRegion,
     });
   }
 

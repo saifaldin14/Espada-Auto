@@ -68,7 +68,7 @@ export class GcpIAMManager {
   constructor(projectId: string, getAccessToken: () => Promise<string>, retryOptions?: GcpRetryOptions) {
     this.projectId = projectId;
     this.getAccessToken = getAccessToken;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "iam", projectId: this.projectId };
   }
 
   /** List all service accounts in the project. */

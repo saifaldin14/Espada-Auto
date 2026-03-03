@@ -27,7 +27,7 @@ export class AzurePolicyManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "policy", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

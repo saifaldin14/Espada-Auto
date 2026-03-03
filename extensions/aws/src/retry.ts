@@ -8,6 +8,24 @@
  * It implements the same patterns as src/infra/retry.ts.
  */
 
+// ── Concurrency limiter (lightweight bulkhead for cloud API calls) ──
+const MAX_CONCURRENT_AWS_CALLS = 20;
+let _active = 0;
+const _waiters: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (_active < MAX_CONCURRENT_AWS_CALLS) {
+    _active++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => _waiters.push(() => { _active++; resolve(); }));
+}
+
+function releaseSlot(): void {
+  _active--;
+  if (_waiters.length > 0) _waiters.shift()!();
+}
+
 /**
  * Retry configuration options
  */
@@ -278,23 +296,42 @@ export function createAWSRetryRunner(options: AWSRetryOptions = {}) {
 export const awsRetry = createAWSRetryRunner();
 
 /**
- * Execute an AWS operation with retry logic
+ * Execute an AWS operation with retry logic and optional circuit breaker protection.
+ *
+ * When `options.service` is provided, the call is wrapped in a per-service
+ * circuit breaker. If the service's circuit is open, the call is rejected
+ * immediately without burning retry attempts.
  *
  * @example
  * ```typescript
  * const result = await withAWSRetry(
  *   () => ec2Client.send(new DescribeInstancesCommand({})),
- *   { label: "DescribeInstances" }
+ *   { label: "DescribeInstances", service: "ec2" }
  * );
  * ```
  */
 export async function withAWSRetry<T>(
   fn: () => Promise<T>,
-  options?: { label?: string } & AWSRetryOptions,
+  options?: { label?: string; service?: string; region?: string } & AWSRetryOptions,
 ): Promise<T> {
   const runner = options?.retry || options?.verbose || options?.onRetry
     ? createAWSRetryRunner(options)
     : awsRetry;
 
-  return runner(fn, options?.label);
+  await acquireSlot();
+  try {
+    if (options?.service) {
+      // Lazy import to avoid circular deps and keep the module self-contained
+      const { withAWSCircuitBreaker } = await import("./circuit-breaker.js");
+      return await withAWSCircuitBreaker(
+        options.service,
+        () => runner(fn, options?.label),
+        { region: options?.region },
+      );
+    }
+
+    return await runner(fn, options?.label);
+  } finally {
+    releaseSlot();
+  }
 }

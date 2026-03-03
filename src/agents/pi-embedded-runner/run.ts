@@ -44,6 +44,14 @@ import {
 import { normalizeUsage, type UsageLike } from "../usage.js";
 
 import { compactEmbeddedPiSessionDirect } from "./compact.js";
+import {
+  getLLMProviderBreaker,
+  isLLMProviderAvailable,
+  recordLLMProviderFailure,
+  recordLLMProviderSuccess,
+  circuitOpenToFailover,
+} from "./circuit-breaker-llm.js";
+import { CircuitOpenError } from "../../infra/circuit-breaker.js";
 import { resolveGlobalLane, resolveSessionLane } from "./lanes.js";
 import { log } from "./logger.js";
 import { resolveModel } from "./model.js";
@@ -108,6 +116,26 @@ export async function runEmbeddedPiAgent(
       if (!model) {
         throw new Error(error ?? `Unknown model: ${provider}/${modelId}`);
       }
+
+      // ── Circuit breaker pre-flight: skip providers whose circuit is open ──
+      if (!isLLMProviderAvailable(provider)) {
+        const breaker = getLLMProviderBreaker(provider);
+        const snap = breaker.snapshot();
+        const elapsed = Date.now() - snap.lastFailureTime;
+        const remainingMs = Math.max(0, 60_000 - elapsed); // match LLM_PROVIDER_DEFAULTS.resetTimeoutMs
+        if (fallbackConfigured) {
+          throw circuitOpenToFailover(
+            new CircuitOpenError(provider, remainingMs),
+            provider,
+            modelId,
+          );
+        }
+        log.warn(
+          `LLM provider "${provider}" circuit breaker is open; proceeding anyway (no fallback configured)`,
+        );
+      }
+      // Ensure the breaker is registered for health tracking even on first call.
+      getLLMProviderBreaker(provider);
 
       const ctxInfo = resolveContextWindowInfo({
         cfg: params.config,
@@ -194,14 +222,18 @@ export async function runEmbeddedPiAgent(
           message,
         });
         if (fallbackConfigured) {
-          throw new FailoverError(message, {
+          const failoverErr = new FailoverError(message, {
             reason,
             provider,
             model: modelId,
             status: resolveFailoverStatus(reason),
             cause: params.error,
           });
+          recordLLMProviderFailure(provider, failoverErr);
+          throw failoverErr;
         }
+        // Record the failure even when no fallback is configured.
+        recordLLMProviderFailure(provider, params.error ?? new Error(message));
         if (params.error instanceof Error) throw params.error;
         throw new Error(message);
       };
@@ -500,13 +532,15 @@ export async function runEmbeddedPiAgent(
             // FIX: Throw FailoverError for prompt errors when fallbacks configured
             // This enables model fallback for quota/rate limit errors during prompt submission
             if (fallbackConfigured && isFailoverErrorMessage(errorText)) {
-              throw new FailoverError(errorText, {
+              const failoverErr = new FailoverError(errorText, {
                 reason: promptFailoverReason ?? "unknown",
                 provider,
                 model: modelId,
                 profileId: lastProfileId,
                 status: resolveFailoverStatus(promptFailoverReason ?? "unknown"),
               });
+              recordLLMProviderFailure(provider, failoverErr);
+              throw failoverErr;
             }
             throw promptError;
           }
@@ -600,13 +634,15 @@ export async function runEmbeddedPiAgent(
               const status =
                 resolveFailoverStatus(assistantFailoverReason ?? "unknown") ??
                 (isTimeoutErrorMessage(message) ? 408 : undefined);
-              throw new FailoverError(message, {
+              const failoverErr2 = new FailoverError(message, {
                 reason: assistantFailoverReason ?? "unknown",
                 provider,
                 model: modelId,
                 profileId: lastProfileId,
                 status,
               });
+              recordLLMProviderFailure(provider, failoverErr2);
+              throw failoverErr2;
             }
           }
 
@@ -634,6 +670,8 @@ export async function runEmbeddedPiAgent(
           log.debug(
             `embedded run done: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - started} aborted=${aborted}`,
           );
+          // Record success on the provider's circuit breaker.
+          recordLLMProviderSuccess(provider);
           if (lastProfileId) {
             await markAuthProfileGood({
               store: authStore,

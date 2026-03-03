@@ -21,7 +21,7 @@ export class AzureAutomationManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "automation", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

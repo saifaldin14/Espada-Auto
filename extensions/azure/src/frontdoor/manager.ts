@@ -28,7 +28,7 @@ export class AzureFrontDoorManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "frontdoor", subscriptionId: this.subscriptionId };
   }
 
   private async getClient() {

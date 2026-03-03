@@ -15,7 +15,7 @@ export class AzureContainerManager {
   constructor(credentialsManager: AzureCredentialsManager, subscriptionId: string, retryOptions?: AzureRetryOptions) {
     this.credentialsManager = credentialsManager;
     this.subscriptionId = subscriptionId;
-    this.retryOptions = retryOptions ?? {};
+    this.retryOptions = { ...(retryOptions ?? {}), service: "containers", subscriptionId: this.subscriptionId };
   }
 
   async listAKSClusters(resourceGroup?: string): Promise<AKSCluster[]> {

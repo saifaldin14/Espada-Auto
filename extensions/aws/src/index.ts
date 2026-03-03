@@ -1815,6 +1815,20 @@ export {
   type RetryOptions,
 } from "./retry.js";
 
+// Circuit breaker utilities
+export {
+  getAWSServiceBreaker,
+  isAWSServiceAvailable,
+  withAWSCircuitBreaker,
+  getAWSCircuitBreakerSnapshots,
+  getAWSCircuitBreakerHealthSummary,
+  resetAllAWSBreakers,
+  CircuitOpenError as AWSCircuitOpenError,
+  type CircuitState as AWSCircuitState,
+  type CircuitBreakerConfig as AWSCircuitBreakerConfig,
+  type CircuitBreakerSnapshot as AWSCircuitBreakerSnapshot,
+} from "./circuit-breaker.js";
+
 // Progress utilities
 export {
   createAWSProgress,

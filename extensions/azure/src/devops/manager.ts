@@ -21,7 +21,7 @@ export class AzureDevOpsManager {
   ) {
     this.credentialsManager = credentialsManager;
     this.organization = organization;
-    this.retryOptions = retryOptions;
+    this.retryOptions = { ...retryOptions, service: "devops" };
   }
 
   private async fetchDevOps<T>(path: string): Promise<T> {
