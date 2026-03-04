@@ -130,6 +130,74 @@
     "./advisor": {
       "import": "./dist/advisor/index.js",
       "types": "./dist/advisor/index.d.ts"
+    },
+    "./backup": {
+      "import": "./dist/backup/index.js",
+      "types": "./dist/backup/index.d.ts"
+    },
+    "./cost": {
+      "import": "./dist/cost/index.js",
+      "types": "./dist/cost/index.d.ts"
+    },
+    "./security": {
+      "import": "./dist/security/index.js",
+      "types": "./dist/security/index.d.ts"
+    },
+    "./tagging": {
+      "import": "./dist/tagging/index.js",
+      "types": "./dist/tagging/index.d.ts"
+    },
+    "./automation": {
+      "import": "./dist/automation/index.js",
+      "types": "./dist/automation/index.d.ts"
+    },
+    "./iac": {
+      "import": "./dist/iac/index.js",
+      "types": "./dist/iac/index.d.ts"
+    },
+    "./containers": {
+      "import": "./dist/containers/index.js",
+      "types": "./dist/containers/index.d.ts"
+    },
+    "./discovery": {
+      "import": "./dist/discovery/index.js",
+      "types": "./dist/discovery/index.d.ts"
+    },
+    "./catalog": {
+      "import": "./dist/catalog/index.js",
+      "types": "./dist/catalog/index.d.ts"
+    },
+    "./reconciliation": {
+      "import": "./dist/reconciliation/index.js",
+      "types": "./dist/reconciliation/index.d.ts"
+    },
+    "./policy": {
+      "import": "./dist/policy/index.js",
+      "types": "./dist/policy/index.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli/index.js",
+      "types": "./dist/cli/index.d.ts"
+    },
+    "./client-pool": {
+      "import": "./dist/client-pool/index.js",
+      "types": "./dist/client-pool/index.d.ts"
+    },
+    "./context": {
+      "import": "./dist/context/index.js",
+      "types": "./dist/context/index.d.ts"
+    },
+    "./enterprise": {
+      "import": "./dist/enterprise/index.js",
+      "types": "./dist/enterprise/index.d.ts"
+    },
+    "./intent": {
+      "import": "./dist/intent/index.js",
+      "types": "./dist/intent/index.d.ts"
+    },
+    "./conversational": {
+      "import": "./dist/conversational/index.js",
+      "types": "./dist/conversational/index.d.ts"
     }
   },
   "scripts": {
