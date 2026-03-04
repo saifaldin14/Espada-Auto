@@ -81,7 +81,7 @@ describe("AWS Diagnostics", () => {
           operation: "DescribeInstances",
           durationMs: 100,
           success: true,
-          ts: expect.any(Number),
+          timestamp: expect.any(Number),
           seq: expect.any(Number),
         })
       );

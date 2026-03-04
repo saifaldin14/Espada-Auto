@@ -49,6 +49,19 @@ import {
   type IaCManager,
   type CostManager,
   type AWSResourceType,
+  type CostDimension,
+  type CostMetric,
+  type BudgetType,
+  type BudgetTimeUnit,
+  type AlertThresholdType,
+  type AlertNotificationType,
+  type RecommendationType,
+  type UnusedResourceType,
+  type KMSKeyUsage,
+  type SecurityFindingSeverity,
+  type PolicyTemplate,
+  type TrustPolicy,
+  type PolicyDocument,
   TemplateVariable,
   TemplateOutput,
 } from "./src/index.js";
@@ -190,6 +203,9 @@ import type {
   EventRuleState,
   ScheduleState,
   StateMachineType,
+  TargetType,
+  ExecutionStatus,
+  EventPattern,
 } from "./src/automation/types.js";
 
 import type {
@@ -201,11 +217,14 @@ import type {
   AuditLogEntry,
   PreOperationBackup,
   ChangeRequest,
+  PolicyCondition,
+  PolicyAction,
 } from "./src/guardrails/types.js";
 
 import type {
   PolicyType,
   SCPCategory,
+  AccountStatus,
 } from "./src/organization/types.js";
 import { InfrastructureTemplate } from "./src/iac/types.js";
 
@@ -7642,11 +7661,11 @@ Use this tool to:
                     groupBy: params.group_by as Array<{ type: "DIMENSION" | "TAG" | "COST_CATEGORY"; key: string }>,
                     filter: params.filter_dimension
                       ? {
-                          dimension: params.filter_dimension as any,
+                          dimension: params.filter_dimension as CostDimension,
                           values: params.filter_values as string[],
                         }
                       : undefined,
-                    metrics: params.metric ? [params.metric as any] : undefined,
+                    metrics: params.metric ? [params.metric as CostMetric] : undefined,
                     region,
                   });
 
@@ -7687,11 +7706,11 @@ Use this tool to:
                   groupBy: params.group_by as Array<{ type: "DIMENSION" | "TAG" | "COST_CATEGORY"; key: string }>,
                   filter: params.filter_dimension
                     ? {
-                        dimension: params.filter_dimension as any,
+                        dimension: params.filter_dimension as CostDimension,
                         values: params.filter_values as string[],
                       }
                     : undefined,
-                  metrics: params.metric ? [params.metric as any] : undefined,
+                  metrics: params.metric ? [params.metric as CostMetric] : undefined,
                   region,
                 });
 
@@ -7745,7 +7764,7 @@ Use this tool to:
                   startDate,
                   endDate,
                   granularity: (params.granularity as "DAILY" | "MONTHLY") || "MONTHLY",
-                  metric: params.metric as any,
+                  metric: params.metric as CostMetric,
                   region,
                 });
 
@@ -7776,7 +7795,7 @@ Use this tool to:
 
               case "get_optimization_recommendations": {
                 const result = await costManager.getOptimizationRecommendations({
-                  types: params.recommendation_types as any[],
+                  types: params.recommendation_types as RecommendationType[],
                   minMonthlySavings: params.min_monthly_savings as number,
                   region,
                 });
@@ -7838,7 +7857,7 @@ Use this tool to:
 
               case "find_unused_resources": {
                 const result = await costManager.findUnusedResources({
-                  resourceTypes: params.resource_types as any[],
+                  resourceTypes: params.resource_types as UnusedResourceType[],
                   minAgeDays: params.min_age_days as number,
                   region: region || "us-east-1",
                   includeCostEstimates: true,
@@ -8009,9 +8028,9 @@ Use this tool to:
 
               case "create_budget": {
                 const budgetName = params.budget_name as string;
-                const budgetType = params.budget_type as any;
+                const budgetType = params.budget_type as BudgetType;
                 const limitAmount = params.limit_amount as number;
-                const timeUnit = params.time_unit as any;
+                const timeUnit = params.time_unit as BudgetTimeUnit;
 
                 if (!budgetName) {
                   return {
@@ -8041,8 +8060,8 @@ Use this tool to:
                   timeUnit: timeUnit || "MONTHLY",
                   alerts: alertThresholds?.map(a => ({
                     threshold: a.threshold,
-                    thresholdType: a.threshold_type as any,
-                    notificationType: a.notification_type as any,
+                    thresholdType: a.threshold_type as AlertThresholdType,
+                    notificationType: a.notification_type as AlertNotificationType,
                     comparisonOperator: "GREATER_THAN" as const,
                     emailAddresses: a.email_addresses,
                   })),
@@ -8793,7 +8812,7 @@ Use this tool to:
                 }
                 const result = await securityManager.createPolicy({
                   policyName,
-                  policyDocument: policyDocument as any,
+                  policyDocument: policyDocument as PolicyDocument,
                   description: params.description as string,
                   tags: params.tags as Record<string, string>,
                 });
@@ -8840,7 +8859,7 @@ Use this tool to:
                 }
                 try {
                   const variables = params.template_variables as Record<string, string>;
-                  const policyDoc = securityManager.getPolicyTemplate(template as any, variables);
+                  const policyDoc = securityManager.getPolicyTemplate(template as PolicyTemplate, variables);
                   return {
                     content: [{
                       type: "text",
@@ -8891,7 +8910,7 @@ Use this tool to:
               case "list_security_findings": {
                 const result = await securityManager.listSecurityFindings({
                   region,
-                  severities: params.severities as any[],
+                  severities: params.severities as SecurityFindingSeverity[],
                   maxResults: params.max_results as number,
                 });
                 if (!result.success) {
@@ -9101,7 +9120,7 @@ Use this tool to:
                 const result = await securityManager.createKMSKey({
                   region,
                   description: params.key_description as string || params.description as string,
-                  keyUsage: params.key_usage as any,
+                  keyUsage: params.key_usage as KMSKeyUsage,
                   enableKeyRotation: params.enable_rotation as boolean,
                   tags: params.tags as Record<string, string>,
                 });
@@ -9716,7 +9735,7 @@ Use this tool to:
           if (!guardrailsManager) {
             guardrailsManager = createGuardrailsManager({
               defaultRegion: region,
-            } as any);
+            });
           }
 
           try {
@@ -9991,8 +10010,9 @@ Use this tool to:
                     ).join("\n")
                   : "No resources affected.";
 
-                const validationText = (dryRun as any).validationErrors?.length > 0
-                  ? `\n\n⚠️ **Validation Errors:**\n${(dryRun as any).validationErrors.map((e: string) => `• ${e}`).join("\n")}`
+                const dryRunResult = dryRun as { validationErrors?: string[] };
+                const validationText = dryRunResult.validationErrors?.length
+                  ? `\n\n⚠️ **Validation Errors:**\n${dryRunResult.validationErrors.map((e: string) => `• ${e}`).join("\n")}`
                   : "";
 
                 return {
@@ -10877,8 +10897,8 @@ Use this tool to:
                   description: policy.description || '',
                   enabled: policy.enabled !== false,
                   priority: policy.priority || 100,
-                  conditions: (policy.conditions || []) as any,
-                  actions: (policy.actions || []) as any,
+                  conditions: (policy.conditions || []) as PolicyCondition[],
+                  actions: (policy.actions || []) as PolicyAction[],
                   success: undefined,
                   error: undefined,
                   data: undefined
@@ -11530,7 +11550,7 @@ Use this tool to:
               // ==================
               case "list_accounts": {
                 const result = await organizationManager.listAccounts({
-                  status: params.status_filter as any,
+                  status: params.status_filter as AccountStatus,
                   organizationalUnitId: params.ou_id as string,
                   includeTags: params.include_tags as boolean,
                   includeCostData: params.include_cost_data as boolean,
@@ -21284,7 +21304,7 @@ ACTIONS:
                   name,
                   description: params.description as string | undefined,
                   eventBusName: params.eventBusName as string | undefined,
-                  eventPattern: params.eventPattern as any,
+                  eventPattern: params.eventPattern as EventPattern | undefined,
                   scheduleExpression: params.scheduleExpression as string | undefined,
                   state: (params.state as EventRuleState) || "ENABLED",
                   roleArn: params.roleArn as string | undefined,
@@ -21303,7 +21323,7 @@ ACTIONS:
                 }
                 const result = await automationManager.updateEventRule(ruleName, {
                   description: params.description as string | undefined,
-                  eventPattern: params.eventPattern as any,
+                  eventPattern: params.eventPattern as EventPattern | undefined,
                   scheduleExpression: params.scheduleExpression as string | undefined,
                   state: params.state as EventRuleState | undefined,
                   roleArn: params.roleArn as string | undefined,
@@ -21370,7 +21390,7 @@ ACTIONS:
                   ruleName,
                   targetId,
                   targetArn,
-                  targetType: (params.targetType as any) || "lambda",
+                  targetType: (params.targetType as TargetType) || "lambda",
                   eventBusName: params.eventBusName as string | undefined,
                   roleArn: params.roleArn as string | undefined,
                   input: params.input as string | undefined,
@@ -21613,7 +21633,7 @@ ACTIONS:
                 }
                 const result = await automationManager.listExecutions({
                   stateMachineArn: arn,
-                  statusFilter: params.statusFilter as any,
+                  statusFilter: params.statusFilter as ExecutionStatus,
                   maxResults: params.limit as number | undefined,
                 });
                 if (!result.success) {
@@ -21822,7 +21842,7 @@ ACTIONS:
                   eventSourceArn: eventBusName,
                   description: params.description as string | undefined,
                   retentionDays: params.retentionDays as number | undefined,
-                  eventPattern: params.eventPattern as any,
+                  eventPattern: params.eventPattern as EventPattern | undefined,
                 } as any);
                 if (!result.success) {
                   return { content: [{ type: "text", text: `Error: ${result.error}` }], details: result };

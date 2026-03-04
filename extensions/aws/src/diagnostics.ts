@@ -1,41 +1,30 @@
 /**
- * AWS Diagnostic Events
+ * AWS Extension — Diagnostics
  *
- * Instrumentation helpers for AWS API call tracing.
- * Enables observability via the diagnostics-otel extension.
- *
- * This module is self-contained to avoid tsconfig rootDir issues.
+ * Event emitter for AWS API call tracing and observability.
+ * Built on the shared DiagnosticEmitter from cloud-utils.
  */
 
+import { DiagnosticEmitter, type BaseDiagnosticEvent } from "../../cloud-utils/diagnostics.js";
 import { formatErrorMessage, extractErrorCode } from "./retry.js";
 
-/**
- * AWS API call diagnostic event
- */
-export type AWSApiCallEvent = {
+// =============================================================================
+// Types
+// =============================================================================
+
+/** AWS API call diagnostic event */
+export type AWSApiCallEvent = BaseDiagnosticEvent & {
   type: "aws.api.call";
-  ts: number;
-  seq: number;
-  service: string;
-  operation: string;
   region?: string;
-  durationMs: number;
   success: true;
   requestId?: string;
   httpStatusCode?: number;
 };
 
-/**
- * AWS API error diagnostic event
- */
-export type AWSApiErrorEvent = {
+/** AWS API error diagnostic event */
+export type AWSApiErrorEvent = BaseDiagnosticEvent & {
   type: "aws.api.error";
-  ts: number;
-  seq: number;
-  service: string;
-  operation: string;
   region?: string;
-  durationMs: number;
   success: false;
   error: string;
   errorCode?: string;
@@ -43,54 +32,39 @@ export type AWSApiErrorEvent = {
   retryable?: boolean;
 };
 
-/**
- * AWS credential refresh diagnostic event
- */
-export type AWSCredentialRefreshEvent = {
+/** AWS credential refresh diagnostic event */
+export type AWSCredentialRefreshEvent = BaseDiagnosticEvent & {
   type: "aws.credential.refresh";
-  ts: number;
-  seq: number;
   source: string;
   profile?: string;
   region?: string;
-  durationMs: number;
   success: boolean;
   error?: string;
 };
 
-/**
- * AWS resource change diagnostic event
- */
-export type AWSResourceChangeEvent = {
+/** AWS resource change diagnostic event */
+export type AWSResourceChangeEvent = BaseDiagnosticEvent & {
   type: "aws.resource.change";
-  ts: number;
-  seq: number;
-  service: string;
   operation: "create" | "update" | "delete";
   resourceType: string;
   resourceId?: string;
   region?: string;
-  durationMs: number;
   success: boolean;
   error?: string;
 };
 
-/**
- * Combined AWS diagnostic event type
- */
+/** Combined AWS diagnostic event type */
 export type AWSApiEvent =
   | AWSApiCallEvent
   | AWSApiErrorEvent
   | AWSCredentialRefreshEvent
   | AWSResourceChangeEvent;
 
-/**
- * Event input without auto-generated fields (ts and seq)
- */
-export type AWSApiCallEventInput = Omit<AWSApiCallEvent, "ts" | "seq">;
-export type AWSApiErrorEventInput = Omit<AWSApiErrorEvent, "ts" | "seq">;
-export type AWSCredentialRefreshEventInput = Omit<AWSCredentialRefreshEvent, "ts" | "seq">;
-export type AWSResourceChangeEventInput = Omit<AWSResourceChangeEvent, "ts" | "seq">;
+/** Event input without auto-generated fields (timestamp and seq) */
+export type AWSApiCallEventInput = Omit<AWSApiCallEvent, "timestamp" | "seq">;
+export type AWSApiErrorEventInput = Omit<AWSApiErrorEvent, "timestamp" | "seq">;
+export type AWSCredentialRefreshEventInput = Omit<AWSCredentialRefreshEvent, "timestamp" | "seq">;
+export type AWSResourceChangeEventInput = Omit<AWSResourceChangeEvent, "timestamp" | "seq">;
 
 export type AWSApiEventInput =
   | AWSApiCallEventInput
@@ -98,81 +72,57 @@ export type AWSApiEventInput =
   | AWSCredentialRefreshEventInput
   | AWSResourceChangeEventInput;
 
-/**
- * Diagnostic event listener type
- */
-type DiagnosticEventListener = (event: AWSApiEvent) => void;
+// =============================================================================
+// Singleton emitter
+// =============================================================================
 
-/**
- * Registered listeners for AWS diagnostic events
- */
-const listeners = new Set<DiagnosticEventListener>();
+const emitter = new DiagnosticEmitter<AWSApiEvent>();
 
-/**
- * Sequence counter for events
- */
-let seq = 0;
+/** Enable AWS diagnostics */
+export function enableAWSDiagnostics(): void { emitter.enable(); }
 
-/**
- * Whether AWS diagnostics are enabled
- */
-let diagnosticsEnabled = false;
+/** Disable AWS diagnostics */
+export function disableAWSDiagnostics(): void { emitter.disable(); }
 
-/**
- * Enable AWS diagnostics
- */
-export function enableAWSDiagnostics(): void {
-  diagnosticsEnabled = true;
-}
+/** Check if AWS diagnostics are enabled */
+export function isAWSDiagnosticsEnabled(): boolean { return emitter.enabled; }
 
-/**
- * Disable AWS diagnostics
- */
-export function disableAWSDiagnostics(): void {
-  diagnosticsEnabled = false;
-}
+/** Set diagnostics enabled state */
+export function setAWSDiagnosticsEnabled(enabled: boolean): void { emitter.setEnabled(enabled); }
 
-/**
- * Check if AWS diagnostics are enabled
- */
-export function isAWSDiagnosticsEnabled(): boolean {
-  return diagnosticsEnabled;
-}
-
-/**
- * Set diagnostics enabled state
- */
-export function setAWSDiagnosticsEnabled(enabled: boolean): void {
-  diagnosticsEnabled = enabled;
-}
-
-/**
- * Emit an AWS diagnostic event
- */
+/** Emit an AWS diagnostic event */
 export function emitAWSDiagnosticEvent(event: AWSApiEventInput): void {
-  if (!diagnosticsEnabled) return;
-
-  const enriched = {
-    ...event,
-    seq: ++seq,
-    ts: Date.now(),
-  } as AWSApiEvent;
-
-  listeners.forEach((listener) => {
-    try {
-      listener(enriched);
-    } catch {
-      // Ignore listener failures
-    }
-  });
+  emitter.emit(event);
 }
 
+/** Subscribe to AWS diagnostic events */
+export function onAWSDiagnosticEvent(listener: (event: AWSApiEvent) => void): () => void {
+  return emitter.on(listener);
+}
+
+// =============================================================================
+// Instrumentation
+// =============================================================================
+
+const extractAWSErrorStatus = (err: unknown): number | undefined => {
+  return (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+};
+
 /**
- * Subscribe to AWS diagnostic events
+ * Check if error is retryable
  */
-export function onAWSDiagnosticEvent(listener: DiagnosticEventListener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+function isRetryableError(err: unknown): boolean {
+  const code = extractErrorCode(err);
+  if (!code) return false;
+
+  const retryableCodes = new Set([
+    "ThrottlingException",
+    "TooManyRequestsException",
+    "ServiceUnavailable",
+    "InternalError",
+  ]);
+
+  return retryableCodes.has(code);
 }
 
 /**
@@ -204,8 +154,6 @@ export async function instrumentedAWSCall<T>(
 
     // Extract metadata from AWS SDK v3 response
     const metadata = (result as { $metadata?: { requestId?: string; httpStatusCode?: number } })?.$metadata;
-    const requestId = metadata?.requestId;
-    const httpStatusCode = metadata?.httpStatusCode;
 
     emitAWSDiagnosticEvent({
       type: "aws.api.call",
@@ -214,15 +162,13 @@ export async function instrumentedAWSCall<T>(
       region: options?.region,
       durationMs,
       success: true,
-      requestId,
-      httpStatusCode,
+      requestId: metadata?.requestId,
+      httpStatusCode: metadata?.httpStatusCode,
     });
 
     return result;
   } catch (err) {
     const durationMs = Date.now() - startTime;
-    const errorCode = extractErrorCode(err);
-    const httpStatusCode = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
 
     emitAWSDiagnosticEvent({
       type: "aws.api.error",
@@ -232,30 +178,13 @@ export async function instrumentedAWSCall<T>(
       durationMs,
       success: false,
       error: formatErrorMessage(err),
-      errorCode,
-      httpStatusCode,
+      errorCode: extractErrorCode(err),
+      httpStatusCode: extractAWSErrorStatus(err),
       retryable: isRetryableError(err),
     });
 
     throw err;
   }
-}
-
-/**
- * Check if error is retryable
- */
-function isRetryableError(err: unknown): boolean {
-  const code = extractErrorCode(err);
-  if (!code) return false;
-
-  const retryableCodes = new Set([
-    "ThrottlingException",
-    "TooManyRequestsException",
-    "ServiceUnavailable",
-    "InternalError",
-  ]);
-
-  return retryableCodes.has(code);
 }
 
 /**
@@ -271,6 +200,8 @@ export function emitCredentialRefreshEvent(params: {
 }): void {
   emitAWSDiagnosticEvent({
     type: "aws.credential.refresh",
+    service: "sts",
+    operation: "credential-refresh",
     ...params,
   });
 }
@@ -308,7 +239,7 @@ export function createInstrumentedClient<T extends { send: (command: unknown) =>
   client: T,
   options?: { region?: string },
 ): T {
-  if (!diagnosticsEnabled) return client;
+  if (!emitter.enabled) return client;
 
   return new Proxy(client, {
     get(target, prop) {
@@ -323,11 +254,7 @@ export function createInstrumentedClient<T extends { send: (command: unknown) =>
   }) as T;
 }
 
-/**
- * Reset diagnostic state for testing
- */
+/** Reset diagnostic state for testing */
 export function resetAWSDiagnosticsForTest(): void {
-  seq = 0;
-  listeners.clear();
-  diagnosticsEnabled = false;
+  emitter.reset();
 }
