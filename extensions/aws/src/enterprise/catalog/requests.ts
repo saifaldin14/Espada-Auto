@@ -14,6 +14,7 @@ import type {
   RequestStatus,
   CatalogModule,
   CatalogResult,
+  ModuleCategory,
 } from './types.js';
 import { CatalogModuleService } from './modules.js';
 
@@ -635,7 +636,7 @@ export class ProvisioningRequestService {
       }
 
       // Check category match
-      if (c.categories?.length && context.category && !c.categories.includes(context.category as any)) {
+      if (c.categories?.length && context.category && !c.categories.includes(context.category as ModuleCategory)) {
         continue;
       }
 

@@ -6,6 +6,7 @@ import type { EspadaPluginApi } from "espada/plugin-sdk";
 import { createK8sTools } from "./src/tools.js";
 import { createHelmTools } from "./src/helm-tools.js";
 import { createK8sCli } from "./src/cli.js";
+import { validateK8sResourceName } from "../cloud-utils/input-validation.js";
 
 // ── Enterprise Diagnostics ──────────────────────────────────────────────
 type K8sDiagnostics = {
@@ -57,6 +58,10 @@ export default {
       const { kubectlGet } = await import("./src/cli-wrapper.js");
       const { parseManifestJson, parseResources } = await import("./src/manifest-parser.js");
       const p = params as { resource: string; namespace?: string };
+      if (p.namespace) {
+        const nsCheck = validateK8sResourceName(p.namespace, "namespace");
+        if (!nsCheck.valid) { trackFailure(new Error(nsCheck.reason)); respond(false, { error: nsCheck.reason }); return; }
+      }
       try {
         const json = await kubectlGet(p.resource, { namespace: p.namespace });
         const manifest = parseManifestJson(json);

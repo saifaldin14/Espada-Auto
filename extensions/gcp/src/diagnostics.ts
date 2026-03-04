@@ -2,7 +2,10 @@
  * GCP Extension — Diagnostics
  *
  * Event emitter for GCP API call tracing and observability.
+ * Built on the shared DiagnosticEmitter from cloud-utils.
  */
+
+import { DiagnosticEmitter, type BaseDiagnosticEvent } from "../../cloud-utils/diagnostics.js";
 
 // =============================================================================
 // Types
@@ -14,77 +17,44 @@ export type GcpDiagnosticEventType =
   | "gcp.credential.refresh"
   | "gcp.resource.change";
 
-export type GcpDiagnosticEvent = {
+export type GcpDiagnosticEvent = BaseDiagnosticEvent & {
   type: GcpDiagnosticEventType;
-  timestamp: number;
-  seq: number;
-  service: string;
-  operation: string;
-  durationMs?: number;
   project?: string;
   region?: string;
   zone?: string;
-  statusCode?: number;
-  requestId?: string;
-  error?: string;
-  metadata?: Record<string, unknown>;
 };
 
 export type GcpDiagnosticListener = (event: GcpDiagnosticEvent) => void;
 
 // =============================================================================
-// Global State
+// Singleton emitter
 // =============================================================================
 
-let diagnosticsEnabled = false;
-let seq = 0;
-const listeners = new Set<GcpDiagnosticListener>();
-
-// =============================================================================
-// Public API
-// =============================================================================
+const emitter = new DiagnosticEmitter<GcpDiagnosticEvent>();
 
 /** Enable GCP diagnostics tracing. */
-export function enableGcpDiagnostics(): void {
-  diagnosticsEnabled = true;
-}
+export function enableGcpDiagnostics(): void { emitter.enable(); }
 
 /** Disable GCP diagnostics tracing. */
-export function disableGcpDiagnostics(): void {
-  diagnosticsEnabled = false;
-}
+export function disableGcpDiagnostics(): void { emitter.disable(); }
 
 /** Check if diagnostics are enabled. */
-export function isGcpDiagnosticsEnabled(): boolean {
-  return diagnosticsEnabled;
-}
+export function isGcpDiagnosticsEnabled(): boolean { return emitter.enabled; }
 
 /** Subscribe to diagnostic events. Returns an unsubscribe function. */
 export function onGcpDiagnosticEvent(listener: GcpDiagnosticListener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return emitter.on(listener);
 }
 
 /** Emit a diagnostic event to all subscribers. */
 export function emitGcpDiagnosticEvent(event: Omit<GcpDiagnosticEvent, "timestamp" | "seq">): void {
-  if (!diagnosticsEnabled) return;
-
-  const fullEvent: GcpDiagnosticEvent = {
-    ...event,
-    timestamp: Date.now(),
-    seq: ++seq,
-  };
-
-  for (const listener of listeners) {
-    try {
-      listener(fullEvent);
-    } catch {
-      // Swallow listener errors to avoid cascading failures
-    }
-  }
+  emitter.emit(event);
 }
+
+const extractGcpErrorStatus = (err: unknown): number | undefined => {
+  const e = err as Record<string, unknown>;
+  return (e.statusCode ?? e.status ?? e.code) as number | undefined;
+};
 
 /**
  * Wrap a GCP API call with diagnostic instrumentation.
@@ -100,50 +70,23 @@ export async function instrumentedGcpCall<T>(
     metadata?: Record<string, unknown>;
   },
 ): Promise<T> {
-  if (!diagnosticsEnabled) return fn();
-
-  const start = Date.now();
-
-  try {
-    const result = await fn();
-
-    emitGcpDiagnosticEvent({
-      type: "gcp.api.call",
-      service,
-      operation,
-      durationMs: Date.now() - start,
+  return emitter.instrument(
+    "gcp.api.call",
+    "gcp.api.error",
+    service,
+    operation,
+    fn,
+    {
       project: options?.project,
       region: options?.region,
       zone: options?.zone,
       metadata: options?.metadata,
-    });
-
-    return result;
-  } catch (error) {
-    const err = error as Record<string, unknown>;
-
-    emitGcpDiagnosticEvent({
-      type: "gcp.api.error",
-      service,
-      operation,
-      durationMs: Date.now() - start,
-      statusCode: (err.statusCode ?? err.status ?? err.code) as number | undefined,
-      error: (err.message ?? String(error)) as string,
-      project: options?.project,
-      region: options?.region,
-      zone: options?.zone,
-      metadata: options?.metadata,
-    });
-
-    throw error;
-  }
+    },
+    extractGcpErrorStatus,
+  );
 }
 
-/**
- * Reset diagnostics state for tests.
- */
+/** Reset diagnostics state for tests. */
 export function resetGcpDiagnosticsForTest(): void {
-  diagnosticsEnabled = false;
-  seq = 0;
-  listeners.clear();
+  emitter.reset();
 }

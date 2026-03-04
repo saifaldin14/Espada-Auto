@@ -83,6 +83,7 @@ import type {
   NotificationEvent,
   NotificationChannelConfig,
   TimeWindow,
+  DayOfWeek,
 } from './types.js';
 
 import { DEFAULT_ACTION_CLASSIFICATIONS } from './types.js';
@@ -299,7 +300,8 @@ export function createGuardrailsManager(config: GuardrailsManagerConfig = {}): G
     if (!windows || windows.length === 0) return true;
     
     const now = new Date();
-    const currentDay = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][now.getDay()] as any;
+    const days: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const currentDay = days[now.getDay()];
     const currentHour = now.getHours();
     
     return windows.some(window => {

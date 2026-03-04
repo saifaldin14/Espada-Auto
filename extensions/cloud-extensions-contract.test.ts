@@ -236,3 +236,230 @@ describe("cloud-utils/input-validation", () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shared Circuit Breaker
+// ─────────────────────────────────────────────────────────────────────────
+describe("cloud-utils/circuit-breaker", () => {
+  let cb: typeof import("./cloud-utils/circuit-breaker.js");
+
+  beforeEach(async () => {
+    cb = await import("./cloud-utils/circuit-breaker.js");
+  });
+
+  it("CircuitBreaker starts closed", () => {
+    const breaker = new cb.CircuitBreaker("test");
+    expect(breaker.state).toBe("closed");
+    expect(breaker.canExecute()).toBe(true);
+  });
+
+  it("opens after failureThreshold consecutive trippable failures", () => {
+    const breaker = new cb.CircuitBreaker("test", {
+      failureThreshold: 3,
+      shouldTrip: () => true,
+    });
+    for (let i = 0; i < 3; i++) breaker.recordFailure(new Error("fail"));
+    expect(breaker.state).toBe("open");
+    expect(breaker.canExecute()).toBe(false);
+  });
+
+  it("rejects with CircuitOpenError when open", async () => {
+    const breaker = new cb.CircuitBreaker("test", {
+      failureThreshold: 1,
+      shouldTrip: () => true,
+    });
+    breaker.recordFailure(new Error("fail"));
+    expect(breaker.state).toBe("open");
+
+    await expect(breaker.execute(() => Promise.resolve("ok"))).rejects.toThrow(
+      cb.CircuitOpenError,
+    );
+  });
+
+  it("snapshot tracks counters correctly", () => {
+    const breaker = new cb.CircuitBreaker("snap-test", {
+      shouldTrip: () => true,
+    });
+    breaker.recordSuccess();
+    breaker.recordSuccess();
+    breaker.recordFailure(new Error("x"));
+    const snap = breaker.snapshot();
+    expect(snap.name).toBe("snap-test");
+    expect(snap.totalSuccesses).toBe(2);
+    expect(snap.totalFailures).toBe(1);
+    expect(snap.failures).toBe(1);
+  });
+
+  it("reset clears all counters", () => {
+    const breaker = new cb.CircuitBreaker("reset-test", {
+      failureThreshold: 1,
+      shouldTrip: () => true,
+    });
+    breaker.recordFailure(new Error("x"));
+    expect(breaker.state).toBe("open");
+    breaker.reset();
+    expect(breaker.state).toBe("closed");
+    expect(breaker.snapshot().totalFailures).toBe(0);
+  });
+
+  it("createProviderBreakerRegistry scopes breakers by prefix", () => {
+    const reg = cb.createProviderBreakerRegistry({
+      prefix: "test",
+      label: "Test",
+    });
+    const b1 = reg.getServiceBreaker("svc1");
+    const b2 = reg.getServiceBreaker("svc1", "scope-a");
+    expect(b1.name).toBe("test:svc1");
+    expect(b2.name).toBe("test:svc1:scope-a");
+    expect(reg.isServiceAvailable("svc1")).toBe(true);
+    expect(reg.getSnapshots()).toHaveLength(2);
+  });
+
+  it("createProviderBreakerRegistry healthSummary works", () => {
+    const reg = cb.createProviderBreakerRegistry({
+      prefix: "h",
+      label: "H",
+      defaultShouldTrip: () => true,
+    });
+    const b = reg.getServiceBreaker("svc");
+    // Force open
+    b.forceOpen();
+    const summary = reg.getHealthSummary();
+    expect(summary.hasOpenCircuits).toBe(true);
+    expect(summary.open).toContain("h:svc");
+    reg.resetAll();
+    expect(reg.getSnapshots()).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Shared Diagnostic Emitter
+// ─────────────────────────────────────────────────────────────────────────
+describe("cloud-utils/diagnostics", () => {
+  let diag: typeof import("./cloud-utils/diagnostics.js");
+
+  beforeEach(async () => {
+    diag = await import("./cloud-utils/diagnostics.js");
+  });
+
+  it("DiagnosticEmitter does not emit when disabled", () => {
+    const emitter = new diag.DiagnosticEmitter();
+    const events: unknown[] = [];
+    emitter.on((e) => events.push(e));
+    emitter.emit({ type: "test", service: "svc", operation: "op" } as any);
+    expect(events).toHaveLength(0);
+  });
+
+  it("DiagnosticEmitter emits with auto timestamp and seq", () => {
+    const emitter = new diag.DiagnosticEmitter();
+    emitter.enable();
+    const events: any[] = [];
+    emitter.on((e) => events.push(e));
+    emitter.emit({ type: "test.call", service: "svc", operation: "list" } as any);
+    emitter.emit({ type: "test.call", service: "svc", operation: "get" } as any);
+    expect(events).toHaveLength(2);
+    expect(events[0].seq).toBe(1);
+    expect(events[1].seq).toBe(2);
+    expect(events[0].timestamp).toBeGreaterThan(0);
+  });
+
+  it("on returns unsubscribe function", () => {
+    const emitter = new diag.DiagnosticEmitter();
+    emitter.enable();
+    const events: unknown[] = [];
+    const unsub = emitter.on((e) => events.push(e));
+    emitter.emit({ type: "x", service: "s", operation: "o" } as any);
+    expect(events).toHaveLength(1);
+    unsub();
+    emitter.emit({ type: "x", service: "s", operation: "o" } as any);
+    expect(events).toHaveLength(1);
+  });
+
+  it("instrument emits success and error events", async () => {
+    const emitter = new diag.DiagnosticEmitter();
+    emitter.enable();
+    const events: any[] = [];
+    emitter.on((e) => events.push(e));
+
+    // Success case
+    const result = await emitter.instrument(
+      "test.call", "test.error", "svc", "list",
+      async () => "ok",
+    );
+    expect(result).toBe("ok");
+    expect(events).toHaveLength(1);
+    expect(events[0].type).toBe("test.call");
+    expect(events[0].durationMs).toBeGreaterThanOrEqual(0);
+
+    // Error case
+    await expect(
+      emitter.instrument(
+        "test.call", "test.error", "svc", "fail",
+        async () => { throw new Error("boom"); },
+      ),
+    ).rejects.toThrow("boom");
+    expect(events).toHaveLength(2);
+    expect(events[1].type).toBe("test.error");
+    expect(events[1].error).toBe("boom");
+  });
+
+  it("reset clears all state", () => {
+    const emitter = new diag.DiagnosticEmitter();
+    emitter.enable();
+    expect(emitter.enabled).toBe(true);
+    emitter.reset();
+    expect(emitter.enabled).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Terraform cwd validation wiring
+// ─────────────────────────────────────────────────────────────────────────
+describe("terraform — cwd input validation wiring", () => {
+  let gateways: Map<string, GatewayHandler>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    process.env.ESPADA_TEST = "1";
+    const { api, gatewayMethods } = createApiMock();
+    gateways = gatewayMethods;
+    const mod = await import("./terraform/index.js");
+    mod.default.register(api);
+  });
+
+  it("terraform/exec-init rejects path traversal cwd", async () => {
+    const { success, payload } = await invokeGateway(gateways, "terraform/exec-init", { cwd: "../etc/shadow" });
+    expect(success).toBe(false);
+    expect((payload as Record<string, unknown>).error).toMatch(/forbidden pattern/);
+  });
+
+  it("terraform/exec-plan rejects /proc cwd", async () => {
+    const { success, payload } = await invokeGateway(gateways, "terraform/exec-plan", { cwd: "/proc/self" });
+    expect(success).toBe(false);
+    expect((payload as Record<string, unknown>).error).toMatch(/forbidden pattern/);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// K8s namespace validation wiring
+// ─────────────────────────────────────────────────────────────────────────
+describe("kubernetes — namespace input validation wiring", () => {
+  let gateways: Map<string, GatewayHandler>;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    const { api, gatewayMethods } = createApiMock();
+    gateways = gatewayMethods;
+    const mod = await import("./kubernetes/index.js");
+    mod.default.register(api);
+  });
+
+  it("k8s/resources rejects invalid namespace names", async () => {
+    const { success, payload } = await invokeGateway(gateways, "k8s/resources", {
+      resource: "pods",
+      namespace: "Bad-Namespace!",
+    });
+    expect(success).toBe(false);
+    expect((payload as Record<string, unknown>).error).toMatch(/RFC 1123/);
+  });
+});

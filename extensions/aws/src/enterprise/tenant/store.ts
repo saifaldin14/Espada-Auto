@@ -36,6 +36,7 @@ import type {
   TenantServiceConfig,
   UsageRecord,
   UsageSummary,
+  UsageType,
   MemberRole,
 } from './types.js';
 import { TIER_QUOTAS, TIER_FEATURES } from './types.js';
@@ -997,7 +998,7 @@ export class TenantStore {
         tenantId: input.tenantId,
         userId: input.userId,
         projectId: input.projectId,
-        type: input.type as any,
+        type: input.type as UsageType,
         quantity: input.quantity,
         unit: input.unit,
         timestamp: now.toISOString(),
@@ -1048,8 +1049,8 @@ export class TenantStore {
       const summary: UsageSummary = {
         tenantId,
         billingPeriod,
-        usage: usage as any,
-        costs: costs as any,
+        usage: usage as Record<UsageType, number>,
+        costs: costs as Record<UsageType, number>,
         totalCost: Object.values(costs).reduce((a, b) => a + b, 0),
         quotaUsage: {},
         generatedAt: new Date().toISOString(),

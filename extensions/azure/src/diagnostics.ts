@@ -2,8 +2,10 @@
  * Azure Extension — Diagnostics
  *
  * Event emitter for Azure API call tracing and observability.
- * Mirrors the AWS diagnostics module pattern.
+ * Built on the shared DiagnosticEmitter from cloud-utils.
  */
+
+import { DiagnosticEmitter, type BaseDiagnosticEvent } from "../../cloud-utils/diagnostics.js";
 
 // =============================================================================
 // Types
@@ -15,77 +17,44 @@ export type AzureDiagnosticEventType =
   | "azure.credential.refresh"
   | "azure.resource.change";
 
-export type AzureDiagnosticEvent = {
+export type AzureDiagnosticEvent = BaseDiagnosticEvent & {
   type: AzureDiagnosticEventType;
-  timestamp: number;
-  seq: number;
-  service: string;
-  operation: string;
-  durationMs?: number;
   subscriptionId?: string;
   resourceGroup?: string;
   region?: string;
-  statusCode?: number;
-  requestId?: string;
-  error?: string;
-  metadata?: Record<string, unknown>;
 };
 
 export type AzureDiagnosticListener = (event: AzureDiagnosticEvent) => void;
 
 // =============================================================================
-// Global State
+// Singleton emitter
 // =============================================================================
 
-let diagnosticsEnabled = false;
-let seq = 0;
-const listeners = new Set<AzureDiagnosticListener>();
-
-// =============================================================================
-// Public API
-// =============================================================================
+const emitter = new DiagnosticEmitter<AzureDiagnosticEvent>();
 
 /** Enable Azure diagnostics tracing. */
-export function enableAzureDiagnostics(): void {
-  diagnosticsEnabled = true;
-}
+export function enableAzureDiagnostics(): void { emitter.enable(); }
 
 /** Disable Azure diagnostics tracing. */
-export function disableAzureDiagnostics(): void {
-  diagnosticsEnabled = false;
-}
+export function disableAzureDiagnostics(): void { emitter.disable(); }
 
 /** Check if diagnostics are enabled. */
-export function isAzureDiagnosticsEnabled(): boolean {
-  return diagnosticsEnabled;
-}
+export function isAzureDiagnosticsEnabled(): boolean { return emitter.enabled; }
 
 /** Subscribe to diagnostic events. Returns an unsubscribe function. */
 export function onAzureDiagnosticEvent(listener: AzureDiagnosticListener): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
+  return emitter.on(listener);
 }
 
 /** Emit a diagnostic event to all subscribers. */
 export function emitAzureDiagnosticEvent(event: Omit<AzureDiagnosticEvent, "timestamp" | "seq">): void {
-  if (!diagnosticsEnabled) return;
-
-  const fullEvent: AzureDiagnosticEvent = {
-    ...event,
-    timestamp: Date.now(),
-    seq: ++seq,
-  };
-
-  for (const listener of listeners) {
-    try {
-      listener(fullEvent);
-    } catch {
-      // Swallow listener errors to avoid cascading failures
-    }
-  }
+  emitter.emit(event);
 }
+
+const extractAzureErrorStatus = (err: unknown): number | undefined => {
+  const e = err as Record<string, unknown>;
+  return (e.statusCode ?? e.status) as number | undefined;
+};
 
 /**
  * Wrap an Azure API call with diagnostic instrumentation.
@@ -101,50 +70,23 @@ export async function instrumentedAzureCall<T>(
     metadata?: Record<string, unknown>;
   },
 ): Promise<T> {
-  if (!diagnosticsEnabled) return fn();
-
-  const start = Date.now();
-
-  try {
-    const result = await fn();
-
-    emitAzureDiagnosticEvent({
-      type: "azure.api.call",
-      service,
-      operation,
-      durationMs: Date.now() - start,
+  return emitter.instrument(
+    "azure.api.call",
+    "azure.api.error",
+    service,
+    operation,
+    fn,
+    {
       subscriptionId: options?.subscriptionId,
       resourceGroup: options?.resourceGroup,
       region: options?.region,
       metadata: options?.metadata,
-    });
-
-    return result;
-  } catch (error) {
-    const err = error as Record<string, unknown>;
-
-    emitAzureDiagnosticEvent({
-      type: "azure.api.error",
-      service,
-      operation,
-      durationMs: Date.now() - start,
-      statusCode: (err.statusCode ?? err.status) as number | undefined,
-      error: (err.message ?? String(error)) as string,
-      subscriptionId: options?.subscriptionId,
-      resourceGroup: options?.resourceGroup,
-      region: options?.region,
-      metadata: options?.metadata,
-    });
-
-    throw error;
-  }
+    },
+    extractAzureErrorStatus,
+  );
 }
 
-/**
- * Reset diagnostics state for tests.
- */
+/** Reset diagnostics state for tests. */
 export function resetAzureDiagnosticsForTest(): void {
-  diagnosticsEnabled = false;
-  seq = 0;
-  listeners.clear();
+  emitter.reset();
 }

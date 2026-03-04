@@ -10,6 +10,9 @@ import type {
   ApplicationIntent,
   TemplateParameter,
   IntentTemplateExample,
+  Environment,
+  AvailabilityRequirement,
+  RuntimeConfiguration,
 } from '../intent/types.js';
 
 /**
@@ -751,7 +754,7 @@ export function applyTemplate(
     ...template.intentTemplate,
     // Apply user overrides
     name: (parameters.name as string) || template.id,
-    environment: (parameters.environment as any) || 'development',
+    environment: (parameters.environment as Environment) || 'development',
     primaryRegion: (parameters.primaryRegion as string) || 'us-east-1',
     cost: {
       monthlyBudgetUsd: (parameters.monthlyBudget as number) || template.costRangeUsd[1] || 1000,
@@ -850,7 +853,7 @@ function applyOptionalParameters(
         if (intent.tiers) {
           for (const tier of intent.tiers) {
             if (tier.type === 'api' || tier.type === 'web') {
-              tier.runtime = { ...tier.runtime, language: lang as any };
+              tier.runtime = { ...tier.runtime, language: lang as RuntimeConfiguration['language'] };
             }
           }
         }
@@ -934,7 +937,7 @@ function applyOptionalParameters(
 
       // --- Availability ---
       case 'availability': {
-        intent.availability = value as any;
+        intent.availability = value as AvailabilityRequirement;
         break;
       }
 

@@ -152,7 +152,7 @@ export class TenantManager {
       });
 
       if (!tenantResult.success || !tenantResult.data) {
-        return tenantResult as any;
+        return { success: false, message: tenantResult.message, errors: tenantResult.errors };
       }
 
       const tenant = tenantResult.data;

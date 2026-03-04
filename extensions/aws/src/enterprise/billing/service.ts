@@ -548,7 +548,7 @@ export class BillingService {
 
     const records = await this.storage.getMeteringRecords(tenantId, startTime, endTime);
     
-    const metrics: AggregatedUsage['metrics'] = {} as any;
+    const metrics = {} as AggregatedUsage['metrics'];
     let totalCents = 0;
 
     for (const metricDef of DEFAULT_USAGE_METRICS) {

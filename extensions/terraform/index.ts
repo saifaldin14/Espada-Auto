@@ -9,6 +9,7 @@ import { createTerraformCliTools } from "./src/cli-tools.js";
 import { createTerraformCli } from "./src/cli.js";
 import type { TerraformStorage } from "./src/types.js";
 import { tfInit, tfPlan, tfApply, tfDestroy, tfStateList, tfStatePull, tfVersion, isTerraformInstalled } from "./src/cli-wrapper.js";
+import { validateCwdPath } from "../cloud-utils/input-validation.js";
 
 // ── Enterprise Diagnostics ──────────────────────────────────────────────
 type TerraformDiagnostics = {
@@ -117,6 +118,8 @@ export default {
       diag.lastExecOperation = "init";
       try {
         const p = params as { cwd: string; upgrade?: boolean };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const ok = await isTerraformInstalled();
         if (!ok.installed) { trackFailure(new Error("terraform not found in PATH"), true); respond(false, { error: "terraform not found in PATH" }); return; }
         const result = await tfInit({ cwd: p.cwd }, { upgrade: p.upgrade });
@@ -132,6 +135,8 @@ export default {
       diag.lastExecOperation = "plan";
       try {
         const p = params as { cwd: string; destroy?: boolean; target?: string[] };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const result = await tfPlan({ cwd: p.cwd }, { destroy: p.destroy, target: p.target });
         trackSuccess(true);
         respond(true, result);
@@ -145,6 +150,8 @@ export default {
       diag.lastExecOperation = "apply";
       try {
         const p = params as { cwd: string; autoApprove?: boolean; target?: string[] };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const result = await tfApply({ cwd: p.cwd }, { autoApprove: p.autoApprove ?? true, target: p.target });
         trackSuccess(true);
         respond(true, result);
@@ -158,6 +165,8 @@ export default {
       diag.lastExecOperation = "destroy";
       try {
         const p = params as { cwd: string; autoApprove?: boolean };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const result = await tfDestroy({ cwd: p.cwd }, { autoApprove: p.autoApprove ?? true });
         trackSuccess(true);
         respond(true, result);
@@ -171,6 +180,8 @@ export default {
       diag.lastExecOperation = "state-list";
       try {
         const p = params as { cwd: string };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const result = await tfStateList({ cwd: p.cwd });
         trackSuccess(true);
         respond(true, result);
@@ -184,6 +195,8 @@ export default {
       diag.lastExecOperation = "state-pull";
       try {
         const p = params as { cwd: string };
+        const cwdCheck = validateCwdPath(p.cwd);
+        if (!cwdCheck.valid) { trackFailure(new Error(cwdCheck.reason)); respond(false, { error: cwdCheck.reason }); return; }
         const result = await tfStatePull({ cwd: p.cwd });
         trackSuccess(true);
         respond(true, result);
