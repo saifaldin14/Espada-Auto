@@ -26,6 +26,7 @@ import {
   DeleteCommand,
   ScanCommand,
   BatchWriteCommand,
+  type NativeAttributeValue,
 } from '@aws-sdk/lib-dynamodb';
 
 import type {
@@ -136,7 +137,7 @@ export interface StoredAuditLog {
 
 export interface QueryOptions {
   limit?: number;
-  startKey?: Record<string, unknown>;
+  startKey?: Record<string, NativeAttributeValue>;
   sortDescending?: boolean;
   filterExpression?: string;
   filterValues?: Record<string, unknown>;
@@ -144,7 +145,7 @@ export interface QueryOptions {
 
 export interface QueryResult<T> {
   items: T[];
-  lastKey?: Record<string, unknown>;
+  lastKey?: Record<string, NativeAttributeValue>;
   count: number;
 }
 
@@ -506,7 +507,7 @@ export class IDIOStateStore {
         ExpressionAttributeNames: { '#status': 'status' },
         ExpressionAttributeValues: { ':status': status },
         Limit: options?.limit,
-        ExclusiveStartKey: options?.startKey as any,
+        ExclusiveStartKey: options?.startKey,
         ScanIndexForward: !options?.sortDescending,
       }));
 
@@ -514,7 +515,7 @@ export class IDIOStateStore {
         success: true,
         data: {
           items: (response.Items ?? []) as StoredPlan[],
-          lastKey: response.LastEvaluatedKey as Record<string, unknown>,
+          lastKey: response.LastEvaluatedKey,
           count: response.Count ?? 0,
         },
       };
@@ -683,7 +684,7 @@ export class IDIOStateStore {
         ExpressionAttributeNames: { '#planId': 'planId' },
         ExpressionAttributeValues: { ':planId': planId },
         Limit: options?.limit,
-        ExclusiveStartKey: options?.startKey as any,
+        ExclusiveStartKey: options?.startKey,
         ScanIndexForward: !options?.sortDescending,
       }));
 
@@ -691,7 +692,7 @@ export class IDIOStateStore {
         success: true,
         data: {
           items: (response.Items ?? []) as StoredExecution[],
-          lastKey: response.LastEvaluatedKey as Record<string, unknown>,
+          lastKey: response.LastEvaluatedKey,
           count: response.Count ?? 0,
         },
       };
@@ -765,14 +766,14 @@ export class IDIOStateStore {
         ExpressionAttributeNames: { '#planId': 'planId' },
         ExpressionAttributeValues: { ':planId': planId },
         Limit: options?.limit,
-        ExclusiveStartKey: options?.startKey as any,
+        ExclusiveStartKey: options?.startKey,
       }));
 
       return {
         success: true,
         data: {
           items: (response.Items ?? []) as StoredResource[],
-          lastKey: response.LastEvaluatedKey as Record<string, unknown>,
+          lastKey: response.LastEvaluatedKey,
           count: response.Count ?? 0,
         },
       };
@@ -878,7 +879,7 @@ export class IDIOStateStore {
         ExpressionAttributeNames: { '#planId': 'planId' },
         ExpressionAttributeValues: { ':planId': planId },
         Limit: options?.limit,
-        ExclusiveStartKey: options?.startKey as any,
+        ExclusiveStartKey: options?.startKey,
         ScanIndexForward: !options?.sortDescending,
       }));
 
@@ -886,7 +887,7 @@ export class IDIOStateStore {
         success: true,
         data: {
           items: (response.Items ?? []) as StoredDriftRecord[],
-          lastKey: response.LastEvaluatedKey as Record<string, unknown>,
+          lastKey: response.LastEvaluatedKey,
           count: response.Count ?? 0,
         },
       };
@@ -985,7 +986,7 @@ export class IDIOStateStore {
         ExpressionAttributeNames: { '#entityType': 'entityType' },
         ExpressionAttributeValues: { ':entityType': entityType },
         Limit: options?.limit,
-        ExclusiveStartKey: options?.startKey as any,
+        ExclusiveStartKey: options?.startKey,
         ScanIndexForward: !options?.sortDescending,
       }));
 
@@ -993,7 +994,7 @@ export class IDIOStateStore {
         success: true,
         data: {
           items: (response.Items ?? []) as StoredAuditLog[],
-          lastKey: response.LastEvaluatedKey as Record<string, unknown>,
+          lastKey: response.LastEvaluatedKey,
           count: response.Count ?? 0,
         },
       };

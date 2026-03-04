@@ -15,6 +15,7 @@ import {
 import {
   enableAWSDiagnostics,
 } from "./src/diagnostics.js";
+import { validateAwsProfileName } from "../cloud-utils/input-validation.js";
 
 // Theme helper for CLI output — uses LOBSTER_PALETTE tokens for consistency
 const theme = {
@@ -1167,6 +1168,21 @@ const plugin = {
               }
 
               const sessionName = session_name || "default-sso";
+
+              // Validate profile/session name
+              const nameCheck = validateAwsProfileName(sessionName);
+              if (!nameCheck.valid) {
+                return {
+                  content: [
+                    {
+                      type: "text",
+                      text: `Error: Invalid session name '${sessionName}': ${nameCheck.reason}`,
+                    },
+                  ],
+                  details: { error: "invalid_session_name" },
+                };
+              }
+
               const region = default_region || sso_region;
 
               // Create SSO configuration
@@ -1205,15 +1221,16 @@ sso_registration_scopes = sso:account:access
                   ],
                   details: { method: "sso", profile: sessionName },
                 };
-              } catch (error: any) {
+              } catch (error: unknown) {
+                const errMessage = error instanceof Error ? error.message : String(error);
                 return {
                   content: [
                     {
                       type: "text",
-                      text: `Browser login initiated. Please check your browser to complete the AWS SSO login.\n\nProfile: ${sessionName}\nIf the browser didn't open automatically, run: aws sso login --profile ${sessionName}\n\nError details: ${error.message}`,
+                      text: `Browser login initiated. Please check your browser to complete the AWS SSO login.\n\nProfile: ${sessionName}\nIf the browser didn't open automatically, run: aws sso login --profile ${sessionName}\n\nError details: ${errMessage}`,
                     },
                   ],
-                  details: { method: "sso", profile: sessionName, browserError: error.message },
+                  details: { method: "sso", profile: sessionName, browserError: errMessage },
                 };
               }
             } else if (method === "access-keys") {
@@ -7141,7 +7158,14 @@ Use this tool to:
                   includeVariables: !!params.variables,
                   includeOutputs: !!params.outputs,
                   region: region,
-                  profile: params.profile as string,
+                  profile: (() => {
+                    const p = params.profile as string | undefined;
+                    if (p) {
+                      const check = validateAwsProfileName(p);
+                      if (!check.valid) return undefined;
+                    }
+                    return p;
+                  })(),
                   backend: params.backend_type ? {
                     type: params.backend_type as "s3" | "local" | "remote",
                     config: (params.backend_config as Record<string, unknown>) || {},

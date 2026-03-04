@@ -69,6 +69,7 @@ import {
   GetInsightsCommand,
   GetInsightResultsCommand,
   type AwsSecurityFinding,
+  type AwsSecurityFindingFilters,
 } from '@aws-sdk/client-securityhub';
 
 import {
@@ -84,6 +85,7 @@ import {
   UnarchiveFindingsCommand,
   GetFindingsStatisticsCommand,
   type Finding,
+  type Condition,
 } from '@aws-sdk/client-guardduty';
 
 import {
@@ -134,6 +136,7 @@ import {
   UpdateFindingsCommand,
   type AnalyzerSummary,
   type FindingSummary,
+  type Criterion,
 } from '@aws-sdk/client-accessanalyzer';
 
 import type {
@@ -1876,7 +1879,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
         }] : undefined;
 
         const response = await client.send(new GetFindingsCommand({
-          Filters: Object.keys(filters).length > 0 ? filters as any : undefined,
+          Filters: Object.keys(filters).length > 0 ? filters : undefined,
           SortCriteria: sortCriteria,
           MaxResults: options.maxResults || 100,
         }));
@@ -2033,7 +2036,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
         }
 
         // Build finding criteria
-        const criterion: Record<string, unknown> = {};
+        const criterion: Record<string, Condition> = {};
         if (options.severities?.length) {
           const severityValues = options.severities.map(s => 
             s === 'High' ? 7 : s === 'Medium' ? 4 : 1
@@ -2050,7 +2053,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
         // Get finding IDs
         const listResp = await client.send(new ListFindingsCommand({
           DetectorId: detectorId,
-          FindingCriteria: Object.keys(criterion).length > 0 ? { Criterion: criterion as any } : undefined,
+          FindingCriteria: Object.keys(criterion).length > 0 ? { Criterion: criterion } : undefined,
           SortCriteria: options.sortBy ? {
             AttributeName: options.sortBy === 'Severity' ? 'severity' : options.sortBy === 'CreatedAt' ? 'createdAt' : 'updatedAt',
             OrderBy: options.sortOrder || 'DESC',
@@ -2658,7 +2661,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
           }
         }
 
-        const filter: Record<string, unknown> = {};
+        const filter: Record<string, Criterion> = {};
         if (options.status) {
           filter.status = { eq: [options.status] };
         }
@@ -2668,7 +2671,7 @@ export function createSecurityManager(config: SecurityManagerConfig = {}): Secur
 
         const response = await client.send(new ListAccessAnalyzerFindingsCommand({
           analyzerArn,
-          filter: Object.keys(filter).length > 0 ? filter as any : undefined,
+          filter: Object.keys(filter).length > 0 ? filter : undefined,
           maxResults: options.maxResults,
           sort: options.sortBy ? {
             attributeName: options.sortBy,

@@ -38,6 +38,7 @@ import {
   DescribeAccountAttributesCommand,
   type Tag,
   type _InstanceType,
+  type CreateRouteCommandInput,
 } from '@aws-sdk/client-ec2';
 
 import { STSClient, GetCallerIdentityCommand } from '@aws-sdk/client-sts';
@@ -107,6 +108,7 @@ import {
   PutBucketEncryptionCommand,
   PutBucketVersioningCommand,
   PutPublicAccessBlockCommand,
+  type BucketLocationConstraint,
 } from '@aws-sdk/client-s3';
 
 import {
@@ -1125,7 +1127,7 @@ export class AWSExecutionEngine {
       for (const route of routes) {
         const targetId = this.resolveDependency(route.targetId, context);
         
-        const routeParams: Record<string, unknown> = {
+        const routeParams: CreateRouteCommandInput = {
           RouteTableId: routeTableId,
           DestinationCidrBlock: route.destinationCidr,
         };
@@ -1136,7 +1138,7 @@ export class AWSExecutionEngine {
           routeParams.NatGatewayId = targetId;
         }
 
-        await this.ec2.send(new CreateRouteCommand(routeParams as any));
+        await this.ec2.send(new CreateRouteCommand(routeParams));
       }
     }
 
@@ -1688,7 +1690,7 @@ export class AWSExecutionEngine {
     await this.s3.send(new CreateBucketCommand({
       Bucket: resourceName,
       CreateBucketConfiguration: this.config.region !== 'us-east-1' ? {
-        LocationConstraint: this.config.region as any,
+        LocationConstraint: this.config.region as BucketLocationConstraint,
       } : undefined,
     }));
 
@@ -2259,7 +2261,7 @@ export class AWSExecutionEngine {
       asgInput.LaunchConfigurationName = launchConfigName;
     }
 
-    await this.autoscaling.send(new CreateAutoScalingGroupCommand(asgInput as any));
+    await this.autoscaling.send(new CreateAutoScalingGroupCommand(asgInput));
 
     return {
       plannedId: resource.id,

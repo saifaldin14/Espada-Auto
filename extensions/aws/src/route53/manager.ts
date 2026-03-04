@@ -80,6 +80,8 @@ import {
   ChangeAction,
   RRType,
   HealthCheckType,
+  HealthCheckRegion,
+  InsufficientDataHealthStatus,
   ResourceRecordSetFailover,
   ResourceRecordSetRegion,
   VPCRegion,
@@ -718,14 +720,14 @@ export class Route53Manager {
         Inverted: config.inverted,
         Disabled: config.disabled,
         EnableSNI: config.enableSNI,
-        Regions: config.regions,
-        InsufficientDataHealthStatus: config.insufficientDataHealthStatus,
+        Regions: config.regions as HealthCheckRegion[] | undefined,
+        InsufficientDataHealthStatus: config.insufficientDataHealthStatus as InsufficientDataHealthStatus | undefined,
         ChildHealthChecks: config.childHealthChecks,
         HealthThreshold: config.healthThreshold,
-      } as any;
+      };
 
       if (config.cloudWatchAlarmConfig) {
-        (healthCheckConfig as any).AlarmIdentifier = {
+        healthCheckConfig.AlarmIdentifier = {
           Name: config.cloudWatchAlarmConfig.alarmName,
           Region: config.cloudWatchAlarmConfig.region,
         };
@@ -733,7 +735,7 @@ export class Route53Manager {
 
       const response = await this.withRetry(() => this.client.send(new CreateHealthCheckCommand({
         CallerReference: `healthcheck-${Date.now()}`,
-        HealthCheckConfig: healthCheckConfig as any,
+        HealthCheckConfig: healthCheckConfig,
       })), 'CreateHealthCheck');
 
       // Add tags if specified
