@@ -39,7 +39,7 @@ describe("gateway auth — SSO/OIDC", () => {
     });
     expect(resolved.mode).toBe("oidc");
     expect(resolved.ssoEnabled).toBe(true);
-    expect(resolved.ssoAllowFallback).toBe(true);
+    expect(resolved.ssoAllowFallback).toBe(false);
   });
 
   it("resolveGatewayAuth defaults to token mode without SSO config", () => {

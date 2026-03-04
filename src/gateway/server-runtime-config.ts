@@ -131,10 +131,16 @@ export async function resolveGatewayRuntimeConfig(params: {
         ssoConfigRaw.callbackUrl ?? `http://${bindHost}:${params.port}/auth/sso/callback`,
       scopes: ssoConfigRaw.scopes ?? DEFAULT_SSO_CONFIG.scopes ?? ["openid", "profile", "email"],
       roleMapping: ssoConfigRaw.roleMapping ?? DEFAULT_SSO_CONFIG.roleMapping ?? {},
-      allowFallback: ssoConfigRaw.allowFallback ?? DEFAULT_SSO_CONFIG.allowFallback ?? true,
+      allowFallback: ssoConfigRaw.allowFallback ?? DEFAULT_SSO_CONFIG.allowFallback ?? false,
     };
     oidcProvider = new OIDCProvider(ssoConfig);
-    sessionManager = new SessionManager(new FileSessionStore(join(stateDir, "sso-sessions.json")));
+    const sessionSigningSecret =
+      process.env.ESPADA_SSO_SESSION_SIGNING_SECRET ?? ssoConfig.clientSecret;
+    const allowUnsignedTokens = process.env.ESPADA_SSO_ALLOW_UNSIGNED_TOKENS === "1";
+    sessionManager = new SessionManager(new FileSessionStore(join(stateDir, "sso-sessions.json")), {
+      signingSecret: sessionSigningSecret,
+      allowUnsignedTokens,
+    });
   }
 
   // RBAC is always initialized (built-in roles exist even without SSO)

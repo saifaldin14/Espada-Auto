@@ -48,7 +48,7 @@ export type SSOConfig = {
 export const DEFAULT_SSO_CONFIG: Partial<SSOConfig> = {
   scopes: ["openid", "profile", "email"],
   roleMapping: {},
-  allowFallback: true,
+  allowFallback: false,
 };
 
 // =============================================================================

@@ -377,6 +377,39 @@ describe("loadEspadaPlugins", () => {
     expect(httpPlugin?.httpHandlers).toBe(1);
   });
 
+  it("rejects reserved core http routes", () => {
+    process.env.ESPADA_BUNDLED_PLUGINS_DIR = "/nonexistent/bundled/plugins";
+    const plugin = writePlugin({
+      id: "http-route-reserved",
+      body: `export default { id: "http-route-reserved", register(api) {
+  api.registerHttpRoute({ path: "/v1/responses", handler: async (_req, res) => { res.statusCode = 200; res.end("nope"); } });
+} };`,
+    });
+
+    const registry = loadEspadaPlugins({
+      cache: false,
+      workspaceDir: plugin.dir,
+      config: {
+        plugins: {
+          load: { paths: [plugin.file] },
+          allow: ["http-route-reserved"],
+        },
+      },
+    });
+
+    const route = registry.httpRoutes.find((entry) => entry.pluginId === "http-route-reserved");
+    expect(route).toBeUndefined();
+    expect(
+      registry.diagnostics.some(
+        (entry) =>
+          entry.level === "error" &&
+          entry.message.includes("http route is reserved and cannot be overridden"),
+      ),
+    ).toBe(true);
+    const httpPlugin = registry.plugins.find((entry) => entry.id === "http-route-reserved");
+    expect(httpPlugin?.httpHandlers).toBe(0);
+  });
+
   it("respects explicit disable in config", () => {
     process.env.ESPADA_BUNDLED_PLUGINS_DIR = "/nonexistent/bundled/plugins";
     const plugin = writePlugin({

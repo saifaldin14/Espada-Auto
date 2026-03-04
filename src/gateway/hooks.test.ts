@@ -30,6 +30,7 @@ describe("gateway hooks helpers", () => {
     const resolved = resolveHooksConfig(base);
     expect(resolved?.basePath).toBe("/hooks");
     expect(resolved?.token).toBe("secret");
+    expect(resolved?.allowQueryToken).toBe(false);
   });
 
   test("resolveHooksConfig rejects root path", () => {
@@ -39,7 +40,7 @@ describe("gateway hooks helpers", () => {
     expect(() => resolveHooksConfig(cfg)).toThrow("hooks.path may not be '/'");
   });
 
-  test("extractHookToken prefers bearer > header > query", () => {
+  test("extractHookToken prefers bearer > header > query (when query enabled)", () => {
     const req = {
       headers: {
         authorization: "Bearer top",
@@ -47,21 +48,29 @@ describe("gateway hooks helpers", () => {
       },
     } as unknown as IncomingMessage;
     const url = new URL("http://localhost/hooks/wake?token=query");
-    const result1 = extractHookToken(req, url);
+    const result1 = extractHookToken(req, url, { allowQueryToken: true });
     expect(result1.token).toBe("top");
     expect(result1.fromQuery).toBe(false);
 
     const req2 = {
       headers: { "x-espada-token": "header" },
     } as unknown as IncomingMessage;
-    const result2 = extractHookToken(req2, url);
+    const result2 = extractHookToken(req2, url, { allowQueryToken: true });
     expect(result2.token).toBe("header");
     expect(result2.fromQuery).toBe(false);
 
     const req3 = { headers: {} } as unknown as IncomingMessage;
-    const result3 = extractHookToken(req3, url);
+    const result3 = extractHookToken(req3, url, { allowQueryToken: true });
     expect(result3.token).toBe("query");
     expect(result3.fromQuery).toBe(true);
+  });
+
+  test("extractHookToken blocks query token by default", () => {
+    const req = { headers: {} } as unknown as IncomingMessage;
+    const url = new URL("http://localhost/hooks/wake?token=query");
+    const result = extractHookToken(req, url);
+    expect(result.token).toBeUndefined();
+    expect(result.fromQuery).toBe(false);
   });
 
   test("normalizeWakePayload trims + validates", () => {

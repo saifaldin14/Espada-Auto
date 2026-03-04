@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { authorizeGatewayConnect } from "./auth.js";
+import { authorizeGatewayConnect, authorizeGatewayPermission } from "./auth.js";
 
 describe("gateway auth", () => {
   it("does not throw when req is missing socket", async () => {
@@ -98,5 +98,63 @@ describe("gateway auth", () => {
     expect(res.ok).toBe(true);
     expect(res.method).toBe("tailscale");
     expect(res.user).toBe("peter");
+  });
+
+  it("allows non-SSO methods through permission gate", async () => {
+    const result = await authorizeGatewayPermission({
+      authResult: { ok: true, method: "token" },
+      permission: "operator.write",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("denies SSO permission checks when RBAC manager is unavailable", async () => {
+    const result = await authorizeGatewayPermission({
+      authResult: {
+        ok: true,
+        method: "sso",
+        ssoUser: {
+          id: "user-1",
+          email: "user@example.com",
+          name: "User",
+          roles: ["viewer"],
+          groups: [],
+          mfaVerified: false,
+          lastLogin: new Date().toISOString(),
+          provider: "oidc",
+        },
+        roles: ["viewer"],
+      },
+      permission: "operator.write",
+      rbacManager: null,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.reason).toBe("rbac_unavailable");
+  });
+
+  it("uses RBAC manager to allow SSO permission checks", async () => {
+    const rbacManager = {
+      checkPermission: async () => ({ allowed: true, grantedBy: ["admin"] }),
+    };
+    const result = await authorizeGatewayPermission({
+      authResult: {
+        ok: true,
+        method: "sso",
+        ssoUser: {
+          id: "user-2",
+          email: "admin@example.com",
+          name: "Admin",
+          roles: ["admin"],
+          groups: [],
+          mfaVerified: true,
+          lastLogin: new Date().toISOString(),
+          provider: "oidc",
+        },
+        roles: ["admin"],
+      },
+      permission: "operator.write",
+      rbacManager: rbacManager as never,
+    });
+    expect(result.ok).toBe(true);
   });
 });

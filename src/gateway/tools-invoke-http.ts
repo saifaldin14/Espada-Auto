@@ -22,7 +22,13 @@ import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { normalizeMessageChannel } from "../utils/message-channel.js";
 
-import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  authorizeGatewayPermission,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { SessionManager } from "./sso/session-store.js";
 import { getBearerToken, getHeader } from "./http-utils.js";
 import {
   readJsonBodyOrError,
@@ -70,7 +76,13 @@ function mergeActionIntoArgsIfSupported(params: {
 export async function handleToolsInvokeHttpRequest(
   req: IncomingMessage,
   res: ServerResponse,
-  opts: { auth: ResolvedGatewayAuth; maxBodyBytes?: number; trustedProxies?: string[] },
+  opts: {
+    auth: ResolvedGatewayAuth;
+    maxBodyBytes?: number;
+    trustedProxies?: string[];
+    sessionManager?: SessionManager | null;
+    rbacManager?: GatewayRBACManager | null;
+  },
 ): Promise<boolean> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
   if (url.pathname !== "/tools/invoke") return false;
@@ -87,9 +99,23 @@ export async function handleToolsInvokeHttpRequest(
     connectAuth: token ? { token, password: token } : null,
     req,
     trustedProxies: opts.trustedProxies ?? cfg.gateway?.trustedProxies,
+    sessionManager: opts.sessionManager,
+    rbacManager: opts.rbacManager,
   });
   if (!authResult.ok) {
     sendUnauthorized(res);
+    return true;
+  }
+
+  const permission = await authorizeGatewayPermission({
+    authResult,
+    permission: "operator.write",
+    rbacManager: opts.rbacManager,
+  });
+  if (!permission.ok) {
+    sendJson(res, 403, {
+      error: { message: "Forbidden", type: "forbidden", reason: permission.reason },
+    });
     return true;
   }
 

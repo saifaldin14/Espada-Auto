@@ -6,7 +6,13 @@ import { createDefaultDeps } from "../cli/deps.js";
 import { agentCommand } from "../commands/agent.js";
 import { emitAgentEvent, onAgentEvent } from "../infra/agent-events.js";
 import { defaultRuntime } from "../runtime.js";
-import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  authorizeGatewayPermission,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { SessionManager } from "./sso/session-store.js";
 import {
   readJsonBodyOrError,
   sendJson,
@@ -21,6 +27,8 @@ type OpenAiHttpOptions = {
   auth: ResolvedGatewayAuth;
   maxBodyBytes?: number;
   trustedProxies?: string[];
+  sessionManager?: SessionManager | null;
+  rbacManager?: GatewayRBACManager | null;
 };
 
 type OpenAiChatMessage = {
@@ -170,9 +178,23 @@ export async function handleOpenAiHttpRequest(
     connectAuth: { token, password: token },
     req,
     trustedProxies: opts.trustedProxies,
+    sessionManager: opts.sessionManager,
+    rbacManager: opts.rbacManager,
   });
   if (!authResult.ok) {
     sendUnauthorized(res);
+    return true;
+  }
+
+  const permission = await authorizeGatewayPermission({
+    authResult,
+    permission: "operator.write",
+    rbacManager: opts.rbacManager,
+  });
+  if (!permission.ok) {
+    sendJson(res, 403, {
+      error: { message: "Forbidden", type: "forbidden", reason: permission.reason },
+    });
     return true;
   }
 

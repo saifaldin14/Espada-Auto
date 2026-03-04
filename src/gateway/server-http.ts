@@ -30,6 +30,9 @@ import { applyHookMappings } from "./hooks-mapping.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
+import { resolveGatewayClientIp } from "./net.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { SessionManager } from "./sso/session-store.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -56,6 +59,53 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+const RATE_LIMIT_WINDOW_MS = Number.parseInt(
+  process.env.ESPADA_GATEWAY_RATE_LIMIT_WINDOW_MS ?? "60000",
+  10,
+);
+const RATE_LIMIT_MAX = Number.parseInt(process.env.ESPADA_GATEWAY_RATE_LIMIT_MAX ?? "240", 10);
+const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>();
+
+function isSensitiveRateLimitedPath(pathname: string): boolean {
+  return (
+    pathname.startsWith("/auth/sso/") ||
+    pathname.startsWith("/v1/") ||
+    pathname.startsWith("/tools/invoke")
+  );
+}
+
+function applyHttpRateLimit(params: {
+  req: IncomingMessage;
+  pathname: string;
+  trustedProxies: string[];
+}): boolean {
+  if (RATE_LIMIT_MAX <= 0 || !isSensitiveRateLimitedPath(params.pathname)) {
+    return true;
+  }
+  const remoteAddr = params.req.socket?.remoteAddress ?? "";
+  const clientIp =
+    resolveGatewayClientIp({
+      remoteAddr,
+      forwardedFor: Array.isArray(params.req.headers["x-forwarded-for"])
+        ? params.req.headers["x-forwarded-for"][0]
+        : params.req.headers["x-forwarded-for"],
+      realIp: Array.isArray(params.req.headers["x-real-ip"])
+        ? params.req.headers["x-real-ip"][0]
+        : params.req.headers["x-real-ip"],
+      trustedProxies: params.trustedProxies,
+    }) ?? remoteAddr;
+  const key = `${clientIp}:${params.pathname}`;
+  const now = Date.now();
+  const existing = rateLimitBuckets.get(key);
+  if (!existing || now - existing.windowStart >= RATE_LIMIT_WINDOW_MS) {
+    rateLimitBuckets.set(key, { count: 1, windowStart: now });
+    return true;
+  }
+
+  existing.count += 1;
+  return existing.count <= RATE_LIMIT_MAX;
+}
+
 export type HooksRequestHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 
 export function createHooksRequestHandler(
@@ -76,7 +126,9 @@ export function createHooksRequestHandler(
       return false;
     }
 
-    const { token, fromQuery } = extractHookToken(req, url);
+    const { token, fromQuery } = extractHookToken(req, url, {
+      allowQueryToken: hooksConfig.allowQueryToken,
+    });
     if (!token || token !== hooksConfig.token) {
       res.statusCode = 401;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
@@ -211,6 +263,8 @@ export function createGatewayHttpServer(opts: {
   handlePluginRequest?: HooksRequestHandler;
   handleSSORequest?: HooksRequestHandler;
   resolvedAuth: import("./auth.js").ResolvedGatewayAuth;
+  sessionManager?: SessionManager | null;
+  rbacManager?: GatewayRBACManager | null;
   tlsOptions?: TlsOptions;
 }): HttpServer {
   const {
@@ -224,6 +278,8 @@ export function createGatewayHttpServer(opts: {
     handlePluginRequest,
     handleSSORequest,
     resolvedAuth,
+    sessionManager,
+    rbacManager,
   } = opts;
   const httpServer: HttpServer = opts.tlsOptions
     ? createHttpsServer(opts.tlsOptions, (req, res) => {
@@ -240,12 +296,24 @@ export function createGatewayHttpServer(opts: {
     try {
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
+      const parsedUrl = new URL(req.url ?? "/", "http://localhost");
+
+      if (!applyHttpRateLimit({ req, pathname: parsedUrl.pathname, trustedProxies })) {
+        sendJson(res, 429, {
+          ok: false,
+          error: "Rate limit exceeded",
+        });
+        return;
+      }
+
       if (await handleHooksRequest(req, res)) return;
       if (handleSSORequest && (await handleSSORequest(req, res))) return;
       if (
         await handleToolsInvokeHttpRequest(req, res, {
           auth: resolvedAuth,
           trustedProxies,
+          sessionManager,
+          rbacManager,
         })
       )
         return;
@@ -257,6 +325,8 @@ export function createGatewayHttpServer(opts: {
             auth: resolvedAuth,
             config: openResponsesConfig,
             trustedProxies,
+            sessionManager,
+            rbacManager,
           })
         )
           return;
@@ -266,6 +336,8 @@ export function createGatewayHttpServer(opts: {
           await handleOpenAiHttpRequest(req, res, {
             auth: resolvedAuth,
             trustedProxies,
+            sessionManager,
+            rbacManager,
           })
         )
           return;

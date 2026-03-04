@@ -145,6 +145,8 @@ export async function createGatewayRuntimeState(params: {
       handlePluginRequest,
       handleSSORequest,
       resolvedAuth: params.resolvedAuth,
+      sessionManager: params.sessionManager,
+      rbacManager: params.rbacManager,
       tlsOptions: params.gatewayTls?.enabled ? params.gatewayTls.tlsOptions : undefined,
     });
     try {

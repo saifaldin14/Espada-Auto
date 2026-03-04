@@ -160,6 +160,19 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
     diagnostics: [],
   };
   const coreGatewayMethods = new Set(Object.keys(registryParams.coreGatewayHandlers ?? {}));
+  const reservedHttpRoutePaths = new Set([
+    "/tools/invoke",
+    "/v1/chat/completions",
+    "/v1/responses",
+  ]);
+  const reservedHttpRoutePrefixes = ["/auth/sso", "/hooks", "/slack", "/tools", "/v1"];
+
+  const isReservedHttpRoute = (routePath: string): boolean => {
+    if (reservedHttpRoutePaths.has(routePath)) return true;
+    return reservedHttpRoutePrefixes.some(
+      (prefix) => routePath === prefix || routePath.startsWith(`${prefix}/`),
+    );
+  };
 
   const pushDiagnostic = (diag: PluginDiagnostic) => {
     registry.diagnostics.push(diag);
@@ -302,6 +315,15 @@ export function createPluginRegistry(registryParams: PluginRegistryParams) {
         pluginId: record.id,
         source: record.source,
         message: "http route registration missing path",
+      });
+      return;
+    }
+    if (isReservedHttpRoute(normalizedPath)) {
+      pushDiagnostic({
+        level: "error",
+        pluginId: record.id,
+        source: record.source,
+        message: `http route is reserved and cannot be overridden: ${normalizedPath}`,
       });
       return;
     }

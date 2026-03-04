@@ -168,7 +168,7 @@ export class OIDCProvider {
    * issuer/audience/expiration checks. For production deployments
    * with external traffic, add JWKS signature verification.
    */
-  decodeIdToken(idToken: string): OIDCIdTokenClaims {
+  decodeIdToken(idToken: string, expectedNonce?: string): OIDCIdTokenClaims {
     const parts = idToken.split(".");
     if (parts.length !== 3) {
       throw new OIDCError("Invalid ID token: expected 3 JWT parts");
@@ -207,6 +207,11 @@ export class OIDCProvider {
       throw new OIDCError("ID token has expired");
     }
 
+    // Validate nonce binding when provided by caller
+    if (expectedNonce && claims.nonce !== expectedNonce) {
+      throw new OIDCError("ID token nonce mismatch");
+    }
+
     return claims;
   }
 
@@ -240,9 +245,9 @@ export class OIDCProvider {
    */
   createSessionFromTokens(
     tokenResponse: OIDCTokenResponse,
-    options?: { clientIp?: string; userAgent?: string },
+    options?: { clientIp?: string; userAgent?: string; expectedNonce?: string },
   ): { session: SSOSession; user: SSOUser } {
-    const claims = this.decodeIdToken(tokenResponse.id_token);
+    const claims = this.decodeIdToken(tokenResponse.id_token, options?.expectedNonce);
     const user = this.resolveUser(claims);
 
     const now = new Date();

@@ -7,21 +7,30 @@
  */
 
 import type { SSOSession, SessionStore } from "./types.js";
-import { randomUUID } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 
 // =============================================================================
-// Session Token (lightweight JWT-like format)
+// Session Token (JWT-like)
 // =============================================================================
 
-/**
- * Create a session token from a session ID.
- * Uses a simple base64url-encoded JSON payload. For production, use
- * HMAC-SHA256 signed JWTs (requires a configured signing key).
- */
-export function createSessionToken(session: SSOSession): string {
-  const payload = {
+type SessionTokenOptions = {
+  signingSecret?: string;
+  allowUnsignedTokens?: boolean;
+};
+
+type SessionTokenPayload = {
+  sid: string;
+  sub: string;
+  email: string;
+  roles: string[];
+  iat: number;
+  exp: number;
+};
+
+function buildPayload(session: SSOSession): SessionTokenPayload {
+  return {
     sid: session.id,
     sub: session.userId,
     email: session.email,
@@ -29,38 +38,112 @@ export function createSessionToken(session: SSOSession): string {
     iat: new Date(session.issuedAt).getTime(),
     exp: new Date(session.expiresAt).getTime(),
   };
-  return Buffer.from(JSON.stringify(payload)).toString("base64url");
 }
 
-/**
- * Decode a session token and extract the session ID.
- * Returns null if the token is malformed or expired.
- */
-export function decodeSessionToken(
-  token: string,
-): { sessionId: string; userId: string; email: string; roles: string[]; expired: boolean } | null {
+function parsePayloadToResult(payload: SessionTokenPayload): {
+  sessionId: string;
+  userId: string;
+  email: string;
+  roles: string[];
+  expired: boolean;
+} | null {
+  if (!payload.sid || !payload.sub) return null;
+
+  return {
+    sessionId: payload.sid,
+    userId: payload.sub,
+    email: payload.email ?? "",
+    roles: payload.roles ?? [],
+    expired: payload.exp < Date.now(),
+  };
+}
+
+function decodePayload(payloadB64: string): SessionTokenPayload | null {
   try {
-    const json = Buffer.from(token, "base64url").toString("utf8");
-    const payload = JSON.parse(json) as {
-      sid: string;
-      sub: string;
-      email: string;
-      roles: string[];
-      exp: number;
-    };
-
-    if (!payload.sid || !payload.sub) return null;
-
-    return {
-      sessionId: payload.sid,
-      userId: payload.sub,
-      email: payload.email ?? "",
-      roles: payload.roles ?? [],
-      expired: payload.exp < Date.now(),
-    };
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf8");
+    return JSON.parse(payloadJson) as SessionTokenPayload;
   } catch {
     return null;
   }
+}
+
+function signToken(payloadB64: string, signingSecret: string): string {
+  const headerB64 = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const signature = createHmac("sha256", signingSecret).update(signingInput).digest("base64url");
+  return `${signingInput}.${signature}`;
+}
+
+function verifySignedToken(token: string, signingSecret: string): SessionTokenPayload | null {
+  const parts = token.split(".");
+  if (parts.length !== 3) return null;
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  if (!headerB64 || !payloadB64 || !signatureB64) return null;
+
+  let header: { alg?: string; typ?: string };
+  try {
+    const headerJson = Buffer.from(headerB64, "base64url").toString("utf8");
+    header = JSON.parse(headerJson) as { alg?: string; typ?: string };
+  } catch {
+    return null;
+  }
+
+  if (header.alg !== "HS256" || header.typ !== "JWT") return null;
+
+  const signingInput = `${headerB64}.${payloadB64}`;
+  const expected = createHmac("sha256", signingSecret).update(signingInput).digest();
+  const provided = Buffer.from(signatureB64, "base64url");
+  if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
+    return null;
+  }
+
+  return decodePayload(payloadB64);
+}
+
+/**
+ * Create a session token from a session object.
+ * Uses HMAC-SHA256 signed JWT-like tokens when signingSecret is configured.
+ * Falls back to unsigned legacy payload tokens for compatibility.
+ */
+export function createSessionToken(session: SSOSession, opts?: SessionTokenOptions): string {
+  const payloadB64 = Buffer.from(JSON.stringify(buildPayload(session))).toString("base64url");
+  if (opts?.signingSecret) {
+    return signToken(payloadB64, opts.signingSecret);
+  }
+
+  // Legacy compatibility format
+  return payloadB64;
+}
+
+/**
+ * Decode a session token and extract identity claims.
+ * Supports signed JWT-like tokens and optional legacy unsigned token compatibility.
+ */
+export function decodeSessionToken(
+  token: string,
+  opts?: SessionTokenOptions,
+): { sessionId: string; userId: string; email: string; roles: string[]; expired: boolean } | null {
+  const signingSecret = opts?.signingSecret;
+  const allowUnsignedTokens = opts?.allowUnsignedTokens ?? !signingSecret;
+
+  if (signingSecret && token.includes(".")) {
+    const payload = verifySignedToken(token, signingSecret);
+    if (payload) {
+      return parsePayloadToResult(payload);
+    }
+    if (!allowUnsignedTokens) {
+      return null;
+    }
+  }
+
+  if (!allowUnsignedTokens) {
+    return null;
+  }
+
+  const payload = decodePayload(token);
+  if (!payload) return null;
+  return parsePayloadToResult(payload);
 }
 
 // =============================================================================
@@ -183,10 +266,13 @@ export class FileSessionStore implements SessionStore {
   private persist(): void {
     const dir = dirname(this.filePath);
     if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
     const data = [...this.sessions.values()];
-    writeFileSync(this.filePath, JSON.stringify(data, null, 2), "utf8");
+    writeFileSync(this.filePath, JSON.stringify(data, null, 2), {
+      encoding: "utf8",
+      mode: 0o600,
+    });
   }
 
   async save(session: SSOSession): Promise<void> {
@@ -276,7 +362,31 @@ export class FileSessionStore implements SessionStore {
  * handles refresh, and provides session summary.
  */
 export class SessionManager {
-  constructor(private store: SessionStore) {}
+  private signingSecret?: string;
+  private allowUnsignedTokens: boolean;
+
+  constructor(
+    private store: SessionStore,
+    opts?: SessionTokenOptions,
+  ) {
+    this.signingSecret = opts?.signingSecret;
+    this.allowUnsignedTokens = opts?.allowUnsignedTokens ?? !this.signingSecret;
+  }
+
+  decodeToken(
+    token: string,
+  ): {
+    sessionId: string;
+    userId: string;
+    email: string;
+    roles: string[];
+    expired: boolean;
+  } | null {
+    return decodeSessionToken(token, {
+      signingSecret: this.signingSecret,
+      allowUnsignedTokens: this.allowUnsignedTokens,
+    });
+  }
 
   /**
    * Get a session by ID (raw lookup, no token parsing).
@@ -302,7 +412,7 @@ export class SessionManager {
    * Returns null if token is invalid, expired, or session not found.
    */
   async validateToken(token: string): Promise<SSOSession | null> {
-    const decoded = decodeSessionToken(token);
+    const decoded = this.decodeToken(token);
     if (!decoded || decoded.expired) return null;
 
     const session = await this.store.get(decoded.sessionId);
@@ -320,7 +430,10 @@ export class SessionManager {
    */
   async createSession(session: SSOSession): Promise<{ session: SSOSession; token: string }> {
     await this.store.save(session);
-    const token = createSessionToken(session);
+    const token = createSessionToken(session, {
+      signingSecret: this.signingSecret,
+      allowUnsignedTokens: this.allowUnsignedTokens,
+    });
     return { session, token };
   }
 

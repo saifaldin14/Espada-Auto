@@ -12,6 +12,7 @@ const DEFAULT_HOOKS_MAX_BODY_BYTES = 256 * 1024;
 export type HooksConfigResolved = {
   basePath: string;
   token: string;
+  allowQueryToken: boolean;
   maxBodyBytes: number;
   mappings: HookMappingResolved[];
 };
@@ -36,6 +37,7 @@ export function resolveHooksConfig(cfg: EspadaConfig): HooksConfigResolved | nul
   return {
     basePath: trimmed,
     token,
+    allowQueryToken: cfg.hooks?.allowQueryToken === true,
     maxBodyBytes,
     mappings,
   };
@@ -46,7 +48,11 @@ export type HookTokenResult = {
   fromQuery: boolean;
 };
 
-export function extractHookToken(req: IncomingMessage, url: URL): HookTokenResult {
+export function extractHookToken(
+  req: IncomingMessage,
+  url: URL,
+  opts?: { allowQueryToken?: boolean },
+): HookTokenResult {
   const auth =
     typeof req.headers.authorization === "string" ? req.headers.authorization.trim() : "";
   if (auth.toLowerCase().startsWith("bearer ")) {
@@ -56,6 +62,9 @@ export function extractHookToken(req: IncomingMessage, url: URL): HookTokenResul
   const headerToken =
     typeof req.headers["x-espada-token"] === "string" ? req.headers["x-espada-token"].trim() : "";
   if (headerToken) return { token: headerToken, fromQuery: false };
+  if (opts?.allowQueryToken !== true) {
+    return { token: undefined, fromQuery: false };
+  }
   const queryToken = url.searchParams.get("token");
   if (queryToken) return { token: queryToken.trim(), fromQuery: true };
   return { token: undefined, fromQuery: false };

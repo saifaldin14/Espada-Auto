@@ -119,6 +119,7 @@ export function createSSOHttpHandler(opts: {
         const { session, user } = oidcProvider.createSessionFromTokens(tokenResponse, {
           clientIp,
           userAgent,
+          expectedNonce: pending.nonce,
         });
 
         // Resolve RBAC roles from IdP groups
@@ -174,6 +175,25 @@ export function createSSOHttpHandler(opts: {
 
     // ── GET /auth/sso/status ──────────────────────────────────────────
     if (pathname === "/auth/sso/status" && req.method === "GET") {
+      const authHeader = req.headers.authorization;
+      const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
+      if (!token) {
+        sendJson(res, 401, { ok: false, error: "Missing Bearer token" });
+        return true;
+      }
+
+      const session = await sessionManager.validateToken(token);
+      if (!session) {
+        sendJson(res, 401, { ok: false, error: "Invalid or expired session" });
+        return true;
+      }
+
+      const adminCheck = await rbacManager.checkPermission(session.userId, "operator.admin");
+      if (!adminCheck.allowed) {
+        sendJson(res, 403, { ok: false, error: "Admin permission required" });
+        return true;
+      }
+
       const summary = await sessionManager.getSummary();
       sendJson(res, 200, {
         ok: true,

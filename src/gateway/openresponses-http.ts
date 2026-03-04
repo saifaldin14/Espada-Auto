@@ -14,7 +14,11 @@ import { createDefaultDeps } from "../cli/deps.js";
 import { agentCommand } from "../commands/agent.js";
 import { emitAgentEvent, onAgentEvent } from "../infra/agent-events.js";
 import { defaultRuntime } from "../runtime.js";
-import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
+import {
+  authorizeGatewayConnect,
+  authorizeGatewayPermission,
+  type ResolvedGatewayAuth,
+} from "./auth.js";
 import { getBearerToken, resolveAgentIdForRequest, resolveSessionKey } from "./http-utils.js";
 import {
   readJsonBodyOrError,
@@ -55,12 +59,16 @@ import {
   type InputImageLimits,
   type InputImageSource,
 } from "../media/input-files.js";
+import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { SessionManager } from "./sso/session-store.js";
 
 type OpenResponsesHttpOptions = {
   auth: ResolvedGatewayAuth;
   maxBodyBytes?: number;
   config?: GatewayHttpResponsesConfig;
   trustedProxies?: string[];
+  sessionManager?: SessionManager | null;
+  rbacManager?: GatewayRBACManager | null;
 };
 
 const DEFAULT_BODY_BYTES = 20 * 1024 * 1024;
@@ -333,9 +341,23 @@ export async function handleOpenResponsesHttpRequest(
     connectAuth: { token, password: token },
     req,
     trustedProxies: opts.trustedProxies,
+    sessionManager: opts.sessionManager,
+    rbacManager: opts.rbacManager,
   });
   if (!authResult.ok) {
     sendUnauthorized(res);
+    return true;
+  }
+
+  const permission = await authorizeGatewayPermission({
+    authResult,
+    permission: "operator.write",
+    rbacManager: opts.rbacManager,
+  });
+  if (!permission.ok) {
+    sendJson(res, 403, {
+      error: { message: "Forbidden", type: "forbidden", reason: permission.reason },
+    });
     return true;
   }
 

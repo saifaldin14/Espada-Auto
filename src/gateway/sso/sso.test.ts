@@ -174,6 +174,29 @@ describe("OIDCProvider", () => {
       expect(() => provider.decodeIdToken("not-a-jwt")).toThrow("expected 3 JWT parts");
       expect(() => provider.decodeIdToken("a.b")).toThrow("expected 3 JWT parts");
     });
+
+    it("should enforce nonce when expected nonce is provided", () => {
+      const config = makeSSOConfig();
+      const provider = new OIDCProvider(config);
+
+      const payload = {
+        iss: "https://idp.example.com",
+        sub: "user-123",
+        aud: "test-client-id",
+        exp: Math.floor(Date.now() / 1000) + 3600,
+        iat: Math.floor(Date.now() / 1000),
+        nonce: "nonce-ok",
+      };
+
+      const header = Buffer.from(JSON.stringify({ alg: "RS256", typ: "JWT" })).toString(
+        "base64url",
+      );
+      const payloadB64 = Buffer.from(JSON.stringify(payload)).toString("base64url");
+      const idToken = `${header}.${payloadB64}.sig`;
+
+      expect(() => provider.decodeIdToken(idToken, "nonce-ok")).not.toThrow();
+      expect(() => provider.decodeIdToken(idToken, "nonce-bad")).toThrow("nonce mismatch");
+    });
   });
 
   describe("resolveUser", () => {
@@ -380,6 +403,28 @@ describe("Session Tokens", () => {
   it("should return null for malformed tokens", () => {
     expect(decodeSessionToken("not-valid")).toBeNull();
     expect(decodeSessionToken("")).toBeNull();
+  });
+
+  it("should create and verify signed session tokens", () => {
+    const session = makeSession({ id: "signed-sid", userId: "signed-user" });
+    const token = createSessionToken(session, { signingSecret: "super-secret" });
+
+    const decoded = decodeSessionToken(token, { signingSecret: "super-secret" });
+    expect(decoded).not.toBeNull();
+    expect(decoded!.sessionId).toBe("signed-sid");
+    expect(decoded!.userId).toBe("signed-user");
+    expect(decoded!.expired).toBe(false);
+  });
+
+  it("should reject signed tokens with wrong secret", () => {
+    const session = makeSession({ id: "signed-sid-2" });
+    const token = createSessionToken(session, { signingSecret: "super-secret" });
+
+    const decoded = decodeSessionToken(token, {
+      signingSecret: "wrong-secret",
+      allowUnsignedTokens: false,
+    });
+    expect(decoded).toBeNull();
   });
 });
 

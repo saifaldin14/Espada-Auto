@@ -5,8 +5,8 @@ import { readTailscaleWhoisIdentity, type TailscaleWhoisIdentity } from "../infr
 import { isTrustedProxyAddress, parseForwardedForClientIp, resolveGatewayClientIp } from "./net.js";
 import type { SSOUser } from "./sso/types.js";
 import type { SessionManager } from "./sso/session-store.js";
-import { decodeSessionToken } from "./sso/session-store.js";
 import type { GatewayRBACManager } from "./rbac/manager.js";
+import type { Permission } from "./rbac/types.js";
 
 export type ResolvedGatewayAuthMode = "token" | "password" | "oidc";
 
@@ -202,7 +202,7 @@ export function resolveGatewayAuth(params: {
     password,
     allowTailscale,
     ssoEnabled,
-    ssoAllowFallback: ssoConfig?.allowFallback ?? true,
+    ssoAllowFallback: ssoConfig?.allowFallback ?? false,
   };
 }
 
@@ -293,6 +293,38 @@ export async function authorizeGatewayConnect(params: {
   return { ok: false, reason: "unauthorized" };
 }
 
+export async function authorizeGatewayPermission(params: {
+  authResult: GatewayAuthResult;
+  permission: Permission;
+  rbacManager?: GatewayRBACManager | null;
+}): Promise<{ ok: boolean; reason?: string }> {
+  const { authResult, permission, rbacManager } = params;
+  if (!authResult.ok) {
+    return { ok: false, reason: authResult.reason ?? "unauthorized" };
+  }
+
+  if (authResult.method !== "sso") {
+    return { ok: true };
+  }
+
+  const userId = authResult.ssoUser?.id;
+  if (!userId) {
+    return { ok: false, reason: "sso_user_missing" };
+  }
+
+  if (rbacManager) {
+    const check = await rbacManager.checkPermission(userId, permission);
+    if (check.allowed) return { ok: true };
+    return { ok: false, reason: check.reason ?? "forbidden" };
+  }
+
+  if ((authResult.roles ?? []).includes("admin")) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: "rbac_unavailable" };
+}
+
 // ── SSO token validation ─────────────────────────────────────────────────
 
 async function validateSSOSessionToken(params: {
@@ -300,7 +332,7 @@ async function validateSSOSessionToken(params: {
   sessionManager: SessionManager;
   rbacManager: GatewayRBACManager | null;
 }): Promise<GatewayAuthResult | null> {
-  const decoded = decodeSessionToken(params.token);
+  const decoded = params.sessionManager.decodeToken(params.token);
   if (!decoded) return null; // Not an SSO token — let other methods try
   if (decoded.expired) {
     return { ok: false, reason: "sso_session_expired" };
