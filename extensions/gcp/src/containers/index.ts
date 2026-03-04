@@ -224,7 +224,6 @@ export class GcpContainerManager {
   async deployService(opts: DeployServiceOptions): Promise<GcpOperationResult> {
     return withGcpRetry(async () => {
       const token = await this.getAccessToken();
-      const url = `${RUN_BASE}/projects/${this.projectId}/locations/${opts.location}/services?serviceId=${encodeURIComponent(opts.serviceName)}`;
       const body = {
         description: opts.description ?? "",
         template: {
@@ -247,7 +246,21 @@ export class GcpContainerManager {
         },
         labels: opts.labels ?? {},
       };
-      const result = await gcpMutate(url, token, body);
+
+      // Try PATCH (update) first. If the service doesn't exist, fall back to
+      // POST (create). This handles the "upsert" pattern cleanly.
+      const patchUrl = `${RUN_BASE}/projects/${this.projectId}/locations/${opts.location}/services/${encodeURIComponent(opts.serviceName)}`;
+      try {
+        const result = await gcpMutate(patchUrl, token, body, "PATCH");
+        return { success: true, message: `Service "${opts.serviceName}" updated`, operationId: result.operationId };
+      } catch (err) {
+        const statusCode = (err as { statusCode?: number }).statusCode;
+        if (statusCode !== 404) throw err;
+      }
+
+      // Service doesn't exist — create it
+      const createUrl = `${RUN_BASE}/projects/${this.projectId}/locations/${opts.location}/services?serviceId=${encodeURIComponent(opts.serviceName)}`;
+      const result = await gcpMutate(createUrl, token, body);
       return { success: true, message: `Service "${opts.serviceName}" deployed`, operationId: result.operationId };
     }, this.retryOptions);
   }

@@ -93,7 +93,7 @@ export type LabelComplianceReport = {
 // =============================================================================
 
 const SENSITIVE_PATTERNS = [
-  /password/i, /secret/i, /key/i, /token/i, /credential/i,
+  /password/i, /secret/i, /\bapi[_-]?key\b/i, /\baccess[_-]?token\b/i, /credential/i,
   /ssn/i, /social.?security/i, /credit.?card/i, /cvv/i,
   /\b\d{3}-\d{2}-\d{4}\b/, // SSN pattern
   /\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b/, // Credit card
@@ -257,24 +257,36 @@ export class GcpTaggingManager {
       errors: [],
     };
 
-    for (const op of operations) {
-      try {
-        const res = await this.setLabels(op.resourceType, op.resourceId, op.labels, {
-          zone: op.zone,
-          region: op.region,
-        });
-        if (res.success) {
-          result.succeeded++;
+    // Run operations concurrently in batches of 10 for throughput
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+      const batch = operations.slice(i, i + BATCH_SIZE);
+      const settled = await Promise.allSettled(
+        batch.map(async (op) => {
+          const res = await this.setLabels(op.resourceType, op.resourceId, op.labels, {
+            zone: op.zone,
+            region: op.region,
+          });
+          return { op, res };
+        }),
+      );
+
+      for (const outcome of settled) {
+        if (outcome.status === "fulfilled") {
+          if (outcome.value.res.success) {
+            result.succeeded++;
+          } else {
+            result.failed++;
+            result.errors.push({ resource: outcome.value.op.resourceId, error: outcome.value.res.error ?? "Unknown error" });
+          }
         } else {
           result.failed++;
-          result.errors.push({ resource: op.resourceId, error: res.error ?? "Unknown error" });
+          const err = outcome.reason;
+          result.errors.push({
+            resource: "unknown",
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-      } catch (err) {
-        result.failed++;
-        result.errors.push({
-          resource: op.resourceId,
-          error: err instanceof Error ? err.message : String(err),
-        });
       }
     }
 

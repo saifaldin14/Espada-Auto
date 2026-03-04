@@ -64,6 +64,17 @@ export class GcpCliManager {
   // ---------------------------------------------------------------------------
 
   async exec(args: string[], opts: CliExecOptions = {}): Promise<CliExecResult> {
+    // Validate arguments — reject embedded control characters and
+    // overly long values that may indicate injection attempts.
+    for (const arg of args) {
+      if (/[\x00-\x08\x0e-\x1f\x7f]/.test(arg)) {
+        throw new Error(`Invalid CLI argument — contains control characters: ${JSON.stringify(arg)}`);
+      }
+      if (arg.length > 4096) {
+        throw new Error(`CLI argument exceeds maximum length (4096 chars)`);
+      }
+    }
+
     const fullArgs = [...args];
     const project = opts.project ?? this.projectId;
     if (project && !args.includes("--project")) {

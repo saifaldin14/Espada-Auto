@@ -184,21 +184,8 @@ export class GcpCostManager {
         filter: this.buildCostFilter(opts),
       };
 
-      try {
-        const data = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body });
-        return this.mapCostSummary(data, opts);
-      } catch {
-        // Fallback: return empty summary if billing export not configured
-        return {
-          totalCost: 0,
-          currency: "USD",
-          startDate: opts.startDate,
-          endDate: opts.endDate,
-          dataPoints: [],
-          byService: {},
-          byProject: {},
-        };
-      }
+      const data = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body });
+      return this.mapCostSummary(data, opts);
     }, this.retryOptions);
   }
 
@@ -210,24 +197,14 @@ export class GcpCostManager {
         forecastPeriod: { days: opts.forecastDays },
       };
 
-      try {
-        const data = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body });
-        return {
-          forecastedCost: Number(data.forecastedCost ?? 0),
-          currency: String(data.currency ?? "USD"),
-          startDate: new Date().toISOString().slice(0, 10),
-          endDate: new Date(Date.now() + opts.forecastDays * 86400000).toISOString().slice(0, 10),
-          confidence: (data.confidence as CostForecastResult["confidence"]) ?? "MEDIUM",
-        };
-      } catch {
-        return {
-          forecastedCost: 0,
-          currency: "USD",
-          startDate: new Date().toISOString().slice(0, 10),
-          endDate: new Date(Date.now() + opts.forecastDays * 86400000).toISOString().slice(0, 10),
-          confidence: "LOW",
-        };
-      }
+      const data = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body });
+      return {
+        forecastedCost: Number(data.forecastedCost ?? 0),
+        currency: String(data.currency ?? "USD"),
+        startDate: new Date().toISOString().slice(0, 10),
+        endDate: new Date(Date.now() + opts.forecastDays * 86400000).toISOString().slice(0, 10),
+        confidence: (data.confidence as CostForecastResult["confidence"]) ?? "MEDIUM",
+      };
     }, this.retryOptions);
   }
 
@@ -451,9 +428,12 @@ export class GcpCostManager {
   }
 
   private classifyUnusedResourceType(name: string): UnusedResourceType {
-    if (name.includes("Instance")) return "IDLE_VM";
-    if (name.includes("disk") || name.includes("Disk")) return "UNATTACHED_DISK";
-    if (name.includes("address") || name.includes("Address")) return "IDLE_IP";
+    const lower = name.toLowerCase();
+    if (lower.includes("instance")) return "IDLE_VM";
+    if (lower.includes("disk")) return "UNATTACHED_DISK";
+    if (lower.includes("address") || lower.includes("ip")) return "IDLE_IP";
+    if (lower.includes("forwardingrule") || lower.includes("loadbalancer") || lower.includes("targetpool")) return "IDLE_LB";
+    if (lower.includes("snapshot")) return "UNUSED_SNAPSHOT";
     return "IDLE_VM";
   }
 

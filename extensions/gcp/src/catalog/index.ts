@@ -1,9 +1,15 @@
 /**
- * GCP Catalog Manager
+ * GCP Catalog Manager — Local Template Library
  *
  * Provides an infrastructure template catalog for common GCP
- * deployment patterns. Templates are stored in-memory and can be
- * extended with custom definitions.
+ * deployment patterns. Templates are stored **in-memory** — this
+ * module does NOT call any GCP API and does NOT require authentication.
+ *
+ * The 10 built-in templates provide starting-point blueprints with
+ * **estimated** cost ranges (static, not live pricing). Extend with
+ * custom templates via `registerTemplate()`.
+ *
+ * For live cost data use the Cost Manager module.
  */
 
 // =============================================================================

@@ -298,13 +298,29 @@ export class GcpSecurityManager {
         }
       }
 
-      // Detect excessive permissions
-      for (const analysis of analysisMap.values()) {
-        const hasOwner = analysis.roles.some((r) => r.includes("owner") || r.includes("Owner"));
-        const hasEditor = analysis.roles.some((r) => r.includes("editor") || r.includes("Editor"));
-        const hasAdmin = analysis.roles.some((r) => r.includes("admin") || r.includes("Admin"));
+      // Detect excessive permissions using exact predefined role matching
+      const PRIVILEGED_ROLES = new Set([
+        "roles/owner",
+        "roles/editor",
+        "roles/iam.securityAdmin",
+        "roles/iam.serviceAccountAdmin",
+        "roles/iam.serviceAccountKeyAdmin",
+        "roles/iam.organizationRoleAdmin",
+        "roles/resourcemanager.organizationAdmin",
+        "roles/resourcemanager.folderAdmin",
+        "roles/resourcemanager.projectIamAdmin",
+        "roles/billing.admin",
+        "roles/compute.admin",
+        "roles/storage.admin",
+        "roles/container.admin",
+      ]);
 
-        if (hasOwner || (hasEditor && hasAdmin)) {
+      for (const analysis of analysisMap.values()) {
+        const hasOwner = analysis.roles.includes("roles/owner");
+        const hasEditor = analysis.roles.includes("roles/editor");
+        const privilegedCount = analysis.roles.filter((r) => PRIVILEGED_ROLES.has(r)).length;
+
+        if (hasOwner || (hasEditor && privilegedCount > 1)) {
           analysis.hasExcessivePermissions = true;
           analysis.recommendations.push("Consider using more granular roles instead of broad access");
         }

@@ -259,6 +259,10 @@ export class GcpBackupManager {
   }
 
   async restoreBackup(opts: RestoreOptions): Promise<GcpOperationResult> {
+    if (!opts.location?.trim()) throw new Error("restoreBackup: 'location' is required");
+    if (!opts.backupVault?.trim()) throw new Error("restoreBackup: 'backupVault' is required");
+    if (!opts.backupId?.trim()) throw new Error("restoreBackup: 'backupId' is required");
+
     return withGcpRetry(async () => {
       const token = await this.getAccessToken();
       const url = `${BASE}/projects/${this.projectId}/locations/${opts.location}/backupVaults/${opts.backupVault}/dataSources/-/backups/${opts.backupId}:restore`;

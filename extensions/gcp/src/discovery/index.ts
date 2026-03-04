@@ -239,13 +239,20 @@ export class GcpDiscoveryManager {
     };
   }
 
-  async findRelationships(assetName: string): Promise<ResourceRelationship[]> {
+  async findRelationships(assetName: string, relationshipTypes?: string[]): Promise<ResourceRelationship[]> {
     return withGcpRetry(async () => {
       const token = await this.getAccessToken();
-      const params = new URLSearchParams({
-        relationshipTypes: "INSTANCE_TO_INSTANCEGROUP",
-        contentType: "RELATIONSHIP",
-      });
+      const types = relationshipTypes ?? [
+        "INSTANCE_TO_INSTANCEGROUP",
+        "INSTANCE_TO_NETWORK",
+        "INSTANCE_TO_SUBNETWORK",
+        "INSTANCE_TO_DISK",
+        "DISK_TO_IMAGE",
+        "NETWORK_TO_SUBNETWORK",
+        "CLUSTER_TO_NODEPOOL",
+      ];
+      const params = new URLSearchParams({ contentType: "RELATIONSHIP" });
+      for (const t of types) params.append("relationshipTypes", t);
       params.append("assetNames", assetName);
       const url = `${ASSET_BASE}/projects/${this.projectId}/assets?${params}`;
       const items = await gcpList<Record<string, unknown>>(url, token, "assets");

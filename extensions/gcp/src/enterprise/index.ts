@@ -129,7 +129,7 @@ export class GcpEnterpriseManager {
     return withGcpRetry(async () => {
       const token = await this.getAccessToken();
       const url = `${CRM_BASE}/organizations:search`;
-      const raw = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body: JSON.stringify({}) });
+      const raw = await gcpRequest<Record<string, unknown>>(url, token, { method: "POST", body: {} });
       const orgs = (raw.organizations ?? []) as Array<Record<string, unknown>>;
       return orgs.map((o) => this.mapOrganization(o));
     }, this.retryOptions);
@@ -233,11 +233,13 @@ export class GcpEnterpriseManager {
     }, this.retryOptions);
   }
 
-  async deleteProject(projectId?: string): Promise<GcpOperationResult> {
+  async deleteProject(projectId: string): Promise<GcpOperationResult> {
+    if (!projectId) {
+      throw new Error("deleteProject requires an explicit projectId argument");
+    }
     return withGcpRetry(async () => {
       const token = await this.getAccessToken();
-      const id = projectId ?? this.projectId;
-      const url = `${CRM_BASE}/projects/${id}`;
+      const url = `${CRM_BASE}/projects/${projectId}`;
       const result = await gcpMutate(url, token, undefined, "DELETE");
       return { success: true, message: result.message, operationId: result.operationId };
     }, this.retryOptions);
@@ -266,7 +268,7 @@ export class GcpEnterpriseManager {
       const url = `${CRM_BASE}/${target}:getIamPolicy`;
       const raw = await gcpRequest<Record<string, unknown>>(url, token, {
         method: "POST",
-        body: JSON.stringify({ options: { requestedPolicyVersion: 3 } }),
+        body: { options: { requestedPolicyVersion: 3 } },
       });
       return this.mapIamPolicy(raw);
     }, this.retryOptions);

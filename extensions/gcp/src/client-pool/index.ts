@@ -87,6 +87,8 @@ export class GcpClientPoolManager {
 
   constructor(config?: Partial<PoolConfig>) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+    // Auto-start cleanup so expired tokens and idle clients are reaped
+    this.startCleanup();
   }
 
   // ---------------------------------------------------------------------------

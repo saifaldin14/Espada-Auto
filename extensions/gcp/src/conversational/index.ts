@@ -68,6 +68,15 @@ export type ConversationConfig = {
   confirmDestructive: boolean;
   systemPrompt?: string;
   suggestions: boolean;
+  /**
+   * Optional callback invoked for non-destructive messages after intent
+   * classification. Return a `ConversationResponse` to override the
+   * default echo reply, or `undefined` to use the default.
+   */
+  onExecute?: (
+    content: string,
+    session: ConversationSession,
+  ) => ConversationResponse | Promise<ConversationResponse> | undefined | Promise<undefined>;
 };
 
 export type ConversationResponse = {
@@ -155,7 +164,7 @@ export class GcpConversationalManager {
   // Message handling
   // ---------------------------------------------------------------------------
 
-  processUserMessage(content: string, sessionId?: string): ConversationResponse {
+  processUserMessage(content: string, sessionId?: string): ConversationResponse | Promise<ConversationResponse> {
     const session = this.getSession(sessionId);
     if (!session) {
       return { message: "No active session. Start a new session first.", state: "error" };
@@ -212,11 +221,56 @@ export class GcpConversationalManager {
       };
     }
 
-    // Normal message handling
+    // Dispatch through onExecute callback if provided
+    if (this.config.onExecute) {
+      const startTime = Date.now();
+      const callbackResult = this.config.onExecute(content, session);
+
+      const finalise = (result: ConversationResponse | undefined): ConversationResponse => {
+        if (result) {
+          const assistantMsg: ConversationMessage = {
+            id: this.generateId(),
+            role: "assistant",
+            content: result.message,
+            timestamp: new Date().toISOString(),
+          };
+          session.turns.push({
+            userMessage: userMsg,
+            assistantMessage: assistantMsg,
+            executedAction: {
+              service: "dispatched",
+              operation: content,
+              success: result.state !== "error",
+              duration: Date.now() - startTime,
+            },
+          });
+          session.state = result.state;
+          this.trimHistory(session);
+          return result;
+        }
+        return this.buildDefaultReply(session, userMsg, content);
+      };
+
+      // Support both sync and async callbacks
+      if (callbackResult && typeof (callbackResult as Promise<unknown>).then === "function") {
+        return (callbackResult as Promise<ConversationResponse | undefined>).then(finalise);
+      }
+      return finalise(callbackResult as ConversationResponse | undefined);
+    }
+
+    // Default reply when no onExecute callback is wired
+    return this.buildDefaultReply(session, userMsg, content);
+  }
+
+  private buildDefaultReply(
+    session: ConversationSession,
+    userMsg: ConversationMessage,
+    content: string,
+  ): ConversationResponse {
     const assistantMsg: ConversationMessage = {
       id: this.generateId(),
       role: "assistant",
-      content: `Understood: "${content}". Processing your request.`,
+      content: `Received: "${content}". No execution handler is configured — wire an onExecute callback to dispatch GCP operations.`,
       timestamp: new Date().toISOString(),
     };
 

@@ -375,8 +375,13 @@ export class GcpReconciliationManager {
 
       try {
         return await gcpRequest<Record<string, unknown>>(apiUrl, token);
-      } catch {
-        return null;
+      } catch (err) {
+        // Only treat 404 as "resource missing" — rethrow everything else
+        // so it surfaces as an API / auth / network error instead of a
+        // false "missing resource" report.
+        const statusCode = (err as { statusCode?: number }).statusCode;
+        if (statusCode === 404) return null;
+        throw err;
       }
     }, this.retryOptions);
   }

@@ -235,20 +235,70 @@ export class GcpPolicyManager {
   // Compliance check
   // ---------------------------------------------------------------------------
 
+  /**
+   * Evaluate effective policies for the project and report potential violations.
+   *
+   * For **boolean** constraints, checks whether the constraint is enforced
+   * vs. not enforced. For **list** constraints, queries the effective policy
+   * from the API (which resolves the entire resource hierarchy) and then
+   * reports any deny-list entries that are actively blocking values.
+   *
+   * > NOTE: This reports *policy-level* warnings — it does NOT inspect every
+   * > individual resource in the project to see if it violates a constraint.
+   * > Full resource-level compliance scanning requires Security Command Center
+   * > or Config Validator and is out of scope for this module.
+   */
   async checkCompliance(): Promise<PolicyComplianceReport> {
     const policies = await this.listPolicies();
+    const constraints = await this.listConstraints();
+    const constraintMap = new Map(constraints.map((c) => [c.name, c]));
     const violations: PolicyViolation[] = [];
 
     for (const policy of policies) {
-      for (const rule of policy.rules) {
-        if (rule.values?.deniedValues?.length) {
+      const constraint = constraintMap.get(policy.constraint);
+
+      // Boolean constraint — flag if enforcement is set (potential blocker)
+      if (constraint?.constraintType === "boolean") {
+        const enforced = policy.rules.some((r) => r.enforce === true);
+        if (enforced) {
           violations.push({
             constraint: policy.constraint,
             resource: `projects/${this.projectId}`,
             resourceType: "project",
-            violationMessage: `Constraint "${policy.constraint}" has deny rules — verify that denied values [${rule.values.deniedValues.join(", ")}] are not in use`,
-            severity: "medium",
+            violationMessage: `Boolean constraint "${policy.constraint}" is enforced — resources violating this constraint will be blocked`,
+            severity: "high",
           });
+        }
+        continue;
+      }
+
+      // List constraint — query the effective policy for hierarchy-resolved values
+      try {
+        const effective = await this.getEffectivePolicy(policy.constraint);
+        for (const rule of effective.rules) {
+          if (rule.values?.deniedValues?.length) {
+            violations.push({
+              constraint: policy.constraint,
+              resource: `projects/${this.projectId}`,
+              resourceType: "project",
+              violationMessage: `Effective policy for "${policy.constraint}" actively denies values: [${rule.values.deniedValues.join(", ")}]`,
+              severity: "medium",
+            });
+          }
+        }
+      } catch {
+        // Fall back to inspecting the policy directly when effective policy
+        // endpoint is unavailable (e.g. missing permissions).
+        for (const rule of policy.rules) {
+          if (rule.values?.deniedValues?.length) {
+            violations.push({
+              constraint: policy.constraint,
+              resource: `projects/${this.projectId}`,
+              resourceType: "project",
+              violationMessage: `Constraint "${policy.constraint}" has deny rules — verify that denied values [${rule.values.deniedValues.join(", ")}] are not in use`,
+              severity: "medium",
+            });
+          }
         }
       }
     }
@@ -261,6 +311,20 @@ export class GcpPolicyManager {
       nonCompliant: violations.length,
       violations,
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Effective policy (hierarchy-resolved)
+  // ---------------------------------------------------------------------------
+
+  async getEffectivePolicy(constraintName: string): Promise<OrgPolicy> {
+    return withGcpRetry(async () => {
+      const token = await this.getAccessToken();
+      const encoded = encodeURIComponent(constraintName);
+      const url = `${POLICY_BASE}/projects/${this.projectId}/policies/${encoded}:getEffectivePolicy`;
+      const raw = await gcpRequest<Record<string, unknown>>(url, token);
+      return this.mapPolicy(raw);
+    }, this.retryOptions);
   }
 
   // ---------------------------------------------------------------------------

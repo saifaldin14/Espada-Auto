@@ -303,8 +303,11 @@ export class GcpContextManager {
     }
   }
 
+  private idCounter = 0;
+
   private generateId(): string {
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    this.idCounter++;
+    return `${Date.now().toString(36)}-${this.idCounter.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
 }
 

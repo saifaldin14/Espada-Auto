@@ -1,9 +1,16 @@
 /**
- * GCP Intent Manager
+ * GCP Intent Manager — Local Heuristic Classifier
  *
  * Classifies natural-language user input into structured GCP
- * operation intents. Maps conversational phrases to specific
- * cloud resource actions, services, and parameters.
+ * operation intents using regex pattern matching. This is a
+ * **local, in-memory utility** — it does NOT call any GCP API
+ * and does NOT require authentication.
+ *
+ * Confidence scores are heuristic (based on match-length ratio)
+ * and should not be treated as ML-grade probabilities. For
+ * production NLU, integrate with Dialogflow or a hosted LLM.
+ *
+ * Extensible via `addPattern()` / constructor `customPatterns`.
  */
 
 // =============================================================================
@@ -305,6 +312,14 @@ export class GcpIntentManager {
     this.confidenceThreshold = confidenceThreshold ?? 0.3;
   }
 
+  /**
+   * Classify a natural-language input string into a GCP operation intent.
+   *
+   * @returns A `ClassifiedIntent` with a heuristic `confidence` score
+   *          (0–0.95). A score below `confidenceThreshold` yields
+   *          `category: "unknown"`. The `alternatives` array contains
+   *          up to 3 runner-up matches.
+   */
   classify(input: string): ClassifiedIntent {
     const normalized = input.trim();
     const matches: Array<{ pattern: IntentPattern; confidence: number }> = [];
