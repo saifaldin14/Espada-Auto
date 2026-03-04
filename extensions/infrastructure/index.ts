@@ -26,6 +26,8 @@ import {
   createProviderRegistry,
   createInfrastructureLogger,
   getDefaultInfrastructureConfig,
+  getProviderCommandTelemetrySnapshot,
+  resetProviderCommandTelemetry,
   type InfrastructureConfigSchema,
   type RegistryOptions,
 } from "./src/index.js";
@@ -236,6 +238,43 @@ const plugin = {
             await registry.discoverAndRegisterProviders();
             console.log("Discovery complete");
           });
+
+        infra
+          .command("telemetry")
+          .description("Show provider command telemetry snapshot")
+          .action(async () => {
+            const snapshot = getProviderCommandTelemetrySnapshot(20);
+            console.log("\nProvider Command Telemetry:\n");
+            console.log(`  Total: ${snapshot.summary.total}`);
+            console.log(`  Success: ${snapshot.summary.success}`);
+            console.log(`  Failed: ${snapshot.summary.failed}`);
+            console.log(`  Retryable Failures: ${snapshot.summary.retryableFailures}`);
+            console.log(`  Avg Duration (ms): ${snapshot.summary.avgDurationMs.toFixed(2)}`);
+            console.log("\n  By Provider:");
+            console.log(`    aws: ${snapshot.summary.providerCounts.aws}`);
+            console.log(`    azure: ${snapshot.summary.providerCounts.azure}`);
+            console.log(`    terraform: ${snapshot.summary.providerCounts.terraform}`);
+            console.log(`    kubernetes: ${snapshot.summary.providerCounts.kubernetes}`);
+            console.log(`    pulumi: ${snapshot.summary.providerCounts.pulumi}`);
+
+            if (snapshot.recent.length > 0) {
+              console.log("\n  Recent Events:");
+              for (const event of snapshot.recent) {
+                console.log(
+                  `    [${event.timestamp}] ${event.provider} ${event.success ? "ok" : "fail"} ` +
+                  `code=${event.exitCode} duration=${event.durationMs}ms cmd=${event.commandRedacted}`,
+                );
+              }
+            }
+          });
+
+        infra
+          .command("telemetry-reset")
+          .description("Reset provider command telemetry buffer and counters")
+          .action(async () => {
+            resetProviderCommandTelemetry();
+            console.log("Provider command telemetry has been reset.");
+          });
       },
       { commands: ["infra"] },
     );
@@ -277,6 +316,19 @@ const plugin = {
       return {
         success: true,
         data: registry.getStatistics(),
+      };
+    });
+
+    api.registerGatewayMethod("infrastructure/telemetry", async () => ({
+      success: true,
+      data: getProviderCommandTelemetrySnapshot(),
+    }));
+
+    api.registerGatewayMethod("infrastructure/telemetry/reset", async () => {
+      resetProviderCommandTelemetry();
+      return {
+        success: true,
+        data: { reset: true },
       };
     });
 

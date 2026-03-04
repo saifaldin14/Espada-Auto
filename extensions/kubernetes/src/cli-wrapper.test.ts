@@ -18,6 +18,7 @@ vi.mock("node:child_process", () => ({
 
 // After vi.mock we can import — vitest hoists the mock automatically
 import {
+  kubectlRunCommand,
   kubectlApplyDryRun,
   kubectlApply,
   kubectlGet,
@@ -89,10 +90,56 @@ describe("kubectlApplyDryRun", () => {
   });
 });
 
+describe("kubectlRunCommand", () => {
+  it("returns structured success result", async () => {
+    resolveWith('{"ok":true}');
+    const result = await kubectlRunCommand(["get", "pods", "-o", "json"]);
+    expect(result.success).toBe(true);
+    expect(result.exitCode).toBe(0);
+    expect(result.command).toContain("kubectl get pods -o json");
+    expect(result.commandRedacted).toContain("kubectl get pods -o json");
+  });
+
+  it("classifies not-found errors", async () => {
+    execFileMock.mockImplementation(
+      (_cmd: string, _args: string[], _opts: unknown, cb: (err: { message: string; code: number }) => void) => {
+        cb({ message: "kubectl: command not found", code: 127 });
+      },
+    );
+    const result = await kubectlRunCommand(["get", "pods"]);
+    expect(result.success).toBe(false);
+    expect(result.errorType).toBe("not-found");
+  });
+
+  it("redacts token values in commandRedacted", async () => {
+    resolveWith("ok");
+    const result = await kubectlRunCommand(["config", "set-credentials", "u", "--token", "abc123"]);
+    expect(result.command).toContain("abc123");
+    expect(result.commandRedacted).toContain("--token ***");
+  });
+});
+
 describe("kubectlApply", () => {
   it("builds correct args", async () => {
     await kubectlApply("/tmp/manifest.yaml");
     expect(calledArgs()).toEqual(["apply", "-f", "/tmp/manifest.yaml"]);
+  });
+
+  it("passes timeout/signal/maxBuffer options through to execFile", async () => {
+    const controller = new AbortController();
+    await kubectlApply("/tmp/manifest.yaml", {
+      timeoutMs: 42_000,
+      signal: controller.signal,
+      maxBufferBytes: 1024,
+    });
+    const callOpts = execFileMock.mock.calls[0]?.[2] as {
+      timeout?: number;
+      signal?: AbortSignal;
+      maxBuffer?: number;
+    };
+    expect(callOpts.timeout).toBe(42_000);
+    expect(callOpts.signal).toBe(controller.signal);
+    expect(callOpts.maxBuffer).toBe(1024);
   });
 });
 

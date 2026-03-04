@@ -77,6 +77,28 @@ export default {
       },
     );
 
+    api.registerGatewayMethod(
+      "cost/budget/audit",
+      async ({ params, respond }) => {
+        const { limit, scope, scopeId } = (params ?? {}) as {
+          limit?: number;
+          scope?: "team" | "project" | "environment" | "global";
+          scopeId?: string;
+        };
+        const entries = budgetManager.listAuditEntries({ limit, scope, scopeId });
+        respond(true, { entries });
+      },
+    );
+
+    api.registerGatewayMethod(
+      "cost/budget/audit/clear",
+      async ({ params, respond }) => {
+        const { beforeOrAt } = (params ?? {}) as { beforeOrAt?: string };
+        const removed = budgetManager.clearAuditEntries(beforeOrAt);
+        respond(true, { removed });
+      },
+    );
+
     // Service lifecycle
     api.registerService({
       id: "cost-governance",

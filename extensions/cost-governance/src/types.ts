@@ -186,6 +186,26 @@ export interface BudgetInput {
   currency?: string;
 }
 
+export type BudgetAuditAction =
+  | "budget_created"
+  | "budget_updated"
+  | "budget_deleted"
+  | "spend_updated"
+  | "status_changed";
+
+export interface BudgetAuditEntry {
+  id: string;
+  action: BudgetAuditAction;
+  budgetId: string;
+  budgetName: string;
+  scope: BudgetScope;
+  scopeId: string;
+  previousStatus: BudgetStatus | null;
+  currentStatus: BudgetStatus | null;
+  timestamp: string;
+  metadata: Record<string, unknown>;
+}
+
 /* ---------- Forecast ---------- */
 
 export interface CostDataPoint {

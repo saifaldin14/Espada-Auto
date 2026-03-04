@@ -300,6 +300,53 @@ describe("BudgetManager", () => {
     expect(statuses[0]!.utilization).toBe(50);
     expect(statuses[0]!.status).toBe("ok");
   });
+
+  it("records audit entries for create, spend update, status change, and delete", () => {
+    const mgr = new BudgetManager(null);
+    const budget = mgr.setBudget(makeBudgetInput({ monthlyLimit: 1000 }));
+    mgr.updateSpend(budget.id, 810);
+    mgr.deleteBudget(budget.id);
+
+    const entries = mgr.listAuditEntries();
+    const actions = entries.map((entry) => entry.action);
+
+    expect(actions).toContain("budget_created");
+    expect(actions).toContain("spend_updated");
+    expect(actions).toContain("status_changed");
+    expect(actions).toContain("budget_deleted");
+  });
+
+  it("filters and limits audit entries", () => {
+    const mgr = new BudgetManager(null);
+    const b1 = mgr.setBudget(makeBudgetInput({ scope: "project", scopeId: "p1", name: "P1" }));
+    const b2 = mgr.setBudget(makeBudgetInput({ scope: "team", scopeId: "t1", name: "T1" }));
+    mgr.updateSpend(b1.id, 100);
+    mgr.updateSpend(b2.id, 200);
+
+    const teamEntries = mgr.listAuditEntries({ scope: "team" });
+    expect(teamEntries.length).toBeGreaterThan(0);
+    expect(teamEntries.every((entry) => entry.scope === "team")).toBe(true);
+
+    const limited = mgr.listAuditEntries({ limit: 2 });
+    expect(limited).toHaveLength(2);
+  });
+
+  it("clears audit entries by timestamp threshold", () => {
+    const mgr = new BudgetManager(null);
+    const budget = mgr.setBudget(makeBudgetInput());
+    const marker = new Date().toISOString();
+    mgr.updateSpend(budget.id, 50);
+
+    const removed = mgr.clearAuditEntries(marker);
+    expect(removed).toBeGreaterThan(0);
+
+    const remaining = mgr.listAuditEntries();
+    expect(remaining.every((entry) => new Date(entry.timestamp).getTime() > new Date(marker).getTime())).toBe(true);
+
+    const removedAll = mgr.clearAuditEntries();
+    expect(removedAll).toBe(remaining.length);
+    expect(mgr.listAuditEntries()).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

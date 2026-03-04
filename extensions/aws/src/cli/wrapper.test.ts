@@ -208,6 +208,88 @@ describe("AWSCLIWrapper", () => {
       const args = callArgs[1] as string[];
       expect(args).toContain("--dry-run");
     });
+
+    it("passes AbortSignal to spawn options", async () => {
+      const { spawn } = await import("node:child_process");
+      const controller = new AbortController();
+
+      await wrapper.execute("ec2", "describe-instances", {}, { signal: controller.signal });
+
+      expect(spawn).toHaveBeenCalled();
+      const spawnOpts = vi.mocked(spawn).mock.calls[0]?.[2] as { signal?: AbortSignal };
+      expect(spawnOpts.signal).toBe(controller.signal);
+    });
+
+    it("classifies command-not-found as not-found and exposes redacted command", async () => {
+      const { spawn } = await import("node:child_process");
+      vi.mocked(spawn).mockImplementationOnce(() => {
+        const events: Record<string, ((...args: unknown[]) => void)[]> = {};
+        const stdoutEvents: Record<string, ((...args: unknown[]) => void)[]> = {};
+        const stderrEvents: Record<string, ((...args: unknown[]) => void)[]> = {};
+        return {
+          stdout: {
+            on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+              if (!stdoutEvents[event]) stdoutEvents[event] = [];
+              stdoutEvents[event].push(cb);
+            }),
+          },
+          stderr: {
+            on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+              if (!stderrEvents[event]) stderrEvents[event] = [];
+              stderrEvents[event].push(cb);
+            }),
+          },
+          on: vi.fn((event: string, cb: (...args: unknown[]) => void) => {
+            if (!events[event]) events[event] = [];
+            events[event].push(cb);
+            if (event === "close") {
+              setTimeout(() => {
+                stderrEvents.data?.forEach((h) => h("aws: command not found"));
+                cb(127);
+              }, 10);
+            }
+          }),
+          kill: vi.fn(),
+        } as never;
+      });
+
+      const result = await wrapper.execute("sts", "get-caller-identity");
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe("not-found");
+      expect(result.commandRedacted).toContain("aws sts get-caller-identity");
+    });
+
+    it("redacts secrets in commandRedacted", async () => {
+      const result = await wrapper.execute(
+        "s3api",
+        "put-object",
+        { secretAccessKey: "super-secret-value", bucket: "demo" },
+      );
+      expect(result.commandRedacted).toContain("***");
+      expect(result.command).toContain("super-secret-value");
+    });
+
+    it("emits telemetry events with redacted command", async () => {
+      const onTelemetry = vi.fn();
+      const result = await wrapper.execute(
+        "sts",
+        "get-caller-identity",
+        {},
+        { onTelemetry },
+      );
+
+      expect(result.success).toBe(true);
+      expect(onTelemetry).toHaveBeenCalledTimes(1);
+      expect(onTelemetry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: "aws",
+          success: true,
+          commandRedacted: expect.stringContaining("aws sts get-caller-identity"),
+          durationMs: expect.any(Number),
+          timestamp: expect.any(String),
+        }),
+      );
+    });
   });
 
   describe("getVersion", () => {

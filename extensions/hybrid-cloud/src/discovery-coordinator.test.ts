@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { HybridDiscoveryCoordinator } from "../src/discovery-coordinator.js";
 import type { GraphSyncTarget } from "../src/discovery-coordinator.js";
+import type { HybridAdapterFailure } from "../src/discovery-coordinator.js";
 import type {
   HybridDiscoveryAdapter,
   HybridSite,
@@ -163,6 +164,17 @@ describe("HybridDiscoveryCoordinator", () => {
       const sites = await coordinator.discoverEdgeSites();
       expect(sites).toHaveLength(1);
       expect(sites[0].id).toBe("good-site");
+
+      const diagnostics = coordinator.getLastDiscoveryRunDiagnostics();
+      expect(diagnostics).not.toBeNull();
+      expect(diagnostics?.failures).toHaveLength(1);
+      expect(diagnostics?.failures[0]).toMatchObject({
+        provider: "azure-arc",
+        operation: "discoverSites",
+        type: "authentication",
+        retryable: false,
+      });
+      expect(diagnostics?.failureCountByProvider["azure-arc"]).toBe(1);
     });
   });
 
@@ -197,6 +209,13 @@ describe("HybridDiscoveryCoordinator", () => {
 
       const clusters = await coordinator.discoverFleet();
       expect(clusters).toHaveLength(1);
+
+      const diagnostics = coordinator.getLastDiscoveryRunDiagnostics();
+      expect(diagnostics?.failures).toHaveLength(1);
+      expect(diagnostics?.failures[0]).toMatchObject({
+        provider: "aws",
+        operation: "discoverFleetClusters",
+      });
     });
   });
 
@@ -296,6 +315,26 @@ describe("HybridDiscoveryCoordinator", () => {
       expect(result.sitesDiscovered).toBe(0);
       expect(target.upsertNodes).not.toHaveBeenCalled();
     });
+
+    it("captures resource discovery failures during sync", async () => {
+      coordinator.registerAdapter("azure-arc", makeAdapter("azure-arc", {
+        discoverSites: vi.fn().mockResolvedValue([]),
+        discoverFleetClusters: vi.fn().mockResolvedValue([]),
+        discoverHybridResources: vi.fn().mockRejectedValue(new Error("network timeout")),
+      }));
+
+      const target = makeGraphTarget();
+      await coordinator.syncToGraph(target);
+
+      const diagnostics = coordinator.getLastDiscoveryRunDiagnostics();
+      expect(diagnostics?.failures).toHaveLength(1);
+      expect(diagnostics?.failures[0]).toMatchObject({
+        provider: "azure-arc",
+        operation: "discoverHybridResources",
+        type: "timeout",
+        retryable: true,
+      });
+    });
   });
 
   describe("healthCheckAll", () => {
@@ -319,6 +358,56 @@ describe("HybridDiscoveryCoordinator", () => {
 
       const health = await coordinator.healthCheckAll();
       expect(health.get("gcp")).toBe(false);
+
+      const diagnostics = coordinator.getLastDiscoveryRunDiagnostics();
+      expect(diagnostics?.failures).toHaveLength(1);
+      expect(diagnostics?.failures[0]).toMatchObject({
+        provider: "gcp",
+        operation: "healthCheck",
+        type: "network",
+        retryable: true,
+      });
+    });
+  });
+
+  describe("discovery diagnostics", () => {
+    it("records adapter failures in bounded history", async () => {
+      const onAdapterFailure = vi.fn<(failure: HybridAdapterFailure) => void>();
+      const historyCoordinator = new HybridDiscoveryCoordinator({
+        maxFailureHistory: 2,
+        onAdapterFailure,
+      });
+
+      historyCoordinator.registerAdapter("aws", makeAdapter("aws", {
+        discoverSites: vi.fn().mockRejectedValue(new Error("auth failure")),
+      }));
+      historyCoordinator.registerAdapter("gcp", makeAdapter("gcp", {
+        discoverSites: vi.fn().mockRejectedValue(new Error("network timeout")),
+      }));
+      historyCoordinator.registerAdapter("azure-arc", makeAdapter("azure-arc", {
+        discoverSites: vi.fn().mockRejectedValue(new Error("forbidden")),
+      }));
+
+      await historyCoordinator.discoverEdgeSites();
+
+      const history = historyCoordinator.getAdapterFailureHistory();
+      expect(history).toHaveLength(2);
+      expect(history.map((h) => h.provider)).toEqual(["gcp", "azure-arc"]);
+      expect(onAdapterFailure).toHaveBeenCalledTimes(3);
+    });
+
+    it("resets diagnostics state", async () => {
+      coordinator.registerAdapter("aws", makeAdapter("aws", {
+        discoverSites: vi.fn().mockRejectedValue(new Error("boom")),
+      }));
+
+      await coordinator.discoverEdgeSites();
+      expect(coordinator.getLastDiscoveryRunDiagnostics()).not.toBeNull();
+      expect(coordinator.getAdapterFailureHistory()).toHaveLength(1);
+
+      coordinator.resetAdapterFailureHistory();
+      expect(coordinator.getLastDiscoveryRunDiagnostics()).toBeNull();
+      expect(coordinator.getAdapterFailureHistory()).toEqual([]);
     });
   });
 });

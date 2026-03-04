@@ -55,7 +55,7 @@ beforeEach(() => {
 describe("k8s_delete tool", () => {
   it("calls kubectlDelete with correct args", async () => {
     const tool = getTool("k8s_delete");
-    const result = await tool.execute({ resource: "deployment", name: "web" });
+    const result = await tool.execute({ resource: "deployment", name: "web", confirm: "yes" });
     expect(mockDelete).toHaveBeenCalledWith("deployment", "web", {
       namespace: undefined,
       force: undefined,
@@ -73,6 +73,7 @@ describe("k8s_delete tool", () => {
       namespace: "prod",
       force: true,
       gracePeriod: 0,
+      confirm: "yes",
     });
     expect(mockDelete).toHaveBeenCalledWith("pod", "stuck", {
       namespace: "prod",
@@ -84,9 +85,16 @@ describe("k8s_delete tool", () => {
   it("returns error text on failure", async () => {
     mockDelete.mockRejectedValueOnce(new Error("not found"));
     const tool = getTool("k8s_delete");
-    const result = await tool.execute({ resource: "pod", name: "ghost" });
+    const result = await tool.execute({ resource: "pod", name: "ghost", confirm: "yes" });
     expect(extractText(result)).toContain("kubectl delete failed");
     expect(extractText(result)).toContain("not found");
+  });
+
+  it("blocks delete when confirmation is missing", async () => {
+    const tool = getTool("k8s_delete");
+    const result = await tool.execute({ resource: "pod", name: "ghost" });
+    expect(extractText(result)).toContain("mutating operation");
+    expect(mockDelete).not.toHaveBeenCalled();
   });
 });
 
@@ -158,29 +166,36 @@ describe("k8s_logs tool", () => {
 describe("k8s_scale tool", () => {
   it("calls kubectlScale with correct args", async () => {
     const tool = getTool("k8s_scale");
-    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 5 });
+    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 5, confirm: "yes" });
     expect(mockScale).toHaveBeenCalledWith("deployment", "web", 5, { namespace: undefined });
     expect(extractText(result)).toContain("Scaled deployment/web to 5 replica(s)");
   });
 
   it("scales to zero", async () => {
     const tool = getTool("k8s_scale");
-    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 0 });
+    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 0, confirm: "yes" });
     expect(mockScale).toHaveBeenCalledWith("deployment", "web", 0, { namespace: undefined });
     expect(extractText(result)).toContain("0 replica(s)");
   });
 
   it("passes namespace", async () => {
     const tool = getTool("k8s_scale");
-    await tool.execute({ resource: "statefulset", name: "db", replicas: 3, namespace: "prod" });
+    await tool.execute({ resource: "statefulset", name: "db", replicas: 3, namespace: "prod", confirm: "yes" });
     expect(mockScale).toHaveBeenCalledWith("statefulset", "db", 3, { namespace: "prod" });
   });
 
   it("returns error text on failure", async () => {
     mockScale.mockRejectedValueOnce(new Error("permission denied"));
     const tool = getTool("k8s_scale");
-    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 2 });
+    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 2, confirm: "yes" });
     expect(extractText(result)).toContain("kubectl scale failed");
+  });
+
+  it("blocks scale when confirmation is missing", async () => {
+    const tool = getTool("k8s_scale");
+    const result = await tool.execute({ resource: "deployment", name: "web", replicas: 2 });
+    expect(extractText(result)).toContain("mutating operation");
+    expect(mockScale).not.toHaveBeenCalled();
   });
 });
 
@@ -192,7 +207,7 @@ describe("k8s_rollout tool", () => {
   describe("restart action", () => {
     it("calls kubectlRolloutRestart", async () => {
       const tool = getTool("k8s_rollout");
-      const result = await tool.execute({ action: "restart", resource: "deployment", name: "web" });
+      const result = await tool.execute({ action: "restart", resource: "deployment", name: "web", confirm: "yes" });
       expect(mockRolloutRestart).toHaveBeenCalledWith("deployment", "web", { namespace: undefined });
       expect(extractText(result)).toContain("Rollout restart initiated");
     });
@@ -201,7 +216,7 @@ describe("k8s_rollout tool", () => {
   describe("undo action", () => {
     it("calls kubectlRolloutUndo (previous revision)", async () => {
       const tool = getTool("k8s_rollout");
-      const result = await tool.execute({ action: "undo", resource: "deployment", name: "web" });
+      const result = await tool.execute({ action: "undo", resource: "deployment", name: "web", confirm: "yes" });
       expect(mockRolloutUndo).toHaveBeenCalledWith("deployment", "web", {
         namespace: undefined,
         toRevision: undefined,
@@ -211,7 +226,7 @@ describe("k8s_rollout tool", () => {
 
     it("calls kubectlRolloutUndo with specific revision", async () => {
       const tool = getTool("k8s_rollout");
-      const result = await tool.execute({ action: "undo", resource: "deployment", name: "web", toRevision: 3 });
+      const result = await tool.execute({ action: "undo", resource: "deployment", name: "web", toRevision: 3, confirm: "yes" });
       expect(mockRolloutUndo).toHaveBeenCalledWith("deployment", "web", {
         namespace: undefined,
         toRevision: 3,
@@ -256,8 +271,22 @@ describe("k8s_rollout tool", () => {
     it("returns error text on restart failure", async () => {
       mockRolloutRestart.mockRejectedValueOnce(new Error("timeout"));
       const tool = getTool("k8s_rollout");
-      const result = await tool.execute({ action: "restart", resource: "deployment", name: "web" });
+      const result = await tool.execute({ action: "restart", resource: "deployment", name: "web", confirm: "yes" });
       expect(extractText(result)).toContain("kubectl rollout failed");
+    });
+
+    it("blocks restart when confirmation is missing", async () => {
+      const tool = getTool("k8s_rollout");
+      const result = await tool.execute({ action: "restart", resource: "deployment", name: "web" });
+      expect(extractText(result)).toContain("mutating operation");
+      expect(mockRolloutRestart).not.toHaveBeenCalled();
+    });
+
+    it("blocks undo when confirmation is missing", async () => {
+      const tool = getTool("k8s_rollout");
+      const result = await tool.execute({ action: "undo", resource: "deployment", name: "web" });
+      expect(extractText(result)).toContain("mutating operation");
+      expect(mockRolloutUndo).not.toHaveBeenCalled();
     });
 
     it("returns message for unknown action", async () => {
@@ -271,7 +300,7 @@ describe("k8s_rollout tool", () => {
     it("passes namespace on all actions", async () => {
       const tool = getTool("k8s_rollout");
 
-      await tool.execute({ action: "restart", resource: "deployment", name: "web", namespace: "prod" });
+      await tool.execute({ action: "restart", resource: "deployment", name: "web", namespace: "prod", confirm: "yes" });
       expect(mockRolloutRestart).toHaveBeenCalledWith("deployment", "web", { namespace: "prod" });
 
       await tool.execute({ action: "status", resource: "deployment", name: "web", namespace: "staging" });

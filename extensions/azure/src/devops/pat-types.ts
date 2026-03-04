@@ -85,6 +85,27 @@ export type DevOpsPATScope =
 /** How the PAT token value is stored. */
 export type PATStorageBackend = "file" | "keychain" | "keyvault";
 
+export type PATEncryptionKeySource = "derived" | "static" | "provider";
+
+export type PATEncryptionMetadata = {
+  keySource: PATEncryptionKeySource;
+  keyId?: string;
+  keyVersion?: string;
+  encryptedAt: string;
+  rotatedAt?: string;
+};
+
+export type PATResolvedKey = {
+  key: string | Buffer;
+  keySource: PATEncryptionKeySource;
+  keyId?: string;
+  keyVersion?: string;
+};
+
+export type PATEncryptionKeyProvider = {
+  getEncryptionKey: () => Promise<PATResolvedKey>;
+};
+
 /** Stored PAT record (token value encrypted at rest). */
 export type StoredPAT = {
   /** Unique identifier for this PAT entry (UUID v4). */
@@ -113,6 +134,8 @@ export type StoredPAT = {
   backend: PATStorageBackend;
   /** Azure Key Vault URI if backend is "keyvault". */
   keyVaultSecretUri?: string;
+  /** Key metadata used to encrypt this PAT entry. */
+  encryption: PATEncryptionMetadata;
 };
 
 /** Decrypted PAT ready for API use. */
@@ -139,6 +162,9 @@ export type PATSummary = {
   lastUsedAt?: string;
   backend: PATStorageBackend;
   status: PATStatus;
+  encryption: PATEncryptionMetadata;
+  /** True when key age exceeds configured rotation window. */
+  keyRotationDue: boolean;
 };
 
 /** Computed PAT health status. */
@@ -178,6 +204,12 @@ export type PATManagerOptions = {
   storageDir?: string;
   /** Encryption key (32 bytes hex). Derived from machine ID if not set. */
   encryptionKey?: string;
+  /** Pluggable key provider (e.g., Key Vault/HSM integration). */
+  encryptionKeyProvider?: PATEncryptionKeyProvider;
+  /** Require managed/static key and fail if fallback machine-derived key would be used. */
+  requireManagedEncryptionKey?: boolean;
+  /** Key rotation window in days for metadata signaling. Default: 90. */
+  keyRotationIntervalDays?: number;
   /** Default organization for new PATs. */
   defaultOrganization?: string;
   /** Number of days before expiry to warn. Default: 7. */

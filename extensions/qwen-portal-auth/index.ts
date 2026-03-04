@@ -10,6 +10,24 @@ const DEFAULT_CONTEXT_WINDOW = 128000;
 const DEFAULT_MAX_TOKENS = 8192;
 const OAUTH_PLACEHOLDER = "qwen-oauth";
 
+type QwenPortalDiagnostics = {
+  registeredAt: string;
+  authAttempts: number;
+  authSuccesses: number;
+  authFailures: number;
+  lastAuthAt: string | null;
+  lastAuthSuccessAt: string | null;
+  lastTokenExpiry: number | null;
+  lastBaseUrl: string | null;
+  lastError: string | null;
+};
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Unknown error";
+}
+
 function normalizeBaseUrl(value: string | undefined): string {
   const raw = value?.trim() || DEFAULT_BASE_URL;
   const withProtocol = raw.startsWith("http") ? raw : `https://${raw}`;
@@ -34,6 +52,18 @@ const qwenPortalPlugin = {
   description: "OAuth flow for Qwen (free-tier) models",
   configSchema: emptyPluginConfigSchema(),
   register(api) {
+    const diagnostics: QwenPortalDiagnostics = {
+      registeredAt: new Date().toISOString(),
+      authAttempts: 0,
+      authSuccesses: 0,
+      authFailures: 0,
+      lastAuthAt: null,
+      lastAuthSuccessAt: null,
+      lastTokenExpiry: null,
+      lastBaseUrl: null,
+      lastError: null,
+    };
+
     api.registerProvider({
       id: PROVIDER_ID,
       label: PROVIDER_LABEL,
@@ -46,6 +76,9 @@ const qwenPortalPlugin = {
           hint: "Device code login",
           kind: "device_code",
           run: async (ctx) => {
+            diagnostics.authAttempts += 1;
+            diagnostics.lastAuthAt = new Date().toISOString();
+
             const progress = ctx.prompter.progress("Starting Qwen OAuth…");
             try {
               const result = await loginQwenPortalOAuth({
@@ -58,6 +91,11 @@ const qwenPortalPlugin = {
 
               const profileId = `${PROVIDER_ID}:default`;
               const baseUrl = normalizeBaseUrl(result.resourceUrl);
+              diagnostics.authSuccesses += 1;
+              diagnostics.lastAuthSuccessAt = new Date().toISOString();
+              diagnostics.lastTokenExpiry = result.expires;
+              diagnostics.lastBaseUrl = baseUrl;
+              diagnostics.lastError = null;
 
               return {
                 profiles: [
@@ -110,6 +148,8 @@ const qwenPortalPlugin = {
                 ],
               };
             } catch (err) {
+              diagnostics.authFailures += 1;
+              diagnostics.lastError = toErrorMessage(err);
               progress.stop("Qwen OAuth failed");
               await ctx.prompter.note(
                 "If OAuth fails, verify your Qwen account has portal access and try again.",
@@ -120,6 +160,29 @@ const qwenPortalPlugin = {
           },
         },
       ],
+    });
+
+    api.registerGatewayMethod("qwen-portal/status", async ({ respond }) => {
+      respond(true, {
+        providerId: PROVIDER_ID,
+        diagnostics,
+        defaults: {
+          baseUrl: DEFAULT_BASE_URL,
+          defaultModel: DEFAULT_MODEL,
+        },
+      });
+    });
+
+    api.registerGatewayMethod("qwen-portal/diagnostics/reset", async ({ respond }) => {
+      diagnostics.authAttempts = 0;
+      diagnostics.authSuccesses = 0;
+      diagnostics.authFailures = 0;
+      diagnostics.lastAuthAt = null;
+      diagnostics.lastAuthSuccessAt = null;
+      diagnostics.lastTokenExpiry = null;
+      diagnostics.lastBaseUrl = null;
+      diagnostics.lastError = null;
+      respond(true, { reset: true });
     });
   },
 };

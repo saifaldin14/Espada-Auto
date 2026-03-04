@@ -18,7 +18,14 @@ import { registerHybridTools } from "./src/tools.js";
 import { registerHybridCli } from "./src/cli.js";
 
 // Re-export public API for programmatic use by other extensions
-export { HybridDiscoveryCoordinator } from "./src/discovery-coordinator.js";
+export {
+  HybridDiscoveryCoordinator,
+  type HybridAdapterFailure,
+  type HybridDiscoveryFailureType,
+  type HybridDiscoveryOperation,
+  type HybridDiscoveryRunDiagnostics,
+  type HybridDiscoveryCoordinatorOptions,
+} from "./src/discovery-coordinator.js";
 export { CrossBoundaryAnalyzer } from "./src/cross-boundary-analysis.js";
 export {
   createEdgeSiteNode,

@@ -18,6 +18,10 @@ export {
   type ProviderHealthCheck,
   type HealthCheckItem,
   BaseInfrastructureProvider,
+  getProviderCommandTelemetrySink,
+  type ProviderCommandTelemetrySnapshot,
+  getProviderCommandTelemetrySnapshot,
+  resetProviderCommandTelemetry,
 } from "./provider.js";
 
 // Logging Subsystem
@@ -28,6 +32,13 @@ export {
   type LogTransport,
   type InfrastructureLogger,
   type LogContext,
+  type CloudCommandProvider,
+  type CloudCommandErrorType,
+  type CloudCommandTelemetryInput,
+  type NormalizedCloudCommandTelemetryEvent,
+  type CloudCommandTelemetrySummary,
+  type CloudCommandTelemetrySinkOptions,
+  type CloudCommandTelemetrySink,
   compareLogLevels,
   shouldLog,
   createDefaultFormatter,
@@ -37,6 +48,8 @@ export {
   createInfrastructureLogger,
   getInfrastructureLogger,
   setGlobalInfrastructureLogger,
+  normalizeCloudCommandTelemetry,
+  createCloudCommandTelemetrySink,
 } from "./logging/index.js";
 
 // Command Validation

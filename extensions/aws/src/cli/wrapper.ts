@@ -15,6 +15,8 @@ import type {
   AWSCLIOptions,
   AWSCLIResult,
   AWSCLIError,
+  AWSCLIErrorType,
+  AWSCommandTelemetryEvent,
   AWSCLIConfig,
 } from "../types.js";
 
@@ -25,6 +27,7 @@ import type {
 const DEFAULT_TIMEOUT = 120000; // 2 minutes
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_DELAY = 1000; // 1 second
+const DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024; // 8MB
 const RETRYABLE_ERROR_CODES = [
   "Throttling",
   "ThrottlingException",
@@ -132,6 +135,89 @@ function isRetryableError(code: string | undefined): boolean {
   return RETRYABLE_ERROR_CODES.some(
     (retryableCode) => code.includes(retryableCode) || retryableCode.includes(code),
   );
+}
+
+function classifyErrorType(params: {
+  error?: AWSCLIError | null;
+  stderr: string;
+  timedOut?: boolean;
+  aborted?: boolean;
+}): AWSCLIErrorType {
+  if (params.timedOut) return "timeout";
+  if (params.aborted) return "timeout";
+  const code = params.error?.code?.toLowerCase() ?? "";
+  const message = `${params.error?.message ?? ""}\n${params.stderr}`.toLowerCase();
+  if (code.includes("timeout") || message.includes("timed out") || message.includes("timeout")) {
+    return "timeout";
+  }
+  if (code.includes("spawn") || message.includes("enoent") || message.includes("not found")) {
+    return "not-found";
+  }
+  if (message.includes("permission denied")) return "permission";
+  if (code.includes("accessdenied") || code.includes("credential") || message.includes("unauthorized")) {
+    return "auth";
+  }
+  if (params.error?.retryable || message.includes("throttl") || message.includes("rate limit")) {
+    return "rate-limit";
+  }
+  if (message.includes("validation") || message.includes("invalid")) return "validation";
+  return "unknown";
+}
+
+function redactCommandToken(token: string): string {
+  const lower = token.toLowerCase();
+  if (
+    lower.includes("token") ||
+    lower.includes("secret") ||
+    lower.includes("password") ||
+    lower.includes("access-key") ||
+    lower.includes("session-token") ||
+    lower.includes("client-secret")
+  ) {
+    return "***";
+  }
+  return token;
+}
+
+function redactCommandArgs(args: string[]): string[] {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    const lower = arg.toLowerCase();
+    if (
+      lower === "--access-key" ||
+      lower === "--secret-key" ||
+      lower === "--session-token" ||
+      lower === "--token" ||
+      lower === "--password"
+    ) {
+      redacted.push(arg);
+      if (args[i + 1] !== undefined) {
+        redacted.push("***");
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.includes("=")) {
+      const [k, v] = arg.split("=", 2);
+      redacted.push(`${k}=${redactCommandToken(v ?? "")}`);
+      continue;
+    }
+    redacted.push(redactCommandToken(arg));
+  }
+  return redacted;
+}
+
+function emitTelemetry(
+  cb: AWSCLIOptions["onTelemetry"],
+  event: AWSCommandTelemetryEvent,
+): void {
+  if (!cb) return;
+  try {
+    cb(event);
+  } catch {
+    // ignore telemetry sink errors
+  }
 }
 
 // =============================================================================
@@ -261,6 +347,7 @@ export class AWSCLIWrapper {
     // Build command arguments
     const cliArgs = this.buildArgs(service, command, args, mergedOptions);
     const fullCommand = `aws ${cliArgs.join(" ")}`;
+    const redactedCommand = `aws ${redactCommandArgs(cliArgs).join(" ")}`;
 
     let lastError: AWSCLIError | null = null;
     let attempts = 0;
@@ -274,8 +361,24 @@ export class AWSCLIWrapper {
           cliArgs,
           mergedOptions,
           fullCommand,
+          redactedCommand,
           startTime,
         );
+
+        emitTelemetry(mergedOptions.onTelemetry, {
+          provider: "aws",
+          command: fullCommand,
+          commandRedacted: redactedCommand,
+          success: result.success,
+          exitCode: result.exitCode,
+          durationMs: result.duration,
+          errorType: result.errorType,
+          retryable: result.error?.retryable,
+          outputTruncated: result.outputTruncated,
+          attempt: attempts,
+          maxAttempts,
+          timestamp: new Date().toISOString(),
+        });
 
         if (result.success || !result.error?.retryable || attempts > maxAttempts) {
           return result;
@@ -290,14 +393,30 @@ export class AWSCLIWrapper {
         };
         
         if (attempts > maxAttempts) {
+          const errorType = classifyErrorType({ error: lastError, stderr: lastError.message });
+          emitTelemetry(mergedOptions.onTelemetry, {
+            provider: "aws",
+            command: fullCommand,
+            commandRedacted: redactedCommand,
+            success: false,
+            exitCode: 1,
+            durationMs: Date.now() - startTime,
+            errorType,
+            retryable: lastError.retryable,
+            attempt: attempts,
+            maxAttempts,
+            timestamp: new Date().toISOString(),
+          });
           return {
             success: false,
             error: lastError,
+            errorType,
             exitCode: 1,
             stdout: "",
             stderr: lastError.message,
             duration: Date.now() - startTime,
             command: fullCommand,
+            commandRedacted: redactedCommand,
           };
         }
       }
@@ -307,6 +426,21 @@ export class AWSCLIWrapper {
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
 
+    const fallbackErrorType = classifyErrorType({ error: lastError, stderr: lastError?.message ?? "" });
+    emitTelemetry(mergedOptions.onTelemetry, {
+      provider: "aws",
+      command: fullCommand,
+      commandRedacted: redactedCommand,
+      success: false,
+      exitCode: 1,
+      durationMs: Date.now() - startTime,
+      errorType: fallbackErrorType,
+      retryable: lastError?.retryable,
+      attempt: attempts,
+      maxAttempts,
+      timestamp: new Date().toISOString(),
+    });
+
     return {
       success: false,
       error: lastError ?? {
@@ -314,11 +448,13 @@ export class AWSCLIWrapper {
         message: "Maximum retry attempts exceeded",
         retryable: false,
       },
+      errorType: fallbackErrorType,
       exitCode: 1,
       stdout: "",
       stderr: lastError?.message ?? "Unknown error",
       duration: Date.now() - startTime,
       command: fullCommand,
+      commandRedacted: redactedCommand,
     };
   }
 
@@ -329,19 +465,24 @@ export class AWSCLIWrapper {
     args: string[],
     options: AWSCLIOptions,
     fullCommand: string,
+    redactedCommand: string,
     startTime: number,
   ): Promise<AWSCLIResult<T>> {
     return new Promise((resolve) => {
       const timeout = options.timeout ?? this.config.commandTimeout;
+      const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
       let stdout = "";
       let stderr = "";
       let timedOut = false;
+      let aborted = false;
+      let outputTruncated = false;
 
       const child = spawn(this.cliPath!, args, {
         env: {
           ...process.env,
           AWS_PAGER: "", // Disable pager
         },
+        signal: options.signal,
         timeout,
       });
 
@@ -350,12 +491,38 @@ export class AWSCLIWrapper {
         child.kill("SIGTERM");
       }, timeout);
 
+      const appendLimited = (current: string, chunk: string): string => {
+        if (outputTruncated) return current;
+        const next = current + chunk;
+        if (Buffer.byteLength(next, "utf8") > maxOutputBytes) {
+          outputTruncated = true;
+          return next.slice(0, maxOutputBytes);
+        }
+        return next;
+      };
+
+      if (options.signal) {
+        if (options.signal.aborted) {
+          aborted = true;
+          child.kill("SIGTERM");
+        } else {
+          options.signal.addEventListener(
+            "abort",
+            () => {
+              aborted = true;
+              child.kill("SIGTERM");
+            },
+            { once: true },
+          );
+        }
+      }
+
       child.stdout.on("data", (data) => {
-        stdout += data.toString();
+        stdout = appendLimited(stdout, data.toString());
       });
 
       child.stderr.on("data", (data) => {
-        stderr += data.toString();
+        stderr = appendLimited(stderr, data.toString());
       });
 
       child.on("close", (code) => {
@@ -363,18 +530,43 @@ export class AWSCLIWrapper {
         const duration = Date.now() - startTime;
 
         if (timedOut) {
+          const error: AWSCLIError = {
+            code: "CommandTimeout",
+            message: `Command timed out after ${timeout}ms`,
+            retryable: true,
+          };
           resolve({
             success: false,
-            error: {
-              code: "CommandTimeout",
-              message: `Command timed out after ${timeout}ms`,
-              retryable: true,
-            },
+            error,
+            errorType: classifyErrorType({ error, stderr, timedOut: true }),
             exitCode: -1,
             stdout,
             stderr,
             duration,
             command: fullCommand,
+            commandRedacted: redactedCommand,
+            outputTruncated,
+          });
+          return;
+        }
+
+        if (aborted) {
+          const error: AWSCLIError = {
+            code: "CommandAborted",
+            message: "Command aborted",
+            retryable: false,
+          };
+          resolve({
+            success: false,
+            error,
+            errorType: classifyErrorType({ error, stderr, aborted: true }),
+            exitCode: -1,
+            stdout,
+            stderr,
+            duration,
+            command: fullCommand,
+            commandRedacted: redactedCommand,
+            outputTruncated,
           });
           return;
         }
@@ -393,6 +585,8 @@ export class AWSCLIWrapper {
             stderr,
             duration,
             command: fullCommand,
+            commandRedacted: redactedCommand,
+            outputTruncated,
           });
         } else {
           const error = parseAWSError(stderr, stdout);
@@ -403,11 +597,14 @@ export class AWSCLIWrapper {
               message: stderr || "Command failed with no error message",
               retryable: false,
             },
+            errorType: classifyErrorType({ error, stderr }),
             exitCode,
             stdout,
             stderr,
             duration,
             command: fullCommand,
+            commandRedacted: redactedCommand,
+            outputTruncated,
           });
         }
       });
@@ -421,11 +618,18 @@ export class AWSCLIWrapper {
             message: error.message,
             retryable: false,
           },
+          errorType: classifyErrorType({ stderr, error: {
+            code: "SpawnError",
+            message: error.message,
+            retryable: false,
+          } }),
           exitCode: -1,
           stdout,
           stderr,
           duration: Date.now() - startTime,
           command: fullCommand,
+          commandRedacted: redactedCommand,
+          outputTruncated,
         });
       });
     });

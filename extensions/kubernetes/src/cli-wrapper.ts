@@ -12,6 +12,183 @@ export interface KubectlOptions {
   context?: string;
   kubeconfig?: string;
   env?: Record<string, string>;
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  maxBufferBytes?: number;
+  onTelemetry?: (event: KubectlTelemetryEvent) => void;
+}
+
+export type CloudCliErrorType =
+  | "timeout"
+  | "not-found"
+  | "permission"
+  | "auth"
+  | "rate-limit"
+  | "validation"
+  | "unknown";
+
+export interface KubectlCommandResult {
+  success: boolean;
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  command: string;
+  commandRedacted: string;
+  errorType?: CloudCliErrorType;
+  retryable?: boolean;
+  outputTruncated?: boolean;
+}
+
+export interface KubectlTelemetryEvent {
+  provider: "kubernetes";
+  command: string;
+  commandRedacted: string;
+  success: boolean;
+  exitCode: number;
+  durationMs: number;
+  errorType?: CloudCliErrorType;
+  retryable?: boolean;
+  outputTruncated?: boolean;
+  timestamp: string;
+}
+
+function classifyError(params: { message: string; stderr: string; exitCode: number }): CloudCliErrorType {
+  const haystack = `${params.message}\n${params.stderr}`.toLowerCase();
+  if (haystack.includes("timed out") || haystack.includes("timeout")) return "timeout";
+  if (haystack.includes("enoent") || haystack.includes("not found")) return "not-found";
+  if (haystack.includes("permission denied") || params.exitCode === 126) return "permission";
+  if (haystack.includes("unauthorized") || haystack.includes("forbidden")) return "auth";
+  if (haystack.includes("throttl") || haystack.includes("rate limit")) return "rate-limit";
+  if (params.exitCode === 1) return "validation";
+  return "unknown";
+}
+
+function isRetryable(errorType: CloudCliErrorType): boolean {
+  return errorType === "timeout" || errorType === "rate-limit";
+}
+
+function emitTelemetry(
+  cb: KubectlOptions["onTelemetry"],
+  event: KubectlTelemetryEvent,
+): void {
+  if (!cb) return;
+  try {
+    cb(event);
+  } catch {
+    // ignore telemetry sink errors
+  }
+}
+
+function redactArg(arg: string): string {
+  const lower = arg.toLowerCase();
+  if (
+    lower.includes("token") ||
+    lower.includes("password") ||
+    lower.includes("secret") ||
+    lower.includes("client-key")
+  ) {
+    return "***";
+  }
+  return arg;
+}
+
+function redactCommandArgs(args: string[]): string[] {
+  const redacted: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? "";
+    const lower = arg.toLowerCase();
+    if (lower === "--token" || lower === "--password") {
+      redacted.push(arg);
+      if (args[i + 1] !== undefined) {
+        redacted.push("***");
+        i += 1;
+      }
+      continue;
+    }
+    if (arg.includes("=")) {
+      const [k, v] = arg.split("=", 2);
+      redacted.push(`${k}=${redactArg(v ?? "")}`);
+      continue;
+    }
+    redacted.push(redactArg(arg));
+  }
+  return redacted;
+}
+
+function buildKubectlArgs(args: string[], options: KubectlOptions): string[] {
+  const fullArgs = [...args];
+  if (options.namespace) fullArgs.push("-n", options.namespace);
+  if (options.context) fullArgs.push("--context", options.context);
+  if (options.kubeconfig) fullArgs.push("--kubeconfig", options.kubeconfig);
+  return fullArgs;
+}
+
+export async function kubectlRunCommand(
+  args: string[],
+  options: KubectlOptions = {},
+): Promise<KubectlCommandResult> {
+  const fullArgs = buildKubectlArgs(args, options);
+  const env = { ...process.env, ...options.env };
+  const command = `kubectl ${fullArgs.join(" ")}`;
+  const commandRedacted = `kubectl ${redactCommandArgs(fullArgs).join(" ")}`;
+  const startedAt = Date.now();
+
+  try {
+    const { stdout, stderr } = await execFileAsync("kubectl", fullArgs, {
+      env,
+      timeout: options.timeoutMs ?? 120_000,
+      signal: options.signal,
+      maxBuffer: options.maxBufferBytes ?? 50 * 1024 * 1024,
+    });
+    emitTelemetry(options.onTelemetry, {
+      provider: "kubernetes",
+      command,
+      commandRedacted,
+      success: true,
+      exitCode: 0,
+      durationMs: Date.now() - startedAt,
+      timestamp: new Date().toISOString(),
+      outputTruncated: false,
+    });
+    return {
+      success: true,
+      stdout,
+      stderr,
+      exitCode: 0,
+      command,
+      commandRedacted,
+      outputTruncated: false,
+    };
+  } catch (error: unknown) {
+    const err = error as { stdout?: string; stderr?: string; code?: number | string; message?: string };
+    const exitCode = typeof err.code === "number" ? err.code : 1;
+    const stderr = err.stderr ?? err.message ?? "Unknown error";
+    const errorType = classifyError({ message: err.message ?? "", stderr, exitCode });
+    const retryable = isRetryable(errorType);
+    emitTelemetry(options.onTelemetry, {
+      provider: "kubernetes",
+      command,
+      commandRedacted,
+      success: false,
+      exitCode,
+      durationMs: Date.now() - startedAt,
+      errorType,
+      retryable,
+      timestamp: new Date().toISOString(),
+      outputTruncated: false,
+    });
+    return {
+      success: false,
+      stdout: err.stdout ?? "",
+      stderr,
+      exitCode,
+      command,
+      commandRedacted,
+      errorType,
+      retryable,
+      outputTruncated: false,
+    };
+  }
 }
 
 /** Run a kubectl command and return stdout. */
@@ -19,17 +196,11 @@ async function runKubectl(
   args: string[],
   options: KubectlOptions = {},
 ): Promise<string> {
-  const fullArgs = [...args];
-  if (options.namespace) fullArgs.push("-n", options.namespace);
-  if (options.context) fullArgs.push("--context", options.context);
-  if (options.kubeconfig) fullArgs.push("--kubeconfig", options.kubeconfig);
-
-  const env = { ...process.env, ...options.env };
-  const { stdout } = await execFileAsync("kubectl", fullArgs, {
-    env,
-    maxBuffer: 50 * 1024 * 1024,
-  });
-  return stdout;
+  const result = await kubectlRunCommand(args, options);
+  if (!result.success) {
+    throw new Error(result.stderr || `kubectl command failed (${result.errorType ?? "unknown"})`);
+  }
+  return result.stdout;
 }
 
 /** Run `kubectl apply -f <file> --dry-run=server -o json`. */
@@ -64,15 +235,11 @@ export async function kubectlDiff(
   filePath: string,
   options: KubectlOptions = {},
 ): Promise<string> {
-  try {
-    return await runKubectl(["diff", "-f", filePath], options);
-  } catch (err: unknown) {
-    // kubectl diff exits 1 when there are differences — capture stdout
-    if (typeof err === "object" && err !== null && "stdout" in err) {
-      return (err as { stdout: string }).stdout;
-    }
-    throw err;
-  }
+  const result = await kubectlRunCommand(["diff", "-f", filePath], options);
+  if (result.success) return result.stdout;
+  // kubectl diff exits 1 when there are differences
+  if (result.exitCode === 1 && result.stdout.trim().length > 0) return result.stdout;
+  throw new Error(result.stderr || "kubectl diff failed");
 }
 
 /** Run `kubectl describe <resource> <name>`. */

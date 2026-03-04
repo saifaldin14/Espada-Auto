@@ -67,6 +67,7 @@ describe("AzureCLIWrapper", () => {
       expect(result.success).toBe(false);
       expect(result.exitCode).toBe(127);
       expect(result.stderr).toBe("command not found");
+      expect(result.errorType).toBe("not-found");
     });
 
     it("uses error message as fallback when stderr missing", async () => {
@@ -84,6 +85,43 @@ describe("AzureCLIWrapper", () => {
       expect(result.success).toBe(false);
       expect(result.stderr).toBe("Unknown error");
       expect(result.exitCode).toBe(1);
+    });
+
+    it("passes timeout/signal/maxBuffer/cwd/env overrides", async () => {
+      mockExecFile.mockResolvedValue({ stdout: "{}", stderr: "" });
+      const controller = new AbortController();
+
+      await cli.execute(["group", "list"], {
+        timeoutMs: 15000,
+        signal: controller.signal,
+        maxBufferBytes: 4096,
+        cwd: "/tmp/project",
+        env: { TEST_FLAG: "1" },
+      });
+
+      expect(mockExecFile).toHaveBeenCalledWith(
+        "az",
+        ["group", "list", "--output", "json"],
+        expect.objectContaining({
+          timeout: 15000,
+          signal: controller.signal,
+          maxBuffer: 4096,
+          cwd: "/tmp/project",
+          env: expect.objectContaining({ TEST_FLAG: "1" }),
+        }),
+      );
+    });
+
+    it("redacts sensitive command args in commandRedacted", async () => {
+      mockExecFile.mockRejectedValue({ stderr: "bad token", code: 1, message: "bad token" });
+      const result = await cli.execute([
+        "devops",
+        "pat",
+        "store",
+        "--token",
+        "super-secret-value",
+      ]);
+      expect(result.commandRedacted).toContain("--token ***");
     });
   });
 

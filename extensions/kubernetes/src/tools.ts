@@ -9,6 +9,17 @@ export function createK8sTools() {
   return [k8sResourcesTool, k8sGetTool, k8sDiffTool, k8sApplyTool, k8sDeleteTool, k8sLogsTool, k8sScaleTool, k8sRolloutTool];
 }
 
+function requireConfirm(confirm: string | undefined, action: string): string | null {
+  if (confirm !== "yes") {
+    return (
+      `⛔ ${action} is a mutating operation.\n` +
+      `To proceed, set confirm to "yes".\n` +
+      `This safety guard helps prevent unintended changes to live infrastructure.`
+    );
+  }
+  return null;
+}
+
 /* ---------- k8s_resources ---------- */
 
 const k8sResourcesTool = {
@@ -149,8 +160,9 @@ const k8sApplyTool = {
     filePath: Type.String({ description: "Path to YAML manifest file" }),
     namespace: Type.Optional(Type.String({ description: "Kubernetes namespace" })),
     dryRun: Type.Optional(Type.Boolean({ description: "If true, perform a server-side dry run" })),
+    confirm: Type.Optional(Type.String({ description: "Must be set to \"yes\" for live apply (not required for dryRun)." })),
   }),
-  execute: async (input: { filePath: string; namespace?: string; dryRun?: boolean }) => {
+  execute: async (input: { filePath: string; namespace?: string; dryRun?: boolean; confirm?: string }) => {
     try {
       if (input.dryRun) {
         const { kubectlApplyDryRun } = await import("./cli-wrapper.js");
@@ -158,6 +170,11 @@ const k8sApplyTool = {
         return {
           content: [{ type: "text" as const, text: `Dry run result:\n${result}` }],
         };
+      }
+
+      const guard = requireConfirm(input.confirm, "kubectl apply");
+      if (guard) {
+        return { content: [{ type: "text" as const, text: guard }] };
       }
 
       const { kubectlApply } = await import("./cli-wrapper.js");
@@ -182,9 +199,15 @@ const k8sDeleteTool = {
     namespace: Type.Optional(Type.String({ description: "Kubernetes namespace" })),
     force: Type.Optional(Type.Boolean({ description: "Force deletion (immediate, no graceful shutdown)" })),
     gracePeriod: Type.Optional(Type.Number({ description: "Grace period in seconds before force-killing (0 = immediate)" })),
+    confirm: Type.Optional(Type.String({ description: "Must be set to \"yes\" to execute deletion." })),
   }),
-  execute: async (input: { resource: string; name: string; namespace?: string; force?: boolean; gracePeriod?: number }) => {
+  execute: async (input: { resource: string; name: string; namespace?: string; force?: boolean; gracePeriod?: number; confirm?: string }) => {
     try {
+      const guard = requireConfirm(input.confirm, "kubectl delete");
+      if (guard) {
+        return { content: [{ type: "text" as const, text: guard }] };
+      }
+
       const { kubectlDelete } = await import("./cli-wrapper.js");
       const result = await kubectlDelete(input.resource, input.name, {
         namespace: input.namespace,
@@ -262,9 +285,15 @@ const k8sScaleTool = {
     name: Type.String({ description: "Resource name" }),
     replicas: Type.Number({ description: "Target replica count" }),
     namespace: Type.Optional(Type.String({ description: "Kubernetes namespace" })),
+    confirm: Type.Optional(Type.String({ description: "Must be set to \"yes\" to execute scaling." })),
   }),
-  execute: async (input: { resource: string; name: string; replicas: number; namespace?: string }) => {
+  execute: async (input: { resource: string; name: string; replicas: number; namespace?: string; confirm?: string }) => {
     try {
+      const guard = requireConfirm(input.confirm, "kubectl scale");
+      if (guard) {
+        return { content: [{ type: "text" as const, text: guard }] };
+      }
+
       const { kubectlScale } = await import("./cli-wrapper.js");
       const result = await kubectlScale(input.resource, input.name, input.replicas, {
         namespace: input.namespace,
@@ -304,6 +333,7 @@ const k8sRolloutTool = {
     namespace: Type.Optional(Type.String({ description: "Kubernetes namespace" })),
     toRevision: Type.Optional(Type.Number({ description: "Revision number to roll back to (for undo action)" })),
     revision: Type.Optional(Type.Number({ description: "Specific revision to inspect (for history action)" })),
+    confirm: Type.Optional(Type.String({ description: "Must be set to \"yes\" for mutating actions (restart/undo)." })),
   }),
   execute: async (input: {
     action: "restart" | "undo" | "status" | "history";
@@ -312,9 +342,17 @@ const k8sRolloutTool = {
     namespace?: string;
     toRevision?: number;
     revision?: number;
+    confirm?: string;
   }) => {
     try {
       const opts = { namespace: input.namespace };
+
+      if (input.action === "restart" || input.action === "undo") {
+        const guard = requireConfirm(input.confirm, `kubectl rollout ${input.action}`);
+        if (guard) {
+          return { content: [{ type: "text" as const, text: guard }] };
+        }
+      }
 
       switch (input.action) {
         case "restart": {

@@ -16,7 +16,7 @@
 
 import { randomBytes, createCipheriv, createDecipheriv, createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { readFile, writeFile, mkdir, unlink, chmod, stat } from "node:fs/promises";
+import { readFile, writeFile, mkdir, chmod } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir, hostname } from "node:os";
 import type {
@@ -28,6 +28,10 @@ import type {
   PATManagerOptions,
   PATEvent,
   PATEventListener,
+  PATEncryptionMetadata,
+  PATEncryptionKeyProvider,
+  PATEncryptionKeySource,
+  PATResolvedKey,
   PATStorageBackend,
   DevOpsPATScope,
 } from "./pat-types.js";
@@ -42,6 +46,7 @@ const AUTH_TAG_LENGTH = 16;
 const KEY_BYTES = 32;
 const STORAGE_FILENAME = "pats.json";
 const DEFAULT_EXPIRY_WARNING_DAYS = 7;
+const DEFAULT_KEY_ROTATION_INTERVAL_DAYS = 90;
 
 /** Default storage directory for encrypted PATs. */
 function defaultStorageDir(): string {
@@ -59,6 +64,11 @@ function defaultStorageDir(): string {
 function deriveKey(input?: string): Buffer {
   const material = input ?? `${hostname()}:${process.env.USER ?? process.env.USERNAME ?? "espada"}:azure-devops-pat`;
   return createHash("sha256").update(material).digest();
+}
+
+function normalizeResolvedKeyKey(input: string | Buffer): Buffer {
+  if (Buffer.isBuffer(input)) return createHash("sha256").update(input).digest();
+  return deriveKey(input);
 }
 
 function encrypt(plaintext: string, key: Buffer): { encrypted: string; iv: string; authTag: string } {
@@ -103,7 +113,15 @@ function computeStatus(pat: StoredPAT, warningDays: number): PATStatus {
 
 export class DevOpsPATManager {
   private storageDir: string;
-  private encKey: Buffer;
+  private encKey: Buffer | null = null;
+  private keyProvider?: PATEncryptionKeyProvider;
+  private requireManagedEncryptionKey: boolean;
+  private keyRotationIntervalDays: number;
+  private resolvedKeyMeta: {
+    keySource: PATEncryptionKeySource;
+    keyId?: string;
+    keyVersion?: string;
+  };
   private defaultOrg?: string;
   private warningDays: number;
   private keyVaultUrl?: string;
@@ -113,7 +131,19 @@ export class DevOpsPATManager {
 
   constructor(options: PATManagerOptions = {}) {
     this.storageDir = options.storageDir ?? defaultStorageDir();
-    this.encKey = deriveKey(options.encryptionKey);
+    this.keyProvider = options.encryptionKeyProvider;
+    this.requireManagedEncryptionKey = options.requireManagedEncryptionKey ?? false;
+    this.keyRotationIntervalDays = options.keyRotationIntervalDays ?? DEFAULT_KEY_ROTATION_INTERVAL_DAYS;
+    this.resolvedKeyMeta = {
+      keySource: options.encryptionKey
+        ? "static"
+        : options.encryptionKeyProvider
+          ? "provider"
+          : "derived",
+    };
+    if (options.encryptionKey) {
+      this.encKey = deriveKey(options.encryptionKey);
+    }
     this.defaultOrg = options.defaultOrganization;
     this.warningDays = options.expiryWarningDays ?? DEFAULT_EXPIRY_WARNING_DAYS;
     this.keyVaultUrl = options.keyVaultUrl;
@@ -143,10 +173,35 @@ export class DevOpsPATManager {
 
   /** Ensure storage dir exists and load token index. */
   async initialize(): Promise<void> {
+    if (!this.encKey) {
+      const resolved = await this.resolveEncryptionKey();
+      this.encKey = normalizeResolvedKeyKey(resolved.key);
+      this.resolvedKeyMeta = {
+        keySource: resolved.keySource,
+        keyId: resolved.keyId,
+        keyVersion: resolved.keyVersion,
+      };
+    }
+
     await mkdir(this.storageDir, { recursive: true });
     // Lock directory permissions to owner only
     try { await chmod(this.storageDir, 0o700); } catch { /* may fail on Windows */ }
     await this.load();
+  }
+
+  private async resolveEncryptionKey(): Promise<PATResolvedKey> {
+    if (this.keyProvider) {
+      return this.keyProvider.getEncryptionKey();
+    }
+
+    if (this.requireManagedEncryptionKey) {
+      throw new Error("Managed encryption key is required but no encryptionKey or encryptionKeyProvider was configured");
+    }
+
+    return {
+      key: deriveKey(),
+      keySource: "derived",
+    };
   }
 
   private storagePath(): string {
@@ -157,7 +212,18 @@ export class DevOpsPATManager {
     try {
       const raw = await readFile(this.storagePath(), "utf8");
       const data = JSON.parse(raw);
-      this.pats = Array.isArray(data) ? data : [];
+      this.pats = (Array.isArray(data) ? data : []).map((entry) => {
+        const pat = entry as StoredPAT;
+        if (!pat.encryption) {
+          pat.encryption = {
+            keySource: this.resolvedKeyMeta.keySource,
+            keyId: this.resolvedKeyMeta.keyId,
+            keyVersion: this.resolvedKeyMeta.keyVersion,
+            encryptedAt: pat.createdAt,
+          };
+        }
+        return pat;
+      });
       this.loaded = true;
     } catch {
       // File doesn't exist yet — start empty
@@ -174,6 +240,9 @@ export class DevOpsPATManager {
   private ensureLoaded(): void {
     if (!this.loaded) {
       throw new Error("PAT manager not initialized — call initialize() first");
+    }
+    if (!this.encKey) {
+      throw new Error("PAT encryption key is not initialized");
     }
   }
 
@@ -213,7 +282,8 @@ export class DevOpsPATManager {
       throw new Error(`A PAT with label "${params.label}" already exists for organization "${org}" (id: ${dup.id})`);
     }
 
-    const { encrypted, iv, authTag } = encrypt(params.token, this.encKey);
+    const nowIso = new Date().toISOString();
+    const { encrypted, iv, authTag } = encrypt(params.token, this.encKey!);
 
     const stored: StoredPAT = {
       id: randomUUID(),
@@ -223,11 +293,17 @@ export class DevOpsPATManager {
       encryptedToken: encrypted,
       iv,
       authTag,
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso,
       expiresAt: params.expiresAt,
       validated: false,
       backend: params.backend ?? "file",
       keyVaultSecretUri: params.keyVaultSecretUri,
+      encryption: {
+        keySource: this.resolvedKeyMeta.keySource,
+        keyId: this.resolvedKeyMeta.keyId,
+        keyVersion: this.resolvedKeyMeta.keyVersion,
+        encryptedAt: nowIso,
+      },
     };
 
     // Optionally validate before storing
@@ -283,7 +359,7 @@ export class DevOpsPATManager {
     const pat = this.pats.find((p) => p.id === id);
     if (!pat) throw new Error(`PAT not found: ${id}`);
 
-    const token = decrypt(pat.encryptedToken, pat.iv, pat.authTag, this.encKey);
+    const token = decrypt(pat.encryptedToken, pat.iv, pat.authTag, this.encKey!);
 
     // Update last-used timestamp
     pat.lastUsedAt = new Date().toISOString();
@@ -366,13 +442,21 @@ export class DevOpsPATManager {
       throw new Error("New token value looks too short to be a valid PAT");
     }
 
-    const { encrypted, iv, authTag } = encrypt(newToken, this.encKey);
+    const rotatedAt = new Date().toISOString();
+    const { encrypted, iv, authTag } = encrypt(newToken, this.encKey!);
     pat.encryptedToken = encrypted;
     pat.iv = iv;
     pat.authTag = authTag;
     pat.validated = false;
     pat.lastUsedAt = undefined;
     if (newExpiresAt) pat.expiresAt = newExpiresAt;
+    pat.encryption = {
+      keySource: this.resolvedKeyMeta.keySource,
+      keyId: this.resolvedKeyMeta.keyId,
+      keyVersion: this.resolvedKeyMeta.keyVersion,
+      encryptedAt: rotatedAt,
+      rotatedAt,
+    };
 
     await this.save();
 
@@ -401,7 +485,7 @@ export class DevOpsPATManager {
     const pat = this.pats.find((p) => p.id === id);
     if (!pat) throw new Error(`PAT not found: ${id}`);
 
-    const token = decrypt(pat.encryptedToken, pat.iv, pat.authTag, this.encKey);
+    const token = decrypt(pat.encryptedToken, pat.iv, pat.authTag, this.encKey!);
     const result = await this.validateTokenAgainstAPI(token, pat.organization);
 
     pat.validated = result.valid;
@@ -553,6 +637,11 @@ export class DevOpsPATManager {
   // ---------------------------------------------------------------------------
 
   private toSummary(pat: StoredPAT): PATSummary {
+    const encryptedAtMs = new Date(pat.encryption.encryptedAt).getTime();
+    const rotationDue = Number.isFinite(encryptedAtMs)
+      ? Date.now() - encryptedAtMs >= this.keyRotationIntervalDays * 24 * 60 * 60 * 1000
+      : false;
+
     return {
       id: pat.id,
       label: pat.label,
@@ -564,6 +653,8 @@ export class DevOpsPATManager {
       lastUsedAt: pat.lastUsedAt,
       backend: pat.backend,
       status: computeStatus(pat, this.warningDays),
+      encryption: pat.encryption,
+      keyRotationDue: rotationDue,
     };
   }
 }

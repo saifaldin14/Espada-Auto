@@ -3,17 +3,26 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { emptyPluginConfigSchema } from "espada/plugin-sdk";
 
-// OAuth constants - decoded from pi-ai's base64 encoded values to stay in sync
-const decode = (s: string) => Buffer.from(s, "base64").toString();
-const CLIENT_ID = decode(
-  "MTA3MTAwNjA2MDU5MS10bWhzc2luMmgyMWxjcmUyMzV2dG9sb2poNGc0MDNlcC5hcHBzLmdvb2dsZXVzZXJjb250ZW50LmNvbQ==",
-);
-const CLIENT_SECRET = decode("R09DU1BYLUs1OEZXUjQ4NkxkTEoxbUxCOHNYQzR6NnFEQWY=");
+// OAuth constants - must be provided via environment variables
+const CLIENT_ID = process.env.GOOGLE_ANTIGRAVITY_CLIENT_ID ?? "";
+const CLIENT_SECRET = process.env.GOOGLE_ANTIGRAVITY_CLIENT_SECRET ?? "";
 const REDIRECT_URI = "http://localhost:51121/oauth-callback";
 const AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 const DEFAULT_MODEL = "google-antigravity/claude-opus-4-5-thinking";
+
+type AntigravityAuthDiagnostics = {
+  registeredAt: string;
+  authAttempts: number;
+  authSuccesses: number;
+  authFailures: number;
+  lastAuthAt: string | null;
+  lastAuthSuccessAt: string | null;
+  lastAuthenticatedEmail: string | null;
+  lastProjectId: string | null;
+  lastError: string | null;
+};
 
 const SCOPES = [
   "https://www.googleapis.com/auth/cloud-platform",
@@ -41,6 +50,12 @@ const RESPONSE_PAGE = `<!DOCTYPE html>
     </main>
   </body>
 </html>`;
+
+function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  return "Unknown error";
+}
 
 function generatePkce(): { verifier: string; challenge: string } {
   const verifier = randomBytes(32).toString("hex");
@@ -369,6 +384,18 @@ const antigravityPlugin = {
   description: "OAuth flow for Google Antigravity (Cloud Code Assist)",
   configSchema: emptyPluginConfigSchema(),
   register(api) {
+    const diagnostics: AntigravityAuthDiagnostics = {
+      registeredAt: new Date().toISOString(),
+      authAttempts: 0,
+      authSuccesses: 0,
+      authFailures: 0,
+      lastAuthAt: null,
+      lastAuthSuccessAt: null,
+      lastAuthenticatedEmail: null,
+      lastProjectId: null,
+      lastError: null,
+    };
+
     api.registerProvider({
       id: "google-antigravity",
       label: "Google Antigravity",
@@ -381,6 +408,9 @@ const antigravityPlugin = {
           hint: "PKCE + localhost callback",
           kind: "oauth",
           run: async (ctx) => {
+            diagnostics.authAttempts += 1;
+            diagnostics.lastAuthAt = new Date().toISOString();
+
             const spin = ctx.prompter.progress("Starting Antigravity OAuth…");
             try {
               const result = await loginAntigravity({
@@ -393,6 +423,12 @@ const antigravityPlugin = {
               });
 
               const profileId = `google-antigravity:${result.email ?? "default"}`;
+              diagnostics.authSuccesses += 1;
+              diagnostics.lastAuthSuccessAt = new Date().toISOString();
+              diagnostics.lastAuthenticatedEmail = result.email ?? null;
+              diagnostics.lastProjectId = result.projectId;
+              diagnostics.lastError = null;
+
               return {
                 profiles: [
                   {
@@ -424,12 +460,37 @@ const antigravityPlugin = {
                 ],
               };
             } catch (err) {
+              diagnostics.authFailures += 1;
+              diagnostics.lastError = toErrorMessage(err);
               spin.stop("Antigravity OAuth failed");
               throw err;
             }
           },
         },
       ],
+    });
+
+    api.registerGatewayMethod("google-antigravity/status", async ({ respond }) => {
+      respond(true, {
+        providerId: "google-antigravity",
+        diagnostics,
+        defaults: {
+          defaultProjectId: DEFAULT_PROJECT_ID,
+          defaultModel: DEFAULT_MODEL,
+        },
+      });
+    });
+
+    api.registerGatewayMethod("google-antigravity/diagnostics/reset", async ({ respond }) => {
+      diagnostics.authAttempts = 0;
+      diagnostics.authSuccesses = 0;
+      diagnostics.authFailures = 0;
+      diagnostics.lastAuthAt = null;
+      diagnostics.lastAuthSuccessAt = null;
+      diagnostics.lastAuthenticatedEmail = null;
+      diagnostics.lastProjectId = null;
+      diagnostics.lastError = null;
+      respond(true, { reset: true });
     });
   },
 };

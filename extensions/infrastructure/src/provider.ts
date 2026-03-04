@@ -22,6 +22,74 @@ import type {
   ValidationResult,
 } from "./types.js";
 import type { InfrastructureLogger } from "./logging/logger.js";
+import {
+  createCloudCommandTelemetrySink,
+  type CloudCommandProvider,
+  type CloudCommandTelemetrySummary,
+  type CloudCommandTelemetrySink,
+  type NormalizedCloudCommandTelemetryEvent,
+} from "./logging/cloud-command-telemetry.js";
+
+const providerCommandTelemetrySink = createCloudCommandTelemetrySink({
+  maxBufferSize: 1000,
+});
+
+function toCloudCommandProvider(providerId: string): CloudCommandProvider | null {
+  const normalized = providerId.toLowerCase();
+  if (normalized.includes("aws")) return "aws";
+  if (normalized.includes("azure")) return "azure";
+  if (normalized.includes("terraform")) return "terraform";
+  if (normalized.includes("kubernetes") || normalized.includes("k8s")) return "kubernetes";
+  if (normalized.includes("pulumi")) return "pulumi";
+  return null;
+}
+
+function emitProviderCommandTelemetry(params: {
+  sink: CloudCommandTelemetrySink;
+  providerId: string;
+  commandId: string;
+  success: boolean;
+  durationMs: number;
+  errorType?: "validation" | "unknown";
+}): void {
+  const provider = toCloudCommandProvider(params.providerId);
+  if (!provider) return;
+
+  params.sink.handle({
+    provider,
+    command: `${params.providerId}:${params.commandId}`,
+    commandRedacted: `${params.providerId}:${params.commandId}`,
+    success: params.success,
+    exitCode: params.success ? 0 : 1,
+    durationMs: params.durationMs,
+    errorType: params.errorType,
+    retryable: false,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+export function getProviderCommandTelemetrySink(): CloudCommandTelemetrySink {
+  return providerCommandTelemetrySink;
+}
+
+export interface ProviderCommandTelemetrySnapshot {
+  summary: CloudCommandTelemetrySummary;
+  recent: NormalizedCloudCommandTelemetryEvent[];
+}
+
+export function getProviderCommandTelemetrySnapshot(limit = 50): ProviderCommandTelemetrySnapshot {
+  const boundedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 50;
+  const buffer = providerCommandTelemetrySink.getBuffer();
+  const start = Math.max(0, buffer.length - boundedLimit);
+  return {
+    summary: providerCommandTelemetrySink.getSummary(),
+    recent: buffer.slice(start),
+  };
+}
+
+export function resetProviderCommandTelemetry(): void {
+  providerCommandTelemetrySink.clear();
+}
 
 // =============================================================================
 // Provider Interface
@@ -312,8 +380,17 @@ export abstract class BaseInfrastructureProvider implements InfrastructureProvid
     parameters: Record<string, unknown>,
     context: CommandExecutionContext,
   ): Promise<CommandExecutionResult<T>> {
+    const startTime = Date.now();
     const command = this._commands.get(commandId);
     if (!command) {
+      emitProviderCommandTelemetry({
+        sink: providerCommandTelemetrySink,
+        providerId: this.meta.id,
+        commandId,
+        success: false,
+        durationMs: Date.now() - startTime,
+        errorType: "validation",
+      });
       return {
         success: false,
         error: {
@@ -328,7 +405,6 @@ export abstract class BaseInfrastructureProvider implements InfrastructureProvid
       };
     }
 
-    const startTime = Date.now();
     const logs: Array<{
       timestamp: Date;
       level: "trace" | "debug" | "info" | "warn" | "error";
@@ -341,12 +417,30 @@ export abstract class BaseInfrastructureProvider implements InfrastructureProvid
         logs.push({ ...log, timestamp: new Date() });
       });
 
+      const durationMs = Date.now() - startTime;
+      emitProviderCommandTelemetry({
+        sink: providerCommandTelemetrySink,
+        providerId: this.meta.id,
+        commandId: command.id,
+        success: result.success,
+        durationMs,
+        errorType: result.success ? undefined : "unknown",
+      });
+
       return {
         ...result,
-        duration: Date.now() - startTime,
+        duration: durationMs,
         logs,
       };
     } catch (error) {
+      emitProviderCommandTelemetry({
+        sink: providerCommandTelemetrySink,
+        providerId: this.meta.id,
+        commandId: command.id,
+        success: false,
+        durationMs: Date.now() - startTime,
+        errorType: "unknown",
+      });
       return {
         success: false,
         error: {

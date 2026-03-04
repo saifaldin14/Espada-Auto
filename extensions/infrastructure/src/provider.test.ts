@@ -5,6 +5,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   BaseInfrastructureProvider,
+  getProviderCommandTelemetrySnapshot,
+  getProviderCommandTelemetrySink,
+  resetProviderCommandTelemetry,
   type HealthCheckItem,
   type InfrastructureProvider,
 } from "../src/provider.js";
@@ -90,6 +93,7 @@ describe("BaseInfrastructureProvider", () => {
 
   beforeEach(() => {
     provider = new TestProvider();
+    getProviderCommandTelemetrySink().clear();
   });
 
   describe("lifecycle", () => {
@@ -211,6 +215,113 @@ describe("BaseInfrastructureProvider", () => {
       await provider.initialize({ method: "api-key" });
 
       expect(hookFn).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("command telemetry aggregation", () => {
+    it("emits normalized telemetry for mapped cloud providers", async () => {
+      class TerraformTelemetryProvider extends TestProvider {
+        override readonly meta: InfrastructureProviderMeta = {
+          id: "terraform-provider",
+          name: "Terraform Provider",
+          displayName: "Terraform Provider",
+          description: "Terraform telemetry test provider",
+          version: "1.0.0",
+          category: "cloud",
+          capabilities: ["provision", "deprovision", "monitor"],
+          supportedResources: ["compute", "storage"],
+          authMethods: ["api-key"],
+        };
+
+        constructor() {
+          super();
+          this.registerCommand({
+            id: "plan",
+            name: "Plan",
+            description: "Run terraform plan",
+            category: "monitor",
+            parameters: [],
+            requiredCapabilities: ["monitor"],
+            supportsDryRun: true,
+            dangerous: false,
+            examples: [],
+          });
+        }
+      }
+
+      const telemetryProvider = new TerraformTelemetryProvider();
+      const context: CommandExecutionContext = {
+        sessionId: "s-1",
+        userId: "u-1",
+        providerId: "terraform-provider",
+        dryRun: false,
+        timeout: 10_000,
+        environment: {},
+        variables: {},
+      };
+
+      const result = await telemetryProvider.executeCommand("plan", {}, context);
+      expect(result.success).toBe(true);
+
+      const summary = getProviderCommandTelemetrySink().getSummary();
+      expect(summary.total).toBe(1);
+      expect(summary.success).toBe(1);
+      expect(summary.providerCounts.terraform).toBe(1);
+    });
+
+    it("supports diagnostics snapshot and reset helpers", async () => {
+      class AwsTelemetryProvider extends TestProvider {
+        override readonly meta: InfrastructureProviderMeta = {
+          id: "aws-provider",
+          name: "AWS Provider",
+          displayName: "AWS Provider",
+          description: "AWS telemetry test provider",
+          version: "1.0.0",
+          category: "cloud",
+          capabilities: ["provision", "deprovision", "monitor"],
+          supportedResources: ["compute", "storage"],
+          authMethods: ["api-key"],
+        };
+
+        constructor() {
+          super();
+          this.registerCommand({
+            id: "list",
+            name: "List",
+            description: "List resources",
+            category: "monitor",
+            parameters: [],
+            requiredCapabilities: ["monitor"],
+            supportsDryRun: true,
+            dangerous: false,
+            examples: [],
+          });
+        }
+      }
+
+      const telemetryProvider = new AwsTelemetryProvider();
+      const context: CommandExecutionContext = {
+        sessionId: "s-2",
+        userId: "u-2",
+        providerId: "aws-provider",
+        dryRun: false,
+        timeout: 10_000,
+        environment: {},
+        variables: {},
+      };
+
+      await telemetryProvider.executeCommand("list", {}, context);
+
+      const snapshot = getProviderCommandTelemetrySnapshot(10);
+      expect(snapshot.summary.total).toBe(1);
+      expect(snapshot.summary.providerCounts.aws).toBe(1);
+      expect(snapshot.recent).toHaveLength(1);
+      expect(snapshot.recent[0]?.provider).toBe("aws");
+
+      resetProviderCommandTelemetry();
+      const cleared = getProviderCommandTelemetrySnapshot();
+      expect(cleared.summary.total).toBe(0);
+      expect(cleared.recent).toHaveLength(0);
     });
   });
 });

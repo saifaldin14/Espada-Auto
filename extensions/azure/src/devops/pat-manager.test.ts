@@ -61,6 +61,38 @@ describe("DevOpsPATManager", () => {
       });
       expect(() => mgr.listPATs()).toThrow("not initialized");
     });
+
+    it("supports pluggable encryption key provider", async () => {
+      const provider = {
+        getEncryptionKey: vi.fn().mockResolvedValue({
+          key: "provider-key-material",
+          keySource: "provider",
+          keyId: "kv://pat-key",
+          keyVersion: "v1",
+        }),
+      };
+
+      const mgr = await createManager({
+        encryptionKey: undefined,
+        encryptionKeyProvider: provider,
+      });
+
+      expect(provider.getEncryptionKey).toHaveBeenCalledTimes(1);
+      const summary = await mgr.storePAT({ token: VALID_TOKEN, label: "Provider Key" });
+      expect(summary.encryption.keySource).toBe("provider");
+      expect(summary.encryption.keyId).toBe("kv://pat-key");
+      expect(summary.encryption.keyVersion).toBe("v1");
+    });
+
+    it("enforces managed key requirement", async () => {
+      const mgr = new DevOpsPATManager({
+        storageDir: tempDir,
+        defaultOrganization: "test-org",
+        requireManagedEncryptionKey: true,
+      });
+
+      await expect(mgr.initialize()).rejects.toThrow(/Managed encryption key is required/);
+    });
   });
 
   describe("storePAT", () => {
@@ -78,6 +110,8 @@ describe("DevOpsPATManager", () => {
       expect(summary.scopes).toEqual(["vso.build", "vso.code"]);
       expect(summary.status).toBe("unvalidated");
       expect(summary.backend).toBe("file");
+      expect(summary.encryption.keySource).toBe("static");
+      expect(summary.keyRotationDue).toBe(false);
       expect(summary.createdAt).toBeTruthy();
     });
 
@@ -273,6 +307,7 @@ describe("DevOpsPATManager", () => {
       expect(rotated.id).toBe(stored.id);
       expect(rotated.label).toBe("Rotate");
       expect(rotated.validated).toBe(false); // Reset
+      expect(rotated.encryption.rotatedAt).toBeTruthy();
 
       const dec = await mgr.decryptPAT(stored.id);
       expect(dec.token).toBe(newToken);
@@ -340,6 +375,19 @@ describe("DevOpsPATManager", () => {
       expect(purged).toBe(1);
       expect(mgr.count()).toBe(1);
       expect(mgr.listPATs()[0].label).toBe("Keep");
+    });
+  });
+
+  describe("key rotation metadata", () => {
+    it("marks keyRotationDue when encryptedAt exceeds configured interval", async () => {
+      const mgr = await createManager({ keyRotationIntervalDays: 1 });
+      const summary = await mgr.storePAT({ token: VALID_TOKEN, label: "Rotate Due" });
+
+      const entry = (mgr as any).pats.find((p: any) => p.id === summary.id);
+      entry.encryption.encryptedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+      const refreshed = mgr.getPAT(summary.id)!;
+      expect(refreshed.keyRotationDue).toBe(true);
     });
   });
 

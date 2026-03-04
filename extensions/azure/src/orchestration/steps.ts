@@ -8,6 +8,46 @@
 import type { StepTypeDefinition, StepHandler, StepContext } from "./types.js";
 import { registerStepType } from "./registry.js";
 
+type AzureDeploymentValidation = {
+  isValid: boolean;
+  error?: { message?: string };
+};
+
+type AzureDeploymentOutputMap = Record<string, { value?: unknown }>;
+
+type AzureDeploymentResult = {
+  id?: string;
+  provisioningState?: string;
+  outputs?: AzureDeploymentOutputMap;
+};
+
+interface AzureResourceManagerLike {
+  createResourceGroup(
+    name: string,
+    location: string,
+    tags?: Record<string, unknown>,
+  ): Promise<{ name?: string; id?: string }>;
+  deleteResourceGroup(name: string): Promise<void>;
+  validateDeployment(
+    resourceGroup: string,
+    deploymentName: string,
+    template: Record<string, unknown>,
+    parameters?: Record<string, unknown>,
+  ): Promise<AzureDeploymentValidation>;
+  createDeployment(
+    resourceGroup: string,
+    deploymentName: string,
+    template: Record<string, unknown>,
+    parameters?: Record<string, unknown>,
+  ): Promise<AzureDeploymentResult>;
+}
+
+interface AzureStorageManagerLike {
+  deleteStorageAccount(resourceGroup: string, name: string): Promise<void>;
+}
+
+type ManagerFactory<T> = () => T;
+
 // =============================================================================
 // Helpers
 // =============================================================================
@@ -49,7 +89,7 @@ const createResourceGroupDef: StepTypeDefinition = {
   estimatedDurationMs: 5_000,
 };
 
-function createResourceGroupHandler(getManager: () => any): StepHandler {
+function createResourceGroupHandler(getManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { name, location } = ctx.params as { name: string; location: string };
@@ -97,7 +137,7 @@ const deployArmTemplateDef: StepTypeDefinition = {
   estimatedDurationMs: 60_000,
 };
 
-function deployArmTemplateHandler(getManager: () => any): StepHandler {
+function deployArmTemplateHandler(getManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, deploymentName, template, parameters } = ctx.params as {
@@ -146,7 +186,7 @@ const createVNetDef: StepTypeDefinition = {
   estimatedDurationMs: 15_000,
 };
 
-function createVNetHandler(getResourceManager: () => any): StepHandler {
+function createVNetHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, addressPrefix, subnetName, subnetPrefix } = ctx.params as {
@@ -202,7 +242,7 @@ const createNSGDef: StepTypeDefinition = {
   estimatedDurationMs: 10_000,
 };
 
-function createNSGHandler(getResourceManager: () => any): StepHandler {
+function createNSGHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, rules } = ctx.params as {
@@ -256,7 +296,10 @@ const createStorageAccountDef: StepTypeDefinition = {
   estimatedDurationMs: 20_000,
 };
 
-function createStorageAccountHandler(getResourceManager: () => any, getStorageManager: () => any): StepHandler {
+function createStorageAccountHandler(
+  getResourceManager: ManagerFactory<AzureResourceManagerLike>,
+  getStorageManager: ManagerFactory<AzureStorageManagerLike>,
+): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, sku, kind, httpsOnly } = ctx.params as {
@@ -323,7 +366,7 @@ const createSqlServerDef: StepTypeDefinition = {
   estimatedDurationMs: 60_000,
 };
 
-function createSqlServerHandler(getResourceManager: () => any): StepHandler {
+function createSqlServerHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, serverName, location, adminLogin, adminPassword, databaseName, databaseSku } = ctx.params as {
@@ -403,7 +446,7 @@ const createCosmosDBDef: StepTypeDefinition = {
   estimatedDurationMs: 120_000,
 };
 
-function createCosmosDBHandler(getResourceManager: () => any): StepHandler {
+function createCosmosDBHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, accountName, location, apiKind, consistencyLevel } = ctx.params as {
@@ -463,7 +506,7 @@ const createRedisCacheDef: StepTypeDefinition = {
   estimatedDurationMs: 120_000,
 };
 
-function createRedisCacheHandler(getResourceManager: () => any): StepHandler {
+function createRedisCacheHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, sku, capacity } = ctx.params as {
@@ -523,7 +566,7 @@ const createCDNProfileDef: StepTypeDefinition = {
   estimatedDurationMs: 30_000,
 };
 
-function createCDNProfileHandler(getResourceManager: () => any): StepHandler {
+function createCDNProfileHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, profileName, location, sku, endpointName, originHostName } = ctx.params as {
@@ -595,7 +638,7 @@ const createAppServicePlanDef: StepTypeDefinition = {
   estimatedDurationMs: 15_000,
 };
 
-function createAppServicePlanHandler(getResourceManager: () => any): StepHandler {
+function createAppServicePlanHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, sku, os } = ctx.params as {
@@ -649,7 +692,7 @@ const createWebAppDef: StepTypeDefinition = {
   estimatedDurationMs: 30_000,
 };
 
-function createWebAppHandler(getResourceManager: () => any): StepHandler {
+function createWebAppHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, planId, runtime, appSettings } = ctx.params as {
@@ -719,7 +762,7 @@ const createAppInsightsDef: StepTypeDefinition = {
   estimatedDurationMs: 10_000,
 };
 
-function createAppInsightsHandler(getResourceManager: () => any): StepHandler {
+function createAppInsightsHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, applicationType } = ctx.params as {
@@ -780,7 +823,7 @@ const createServiceBusNamespaceDef: StepTypeDefinition = {
   estimatedDurationMs: 30_000,
 };
 
-function createServiceBusNamespaceHandler(getResourceManager: () => any): StepHandler {
+function createServiceBusNamespaceHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, sku } = ctx.params as {
@@ -840,7 +883,7 @@ const createKeyVaultDef: StepTypeDefinition = {
   estimatedDurationMs: 15_000,
 };
 
-function createKeyVaultHandler(getResourceManager: () => any): StepHandler {
+function createKeyVaultHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, tenantId, enableSoftDelete, enablePurgeProtection } = ctx.params as {
@@ -907,7 +950,7 @@ const createFunctionsAppDef: StepTypeDefinition = {
   estimatedDurationMs: 30_000,
 };
 
-function createFunctionsAppHandler(getResourceManager: () => any): StepHandler {
+function createFunctionsAppHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, runtime, sku, storageAccountName } = ctx.params as {
@@ -949,7 +992,7 @@ const createAiServicesDef: StepTypeDefinition = {
   estimatedDurationMs: 20_000,
 };
 
-function createAiServicesHandler(getResourceManager: () => any): StepHandler {
+function createAiServicesHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, kind, sku } = ctx.params as {
@@ -989,7 +1032,7 @@ const createEventGridTopicDef: StepTypeDefinition = {
   estimatedDurationMs: 15_000,
 };
 
-function createEventGridTopicHandler(getResourceManager: () => any): StepHandler {
+function createEventGridTopicHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location } = ctx.params as {
@@ -1029,7 +1072,7 @@ const createContainerRegistryDef: StepTypeDefinition = {
   estimatedDurationMs: 25_000,
 };
 
-function createContainerRegistryHandler(getResourceManager: () => any): StepHandler {
+function createContainerRegistryHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, sku } = ctx.params as {
@@ -1063,7 +1106,7 @@ const createContainerAppEnvironmentDef: StepTypeDefinition = {
   estimatedDurationMs: 60_000,
 };
 
-function createContainerAppEnvironmentHandler(getResourceManager: () => any): StepHandler {
+function createContainerAppEnvironmentHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location } = ctx.params as {
@@ -1102,7 +1145,7 @@ const createContainerAppDef: StepTypeDefinition = {
   estimatedDurationMs: 45_000,
 };
 
-function createContainerAppHandler(getResourceManager: () => any): StepHandler {
+function createContainerAppHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, name, location, image } = ctx.params as {
@@ -1144,7 +1187,7 @@ const createPostgresqlServerDef: StepTypeDefinition = {
   estimatedDurationMs: 120_000,
 };
 
-function createPostgresqlServerHandler(getResourceManager: () => any): StepHandler {
+function createPostgresqlServerHandler(getResourceManager: ManagerFactory<AzureResourceManagerLike>): StepHandler {
   return {
     async execute(ctx: StepContext) {
       const { resourceGroup, serverName, location, sku } = ctx.params as {
@@ -1197,8 +1240,8 @@ export const BUILTIN_STEP_DEFINITIONS: StepTypeDefinition[] = [
  * @param getStorageManager   Returns the AzureStorageManager instance.
  */
 export function registerBuiltinSteps(
-  getResourceManager: () => any,
-  getStorageManager: () => any,
+  getResourceManager: ManagerFactory<AzureResourceManagerLike>,
+  getStorageManager: ManagerFactory<AzureStorageManagerLike>,
 ): void {
   registerStepType(createResourceGroupDef, createResourceGroupHandler(getResourceManager));
   registerStepType(deployArmTemplateDef, deployArmTemplateHandler(getResourceManager));

@@ -105,6 +105,33 @@ export type AWSCLIOptions = {
   dryRun?: boolean;
   noVerifySSL?: boolean;
   endpointUrl?: string;
+  signal?: AbortSignal;
+  maxOutputBytes?: number;
+  onTelemetry?: (event: AWSCommandTelemetryEvent) => void;
+};
+
+export type AWSCLIErrorType =
+  | "timeout"
+  | "not-found"
+  | "permission"
+  | "auth"
+  | "rate-limit"
+  | "validation"
+  | "unknown";
+
+export type AWSCommandTelemetryEvent = {
+  provider: "aws";
+  command: string;
+  commandRedacted: string;
+  success: boolean;
+  exitCode: number;
+  durationMs: number;
+  errorType?: AWSCLIErrorType;
+  retryable?: boolean;
+  outputTruncated?: boolean;
+  attempt?: number;
+  maxAttempts?: number;
+  timestamp: string;
 };
 
 /**
@@ -114,11 +141,14 @@ export type AWSCLIResult<T = unknown> = {
   success: boolean;
   data?: T;
   error?: AWSCLIError;
+  errorType?: AWSCLIErrorType;
   exitCode: number;
   stdout: string;
   stderr: string;
   duration: number;
   command: string;
+  commandRedacted?: string;
+  outputTruncated?: boolean;
 };
 
 /**

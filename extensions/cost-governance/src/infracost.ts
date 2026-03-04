@@ -69,7 +69,7 @@ export function parseBreakdownJson(json: string): CostBreakdown {
       resources.push({
         name: res.name ?? "",
         resourceType: res.resourceType ?? "",
-        provider: extractProvider(res.name ?? ""),
+        provider: extractProvider(res.name ?? "", res.resourceType ?? ""),
         monthlyCost,
         hourlyCost,
         subResources: (res.subresources ?? []).map((s: Record<string, unknown>) => ({
@@ -105,16 +105,24 @@ export function parseDiffJson(json: string): CostDiff {
   const resourceChanges: ResourceCostChange[] = [];
   let currentMonthlyCost = 0;
   let projectedMonthlyCost = 0;
+  let hasProjectTotals = false;
 
   for (const project of projects) {
     const diff = project.diff ?? {};
+    const previousByName = new Map<string, number>();
+    for (const prev of project.pastBreakdown?.resources ?? []) {
+      const name = String(prev.name ?? "");
+      if (!name) continue;
+      previousByName.set(name, parseFloat(prev.monthlyCost ?? "0"));
+    }
     for (const res of diff.resources ?? []) {
-      const prevCost = parseFloat(res.monthlyCost ?? "0");
+      const resourceName = String(res.name ?? "");
+      const prevCost = previousByName.get(resourceName) ?? 0;
       const newCost = parseFloat(res.monthlyCost ?? "0");
-      const action = inferAction(res);
+      const action = inferAction(res, prevCost, newCost);
 
       resourceChanges.push({
-        name: res.name ?? "",
+        name: resourceName,
         resourceType: res.resourceType ?? "",
         action,
         previousMonthlyCost: prevCost,
@@ -123,8 +131,21 @@ export function parseDiffJson(json: string): CostDiff {
       });
     }
 
-    currentMonthlyCost += parseFloat(project.pastBreakdown?.totalMonthlyCost ?? "0");
-    projectedMonthlyCost += parseFloat(project.breakdown?.totalMonthlyCost ?? "0");
+    const pastTotal = parseFloat(project.pastBreakdown?.totalMonthlyCost ?? "NaN");
+    const projectedTotal = parseFloat(project.breakdown?.totalMonthlyCost ?? "NaN");
+    if (Number.isFinite(pastTotal) || Number.isFinite(projectedTotal)) {
+      hasProjectTotals = true;
+      currentMonthlyCost += Number.isFinite(pastTotal) ? pastTotal : 0;
+      projectedMonthlyCost += Number.isFinite(projectedTotal) ? projectedTotal : 0;
+    }
+  }
+
+  if (!hasProjectTotals) {
+    projectedMonthlyCost = parseFloat(data.totalMonthlyCost ?? "0");
+    const reportedDelta = parseFloat(data.diffTotalMonthlyCost ?? "NaN");
+    if (Number.isFinite(reportedDelta)) {
+      currentMonthlyCost = projectedMonthlyCost - reportedDelta;
+    }
   }
 
   const delta = projectedMonthlyCost - currentMonthlyCost;
@@ -141,19 +162,27 @@ export function parseDiffJson(json: string): CostDiff {
   };
 }
 
-function inferAction(resource: Record<string, unknown>): ResourceCostChange["action"] {
+function inferAction(
+  resource: Record<string, unknown>,
+  previousMonthlyCost: number,
+  newMonthlyCost: number,
+): ResourceCostChange["action"] {
   if (resource.metadata) {
     const calls = (resource.metadata as Record<string, unknown>).calls as string[] | undefined;
     if (calls?.includes("create")) return "create";
     if (calls?.includes("delete")) return "delete";
     if (calls?.includes("update")) return "update";
   }
+  if (previousMonthlyCost <= 0 && newMonthlyCost > 0) return "create";
+  if (previousMonthlyCost > 0 && newMonthlyCost <= 0) return "delete";
+  if (previousMonthlyCost !== newMonthlyCost) return "update";
   return "no-change";
 }
 
-function extractProvider(name: string): string {
-  if (name.startsWith("aws_")) return "aws";
-  if (name.startsWith("azurerm_")) return "azure";
-  if (name.startsWith("google_")) return "gcp";
+function extractProvider(name: string, resourceType?: string): string {
+  const haystack = `${name} ${resourceType ?? ""}`.toLowerCase();
+  if (haystack.includes("aws_")) return "aws";
+  if (haystack.includes("azurerm_")) return "azurerm";
+  if (haystack.includes("google_")) return "google";
   return "unknown";
 }

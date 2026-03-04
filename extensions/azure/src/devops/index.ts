@@ -11,5 +11,9 @@ export type {
   PATEvent,
   PATEventListener,
   PATStorageBackend,
+  PATEncryptionKeySource,
+  PATEncryptionMetadata,
+  PATResolvedKey,
+  PATEncryptionKeyProvider,
   DevOpsPATScope,
 } from "./pat-types.js";

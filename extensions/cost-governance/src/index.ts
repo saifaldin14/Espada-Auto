@@ -26,6 +26,8 @@ export type {
   BudgetStatus,
   Budget,
   BudgetInput,
+  BudgetAuditAction,
+  BudgetAuditEntry,
   CostDataPoint,
   CostForecast,
 } from "./types.js";

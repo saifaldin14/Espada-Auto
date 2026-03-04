@@ -38,7 +38,6 @@ export function registerCostCli(program: Command): void {
     .action(async () => {
       const { BudgetManager } = await import("./budgets.js");
       const mgr = new BudgetManager();
-      // In real usage, load from storage; here just show empty state
       const statuses = mgr.getAllStatuses();
       if (statuses.length === 0) {
         console.log("No budgets configured.");
@@ -51,6 +50,48 @@ export function registerCostCli(program: Command): void {
             `(${s.utilization.toFixed(1)}%)`,
         );
       }
+    });
+
+  budget
+    .command("audit")
+    .description("List budget audit events")
+    .option("--limit <n>", "Maximum number of entries", parseFloat, 50)
+    .option("--scope <scope>", "Filter by scope")
+    .option("--scope-id <id>", "Filter by scope identifier")
+    .action(async (opts: { limit: number; scope?: string; scopeId?: string }) => {
+      const { BudgetManager } = await import("./budgets.js");
+      const mgr = new BudgetManager();
+      const entries = mgr.listAuditEntries({
+        limit: opts.limit,
+        scope: opts.scope as "team" | "project" | "environment" | "global" | undefined,
+        scopeId: opts.scopeId,
+      });
+
+      if (entries.length === 0) {
+        console.log("No budget audit entries found.");
+        return;
+      }
+
+      for (const entry of entries) {
+        const statusTransition =
+          entry.previousStatus || entry.currentStatus
+            ? ` ${entry.previousStatus ?? "-"} -> ${entry.currentStatus ?? "-"}`
+            : "";
+        console.log(
+          `${entry.timestamp} [${entry.action}] ${entry.budgetName} (${entry.scope}/${entry.scopeId})${statusTransition}`,
+        );
+      }
+    });
+
+  budget
+    .command("audit-clear")
+    .description("Clear budget audit entries")
+    .option("--before <isoDate>", "Delete entries at or before timestamp")
+    .action(async (opts: { before?: string }) => {
+      const { BudgetManager } = await import("./budgets.js");
+      const mgr = new BudgetManager();
+      const removed = mgr.clearAuditEntries(opts.before);
+      console.log(`Removed ${removed} budget audit entr${removed === 1 ? "y" : "ies"}.`);
     });
 
   budget
