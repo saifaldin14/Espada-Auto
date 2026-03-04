@@ -1190,7 +1190,8 @@ sso_registration_scopes = sso:account:access
 
               // Initiate SSO login (this will open a browser)
               try {
-                const output = execSync(`aws sso login --profile ${sessionName}`, {
+                const { execFileSync } = await import("node:child_process");
+                const output = execFileSync("aws", ["sso", "login", "--profile", sessionName], {
                   encoding: "utf-8",
                   stdio: "pipe",
                 });
@@ -1249,7 +1250,7 @@ region = ${region}
 output = json
 `;
 
-              writeFileSync(configPath, configContent);
+              writeFileSync(configPath, configContent, { mode: 0o600 });
 
               // Test the credentials
               try {

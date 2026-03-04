@@ -175,5 +175,30 @@ export default {
         respond(false, { error: String(err) });
       }
     });
+
+    // -- Enterprise diagnostics gateways ------------------------------------
+    api.registerGatewayMethod("hybrid/status", async ({ respond }) => {
+      const runDiag = coordinator.getLastDiscoveryRunDiagnostics();
+      const failureHistory = coordinator.getAdapterFailureHistory();
+      respond(true, {
+        status: (runDiag?.totalFailures ?? 0) === 0 ? "operational" : "degraded",
+        enabledProviders: mergedConfig.enabledProviders,
+        syncIntervalMinutes: mergedConfig.syncIntervalMinutes,
+        lastRun: runDiag
+          ? {
+              totalFailures: runDiag.totalFailures,
+              failureCountByProvider: runDiag.failureCountByProvider,
+              startedAt: runDiag.startedAt,
+              completedAt: runDiag.completedAt,
+            }
+          : null,
+        recentAdapterFailures: failureHistory.length,
+      });
+    });
+
+    api.registerGatewayMethod("hybrid/diagnostics/reset", async ({ respond }) => {
+      coordinator.resetAdapterFailureHistory();
+      respond(true, { reset: true });
+    });
   },
 };
