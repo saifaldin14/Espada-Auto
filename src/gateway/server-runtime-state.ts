@@ -25,6 +25,9 @@ import type { SessionManager } from "./sso/session-store.js";
 import type { GatewayRBACManager } from "./rbac/manager.js";
 import type { SSOConfig } from "./sso/types.js";
 import { createSSOHttpHandler } from "./sso/http-handler.js";
+import type { AuditLogPipeline } from "./audit/index.js";
+import type { VersionedRouter } from "./api-version/index.js";
+import type { EnterpriseRuntime } from "./enterprise/index.js";
 
 export async function createGatewayRuntimeState(params: {
   cfg: import("../config/config.js").EspadaConfig;
@@ -47,6 +50,9 @@ export async function createGatewayRuntimeState(params: {
   sessionManager?: SessionManager | null;
   rbacManager?: GatewayRBACManager;
   ssoConfig?: SSOConfig | null;
+  audit?: AuditLogPipeline | null;
+  versionedRouter?: VersionedRouter | null;
+  enterprise?: EnterpriseRuntime | null;
   logCanvas: { info: (msg: string) => void; warn: (msg: string) => void };
   log: { info: (msg: string) => void; warn: (msg: string) => void };
   logHooks: ReturnType<typeof createSubsystemLogger>;
@@ -148,6 +154,9 @@ export async function createGatewayRuntimeState(params: {
       sessionManager: params.sessionManager,
       rbacManager: params.rbacManager,
       tlsOptions: params.gatewayTls?.enabled ? params.gatewayTls.tlsOptions : undefined,
+      audit: params.audit,
+      versionedRouter: params.versionedRouter,
+      enterprise: params.enterprise,
     });
     try {
       await listenGatewayHttpServer({

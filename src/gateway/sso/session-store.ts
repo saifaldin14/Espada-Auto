@@ -8,7 +8,7 @@
 
 import type { SSOSession, SessionStore } from "./types.js";
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from "node:fs";
 import { dirname } from "node:path";
 
 // =============================================================================
@@ -269,10 +269,12 @@ export class FileSessionStore implements SessionStore {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
     }
     const data = [...this.sessions.values()];
-    writeFileSync(this.filePath, JSON.stringify(data, null, 2), {
+    const tmpPath = this.filePath + ".tmp";
+    writeFileSync(tmpPath, JSON.stringify(data, null, 2), {
       encoding: "utf8",
       mode: 0o600,
     });
+    renameSync(tmpPath, this.filePath);
   }
 
   async save(session: SSOSession): Promise<void> {
@@ -373,9 +375,7 @@ export class SessionManager {
     this.allowUnsignedTokens = opts?.allowUnsignedTokens ?? !this.signingSecret;
   }
 
-  decodeToken(
-    token: string,
-  ): {
+  decodeToken(token: string): {
     sessionId: string;
     userId: string;
     email: string;

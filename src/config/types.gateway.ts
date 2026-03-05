@@ -261,4 +261,10 @@ export type GatewayConfig = {
    * `x-real-ip`) to determine the client IP for local pairing and HTTP checks.
    */
   trustedProxies?: string[];
+
+  /**
+   * Enterprise subsystem configuration (Gaps #1-#10).
+   * All subsystems are disabled by default.
+   */
+  enterprise?: import("../gateway/enterprise/bootstrap.js").EnterpriseConfig;
 };

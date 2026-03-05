@@ -13,6 +13,11 @@ export function createApiMock() {
   const registerService = vi.fn();
 
   const api = {
+    id: "test-plugin",
+    name: "test-plugin",
+    source: "test",
+    config: {} as Record<string, unknown>,
+    pluginConfig: {},
     registerGatewayMethod: (name: string, handler: GatewayHandler) => {
       gatewayMethods.set(name, handler);
     },
@@ -21,9 +26,12 @@ export function createApiMock() {
     registerCli,
     registerService,
     registerChannel: vi.fn(),
+    registerHook: vi.fn(),
     registerHttpHandler: vi.fn(),
+    registerHttpRoute: vi.fn(),
+    registerCommand: vi.fn(),
+    on: vi.fn(),
     resolvePath: (value: string) => value,
-    pluginConfig: {},
     logger: {
       info: vi.fn(),
       warn: vi.fn(),
@@ -31,14 +39,66 @@ export function createApiMock() {
       debug: vi.fn(),
     },
     runtime: {
+      version: "0.0.0-test",
+      config: { loadConfig: vi.fn(), writeConfigFile: vi.fn() },
+      system: { enqueueSystemEvent: vi.fn(), runCommandWithTimeout: vi.fn(), formatNativeDependencyHint: vi.fn() },
+      media: {
+        loadWebMedia: vi.fn(),
+        detectMime: vi.fn(),
+        mediaKindFromMime: vi.fn(),
+        isVoiceCompatibleAudio: vi.fn(),
+        getImageMetadata: vi.fn(),
+        resizeToJpeg: vi.fn(),
+      },
+      tts: { textToSpeechTelephony: vi.fn() },
       log: vi.fn(),
       tools: {
         createMemorySearchTool: vi.fn(() => ({ name: "memory_search" })),
         createMemoryGetTool: vi.fn(() => ({ name: "memory_get" })),
         registerMemoryCli: vi.fn(),
       },
+      channel: {
+        text: {
+          chunkByNewline: vi.fn(),
+          chunkMarkdownText: vi.fn(),
+          chunkMarkdownTextWithMode: vi.fn(),
+          chunkText: vi.fn(),
+          chunkTextWithMode: vi.fn(),
+          resolveChunkMode: vi.fn(),
+          resolveTextChunkLimit: vi.fn(),
+          hasControlCommand: vi.fn(),
+          resolveMarkdownTableMode: vi.fn(),
+          convertMarkdownTables: vi.fn(),
+        },
+        reply: {
+          dispatchReplyWithBufferedBlockDispatcher: vi.fn(),
+          createReplyDispatcherWithTyping: vi.fn(),
+          resolveEffectiveMessagesConfig: vi.fn(),
+          resolveHumanDelayConfig: vi.fn(),
+          dispatchReplyFromConfig: vi.fn(),
+          finalizeInboundContext: vi.fn(),
+          formatAgentEnvelope: vi.fn(),
+          formatInboundEnvelope: vi.fn(),
+          resolveEnvelopeFormatOptions: vi.fn(),
+        },
+        routing: { resolveAgentRoute: vi.fn() },
+        pairing: {
+          buildPairingReply: vi.fn(),
+          readAllowFromStore: vi.fn(),
+          upsertPairingRequest: vi.fn(),
+        },
+        media: { fetchRemoteMedia: vi.fn(), saveMediaBuffer: vi.fn() },
+        activity: { record: vi.fn(), get: vi.fn() },
+        session: {
+          resolveStorePath: vi.fn(),
+          readSessionUpdatedAt: vi.fn(),
+          recordSessionMetaFromInbound: vi.fn(),
+          recordInboundSession: vi.fn(),
+          updateLastRoute: vi.fn(),
+        },
+      },
     },
-  };
+  } as any; // eslint-disable-line @typescript-eslint/no-explicit-any -- lightweight test mock
 
   return {
     api,

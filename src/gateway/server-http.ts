@@ -33,6 +33,11 @@ import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 import { resolveGatewayClientIp } from "./net.js";
 import type { GatewayRBACManager } from "./rbac/manager.js";
 import type { SessionManager } from "./sso/session-store.js";
+import type { RateLimitStore, RateLimitConfig } from "./state/index.js";
+import type { AuditLogPipeline } from "./audit/index.js";
+import type { VersionedRouter } from "./api-version/index.js";
+import type { EnterpriseRuntime } from "./enterprise/index.js";
+import { createEnterpriseAdminHandler } from "./server-enterprise-admin.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
@@ -66,6 +71,16 @@ const RATE_LIMIT_WINDOW_MS = Number.parseInt(
 const RATE_LIMIT_MAX = Number.parseInt(process.env.ESPADA_GATEWAY_RATE_LIMIT_MAX ?? "240", 10);
 const rateLimitBuckets = new Map<string, { count: number; windowStart: number }>();
 
+/**
+ * Optional pluggable rate-limit store. When set, the gateway uses this
+ * persistent (e.g. SQLite-backed) store instead of the module-level Map.
+ */
+let _rateLimitStore: RateLimitStore | null = null;
+
+export function setGatewayRateLimitStore(store: RateLimitStore): void {
+  _rateLimitStore = store;
+}
+
 function isSensitiveRateLimitedPath(pathname: string): boolean {
   return (
     pathname.startsWith("/auth/sso/") ||
@@ -95,6 +110,14 @@ function applyHttpRateLimit(params: {
       trustedProxies: params.trustedProxies,
     }) ?? remoteAddr;
   const key = `${clientIp}:${params.pathname}`;
+
+  // Use pluggable store if available
+  if (_rateLimitStore) {
+    const cfg: RateLimitConfig = { windowMs: RATE_LIMIT_WINDOW_MS, maxRequests: RATE_LIMIT_MAX };
+    return _rateLimitStore.check(key, cfg);
+  }
+
+  // Fallback to in-memory Map
   const now = Date.now();
   const existing = rateLimitBuckets.get(key);
   if (!existing || now - existing.windowStart >= RATE_LIMIT_WINDOW_MS) {
@@ -266,6 +289,9 @@ export function createGatewayHttpServer(opts: {
   sessionManager?: SessionManager | null;
   rbacManager?: GatewayRBACManager | null;
   tlsOptions?: TlsOptions;
+  audit?: AuditLogPipeline | null;
+  versionedRouter?: VersionedRouter | null;
+  enterprise?: EnterpriseRuntime | null;
 }): HttpServer {
   const {
     canvasHost,
@@ -289,9 +315,18 @@ export function createGatewayHttpServer(opts: {
         void handleRequest(req, res);
       });
 
+  const { audit, versionedRouter } = opts;
+  const handleEnterpriseAdmin = createEnterpriseAdminHandler(opts.enterprise ?? null, {
+    auth: resolvedAuth,
+    sessionManager,
+    rbacManager,
+  });
+
   async function handleRequest(req: IncomingMessage, res: ServerResponse) {
     // Don't interfere with WebSocket upgrades; ws handles the 'upgrade' event.
     if (String(req.headers.upgrade ?? "").toLowerCase() === "websocket") return;
+
+    const requestStartMs = Date.now();
 
     try {
       const configSnapshot = loadConfig();
@@ -299,6 +334,18 @@ export function createGatewayHttpServer(opts: {
       const parsedUrl = new URL(req.url ?? "/", "http://localhost");
 
       if (!applyHttpRateLimit({ req, pathname: parsedUrl.pathname, trustedProxies })) {
+        audit?.record({
+          action: "api.rate_limited",
+          outcome: "denied",
+          severity: "warn",
+          actor: {
+            type: "user",
+            id: "unknown",
+            ip: req.socket?.remoteAddress,
+          },
+          resource: { type: "http", id: parsedUrl.pathname },
+          context: { method: req.method, url: req.url },
+        });
         sendJson(res, 429, {
           ok: false,
           error: "Rate limit exceeded",
@@ -308,6 +355,12 @@ export function createGatewayHttpServer(opts: {
 
       if (await handleHooksRequest(req, res)) return;
       if (handleSSORequest && (await handleSSORequest(req, res))) return;
+
+      // Enterprise admin endpoints: /health, /ready, /admin/* (Phase 2)
+      if (await handleEnterpriseAdmin(req, res)) return;
+
+      // Enterprise versioned API router (Gap #7)
+      if (versionedRouter && (await versionedRouter.handleRequest(req, res))) return;
       if (
         await handleToolsInvokeHttpRequest(req, res, {
           auth: resolvedAuth,
@@ -363,10 +416,47 @@ export function createGatewayHttpServer(opts: {
           return;
       }
 
+      // Audit successful request (if not handled above)
+      audit?.record({
+        action: "api.request",
+        outcome: "success",
+        severity: "info",
+        actor: {
+          type: "user",
+          id: "unknown",
+          ip: req.socket?.remoteAddress,
+        },
+        resource: { type: "http", id: parsedUrl.pathname },
+        context: {
+          method: req.method,
+          url: req.url,
+          status: 404,
+          durationMs: Date.now() - requestStartMs,
+        },
+      });
+
       res.statusCode = 404;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Not Found");
-    } catch {
+    } catch (err) {
+      audit?.record({
+        action: "api.request",
+        outcome: "error",
+        severity: "error",
+        actor: {
+          type: "user",
+          id: "unknown",
+          ip: req.socket?.remoteAddress,
+        },
+        resource: { type: "http", id: req.url ?? "/" },
+        context: {
+          method: req.method,
+          url: req.url,
+          status: 500,
+          error: String(err),
+          durationMs: Date.now() - requestStartMs,
+        },
+      });
       res.statusCode = 500;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Internal Server Error");

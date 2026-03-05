@@ -70,6 +70,11 @@ import { startGatewayTailscaleExposure } from "./server-tailscale.js";
 import { loadGatewayTlsRuntime } from "./server/tls.js";
 import { createWizardSessionTracker } from "./server-wizard-sessions.js";
 import { attachGatewayWsHandlers } from "./server-ws-runtime.js";
+import { bootstrapEnterprise, type EnterpriseRuntime } from "./enterprise/index.js";
+import { DedupMapAdapter } from "./state/index.js";
+import { setGatewayRateLimitStore } from "./server-http.js";
+import { setGatewayTaskQueue } from "./task-queue/index.js";
+import { setGatewaySecretsManager } from "./secrets-accessor.js";
 
 export { __resetModelCatalogCacheForTest } from "./server-model-catalog.js";
 
@@ -259,6 +264,36 @@ export async function startGatewayServer(
   } = runtimeConfig;
   const { oidcProvider, sessionManager, rbacManager, ssoConfig } = runtimeConfig;
   let hooksConfig = runtimeConfig.hooksConfig;
+
+  // ── Enterprise subsystems (Gaps #1-#10) ───────────────────────────────
+  const enterpriseConfig = cfgAtStart.gateway?.enterprise ?? {};
+  let enterprise: EnterpriseRuntime | null = null;
+  try {
+    enterprise = await bootstrapEnterprise(enterpriseConfig);
+    if (Object.values(enterpriseConfig).some((v) => typeof v === "object" && v?.enabled)) {
+      log.info("gateway: enterprise subsystems initialized");
+    }
+
+    // Wire persistent rate-limit store (Gap #2)
+    if (enterprise?.rateLimitStore) {
+      setGatewayRateLimitStore(enterprise.rateLimitStore);
+      log.info("gateway: enterprise persistent rate-limit store active");
+    }
+
+    // Wire durable task queue (Gap #3)
+    if (enterprise?.taskQueue) {
+      setGatewayTaskQueue(enterprise.taskQueue);
+      log.info("gateway: enterprise durable task queue active");
+    }
+
+    // Wire secrets manager for provider key resolution (Phase 3)
+    if (enterprise?.secrets) {
+      setGatewaySecretsManager(enterprise.secrets);
+      log.info("gateway: enterprise secrets manager active (provider key fallback enabled)");
+    }
+  } catch (err) {
+    log.warn(`gateway: enterprise bootstrap failed (non-fatal): ${String(err)}`);
+  }
   const canvasHostEnabled = runtimeConfig.canvasHostEnabled;
 
   const wizardRunner = opts.wizardRunner ?? runOnboardingWizard;
@@ -279,7 +314,7 @@ export async function startGatewayServer(
     clients,
     broadcast,
     agentRunSeq,
-    dedupe,
+    dedupe: baseDedup,
     chatRunState,
     chatRunBuffers,
     chatDeltaSentAt,
@@ -307,11 +342,23 @@ export async function startGatewayServer(
     sessionManager,
     rbacManager,
     ssoConfig,
+    audit: enterprise?.audit,
+    versionedRouter: enterprise?.versionedRouter,
+    enterprise: enterprise ?? null,
     logCanvas,
     log,
     logHooks,
     logPlugins,
   });
+
+  // Wire persistent dedup store (Gap #2) — adapts DedupStore to Map interface
+  const dedupe: Map<string, import("./server-shared.js").DedupeEntry> = enterprise?.dedupStore
+    ? new DedupMapAdapter(enterprise.dedupStore)
+    : baseDedup;
+  if (enterprise?.dedupStore) {
+    log.info("gateway: enterprise persistent dedup store active");
+  }
+
   let bonjourStop: (() => Promise<void>) | null = null;
   const nodeRegistry = new NodeRegistry();
   const nodePresenceTimers = new Map<string, ReturnType<typeof setInterval>>();
@@ -406,6 +453,76 @@ export async function startGatewayServer(
       clearAgentRunContext,
     }),
   );
+
+  // ── Enterprise Event Bus bridge (Gap #6) ──────────────────────────────
+  // Forward agent lifecycle events to the enterprise event bus for
+  // webhook delivery to external systems (ServiceNow, PagerDuty, etc.)
+  let agentEventBusUnsub: (() => void) | null = null;
+  if (enterprise?.eventBus) {
+    const eventBus = enterprise.eventBus;
+    agentEventBusUnsub = onAgentEvent((event) => {
+      const name = `agent.lifecycle.${event.stream ?? "unknown"}`;
+      eventBus.publish({
+        name,
+        namespace: "agent",
+        data: event,
+        source: "gateway",
+      });
+    });
+    log.info("gateway: enterprise event bus bridge active (agent events → webhooks)");
+  }
+
+  // ── Enterprise Cluster → Event Bus bridge (Phase 2, Gap #1) ───────────
+  let clusterEventCleanup: (() => void) | null = null;
+  if (enterprise?.cluster && enterprise.eventBus) {
+    const eventBus = enterprise.eventBus;
+    const cluster = enterprise.cluster;
+    const onClusterEvent = (evt: { type: string; [k: string]: unknown }) => {
+      eventBus.publish({
+        name: `cluster.${evt.type}`,
+        namespace: "infra",
+        data: evt,
+        source: "cluster-coordinator",
+      });
+    };
+    cluster.on("event", onClusterEvent);
+    clusterEventCleanup = () => cluster.removeListener("event", onClusterEvent);
+    log.info("gateway: cluster events → enterprise event bus bridge active");
+  }
+
+  // ── Enterprise Secrets audit callback (Phase 2, Gap #8) ───────────────
+  if (enterprise?.secrets && enterprise.audit) {
+    const audit = enterprise.audit;
+    enterprise.secrets.onAudit((entry) => {
+      audit.record({
+        action: `custom.secret.${entry.action}`,
+        outcome: entry.success ? "success" : "failure",
+        severity: entry.action === "delete" ? "warn" : "info",
+        actor: { type: "system", id: "secrets-manager" },
+        resource: { type: "secret", id: entry.key ?? "*" },
+        context: { backend: entry.backend, timestamp: entry.timestamp },
+      });
+    });
+    log.info("gateway: secrets manager → audit pipeline bridge active");
+  }
+
+  // ── Enterprise Event Bus → WS broadcast (Phase 3, Gap #6) ────────────
+  // Forward all enterprise event bus events to connected WebSocket clients
+  // so dashboards and UIs receive real-time updates without polling.
+  let eventBusBroadcastCleanup: (() => void) | null = null;
+  if (enterprise?.eventBus) {
+    const eventBus = enterprise.eventBus;
+    const onBusEvent = (evt: { name: string; namespace?: string; data?: unknown }) => {
+      broadcast(
+        `enterprise.${evt.namespace ?? "system"}.${evt.name}`,
+        { name: evt.name, namespace: evt.namespace, data: evt.data },
+        { dropIfSlow: true },
+      );
+    };
+    eventBus.on("event", onBusEvent);
+    eventBusBroadcastCleanup = () => eventBus.removeListener("event", onBusEvent);
+    log.info("gateway: enterprise event bus → WS broadcast bridge active");
+  }
 
   const heartbeatUnsub = onHeartbeatEvent((evt) => {
     broadcast("heartbeat", evt, { dropIfSlow: true });
@@ -590,6 +707,16 @@ export async function startGatewayServer(
         skillsRefreshTimer = null;
       }
       skillsChangeUnsub();
+      agentEventBusUnsub?.();
+      clusterEventCleanup?.();
+      eventBusBroadcastCleanup?.();
+      if (enterprise) {
+        try {
+          await enterprise.close();
+        } catch {
+          /* best effort */
+        }
+      }
       await close(opts);
     },
   };

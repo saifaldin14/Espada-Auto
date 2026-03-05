@@ -14,6 +14,7 @@ import {
   resolveAuthStorePathForDisplay,
 } from "./auth-profiles.js";
 import { normalizeProviderId } from "./model-selection.js";
+import { resolveProviderKeyFromSecrets } from "../gateway/secrets-accessor.js";
 
 export { ensureAuthProfileStore, resolveAuthProfileOrder } from "./auth-profiles.js";
 
@@ -193,6 +194,16 @@ export async function resolveApiKeyForProvider(params: {
       apiKey: envResolved.apiKey,
       source: envResolved.source,
       mode: envResolved.source.includes("OAUTH_TOKEN") ? "oauth" : "api-key",
+    };
+  }
+
+  // Enterprise secrets manager lookup (Phase 3)
+  const secretsResolved = await resolveProviderKeyFromSecrets(normalizeProviderId(provider));
+  if (secretsResolved) {
+    return {
+      apiKey: secretsResolved.apiKey,
+      source: secretsResolved.source,
+      mode: "api-key",
     };
   }
 
