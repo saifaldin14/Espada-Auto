@@ -1,0 +1,75 @@
+{
+  "id": "cloud-migration",
+  "name": "Cross-Cloud Migration Engine",
+  "displayName": "Cross-Cloud Migration Engine",
+  "description": "AI-orchestrated, integrity-verified migration of compute workloads, data, and network configurations across AWS, Azure, GCP, and on-premise environments",
+  "version": "1.0.0",
+  "author": "Espada Team",
+  "entryPoint": "index.ts",
+  "category": "infrastructure",
+  "dependencies": [
+    "aws",
+    "azure",
+    "gcp",
+    "knowledge-graph",
+    "cost-governance",
+    "policy-engine",
+    "audit-trail"
+  ],
+  "capabilities": [
+    "cross-cloud-migration",
+    "compute-migration",
+    "data-migration",
+    "network-migration",
+    "database-migration",
+    "integrity-verification",
+    "migration-planning",
+    "cost-estimation",
+    "compatibility-analysis",
+    "dag-orchestration",
+    "approval-gates",
+    "auto-rollback",
+    "knowledge-graph-integration",
+    "on-prem-support"
+  ],
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "maxConcurrency": {
+        "type": "number",
+        "description": "Maximum concurrent orchestration steps",
+        "default": 4
+      },
+      "transferConcurrency": {
+        "type": "number",
+        "description": "Maximum concurrent object transfers",
+        "default": 16
+      },
+      "defaultStepTimeoutMs": {
+        "type": "number",
+        "description": "Default timeout per step in milliseconds",
+        "default": 600000
+      },
+      "globalJobTimeoutMs": {
+        "type": "number",
+        "description": "Global job timeout in milliseconds",
+        "default": 14400000
+      },
+      "autoRollback": {
+        "type": "boolean",
+        "description": "Automatically rollback on step failure",
+        "default": true
+      },
+      "requireApproval": {
+        "type": "boolean",
+        "description": "Require human approval before execution",
+        "default": true
+      },
+      "integrityVerification": {
+        "type": "boolean",
+        "description": "Enable SHA-256 integrity verification at every transfer boundary",
+        "default": true
+      }
+    }
+  }
+}
