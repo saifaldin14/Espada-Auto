@@ -27,7 +27,8 @@ export { syncPostMigrationToKnowledgeGraph } from "./src/graph/post-migration-sy
 export { checkMigrationBudget } from "./src/core/cost-estimator.js";
 export { resolveExtensions, getResolvedExtensions, resetExtensionBridge } from "./src/integrations/extension-bridge.js";
 export { getConfig, resetConfig, initConfig } from "./src/config.js";
-export { scrubCredentials, formatErrors } from "./src/validation.js";
+export { scrubCredentials, formatErrors, toErrorMessage } from "./src/validation.js";
+export { evictTerminalJobs } from "./src/core/migration-engine.js";
 
 // Re-export key types
 export type {

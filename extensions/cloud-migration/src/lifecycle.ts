@@ -8,10 +8,11 @@
 
 import type { MigrationStepType } from "./types.js";
 import { getPluginState, resetPluginState } from "./state.js";
-import { registerStepHandler } from "./core/migration-engine.js";
+import { registerStepHandler, transitionJobPhase } from "./core/migration-engine.js";
 import { clearIdempotencyRegistry } from "./core/migration-engine.js";
 import { getAuditLogger, resetAuditLogger } from "./governance/audit-logger.js";
 import { resetProviderRegistry } from "./providers/registry.js";
+import { resetApprovalStore } from "./governance/approval-gate-handler.js";
 import { resolveExtensions, resetExtensionBridge } from "./integrations/extension-bridge.js";
 
 // Compute step handlers
@@ -315,6 +316,14 @@ export function registerLifecycle(
         logger.warn(
           `[cloud-migration] Stopping with ${activeJobs.length} active job(s): ${activeJobs.map((j) => j.id).join(", ")}`,
         );
+        // Transition active jobs to failed so they don't hang in limbo
+        for (const job of activeJobs) {
+          try {
+            transitionJobPhase(job.id, "failed", "system", "Service shutdown — job terminated");
+          } catch {
+            // Phase transition may not be valid (e.g., already terminal)
+          }
+        }
       }
 
       // Log shutdown in audit trail
@@ -338,6 +347,7 @@ export function registerLifecycle(
       resetProviderRegistry();
       clearIdempotencyRegistry();
       resetExtensionBridge();
+      resetApprovalStore();
 
       logger.info("[cloud-migration] Migration engine service stopped");
     },

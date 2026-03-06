@@ -41,6 +41,9 @@ export class MigrationAuditLogger {
   private entries: AuditEntry[] = [];
   private headHash: string = "genesis";
 
+  /** Maximum number of entries retained in memory. Oldest entries are trimmed. */
+  static readonly MAX_ENTRIES = 50_000;
+
   /**
    * Log a new audit entry.
    */
@@ -69,6 +72,12 @@ export class MigrationAuditLogger {
 
     this.entries.push(fullEntry);
     this.headHash = hash;
+
+    // Trim oldest entries when over the cap (keep last MAX_ENTRIES)
+    if (this.entries.length > MigrationAuditLogger.MAX_ENTRIES) {
+      const excess = this.entries.length - MigrationAuditLogger.MAX_ENTRIES;
+      this.entries.splice(0, excess);
+    }
 
     // Bridge: also emit to the audit-trail extension (if available)
     this.emitToAuditTrail(fullEntry);

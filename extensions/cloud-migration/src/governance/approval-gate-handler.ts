@@ -84,6 +84,9 @@ interface ApprovalGateResult {
 const pendingApprovals = new Map<string, ApprovalRequest>();
 const approvalDecisions = new Map<string, ApprovalDecision>();
 
+/** Maximum number of decisions retained before pruning. */
+const MAX_DECISIONS = 10_000;
+
 /**
  * Submit an approval decision for a pending request.
  * Called by external webhook, CLI, or UI integration.
@@ -94,6 +97,17 @@ export function submitApprovalDecision(decision: ApprovalDecision): boolean {
 
   approvalDecisions.set(decision.requestId, decision);
   pendingApprovals.delete(decision.requestId);
+
+  // Prune old decisions if they exceed the cap
+  if (approvalDecisions.size > MAX_DECISIONS) {
+    const excess = approvalDecisions.size - MAX_DECISIONS;
+    const keys = approvalDecisions.keys();
+    for (let i = 0; i < excess; i++) {
+      const k = keys.next().value;
+      if (k !== undefined) approvalDecisions.delete(k);
+    }
+  }
+
   return true;
 }
 

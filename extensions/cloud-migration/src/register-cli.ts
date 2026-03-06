@@ -28,6 +28,7 @@ import { createIntegrityReport } from "./core/integrity-verifier.js";
 import { getAuditLogger } from "./governance/audit-logger.js";
 import { executeRollback, generateRollbackPlan, RollbackStack } from "./governance/rollback-manager.js";
 import { getPluginState } from "./state.js";
+import { toErrorMessage, validateProvider, validateRequiredString } from "./validation.js";
 
 type CliContext = {
   program: {
@@ -81,6 +82,13 @@ export function registerCli(api: PluginApi): void {
           ? (opts.types.split(",") as MigrationResourceType[])
           : ["vm"];
 
+        // Validate providers
+        const srcV = validateProvider("sourceProvider", sourceProvider);
+        if (!srcV.ok) { output({ error: `Invalid source provider: ${sourceProvider}` }); return; }
+        const tgtV = validateProvider("targetProvider", targetProvider);
+        if (!tgtV.ok) { output({ error: `Invalid target provider: ${targetProvider}` }); return; }
+        if (!targetRegion) { output({ error: "Target region is required" }); return; }
+
         const result = assessMigration({
           sourceProvider,
           targetProvider,
@@ -108,6 +116,12 @@ export function registerCli(api: PluginApi): void {
         const targetProvider = (opts.to as string ?? "azure") as MigrationProvider;
         const sourceProvider = (opts.from as string ?? "aws") as MigrationProvider;
         const targetRegion = (opts.region as string) ?? "us-east-1";
+
+        // Validate providers
+        const srcV = validateProvider("sourceProvider", sourceProvider);
+        if (!srcV.ok) { output({ error: `Invalid source provider: ${sourceProvider}` }); return; }
+        const tgtV = validateProvider("targetProvider", targetProvider);
+        if (!tgtV.ok) { output({ error: `Invalid target provider: ${targetProvider}` }); return; }
 
         const assessment = assessMigration({
           sourceProvider,
@@ -511,7 +525,7 @@ export function registerCli(api: PluginApi): void {
             provider,
             host: `${host}:${port}`,
             reachable: false,
-            error: String(error),
+            error: toErrorMessage(error),
           });
         }
       });
@@ -555,7 +569,7 @@ export function registerCli(api: PluginApi): void {
             })),
           });
         } catch (error) {
-          output({ error: String(error) });
+          output({ error: toErrorMessage(error) });
         }
       });
   });

@@ -47,6 +47,7 @@ import {
   formatErrors,
   mergeValidations,
   scrubCredentials,
+  toErrorMessage,
 } from "./validation.js";
 
 type GatewayHandler = (opts: {
@@ -88,8 +89,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: assessment });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "ASSESS_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "ASSESS_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -170,8 +171,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "PLAN_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "PLAN_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -236,8 +237,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "APPROVE_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "APPROVE_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -287,8 +288,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "EXECUTE_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "EXECUTE_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -340,8 +341,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "STATUS_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "STATUS_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -394,8 +395,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "LIST_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "LIST_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -447,8 +448,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: result });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "ROLLBACK_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "ROLLBACK_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -498,8 +499,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "CUTOVER_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "CUTOVER_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -551,8 +552,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: report });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "VERIFY_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "VERIFY_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -598,8 +599,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: filtered });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "COMPAT_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "COMPAT_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -644,8 +645,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: estimate });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "COST_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "COST_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -688,8 +689,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "AUDIT_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "AUDIT_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -739,8 +740,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: { policies: getBuiltinPolicies().map((p) => ({ id: p.id, name: p.name })), evaluation: result } });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "POLICY_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "POLICY_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -756,7 +757,7 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: { reset: true, previous: before } });
     } catch (error) {
       diag().gatewayFailures++;
-      opts.respond(false, undefined, { code: "RESET_FAILED", message: String(error) });
+      opts.respond(false, undefined, { code: "RESET_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -792,8 +793,8 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(true, { data: health });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "AGENT_HEALTH_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "AGENT_HEALTH_FAILED", message: toErrorMessage(error) });
     }
   });
 
@@ -846,8 +847,8 @@ export function registerGateway(api: PluginApi): void {
       });
     } catch (error) {
       diag().gatewayFailures++;
-      diag().lastError = String(error);
-      opts.respond(false, undefined, { code: "DISCOVER_FAILED", message: String(error) });
+      diag().lastError = toErrorMessage(error);
+      opts.respond(false, undefined, { code: "DISCOVER_FAILED", message: toErrorMessage(error) });
     }
   });
 }

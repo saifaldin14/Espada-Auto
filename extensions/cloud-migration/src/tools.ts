@@ -38,6 +38,7 @@ import {
   validateNumber,
   formatErrors,
   mergeValidations,
+  toErrorMessage,
 } from "./validation.js";
 
 // Type for the registerTool API
@@ -128,8 +129,8 @@ export function registerTools(api: PluginApi): void {
       } catch (err) {
         getPluginState().diagnostics.gatewayAttempts++;
         getPluginState().diagnostics.gatewayFailures++;
-        getPluginState().diagnostics.lastError = String(err);
-        return errorResult(String(err));
+        getPluginState().diagnostics.lastError = toErrorMessage(err);
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -227,8 +228,8 @@ export function registerTools(api: PluginApi): void {
       } catch (err) {
         getPluginState().diagnostics.gatewayAttempts++;
         getPluginState().diagnostics.gatewayFailures++;
-        getPluginState().diagnostics.lastError = String(err);
-        return errorResult(String(err));
+        getPluginState().diagnostics.lastError = toErrorMessage(err);
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -282,7 +283,7 @@ export function registerTools(api: PluginApi): void {
         const orchOpts = getOrchestrationOptions();
         const jobId = job.id;
         executePlan(job.plan, orchOpts).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = err instanceof Error ? err.message : toErrorMessage(err);
           getPluginState().diagnostics.lastError = msg;
           try {
             transitionJobPhase(jobId, "failed", "system", `Execution error: ${msg}`);
@@ -302,8 +303,8 @@ export function registerTools(api: PluginApi): void {
       } catch (err) {
         getPluginState().diagnostics.gatewayAttempts++;
         getPluginState().diagnostics.gatewayFailures++;
-        getPluginState().diagnostics.lastError = String(err);
-        return errorResult(String(err));
+        getPluginState().diagnostics.lastError = toErrorMessage(err);
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -357,7 +358,7 @@ export function registerTools(api: PluginApi): void {
           steps: stepSummary,
         });
       } catch (err) {
-        return errorResult(String(err));
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -414,7 +415,7 @@ export function registerTools(api: PluginApi): void {
 
         return textResult(report);
       } catch (err) {
-        return errorResult(String(err));
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -471,8 +472,8 @@ export function registerTools(api: PluginApi): void {
         getPluginState().diagnostics.jobsRolledBack++;
         return textResult(result);
       } catch (err) {
-        getPluginState().diagnostics.lastError = String(err);
-        return errorResult(String(err));
+        getPluginState().diagnostics.lastError = toErrorMessage(err);
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -531,8 +532,8 @@ export function registerTools(api: PluginApi): void {
           phase: "completed",
         });
       } catch (err) {
-        getPluginState().diagnostics.lastError = String(err);
-        return errorResult(String(err));
+        getPluginState().diagnostics.lastError = toErrorMessage(err);
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -591,7 +592,7 @@ export function registerTools(api: PluginApi): void {
 
         return textResult({ total: jobs.length, returned: result.length, jobs: result });
       } catch (err) {
-        return errorResult(String(err));
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -654,7 +655,7 @@ export function registerTools(api: PluginApi): void {
         );
         return textResult(filtered);
       } catch (err) {
-        return errorResult(String(err));
+        return errorResult(toErrorMessage(err));
       }
     },
   });
@@ -703,7 +704,7 @@ export function registerTools(api: PluginApi): void {
 
         return textResult(estimate);
       } catch (err) {
-        return errorResult(String(err));
+        return errorResult(toErrorMessage(err));
       }
     },
   });

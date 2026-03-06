@@ -278,6 +278,53 @@ export function addEventListener(listener: MigrationEventListener): () => void {
 }
 
 // =============================================================================
+// Job Management — Bounds
+// =============================================================================
+
+/** Maximum number of jobs to retain in state before evicting terminal jobs. */
+const MAX_JOBS = 10_000;
+
+/** Maximum age (ms) for completed/failed/rolled-back jobs before eviction. */
+const JOB_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+const TERMINAL_PHASES = new Set(["completed", "failed", "rolled-back"]);
+
+/**
+ * Evict terminal (completed/failed/rolled-back) jobs that exceed TTL or
+ * push the map over MAX_JOBS. Called automatically after job creation.
+ */
+export function evictTerminalJobs(): number {
+  const state = getPluginState();
+  if (state.jobs.size <= MAX_JOBS) {
+    // Only do TTL eviction when under the cap
+    let evicted = 0;
+    const now = Date.now();
+    for (const [id, job] of state.jobs) {
+      if (TERMINAL_PHASES.has(job.phase) && job.completedAt) {
+        if (now - new Date(job.completedAt).getTime() > JOB_TTL_MS) {
+          state.jobs.delete(id);
+          evicted++;
+        }
+      }
+    }
+    return evicted;
+  }
+
+  // Over cap — evict oldest terminal jobs first
+  const terminal = [...state.jobs.entries()]
+    .filter(([, j]) => TERMINAL_PHASES.has(j.phase))
+    .sort((a, b) => new Date(a[1].updatedAt).getTime() - new Date(b[1].updatedAt).getTime());
+
+  let evicted = 0;
+  for (const [id] of terminal) {
+    if (state.jobs.size <= MAX_JOBS) break;
+    state.jobs.delete(id);
+    evicted++;
+  }
+  return evicted;
+}
+
+// =============================================================================
 // Job Management
 // =============================================================================
 
@@ -318,6 +365,11 @@ export function createMigrationJob(params: {
   state.jobs.set(job.id, job);
   state.activeJobCount++;
   state.diagnostics.jobsCreated++;
+
+  // Periodic eviction — every 100 jobs created
+  if (state.diagnostics.jobsCreated % 100 === 0) {
+    evictTerminalJobs();
+  }
 
   emitEvent({
     type: "job:created",

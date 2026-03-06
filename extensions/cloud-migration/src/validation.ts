@@ -273,6 +273,16 @@ const SENSITIVE_FIELDS = new Set([
 ]);
 
 /**
+ * Extract a human-readable error message from an unknown catch value.
+ * Preserves the original Error message; falls back to String() for non-Error values.
+ */
+export function toErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  try { return String(err); } catch { return "Unknown error"; }
+}
+
+/**
  * Deep-clone an object, replacing sensitive field values with "[REDACTED]".
  * Safe for audit logging and error responses.
  */
