@@ -35,6 +35,7 @@ import type {
   GraphRelationshipType,
   CloudProvider,
 } from "../types.js";
+import { SchemaMigrator, sqliteExecutor } from "./migrator.js";
 
 // =============================================================================
 // Schema DDL
@@ -225,24 +226,25 @@ export class SQLiteGraphStorage implements GraphStorage {
     this.db.pragma("foreign_keys = ON");
     this.db.pragma("synchronous = NORMAL");
 
+    // Legacy path: run DDL for tables that may already exist (idempotent)
     this.db.exec(SCHEMA_DDL);
 
-    // Check / set schema version
+    // Run versioned migrations (handles new columns, indexes, etc.)
+    const migrator = new SchemaMigrator(sqliteExecutor(this.db), "sqlite");
+    const applied = await migrator.migrate();
+    if (applied.length > 0) {
+      const versions = applied.map((m) => `v${m.version}`).join(", ");
+      // Migrations applied — this is logged for observability
+      void versions;
+    }
+
+    // Backcompat: update legacy schema_version table if it exists
     const versionRow = this.db.prepare("SELECT version FROM schema_version LIMIT 1").get() as
       | { version: number }
       | undefined;
     if (!versionRow) {
       this.db.prepare("INSERT INTO schema_version (version) VALUES (?)").run(SCHEMA_VERSION);
     } else if (versionRow.version < SCHEMA_VERSION) {
-      // Migration: v1 → v2: add initiator columns to changes
-      if (versionRow.version < 2) {
-        this.db.exec(`
-          ALTER TABLE changes ADD COLUMN initiator TEXT;
-          ALTER TABLE changes ADD COLUMN initiator_type TEXT;
-          CREATE INDEX IF NOT EXISTS idx_changes_initiator ON changes(initiator);
-          CREATE INDEX IF NOT EXISTS idx_changes_initiator_type ON changes(initiator_type);
-        `);
-      }
       this.db.prepare("UPDATE schema_version SET version = ?").run(SCHEMA_VERSION);
     }
   }

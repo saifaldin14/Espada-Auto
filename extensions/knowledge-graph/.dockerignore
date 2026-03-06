@@ -1,0 +1,17 @@
+node_modules
+dist
+*.tgz
+.git
+.github
+__tests__
+docs
+dashboards
+*.test.ts
+*.test.js
+*.md
+.env
+.env.*
+*.db
+*.sqlite
+coverage
+.vscode

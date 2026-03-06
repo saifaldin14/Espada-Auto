@@ -34,6 +34,7 @@ import type {
   GraphRelationshipType,
   CloudProvider,
 } from "../types.js";
+import { SchemaMigrator, postgresExecutor } from "./migrator.js";
 
 // =============================================================================
 // Configuration
@@ -295,10 +296,22 @@ export class PostgresGraphStorage implements GraphStorage {
       await this.pool.query(`CREATE SCHEMA IF NOT EXISTS ${this.schema}`);
     }
 
-    // Run DDL
+    // Legacy path: run DDL for tables that may already exist (idempotent)
     await this.pool.query(schemaDDL(this.schema));
 
-    // Check / set schema version
+    // Run versioned migrations
+    const migrator = new SchemaMigrator(
+      postgresExecutor(this.pool as unknown as Parameters<typeof postgresExecutor>[0]),
+      "postgres",
+      this.schema,
+    );
+    const applied = await migrator.migrate();
+    if (applied.length > 0) {
+      const versions = applied.map((m) => `v${m.version}`).join(", ");
+      void versions;
+    }
+
+    // Backcompat: update legacy schema_version table
     const versionResult = await this.pool.query(
       `SELECT version FROM ${this.schema}.schema_version LIMIT 1`,
     );
@@ -310,14 +323,6 @@ export class PostgresGraphStorage implements GraphStorage {
     } else {
       const currentVersion = versionResult.rows[0].version as number;
       if (currentVersion < SCHEMA_VERSION) {
-        if (currentVersion < 2) {
-          await this.pool.query(`
-            ALTER TABLE ${this.schema}.changes ADD COLUMN IF NOT EXISTS initiator TEXT;
-            ALTER TABLE ${this.schema}.changes ADD COLUMN IF NOT EXISTS initiator_type TEXT;
-            CREATE INDEX IF NOT EXISTS idx_changes_initiator ON ${this.schema}.changes(initiator);
-            CREATE INDEX IF NOT EXISTS idx_changes_initiator_type ON ${this.schema}.changes(initiator_type);
-          `);
-        }
         await this.pool.query(
           `UPDATE ${this.schema}.schema_version SET version = $1`,
           [SCHEMA_VERSION],

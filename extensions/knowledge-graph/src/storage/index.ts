@@ -3,3 +3,16 @@ export { SQLiteTemporalStorage } from "./sqlite-temporal-store.js";
 export { InMemoryGraphStorage } from "./memory-store.js";
 export { PostgresGraphStorage } from "./postgres-store.js";
 export type { PostgresConfig } from "./postgres-store.js";
+export {
+  SchemaMigrator,
+  sqliteExecutor,
+  postgresExecutor,
+  MIGRATIONS,
+} from "./migrator.js";
+export type {
+  Migration,
+  MigrationDialect,
+  MigrationExecutor,
+  MigrationRecord,
+  MigrationStatus,
+} from "./migrator.js";
