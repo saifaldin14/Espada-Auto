@@ -12,6 +12,7 @@ import { registerStepHandler } from "./core/migration-engine.js";
 import { clearIdempotencyRegistry } from "./core/migration-engine.js";
 import { getAuditLogger, resetAuditLogger } from "./governance/audit-logger.js";
 import { resetProviderRegistry } from "./providers/registry.js";
+import { resolveExtensions, resetExtensionBridge } from "./integrations/extension-bridge.js";
 
 // Compute step handlers
 import { snapshotSourceHandler } from "./compute/steps/snapshot-source.js";
@@ -281,7 +282,10 @@ export function registerLifecycle(
         `[cloud-migration] Registered ${state.stepHandlers.size} step handlers`,
       );
 
-      // 3. Initialize audit logger
+      // 3. Resolve sibling extension bridges (audit-trail, policy-engine, etc.)
+      await resolveExtensions(logger);
+
+      // 4. Initialize audit logger
       const auditLogger = getAuditLogger();
       auditLogger.log({
         jobId: "system",
@@ -333,6 +337,7 @@ export function registerLifecycle(
       resetPluginState();
       resetProviderRegistry();
       clearIdempotencyRegistry();
+      resetExtensionBridge();
 
       logger.info("[cloud-migration] Migration engine service stopped");
     },

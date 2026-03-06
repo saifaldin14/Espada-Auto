@@ -16,6 +16,7 @@ import type {
   NormalizedVM,
   NormalizedBucket,
 } from "../types.js";
+import { getResolvedExtensions } from "../integrations/extension-bridge.js";
 
 // =============================================================================
 // Pricing Data (simplified per-GB rates)
@@ -312,4 +313,68 @@ export function estimateFromResources(params: {
     vms: vmSpecs,
     diskSizeGB: totalDiskGB,
   });
+}
+
+// =============================================================================
+// Budget Integration (via cost-governance extension bridge)
+// =============================================================================
+
+export interface BudgetCheckResult {
+  withinBudget: boolean;
+  budgetId?: string;
+  budgetName?: string;
+  monthlyLimit?: number;
+  currentSpend?: number;
+  projectedSpend?: number;
+  utilization?: number;
+  warning?: string;
+}
+
+/**
+ * Check whether a migration's estimated cost fits within the org's budget.
+ * Queries the cost-governance extension (if available) for a matching budget.
+ *
+ * @param estimatedCostUSD - The estimated one-time migration cost.
+ * @param scope - Budget scope to check against (default: "project").
+ * @param scopeId - Scope identifier (e.g. project name, team name).
+ * @returns Budget check result, or { withinBudget: true } if cost-governance is unavailable.
+ */
+export function checkMigrationBudget(
+  estimatedCostUSD: number,
+  scope: string = "project",
+  scopeId: string = "cloud-migration",
+): BudgetCheckResult {
+  try {
+    const ext = getResolvedExtensions();
+    if (!ext?.budgetManager) {
+      return { withinBudget: true, warning: "cost-governance extension not available — budget check skipped" };
+    }
+
+    const budget = ext.budgetManager.findBudget(scope, scopeId);
+    if (!budget) {
+      return { withinBudget: true, warning: `No budget found for scope=${scope}, scopeId=${scopeId}` };
+    }
+
+    const projectedSpend = budget.currentSpend + estimatedCostUSD;
+    const utilization = budget.monthlyLimit > 0
+      ? Math.round((projectedSpend / budget.monthlyLimit) * 100)
+      : 0;
+
+    const withinBudget = projectedSpend <= budget.monthlyLimit;
+
+    return {
+      withinBudget,
+      budgetId: budget.id,
+      monthlyLimit: budget.monthlyLimit,
+      currentSpend: budget.currentSpend,
+      projectedSpend,
+      utilization,
+      warning: withinBudget
+        ? utilization > 80 ? `Budget utilization at ${utilization}% after migration` : undefined
+        : `Migration would exceed budget: projected $${projectedSpend.toLocaleString()} vs limit $${budget.monthlyLimit.toLocaleString()}`,
+    };
+  } catch {
+    // Graceful degradation
+    return { withinBudget: true, warning: "Budget check failed — cost-governance error" };
+  }
 }

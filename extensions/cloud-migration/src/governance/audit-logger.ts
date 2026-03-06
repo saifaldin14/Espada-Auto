@@ -7,6 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
+import { getResolvedExtensions } from "../integrations/extension-bridge.js";
 
 // =============================================================================
 // Types
@@ -69,7 +70,41 @@ export class MigrationAuditLogger {
     this.entries.push(fullEntry);
     this.headHash = hash;
 
+    // Bridge: also emit to the audit-trail extension (if available)
+    this.emitToAuditTrail(fullEntry);
+
     return fullEntry;
+  }
+
+  /**
+   * Emit an audit entry to the audit-trail sibling extension.
+   * Degrades gracefully if audit-trail is not resolved.
+   */
+  private emitToAuditTrail(entry: AuditEntry): void {
+    try {
+      const ext = getResolvedExtensions();
+      if (!ext?.auditLogger) return;
+
+      ext.auditLogger.log({
+        eventType: "state_changed",
+        severity: entry.action === "error" ? "error" : "info",
+        actor: { id: entry.actor, name: entry.actor, roles: ["migration-engine"] },
+        operation: `migration:${entry.action}`,
+        resource: entry.stepId
+          ? { type: "migration-step", id: entry.stepId, provider: "cloud-migration" }
+          : { type: "migration-job", id: entry.jobId, provider: "cloud-migration" },
+        parameters: entry.details,
+        result: entry.action === "error" ? "failure" : "success",
+        correlationId: entry.jobId,
+        metadata: {
+          phase: entry.phase,
+          migrationAuditHash: entry.hash,
+          previousHash: entry.previousHash,
+        },
+      });
+    } catch {
+      // Graceful degradation — audit-trail extension may not be available
+    }
   }
 
   /**

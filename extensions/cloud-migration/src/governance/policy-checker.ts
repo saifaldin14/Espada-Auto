@@ -13,6 +13,7 @@ import type {
   NormalizedVM,
   NormalizedBucket,
 } from "../types.js";
+import { getResolvedExtensions } from "../integrations/extension-bridge.js";
 
 // =============================================================================
 // Policy Types
@@ -200,6 +201,12 @@ export function evaluatePolicies(
     }
   }
 
+  // Bridge: also evaluate against the policy-engine extension (if available).
+  // This merges org-wide policies from the policy-engine extension with
+  // the built-in migration-specific policies above.
+  const externalViolations = evaluateWithPolicyEngine(context);
+  violations.push(...externalViolations);
+
   const blockers = violations.filter((v) => v.severity === "block");
   const warnings = violations.filter((v) => v.severity === "warning");
   const info = violations.filter((v) => v.severity === "info");
@@ -212,6 +219,65 @@ export function evaluatePolicies(
     info,
     evaluatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Evaluate migration context against the policy-engine extension.
+ * Returns additional violations from org-wide policies, or an empty
+ * array if the policy-engine extension is not available.
+ */
+function evaluateWithPolicyEngine(context: PolicyContext): PolicyViolation[] {
+  try {
+    const ext = getResolvedExtensions();
+    if (!ext?.policyEngine) return [];
+
+    // Build a policy-engine-compatible input from the migration context.
+    const input = {
+      resource: {
+        id: `migration:${context.sourceProvider}-to-${context.targetProvider}`,
+        type: "migration-plan",
+        provider: context.sourceProvider,
+        region: context.plan.steps[0]?.params?.targetRegion as string ?? "unknown",
+        name: `${context.sourceProvider} → ${context.targetProvider}`,
+        status: "pending",
+        tags: context.tags,
+        metadata: {
+          vmCount: context.vms.length,
+          bucketCount: context.buckets.length,
+          estimatedCostUSD: context.estimatedCostUSD,
+          stepCount: context.plan.steps.length,
+        },
+      },
+      plan: {
+        totalCreates: context.plan.steps.filter((s) => s.type.startsWith("create-") || s.type.startsWith("provision-")).length,
+        totalUpdates: context.plan.steps.filter((s) => s.type.startsWith("migrate-")).length,
+        totalDeletes: context.plan.steps.filter((s) => s.type.startsWith("decommission-")).length,
+      },
+      cost: {
+        current: 0,
+        projected: context.estimatedCostUSD,
+        delta: context.estimatedCostUSD,
+      },
+    };
+
+    // evaluateAll expects (policies[], input) — we pass an empty array to use
+    // the engine's built-in evaluation against whatever policies are loaded.
+    // The engine returns { passed, violations }.
+    const result = ext.policyEngine.evaluateAll([], input);
+
+    if (!result || result.passed) return [];
+
+    return result.violations.map((v) => ({
+      policyId: `ext:${v.ruleId}`,
+      policyName: v.ruleId,
+      severity: v.action === "deny" ? "block" as const : "warning" as const,
+      message: v.message,
+      remediation: "See policy-engine extension for details",
+    }));
+  } catch {
+    // Graceful degradation — policy-engine extension may not be available
+    return [];
+  }
 }
 
 /**

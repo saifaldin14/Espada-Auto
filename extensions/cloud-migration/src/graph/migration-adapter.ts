@@ -7,6 +7,7 @@
  */
 
 import type { NormalizedVM, NormalizedBucket, NormalizedSecurityRule, MigrationJob } from "../types.js";
+import { getResolvedExtensions } from "../integrations/extension-bridge.js";
 
 // =============================================================================
 // Graph Node/Edge Types (matching knowledge-graph adapter contract)
@@ -217,4 +218,36 @@ export function getMigrationGraphAdapter(): MigrationGraphAdapter {
     _adapter = new MigrationGraphAdapter();
   }
   return _adapter;
+}
+
+// =============================================================================
+// Knowledge Graph Integration
+// =============================================================================
+
+/**
+ * Push a discovery result into the knowledge-graph extension (if available).
+ *
+ * This bridges the migration adapter's discovery output into
+ * the KG's storage via the extension bridge's `upsertNodes` / `upsertEdges`.
+ *
+ * Returns the number of nodes and edges upserted, or null if KG is unavailable.
+ */
+export async function pushDiscoveryToKnowledgeGraph(
+  result: DiscoveryResult,
+): Promise<{ nodesUpserted: number; edgesUpserted: number } | null> {
+  try {
+    const ext = getResolvedExtensions();
+    if (!ext?.knowledgeGraph) return null;
+
+    await ext.knowledgeGraph.upsertNodes(result.nodes);
+    await ext.knowledgeGraph.upsertEdges(result.edges);
+
+    return {
+      nodesUpserted: result.nodes.length,
+      edgesUpserted: result.edges.length,
+    };
+  } catch {
+    // Graceful degradation — knowledge graph sync failures should not block migrations
+    return null;
+  }
 }

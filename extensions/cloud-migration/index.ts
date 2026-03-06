@@ -21,7 +21,10 @@ export { estimateMigrationCost, estimateFromResources } from "./src/core/cost-es
 export { createIntegrityReport } from "./src/core/integrity-verifier.js";
 export { evaluatePolicies, getBuiltinPolicies } from "./src/governance/policy-checker.js";
 export { getAuditLogger, resetAuditLogger } from "./src/governance/audit-logger.js";
-export { MigrationGraphAdapter, getMigrationGraphAdapter } from "./src/graph/migration-adapter.js";
+export { MigrationGraphAdapter, getMigrationGraphAdapter, pushDiscoveryToKnowledgeGraph } from "./src/graph/migration-adapter.js";
+export { syncPostMigrationToKnowledgeGraph } from "./src/graph/post-migration-sync.js";
+export { checkMigrationBudget } from "./src/core/cost-estimator.js";
+export { resolveExtensions, getResolvedExtensions, resetExtensionBridge } from "./src/integrations/extension-bridge.js";
 
 // Re-export key types
 export type {

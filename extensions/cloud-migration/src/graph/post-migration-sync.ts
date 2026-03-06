@@ -8,6 +8,7 @@
 
 import type { MigrationJob, NormalizedVM, NormalizedBucket } from "../types.js";
 import type { GraphNodeInput, GraphEdgeInput } from "./migration-adapter.js";
+import { getResolvedExtensions } from "../integrations/extension-bridge.js";
 
 // =============================================================================
 // Types
@@ -161,4 +162,52 @@ export function generateLineageReport(
     byTargetProvider,
     timeline,
   };
+}
+
+// =============================================================================
+// Knowledge Graph Integration
+// =============================================================================
+
+/**
+ * Push post-migration graph updates into the knowledge-graph extension.
+ *
+ * Creates new target-side nodes, migration relationship edges,
+ * and deprecates source-side nodes that have been migrated.
+ *
+ * Returns sync stats, or null if knowledge-graph is unavailable.
+ */
+export async function syncPostMigrationToKnowledgeGraph(params: {
+  job: MigrationJob;
+  resourceMappings: ResourceMapping[];
+  targetVMs: NormalizedVM[];
+  targetBuckets: NormalizedBucket[];
+}): Promise<PostMigrationSyncResult | null> {
+  try {
+    const ext = getResolvedExtensions();
+    if (!ext?.knowledgeGraph) return null;
+
+    const startTime = Date.now();
+    const { newNodes, newEdges, deprecatedNodeIds } =
+      generatePostMigrationUpdates(params);
+
+    // Upsert new target-side nodes and migration edges
+    await ext.knowledgeGraph.upsertNodes(newNodes);
+    await ext.knowledgeGraph.upsertEdges(newEdges);
+
+    // Remove deprecated source-side nodes
+    for (const nodeId of deprecatedNodeIds) {
+      await ext.knowledgeGraph.deleteNode(nodeId);
+    }
+
+    return {
+      nodesCreated: newNodes.length,
+      nodesUpdated: 0,
+      edgesCreated: newEdges.length,
+      edgesRemoved: deprecatedNodeIds.length,
+      durationMs: Date.now() - startTime,
+    };
+  } catch {
+    // Graceful degradation — don't block post-migration on KG failures
+    return null;
+  }
 }

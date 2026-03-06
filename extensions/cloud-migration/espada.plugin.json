@@ -10,7 +10,9 @@
   "dependencies": [
     "aws",
     "azure",
-    "gcp",
+    "gcp"
+  ],
+  "optionalDependencies": [
     "knowledge-graph",
     "cost-governance",
     "policy-engine",
