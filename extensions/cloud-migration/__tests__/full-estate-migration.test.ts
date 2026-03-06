@@ -82,13 +82,14 @@ function makeCtx(params: Record<string, unknown> = {}, globalParams: Record<stri
   };
 }
 
-function makeAssessment(overrides: Partial<MigrationAssessment> = {}): MigrationAssessment {
+function makeAssessment(overrides: Partial<MigrationAssessment> & { resourceTypes?: MigrationResourceType[] } = {}): MigrationAssessment {
+  const { resourceTypes = [], ...rest } = overrides;
   return assessMigration({
     sourceProvider: "aws",
     targetProvider: "azure",
     targetRegion: "eastus",
-    resourceTypes: [],
-    ...overrides,
+    resourceTypes,
+    ...rest,
   });
 }
 

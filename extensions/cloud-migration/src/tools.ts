@@ -27,6 +27,18 @@ import { createIntegrityReport } from "./core/integrity-verifier.js";
 import { evaluatePolicies, getBuiltinPolicies } from "./governance/policy-checker.js";
 import { getAuditLogger } from "./governance/audit-logger.js";
 import { executeRollback, generateRollbackPlan, RollbackStack } from "./governance/rollback-manager.js";
+import { getOrchestrationOptions } from "./config.js";
+import {
+  validateAssessParams,
+  validatePlanParams,
+  validateExecuteParams,
+  validateJobIdParams,
+  validateCostParams,
+  validateProvider,
+  validateNumber,
+  formatErrors,
+  mergeValidations,
+} from "./validation.js";
 
 // Type for the registerTool API
 type ToolRegistration = {
@@ -95,10 +107,13 @@ export function registerTools(api: PluginApi): void {
     },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       try {
+        const v = validateAssessParams(params);
+        if (!v.ok) return errorResult(`Validation failed: ${formatErrors(v)}`);
+
         const source = params.sourceProvider as MigrationProvider;
         const target = params.targetProvider as MigrationProvider;
         const targetRegion = params.targetRegion as string;
-        const resourceTypes = params.resourceTypes as MigrationResourceType[];
+        const resourceTypes = (params.resourceTypes as MigrationResourceType[]) ?? [];
 
         const assessment = assessMigration({
           sourceProvider: source,
@@ -171,6 +186,9 @@ export function registerTools(api: PluginApi): void {
     },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       try {
+        const v = validatePlanParams(params);
+        if (!v.ok) return errorResult(`Validation failed: ${formatErrors(v)}`);
+
         const sourceProvider = params.sourceProvider as MigrationProvider;
         const targetProvider = params.targetProvider as MigrationProvider;
         const targetRegion = params.targetRegion as string;
@@ -234,6 +252,9 @@ export function registerTools(api: PluginApi): void {
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       try {
         const planId = params.planId as string;
+        if (!planId || typeof planId !== "string") {
+          return errorResult("planId must be a non-empty string");
+        }
         const dryRun = (params.dryRun as boolean) ?? false;
 
         // Find the job that references this plan
@@ -257,9 +278,17 @@ export function registerTools(api: PluginApi): void {
           });
         }
 
-        // Execute asynchronously — return job reference immediately
-        executePlan(job.plan, {}).catch(() => {
-          // Error handling is internal to executePlan
+        // Execute asynchronously — propagate errors to job state
+        const orchOpts = getOrchestrationOptions();
+        const jobId = job.id;
+        executePlan(job.plan, orchOpts).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          getPluginState().diagnostics.lastError = msg;
+          try {
+            transitionJobPhase(jobId, "failed", "system", `Execution error: ${msg}`);
+          } catch {
+            // Job may already be in a terminal state
+          }
         });
 
         state.diagnostics.gatewayAttempts++;
@@ -660,6 +689,9 @@ export function registerTools(api: PluginApi): void {
     },
     async execute(_toolCallId: string, params: Record<string, unknown>) {
       try {
+        const v = validateCostParams(params);
+        if (!v.ok) return errorResult(`Validation failed: ${formatErrors(v)}`);
+
         const estimate = estimateMigrationCost({
           sourceProvider: params.sourceProvider as MigrationProvider,
           targetProvider: params.targetProvider as MigrationProvider,

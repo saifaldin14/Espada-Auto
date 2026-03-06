@@ -249,13 +249,15 @@ async function resolveKnowledgeGraph(): Promise<KnowledgeGraphLike | null> {
     _logger.info("[extension-bridge] knowledge-graph: resolved");
     // Expose storage's upsert/delete directly — the GraphEngine delegates to
     // these same methods during sync, so callers get the same behaviour.
+    // The KG's GraphNodeInput/GraphEdgeInput types require more fields than
+    // our lightweight bridge types, so we cast through `any` at the boundary.
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     return {
-      upsertNodes: (nodes: Parameters<KnowledgeGraphLike["upsertNodes"]>[0]) =>
-        storage.upsertNodes(nodes),
-      upsertEdges: (edges: Parameters<KnowledgeGraphLike["upsertEdges"]>[0]) =>
-        storage.upsertEdges(edges),
+      upsertNodes: (nodes: any) => storage.upsertNodes(nodes),
+      upsertEdges: (edges: any) => storage.upsertEdges(edges),
       deleteNode: (id: string) => storage.deleteNode(id),
     } as KnowledgeGraphLike;
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   } catch (err) {
     _logger.warn(
       `[extension-bridge] knowledge-graph: not available (${err instanceof Error ? err.message : String(err)})`,

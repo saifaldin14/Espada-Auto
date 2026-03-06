@@ -11,6 +11,7 @@ import { registerLifecycle } from "./src/lifecycle.js";
 import { registerTools } from "./src/tools.js";
 import { registerGateway } from "./src/register-gateway.js";
 import { registerCli } from "./src/register-cli.js";
+import { initConfig } from "./src/config.js";
 
 // Re-export core modules for cross-extension consumption
 export { getPluginState, resetPluginState, getDiagnosticsSnapshot } from "./src/state.js";
@@ -25,6 +26,8 @@ export { MigrationGraphAdapter, getMigrationGraphAdapter, pushDiscoveryToKnowled
 export { syncPostMigrationToKnowledgeGraph } from "./src/graph/post-migration-sync.js";
 export { checkMigrationBudget } from "./src/core/cost-estimator.js";
 export { resolveExtensions, getResolvedExtensions, resetExtensionBridge } from "./src/integrations/extension-bridge.js";
+export { getConfig, resetConfig, initConfig } from "./src/config.js";
+export { scrubCredentials, formatErrors } from "./src/validation.js";
 
 // Re-export key types
 export type {
@@ -150,6 +153,12 @@ const plugin = {
     };
 
     log.info("[cloud-migration] Registering extension");
+
+    // 0. Read and validate configuration
+    const configWarnings = initConfig(api.getConfig?.());
+    for (const w of configWarnings) {
+      log.warn(`[cloud-migration] Config: ${w}`);
+    }
 
     // 1. Service lifecycle (start/stop)
     registerLifecycle(api, log);

@@ -162,7 +162,7 @@ export interface IdempotencyRecord {
 }
 
 /**
- * In-memory idempotency registry.
+ * In-memory idempotency registry with TTL-based eviction and size bounds.
  *
  * In a production deployment this would be backed by a durable store
  * (e.g., DynamoDB, Cosmos DB, or PostgreSQL) with TTL-based expiry.
@@ -170,6 +170,34 @@ export interface IdempotencyRecord {
  * and demonstrates the contract.
  */
 const idempotencyRegistry = new Map<string, IdempotencyRecord>();
+
+/** Maximum entries the in-memory idempotency registry will store. */
+const IDEMPOTENCY_MAX_SIZE = 100_000;
+
+/** Default TTL for idempotency records: 24 hours in milliseconds. */
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Evict expired entries and enforce size cap via LRU-like trim.
+ */
+function pruneIdempotencyRegistry(): void {
+  const now = Date.now();
+  for (const [key, record] of idempotencyRegistry) {
+    const age = now - new Date(record.completedAt).getTime();
+    if (age > IDEMPOTENCY_TTL_MS) {
+      idempotencyRegistry.delete(key);
+    }
+  }
+  // If still over cap, trim oldest entries
+  if (idempotencyRegistry.size > IDEMPOTENCY_MAX_SIZE) {
+    const entries = [...idempotencyRegistry.entries()]
+      .sort((a, b) => new Date(a[1].completedAt).getTime() - new Date(b[1].completedAt).getTime());
+    const excess = entries.length - IDEMPOTENCY_MAX_SIZE;
+    for (let i = 0; i < excess; i++) {
+      idempotencyRegistry.delete(entries[i][0]);
+    }
+  }
+}
 
 /**
  * Generate a deterministic idempotency key from job ID, step ID, and params.
@@ -188,17 +216,30 @@ export function generateIdempotencyKey(
 
 /**
  * Check if an operation has already been completed with this key.
- * Returns the cached result if found, or null if the operation should proceed.
+ * Returns the cached result if found and not expired, or null if the operation should proceed.
  */
 export function checkIdempotency(key: string): IdempotencyRecord | null {
-  return idempotencyRegistry.get(key) ?? null;
+  const record = idempotencyRegistry.get(key);
+  if (!record) return null;
+  // Expire stale entries on read
+  const age = Date.now() - new Date(record.completedAt).getTime();
+  if (age > IDEMPOTENCY_TTL_MS) {
+    idempotencyRegistry.delete(key);
+    return null;
+  }
+  return record;
 }
 
 /**
  * Record a completed operation for future idempotency checks.
+ * Automatically prunes expired/over-cap entries.
  */
 export function recordIdempotency(record: IdempotencyRecord): void {
   idempotencyRegistry.set(record.idempotencyKey, record);
+  // Prune periodically (every 1000 inserts) to avoid unbounded growth
+  if (idempotencyRegistry.size % 1000 === 0) {
+    pruneIdempotencyRegistry();
+  }
 }
 
 /**

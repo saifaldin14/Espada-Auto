@@ -114,12 +114,12 @@ function makeMinimalVM(id: string, provider: string): NormalizedVM {
     memoryGB: 16,
     osType: "linux",
     architecture: "x86_64",
-    disks: [{ id: `disk-${id}`, sizeGB: 100, type: "ssd", deviceName: "/dev/sda1", encrypted: false }],
+    disks: [{ id: `disk-${id}`, name: `disk-${id}`, sizeGB: 100, type: "ssd", isBootDisk: true, encrypted: false }],
     networkInterfaces: [
       { id: `nic-${id}`, privateIp: "10.0.0.1", subnetId: "subnet-1", securityGroupIds: [] },
     ],
     tags: {},
-  } as NormalizedVM;
+  } as unknown as NormalizedVM;
 }
 
 function makeMinimalBucket(id: string, provider: string): NormalizedBucket {
@@ -128,12 +128,13 @@ function makeMinimalBucket(id: string, provider: string): NormalizedBucket {
     name: `bucket-${id}`,
     provider: provider as NormalizedBucket["provider"],
     region: "us-east-1",
-    encryption: "AES256",
+    encryption: { type: "AES256" },
     versioning: false,
     totalSizeBytes: 1024 * 1024,
     objectCount: 10,
+    lifecycleRules: [],
     tags: {},
-  } as NormalizedBucket;
+  } as unknown as NormalizedBucket;
 }
 
 // =============================================================================

@@ -31,6 +31,23 @@ import { createIntegrityReport } from "./core/integrity-verifier.js";
 import { evaluatePolicies, getBuiltinPolicies } from "./governance/policy-checker.js";
 import { getAuditLogger } from "./governance/audit-logger.js";
 import { executeRollback, generateRollbackPlan, RollbackStack } from "./governance/rollback-manager.js";
+import { getConfig, getOrchestrationOptions } from "./config.js";
+import {
+  validateAssessParams,
+  validatePlanParams,
+  validateExecuteParams,
+  validateJobIdParams,
+  validateCostParams,
+  validateProvider,
+  validateOptionalProvider,
+  validateOptionalString,
+  validateRequiredString,
+  validateResourceType,
+  validateNumber,
+  formatErrors,
+  mergeValidations,
+  scrubCredentials,
+} from "./validation.js";
 
 type GatewayHandler = (opts: {
   params?: unknown;
@@ -53,18 +70,18 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/assess", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        sourceProvider: MigrationProvider;
-        targetProvider: MigrationProvider;
-        targetRegion: string;
-        resourceTypes: MigrationResourceType[];
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateAssessParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
 
       const assessment = assessMigration({
-        sourceProvider: params.sourceProvider,
-        targetProvider: params.targetProvider,
-        targetRegion: params.targetRegion,
-        resourceTypes: params.resourceTypes ?? [],
+        sourceProvider: params.sourceProvider as MigrationProvider,
+        targetProvider: params.targetProvider as MigrationProvider,
+        targetRegion: params.targetRegion as string,
+        resourceTypes: (params.resourceTypes as MigrationResourceType[]) ?? [],
       });
 
       diag().gatewaySuccesses++;
@@ -82,48 +99,49 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/plan", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        name?: string;
-        description?: string;
-        sourceProvider: MigrationProvider;
-        targetProvider: MigrationProvider;
-        targetRegion: string;
-        sourceRegion?: string;
-        resourceTypes?: MigrationResourceType[];
-        vmIds?: string[];
-        bucketNames?: string[];
-        initiatedBy?: string;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validatePlanParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
 
-      const resourceTypes = params.resourceTypes ?? ["vm"];
-      const resourceIds = [...(params.vmIds ?? []), ...(params.bucketNames ?? [])];
+      const sourceProvider = params.sourceProvider as MigrationProvider;
+      const targetProvider = params.targetProvider as MigrationProvider;
+      const targetRegion = params.targetRegion as string;
+      const sourceRegion = (params.sourceRegion as string) ?? "";
+      const name = (params.name as string) ?? "Migration Plan";
+      const description = (params.description as string) ?? "";
+      const resourceTypes = (params.resourceTypes as MigrationResourceType[]) ?? ["vm"];
+      const resourceIds = [...((params.vmIds as string[]) ?? []), ...((params.bucketNames as string[]) ?? [])];
+      const initiatedBy = (params.initiatedBy as string) ?? "gateway";
 
       // Assess first
       const assessment = assessMigration({
-        sourceProvider: params.sourceProvider,
-        targetProvider: params.targetProvider,
-        targetRegion: params.targetRegion,
+        sourceProvider,
+        targetProvider,
+        targetRegion,
         resourceTypes,
       });
 
       // Create a job to track this plan
       const job = createMigrationJob({
-        name: params.name ?? "Migration Plan",
-        description: params.description ?? "",
-        source: { provider: params.sourceProvider, region: params.sourceRegion ?? "" },
-        target: { provider: params.targetProvider, region: params.targetRegion },
+        name,
+        description,
+        source: { provider: sourceProvider, region: sourceRegion },
+        target: { provider: targetProvider, region: targetRegion },
         resourceIds,
         resourceTypes,
-        initiatedBy: params.initiatedBy ?? "gateway",
+        initiatedBy,
       });
 
       const plan = generatePlan({
         jobId: job.id,
-        name: params.name ?? "Migration Plan",
-        description: params.description ?? "",
-        sourceProvider: params.sourceProvider,
-        targetProvider: params.targetProvider,
-        targetRegion: params.targetRegion,
+        name,
+        description,
+        sourceProvider,
+        targetProvider,
+        targetRegion,
         resourceTypes,
         assessment,
       });
@@ -163,50 +181,57 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/plan/approve", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        jobId: string;
-        approvedBy: string;
-        reason?: string;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = mergeValidations(
+        validateJobIdParams(params),
+        validateRequiredString("approvedBy", params.approvedBy),
+      );
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const approvedBy = params.approvedBy as string;
+      const reason = (params.reason as string) ?? "Approved via gateway";
 
-      const job = getJob(params.jobId);
+      const job = getJob(jobId);
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
 
       if (job.phase !== "awaiting-approval" && job.phase !== "planning") {
         opts.respond(false, undefined, {
           code: "INVALID_PHASE",
-          message: `Job ${params.jobId} is in phase '${job.phase}', expected 'awaiting-approval' or 'planning'`,
+          message: `Job ${jobId} is in phase '${job.phase}', expected 'awaiting-approval' or 'planning'`,
         });
         return;
       }
 
       // If in planning, transition to awaiting-approval first
       if (job.phase === "planning") {
-        transitionJobPhase(params.jobId, "awaiting-approval", params.approvedBy, "Plan generated");
+        transitionJobPhase(jobId, "awaiting-approval", approvedBy, "Plan generated");
       }
 
       // Log approval in audit trail
       getAuditLogger().log({
-        jobId: params.jobId,
+        jobId,
         action: "approve",
-        actor: params.approvedBy,
+        actor: approvedBy,
         phase: "awaiting-approval",
         stepId: "approval",
-        details: { reason: params.reason ?? "Approved via gateway" },
+        details: { reason },
       });
 
       // Transition to executing
-      transitionJobPhase(params.jobId, "executing", params.approvedBy, params.reason ?? "Plan approved");
+      transitionJobPhase(jobId, "executing", approvedBy, reason);
 
       diag().gatewaySuccesses++;
       opts.respond(true, {
         data: {
-          jobId: params.jobId,
+          jobId,
           phase: "executing",
-          approvedBy: params.approvedBy,
+          approvedBy,
         },
       });
     } catch (error) {
@@ -222,27 +247,40 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/execute", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId: string };
-      const job = getJob(params.jobId);
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateExecuteParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const job = getJob(jobId);
 
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
       if (!job.plan) {
-        opts.respond(false, undefined, { code: "NO_PLAN", message: `Job ${params.jobId} has no execution plan` });
+        opts.respond(false, undefined, { code: "NO_PLAN", message: `Job ${jobId} has no execution plan` });
         return;
       }
 
-      // Start execution asynchronously
-      executePlan(job.plan, {}).catch(() => {
-        // Error handling is internal to executePlan
+      // Start execution asynchronously — propagate errors to job state
+      const orchOpts = getOrchestrationOptions();
+      executePlan(job.plan, orchOpts).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        diag().lastError = msg;
+        try {
+          transitionJobPhase(jobId, "failed", "system", `Execution error: ${msg}`);
+        } catch {
+          // Job may already be in a terminal state
+        }
       });
 
       diag().gatewaySuccesses++;
       opts.respond(true, {
         data: {
-          jobId: params.jobId,
+          jobId,
           status: "execution-started",
           stepCount: job.plan.steps.length,
         },
@@ -260,11 +298,17 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/status", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId: string };
-      const job = getJob(params.jobId);
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateJobIdParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const job = getJob(jobId);
 
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
 
@@ -307,21 +351,26 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/jobs", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        phase?: MigrationPhase;
-        provider?: MigrationProvider;
-        limit?: number;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = mergeValidations(
+        validateNumber("limit", params.limit, { min: 1, max: 10_000 }),
+      );
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const phase = params.phase as MigrationPhase | undefined;
+      const provider = params.provider as MigrationProvider | undefined;
+      const limit = (params.limit as number) ?? 100;
 
-      let jobs = listJobs(params.phase ? { phase: params.phase } : undefined);
+      let jobs = listJobs(phase ? { phase } : undefined);
 
-      if (params.provider) {
+      if (provider) {
         jobs = jobs.filter(
-          (j) => j.source?.provider === params.provider || j.target?.provider === params.provider,
+          (j) => j.source?.provider === provider || j.target?.provider === provider,
         );
       }
 
-      const limit = params.limit ?? 100;
       const sorted = jobs
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
         .slice(0, limit);
@@ -356,23 +405,30 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/rollback", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId: string; reason?: string };
-      const job = getJob(params.jobId);
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateJobIdParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const reason = (params.reason as string) ?? "Gateway-initiated rollback";
+      const job = getJob(jobId);
 
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
       if (!job.plan) {
-        opts.respond(false, undefined, { code: "NO_PLAN", message: `Job ${params.jobId} has no plan to rollback` });
+        opts.respond(false, undefined, { code: "NO_PLAN", message: `Job ${jobId} has no plan to rollback` });
         return;
       }
 
-      transitionJobPhase(params.jobId, "rolling-back", "gateway", params.reason ?? "Gateway-initiated rollback");
+      transitionJobPhase(jobId, "rolling-back", "gateway", reason);
 
       const state = getPluginState();
       const rollbackStack = new RollbackStack();
-      const plan = generateRollbackPlan(params.jobId, rollbackStack, state.stepHandlers);
+      const plan = generateRollbackPlan(jobId, rollbackStack, state.stepHandlers);
       const result = await executeRollback({
         plan,
         stack: rollbackStack,
@@ -381,9 +437,9 @@ export function registerGateway(api: PluginApi): void {
       });
 
       if (result.complete) {
-        transitionJobPhase(params.jobId, "rolled-back", "system", "Rollback completed");
+        transitionJobPhase(jobId, "rolled-back", "system", "Rollback completed");
       } else {
-        transitionJobPhase(params.jobId, "failed", "system", `Rollback failed: ${result.errors.map((e) => e.stepId).join(", ")}`);
+        transitionJobPhase(jobId, "failed", "system", `Rollback failed: ${result.errors.map((e) => e.stepId).join(", ")}`);
       }
 
       diag().jobsRolledBack++;
@@ -402,11 +458,17 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/cutover", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId: string };
-      const job = getJob(params.jobId);
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateJobIdParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const job = getJob(jobId);
 
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
       if (job.phase !== "verifying" && job.phase !== "executing") {
@@ -417,10 +479,10 @@ export function registerGateway(api: PluginApi): void {
         return;
       }
 
-      transitionJobPhase(params.jobId, "cutting-over", "gateway", "Gateway-initiated cutover");
+      transitionJobPhase(jobId, "cutting-over", "gateway", "Gateway-initiated cutover");
 
       getAuditLogger().log({
-        jobId: params.jobId,
+        jobId,
         action: "cutover",
         actor: "gateway",
         phase: "cutting-over",
@@ -428,11 +490,11 @@ export function registerGateway(api: PluginApi): void {
         details: { provider: job.target?.provider ?? "unknown", timestamp: new Date().toISOString() },
       });
 
-      transitionJobPhase(params.jobId, "completed", "system", "Cutover completed");
+      transitionJobPhase(jobId, "completed", "system", "Cutover completed");
 
       diag().gatewaySuccesses++;
       opts.respond(true, {
-        data: { jobId: params.jobId, phase: "completed", status: "cutover-completed" },
+        data: { jobId, phase: "completed", status: "cutover-completed" },
       });
     } catch (error) {
       diag().gatewayFailures++;
@@ -447,11 +509,17 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/verify", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId: string };
-      const job = getJob(params.jobId);
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateJobIdParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string;
+      const job = getJob(jobId);
 
       if (!job) {
-        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${params.jobId}` });
+        opts.respond(false, undefined, { code: "JOB_NOT_FOUND", message: `Job not found: ${jobId}` });
         return;
       }
 
@@ -460,8 +528,8 @@ export function registerGateway(api: PluginApi): void {
       ) ?? [];
 
       const report = createIntegrityReport({
-        jobId: params.jobId,
-        resourceId: params.jobId,
+        jobId,
+        resourceId: jobId,
         resourceType: "object-storage",
         level: "object-level",
         checks: verificationSteps.map((s) => ({
@@ -541,30 +609,35 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/cost", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        sourceProvider: MigrationProvider;
-        targetProvider: MigrationProvider;
-        vmCount?: number;
-        totalStorageGB?: number;
-        totalDiskGB?: number;
-        objectCount?: number;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateCostParams(params);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+
+      const sourceProvider = params.sourceProvider as MigrationProvider;
+      const targetProvider = params.targetProvider as MigrationProvider;
+      const vmCount = (params.vmCount as number) ?? 0;
+      const totalStorageGB = (params.totalStorageGB as number) ?? 0;
+      const totalDiskGB = (params.totalDiskGB as number) ?? 0;
+      const objectCount = (params.objectCount as number) ?? 0;
 
       const resourceTypes: MigrationResourceType[] = [];
-      if ((params.vmCount ?? 0) > 0) resourceTypes.push("vm");
-      const totalStorage = (params.totalStorageGB ?? 0) + (params.totalDiskGB ?? 0);
+      if (vmCount > 0) resourceTypes.push("vm");
+      const totalStorage = totalStorageGB + totalDiskGB;
       if (totalStorage > 0) resourceTypes.push("object-storage");
 
-      const vms = Array.from({ length: params.vmCount ?? 0 }, () => ({ cpuCores: 4, memoryGB: 16 }));
+      const vms = Array.from({ length: vmCount }, () => ({ cpuCores: 4, memoryGB: 16 }));
 
       const estimate = estimateMigrationCost({
-        sourceProvider: params.sourceProvider,
-        targetProvider: params.targetProvider,
+        sourceProvider,
+        targetProvider,
         resourceTypes,
         dataSizeGB: totalStorage,
-        objectCount: params.objectCount ?? 0,
+        objectCount,
         vms,
-        diskSizeGB: params.totalDiskGB ?? 0,
+        diskSizeGB: totalDiskGB,
       });
 
       diag().gatewaySuccesses++;
@@ -582,18 +655,26 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/audit", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as { jobId?: string; limit?: number };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = mergeValidations(
+        validateNumber("limit", params.limit, { min: 1, max: 10_000 }),
+      );
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
+      const jobId = params.jobId as string | undefined;
       const auditLogger = getAuditLogger();
 
-      if (params.jobId) {
-        const entries = auditLogger.getJobEntries(params.jobId);
+      if (jobId) {
+        const entries = auditLogger.getJobEntries(jobId);
         diag().gatewaySuccesses++;
-        opts.respond(true, { data: { jobId: params.jobId, entries } });
+        opts.respond(true, { data: { jobId, entries } });
         return;
       }
 
       const chain = auditLogger.getChain();
-      const limit = params.limit ?? 100;
+      const limit = (params.limit as number) ?? 100;
       const entries = chain.entries.slice(-limit);
 
       diag().gatewaySuccesses++;
@@ -685,15 +766,17 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/agent/health", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        provider: MigrationProvider;
-        credentials: unknown;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateProvider("provider", params.provider);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
 
-      if (!params.provider || !params.credentials) {
+      if (!params.credentials || typeof params.credentials !== "object") {
         opts.respond(false, undefined, {
           code: "INVALID_PARAMS",
-          message: "provider and credentials are required",
+          message: "credentials must be a non-null object",
         });
         return;
       }
@@ -720,31 +803,35 @@ export function registerGateway(api: PluginApi): void {
   api.registerGatewayMethod("migration/agent/discover", async (opts) => {
     diag().gatewayAttempts++;
     try {
-      const params = (opts.params ?? {}) as {
-        provider: MigrationProvider;
-        region?: string;
-        credentials: unknown;
-      };
+      const params = (opts.params ?? {}) as Record<string, unknown>;
+      const v = validateProvider("provider", params.provider);
+      if (!v.ok) {
+        opts.respond(false, undefined, { code: "INVALID_PARAMS", message: formatErrors(v) });
+        return;
+      }
 
-      if (!params.provider || !params.credentials) {
+      if (!params.credentials || typeof params.credentials !== "object") {
         opts.respond(false, undefined, {
           code: "INVALID_PARAMS",
-          message: "provider and credentials are required",
+          message: "credentials must be a non-null object",
         });
         return;
       }
 
+      const provider = params.provider as MigrationProvider;
+      const region = (params.region as string) ?? "default";
+
       const { resolveProviderAdapter: resolve } = await import("./providers/registry.js");
       const adapter = await resolve(
-        params.provider,
+        provider,
         params.credentials as import("./providers/types.js").ProviderCredentialConfig,
       );
-      const vms = await adapter.compute.listVMs(params.region ?? "default");
+      const vms = await adapter.compute.listVMs(region);
 
       diag().gatewaySuccesses++;
       opts.respond(true, {
         data: {
-          provider: params.provider,
+          provider,
           vmCount: vms.length,
           vms: vms.map((vm) => ({
             id: vm.id,
