@@ -27,7 +27,11 @@ import type {
   IQLPathResult,
   IQLValue,
   ComparisonOp,
+  IQLLimits,
+  ResolvedIQLLimits,
 } from "./types.js";
+import { resolveIQLLimits } from "./types.js";
+import { IQLLimitError } from "./lexer.js";
 import type {
   GraphStorage,
   GraphNode,
@@ -48,19 +52,43 @@ export type IQLExecutorOptions = {
   defaultLimit?: number;
   /** Max depth for downstream/upstream traversals (default: 8). */
   maxTraversalDepth?: number;
+  /** Safety limits (timeout, result cap). */
+  limits?: IQLLimits;
 };
 
 /**
  * Execute a parsed IQL query and return structured results.
+ * Enforces a query-level timeout (default: 30 s) and result size cap.
+ * @throws IQLLimitError if the timeout or result cap is exceeded.
  */
 export async function executeQuery(
   query: IQLQuery,
   options: IQLExecutorOptions,
 ): Promise<IQLResult> {
-  if (query.type === "find") {
-    return executeFindQuery(query, options);
+  const limits = resolveIQLLimits(options.limits);
+
+  // Wrap execution in a timeout race
+  const resultPromise =
+    query.type === "find"
+      ? executeFindQuery(query, options, limits)
+      : executeSummarizeQuery(query, options);
+
+  if (limits.queryTimeoutMs <= 0) {
+    return resultPromise;
   }
-  return executeSummarizeQuery(query, options);
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    const timer = setTimeout(
+      () => reject(new IQLLimitError(`Query execution exceeded ${limits.queryTimeoutMs}ms timeout`)),
+      limits.queryTimeoutMs,
+    );
+    // Allow the Node process to exit even if the timer is still pending
+    if (typeof timer === "object" && "unref" in timer) {
+      (timer as { unref: () => void }).unref();
+    }
+  });
+
+  return Promise.race([resultPromise, timeoutPromise]);
 }
 
 // =============================================================================
@@ -70,9 +98,15 @@ export async function executeQuery(
 async function executeFindQuery(
   query: FindQuery,
   options: IQLExecutorOptions,
+  limits?: ResolvedIQLLimits,
 ): Promise<IQLResult> {
   const { storage } = options;
-  const limit = query.limit ?? options.defaultLimit ?? 500;
+  const resolvedLimits = limits ?? resolveIQLLimits(options.limits);
+  // The effective limit is the minimum of the query LIMIT, the default, and the safety cap
+  const limit = Math.min(
+    query.limit ?? options.defaultLimit ?? 500,
+    resolvedLimits.maxResultSize,
+  );
 
   // PATH queries have their own flow
   if (query.target.kind === "path") {

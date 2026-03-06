@@ -4,9 +4,14 @@
  * Migrates API Gateway configurations between providers:
  *   AWS API Gateway → Azure API Management / GCP API Gateway
  *   Translates routes, integrations, authorizers, and stages.
+ *
+ * Uses resolveProviderAdapter() → adapter.serverless.createAPIGateway() for real calls.
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import type { NormalizedAPIGateway } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export const migrateAPIGatewayHandler: MigrationStepHandler = {
   async execute(ctx: MigrationStepContext): Promise<Record<string, unknown>> {
@@ -26,16 +31,16 @@ export const migrateAPIGatewayHandler: MigrationStepHandler = {
     }> = [];
     const warnings: string[] = [];
 
-    const targetAdapter = ctx.targetCredentials as
-      | { serverless?: { createAPIGateway: (gw: unknown) => Promise<{ id: string; endpoint: string }> } }
-      | undefined;
+    const targetCreds = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    const targetAdapter = targetCreds
+      ? await resolveProviderAdapter(targetProvider as MigrationProvider, targetCreds)
+      : undefined;
 
     for (const gw of gateways) {
       const name = String(gw.name ?? "");
       const routes = (gw.routes ?? []) as Array<Record<string, unknown>>;
-      const type = String(gw.type ?? "rest");
+      const type = String(gw.type ?? "rest") as "rest" | "http" | "websocket";
 
-      // Translate routes: update integration endpoints to target equivalents
       const translatedRoutes = routes.map((r) => ({
         ...r,
         integration: translateIntegration(String(r.integration ?? ""), targetProvider),
@@ -48,13 +53,19 @@ export const migrateAPIGatewayHandler: MigrationStepHandler = {
         );
       }
 
-      if (targetAdapter?.serverless) {
-        const result = await targetAdapter.serverless.createAPIGateway({
+      if (targetAdapter) {
+        const normalizedGW: NormalizedAPIGateway = {
+          id: String(gw.id ?? ""),
           name,
+          provider: targetProvider,
           type,
-          routes: translatedRoutes,
-          stages: gw.stages,
-        });
+          endpoint: "",
+          routes: translatedRoutes as NormalizedAPIGateway["routes"],
+          stages: (gw.stages ?? []) as NormalizedAPIGateway["stages"],
+          tags: (gw.tags ?? {}) as Record<string, string>,
+        };
+
+        const result = await targetAdapter.serverless.createAPIGateway(normalizedGW);
         migratedGateways.push({
           sourceId: String(gw.id ?? ""),
           sourceName: name,
@@ -79,22 +90,22 @@ export const migrateAPIGatewayHandler: MigrationStepHandler = {
       migratedGateways,
       gatewaysCount: migratedGateways.length,
       warnings,
+      targetProvider,
     };
   },
 
   async rollback(ctx: MigrationStepContext, outputs: Record<string, unknown>): Promise<void> {
     const { log } = ctx;
+    const targetProvider = (outputs.targetProvider ?? ctx.globalParams.targetProvider) as string;
     const migratedGateways = (outputs.migratedGateways ?? []) as Array<{ targetId: string }>;
 
     log.info(`[migrate-api-gateway] Rolling back ${migratedGateways.length} API Gateways`);
 
-    const targetAdapter = ctx.targetCredentials as
-      | { serverless?: { deleteAPIGateway: (id: string) => Promise<void> } }
-      | undefined;
-
-    if (targetAdapter?.serverless) {
+    const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    if (credentials) {
+      const adapter = await resolveProviderAdapter(targetProvider as MigrationProvider, credentials);
       for (const gw of migratedGateways) {
-        await targetAdapter.serverless.deleteAPIGateway(gw.targetId);
+        await adapter.serverless.deleteAPIGateway(gw.targetId).catch(() => {});
       }
     }
 
@@ -103,7 +114,6 @@ export const migrateAPIGatewayHandler: MigrationStepHandler = {
 };
 
 function translateIntegration(integration: string, targetProvider: string): string {
-  // AWS Lambda ARN → target function reference
   if (integration.startsWith("arn:aws:lambda")) {
     switch (targetProvider) {
       case "azure": return integration.replace(/arn:aws:lambda.*/, "azure-function-ref");

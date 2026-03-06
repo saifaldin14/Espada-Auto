@@ -6,7 +6,8 @@
  * numbers (with optional $ prefix and /mo suffix), operators, and punctuation.
  */
 
-import type { Token, TokenType } from "./types.js";
+import type { Token, TokenType, ResolvedIQLLimits } from "./types.js";
+import { DEFAULT_IQL_LIMITS } from "./types.js";
 
 const KEYWORDS = new Set([
   "FIND",
@@ -47,8 +48,18 @@ export class IQLLexer {
   private input: string;
   private pos = 0;
   private tokens: Token[] = [];
+  private limits: ResolvedIQLLimits;
 
-  constructor(input: string) {
+  constructor(input: string, limits?: Partial<ResolvedIQLLimits>) {
+    this.limits = { ...DEFAULT_IQL_LIMITS, ...limits };
+
+    // Guard: reject inputs that exceed the configured byte-length limit.
+    if (input.length > this.limits.maxInputLength) {
+      throw new IQLLimitError(
+        `Input length ${input.length} exceeds maximum of ${this.limits.maxInputLength} characters`,
+      );
+    }
+
     this.input = input;
   }
 
@@ -59,6 +70,13 @@ export class IQLLexer {
     while (this.pos < this.input.length) {
       this.skipWhitespace();
       if (this.pos >= this.input.length) break;
+
+      // Guard: cap the number of tokens to prevent CPU-exhaustion attacks
+      if (this.tokens.length >= this.limits.maxTokens) {
+        throw new IQLLimitError(
+          `Token count ${this.tokens.length} exceeds maximum of ${this.limits.maxTokens}`,
+        );
+      }
 
       const ch = this.input[this.pos];
 
@@ -265,5 +283,17 @@ export class IQLSyntaxError extends Error {
     this.name = "IQLSyntaxError";
     this.position = position;
     this.source = source;
+  }
+}
+
+/**
+ * Limit exceeded error thrown when an IQL safety bound is hit.
+ * Distinct from syntax errors so callers can differentiate malicious
+ * input from genuinely malformed queries.
+ */
+export class IQLLimitError extends Error {
+  constructor(message: string) {
+    super(`IQL limit exceeded: ${message}`);
+    this.name = "IQLLimitError";
   }
 }

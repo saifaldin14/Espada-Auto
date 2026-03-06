@@ -40,17 +40,25 @@ import type {
   IQLValue,
   DiffTarget,
   AggregateMetric,
+  IQLLimits,
+  ResolvedIQLLimits,
 } from "./types.js";
-import { IQLLexer, IQLSyntaxError } from "./lexer.js";
+import { resolveIQLLimits } from "./types.js";
+import { IQLLexer, IQLSyntaxError, IQLLimitError } from "./lexer.js";
 
 export class IQLParser {
   private tokens: Token[];
   private pos = 0;
   private source: string;
+  private limits: ResolvedIQLLimits;
 
-  constructor(source: string) {
+  /** Current recursion depth for nested conditions (WHERE clause). */
+  private conditionDepth = 0;
+
+  constructor(source: string, limits?: IQLLimits) {
     this.source = source;
-    this.tokens = new IQLLexer(source).tokenize();
+    this.limits = resolveIQLLimits(limits);
+    this.tokens = new IQLLexer(source, this.limits).tokenize();
   }
 
   parse(): IQLQuery {
@@ -227,6 +235,7 @@ export class IQLParser {
   // ---------------------------------------------------------------------------
 
   private parseOrCondition(): Condition {
+    this.enterCondition();
     let left = this.parseAndCondition();
     while (this.peekKeyword() === "OR") {
       this.consumeKeyword("OR");
@@ -237,10 +246,12 @@ export class IQLParser {
         left = { type: "or", conditions: [left, right] };
       }
     }
+    this.leaveCondition();
     return left;
   }
 
   private parseAndCondition(): Condition {
+    this.enterCondition();
     let left = this.parseUnaryCondition();
     while (this.peekKeyword() === "AND") {
       this.consumeKeyword("AND");
@@ -251,24 +262,29 @@ export class IQLParser {
         left = { type: "and", conditions: [left, right] };
       }
     }
+    this.leaveCondition();
     return left;
   }
 
   private parseUnaryCondition(): Condition {
+    this.enterCondition();
+    let result: Condition;
     // NOT prefix
     if (this.peekKeyword() === "NOT") {
       this.consumeKeyword("NOT");
       const inner = this.parseUnaryCondition();
-      return { type: "not", inner };
-    }
-    // Parenthesized expression
-    if (this.peek().type === "LPAREN") {
+      result = { type: "not", inner };
+    } else if (this.peek().type === "LPAREN") {
+      // Parenthesized expression
       this.consume("LPAREN");
       const condition = this.parseOrCondition();
       this.consume("RPAREN");
-      return condition;
+      result = condition;
+    } else {
+      result = this.parsePrimaryCondition();
     }
-    return this.parsePrimaryCondition();
+    this.leaveCondition();
+    return result;
   }
 
   private parsePrimaryCondition(): Condition {
@@ -437,12 +453,32 @@ export class IQLParser {
   private error(message: string): IQLSyntaxError {
     return new IQLSyntaxError(message, this.current().position, this.source);
   }
+
+  // ---------------------------------------------------------------------------
+  // Recursion depth guards
+  // ---------------------------------------------------------------------------
+
+  private enterCondition(): void {
+    this.conditionDepth++;
+    if (this.conditionDepth > this.limits.maxConditionDepth) {
+      throw new IQLLimitError(
+        `Condition nesting depth ${this.conditionDepth} exceeds maximum of ${this.limits.maxConditionDepth}`,
+      );
+    }
+  }
+
+  private leaveCondition(): void {
+    this.conditionDepth--;
+  }
 }
 
 /**
  * Parse an IQL query string into an AST.
+ * @param source — IQL query text.
+ * @param limits — Optional safety limits (input length, token count, depth).
  * @throws IQLSyntaxError on malformed input.
+ * @throws IQLLimitError when a safety bound is exceeded.
  */
-export function parseIQL(source: string): IQLQuery {
-  return new IQLParser(source).parse();
+export function parseIQL(source: string, limits?: IQLLimits): IQLQuery {
+  return new IQLParser(source, limits).parse();
 }

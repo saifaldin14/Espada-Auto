@@ -16,6 +16,7 @@ import type {
   GraphRelationshipType,
   CloudProvider,
 } from "../types.js";
+import { safeArray, safeRecord, safeNumber, safeString } from "./validators.js";
 import type {
   GraphDiscoveryAdapter,
   DiscoverOptions,
@@ -508,12 +509,12 @@ export class GcpDiscoveryAdapter implements GraphDiscoveryAdapter {
         }
 
         // Check attached accelerators (GPUs)
-        const accelerators = data["guestAccelerators"] as unknown[];
-        if (Array.isArray(accelerators) && accelerators.length > 0) {
+        const accelerators = safeArray(data["guestAccelerators"]);
+        if (accelerators.length > 0) {
           meta["isGpuInstance"] = true;
           meta["aiWorkload"] = true;
           meta["accelerators"] = accelerators.map((a: unknown) => {
-            const acc = a as Record<string, unknown>;
+            const acc = safeRecord(a);
             return { type: acc["acceleratorType"], count: acc["acceleratorCount"] };
           });
         }
@@ -524,11 +525,11 @@ export class GcpDiscoveryAdapter implements GraphDiscoveryAdapter {
       case "container.googleapis.com/Cluster": {
         if (data["currentMasterVersion"]) meta["masterVersion"] = data["currentMasterVersion"];
         if (data["currentNodeVersion"]) meta["nodeVersion"] = data["currentNodeVersion"];
-        const pools = data["nodePools"] as unknown[];
-        if (Array.isArray(pools)) {
+        const pools = safeArray(data["nodePools"]);
+        if (pools.length > 0) {
           meta["nodePoolCount"] = pools.length;
           meta["totalNodes"] = pools.reduce(
-            (sum: number, p: unknown) => sum + ((p as Record<string, unknown>)["initialNodeCount"] as number ?? 0),
+            (sum: number, p: unknown) => sum + safeNumber(safeRecord(p)["initialNodeCount"]),
             0,
           );
         }
@@ -557,8 +558,8 @@ export class GcpDiscoveryAdapter implements GraphDiscoveryAdapter {
         break;
       }
       case "aiplatform.googleapis.com/Endpoint": {
-        const deployedModels = data["deployedModels"] as unknown[];
-        if (Array.isArray(deployedModels)) {
+        const deployedModels = safeArray(data["deployedModels"]);
+        if (deployedModels.length > 0) {
           meta["deployedModelCount"] = deployedModels.length;
         }
         break;
@@ -684,14 +685,14 @@ export class GcpDiscoveryAdapter implements GraphDiscoveryAdapter {
       }
       case "container.googleapis.com/Cluster": {
         // GKE management fee + estimated node costs
-        const pools = data["nodePools"] as unknown[];
-        if (Array.isArray(pools)) {
+        const costPools = safeArray(data["nodePools"]);
+        if (costPools.length > 0) {
           let total = 73; // GKE management fee ~$73/mo
-          for (const pool of pools) {
-            const p = pool as Record<string, unknown>;
-            const count = (p["initialNodeCount"] as number) ?? 1;
-            const config = p["config"] as Record<string, unknown>;
-            const mt = ((config?.["machineType"] as string) ?? "").toLowerCase();
+          for (const pool of costPools) {
+            const p = safeRecord(pool);
+            const count = safeNumber(p["initialNodeCount"], 1);
+            const config = safeRecord(p["config"]);
+            const mt = safeString(config["machineType"]).toLowerCase();
             const perVm = GCP_VM_COSTS[mt];
             if (perVm) total += perVm * count;
           }

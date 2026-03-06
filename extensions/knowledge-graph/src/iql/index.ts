@@ -12,7 +12,7 @@
  */
 
 // Lexer
-export { IQLLexer, IQLSyntaxError } from "./lexer.js";
+export { IQLLexer, IQLSyntaxError, IQLLimitError } from "./lexer.js";
 
 // Parser
 export { IQLParser, parseIQL } from "./parser.js";
@@ -47,4 +47,9 @@ export type {
   IQLSummarizeResult,
   IQLDiffResult,
   IQLPathResult,
+  // Limits
+  IQLLimits,
+  ResolvedIQLLimits,
 } from "./types.js";
+
+export { DEFAULT_IQL_LIMITS, resolveIQLLimits } from "./types.js";

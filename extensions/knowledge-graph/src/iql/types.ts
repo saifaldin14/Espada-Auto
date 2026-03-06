@@ -128,6 +128,46 @@ export type ComparisonOp =
 export type IQLValue = string | number | boolean | IQLValue[];
 
 // =============================================================================
+// Limits — Prevent DoS via unbounded input
+// =============================================================================
+
+/**
+ * Configurable safety limits for the IQL pipeline.
+ * All fields are optional — sensible defaults are applied when omitted.
+ */
+export type IQLLimits = {
+  /** Max input string length in bytes (default: 102_400 = 100 KB). */
+  maxInputLength?: number;
+  /** Max number of tokens the lexer will emit before aborting (default: 10_000). */
+  maxTokens?: number;
+  /** Max recursion depth for nested conditions in the parser (default: 64). */
+  maxConditionDepth?: number;
+  /** Query execution timeout in milliseconds (default: 30_000 = 30 s). */
+  queryTimeoutMs?: number;
+  /** Max result rows returned from FIND queries (default: 10_000). */
+  maxResultSize?: number;
+};
+
+/** Fully-resolved limits with all defaults applied. */
+export type ResolvedIQLLimits = Required<IQLLimits>;
+
+/** Default limits — safe for production use. */
+export const DEFAULT_IQL_LIMITS: ResolvedIQLLimits = {
+  maxInputLength: 102_400,
+  maxTokens: 10_000,
+  maxConditionDepth: 64,
+  queryTimeoutMs: 30_000,
+  maxResultSize: 10_000,
+} as const;
+
+/**
+ * Merge partial limits with defaults, returning a fully-resolved set.
+ */
+export function resolveIQLLimits(partial?: IQLLimits): ResolvedIQLLimits {
+  return { ...DEFAULT_IQL_LIMITS, ...partial };
+}
+
+// =============================================================================
 // Query Results
 // =============================================================================
 

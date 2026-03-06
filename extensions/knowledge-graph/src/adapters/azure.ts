@@ -20,6 +20,7 @@ import type {
   GraphRelationshipType,
   CloudProvider,
 } from "../types.js";
+import { ManagerCache, safeArray, safeRecord, safeNumber, safeString, toRecord } from "./validators.js";
 import type {
   GraphDiscoveryAdapter,
   DiscoverOptions,
@@ -374,59 +375,9 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
   private sdkAvailable: boolean | null = null;
 
   // ---------------------------------------------------------------------------
-  // Lazy-loaded @espada/azure manager instances
-  // undefined = not yet loaded; null = unavailable (tried and failed)
+  // Lazy-loaded @espada/azure manager instances (via type-safe ManagerCache)
   // ---------------------------------------------------------------------------
-  private _credentialsManager: unknown | undefined = undefined;
-  private _vmManager: unknown | undefined = undefined;
-  private _containerManager: unknown | undefined = undefined;
-  private _networkManager: unknown | undefined = undefined;
-  private _sqlManager: unknown | undefined = undefined;
-  private _cosmosdbManager: unknown | undefined = undefined;
-  private _storageManager: unknown | undefined = undefined;
-  private _functionsManager: unknown | undefined = undefined;
-  private _webappManager: unknown | undefined = undefined;
-  private _keyvaultManager: unknown | undefined = undefined;
-  private _servicebusManager: unknown | undefined = undefined;
-  private _eventhubsManager: unknown | undefined = undefined;
-  private _eventgridManager: unknown | undefined = undefined;
-  private _dnsManager: unknown | undefined = undefined;
-  private _redisManager: unknown | undefined = undefined;
-  private _cdnManager: unknown | undefined = undefined;
-  private _aiManager: unknown | undefined = undefined;
-  private _backupManager: unknown | undefined = undefined;
-  private _firewallManager: unknown | undefined = undefined;
-  private _appgatewayManager: unknown | undefined = undefined;
-  private _frontdoorManager: unknown | undefined = undefined;
-  private _costManager: unknown | undefined = undefined;
-  private _monitorManager: unknown | undefined = undefined;
-  private _securityManager: unknown | undefined = undefined;
-  private _iamManager: unknown | undefined = undefined;
-  private _taggingManager: unknown | undefined = undefined;
-  private _activitylogManager: unknown | undefined = undefined;
-  // New manager fields
-  private _policyManager: unknown | undefined = undefined;
-  private _complianceManager: unknown | undefined = undefined;
-  private _devopsManager: unknown | undefined = undefined;
-  private _automationManager: unknown | undefined = undefined;
-  private _apimanagementManager: unknown | undefined = undefined;
-  private _logicManager: unknown | undefined = undefined;
-  private _datafactoryManager: unknown | undefined = undefined;
-  private _resourcesManager: unknown | undefined = undefined;
-  private _subscriptionsManager: unknown | undefined = undefined;
-  private _enterpriseManager: unknown | undefined = undefined;
-  private _synapseManager: unknown | undefined = undefined;
-  private _purviewManager: unknown | undefined = undefined;
-  private _hybridManager: unknown | undefined = undefined;
-  private _bastionManager: unknown | undefined = undefined;
-  private _trafficmanagerManager: unknown | undefined = undefined;
-  private _springappsManager: unknown | undefined = undefined;
-  private _staticwebappsManager: unknown | undefined = undefined;
-  private _signalrManager: unknown | undefined = undefined;
-  private _digitaltwinsManager: unknown | undefined = undefined;
-  private _notificationhubsManager: unknown | undefined = undefined;
-  private _mapsManager: unknown | undefined = undefined;
-  private _databaseManager: unknown | undefined = undefined;
+  private _managers = new ManagerCache();
 
   constructor(config: AzureAdapterConfig) {
     this.config = config;
@@ -785,11 +736,11 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
       }
       case "microsoft.containerservice/managedclusters": {
         if (props["kubernetesVersion"]) meta["k8sVersion"] = props["kubernetesVersion"];
-        const pools = props["agentPoolProfiles"] as unknown[];
-        if (Array.isArray(pools)) {
+        const pools = safeArray(props["agentPoolProfiles"]);
+        if (pools.length > 0) {
           meta["nodePoolCount"] = pools.length;
           meta["totalNodes"] = pools.reduce(
-            (sum: number, p: unknown) => sum + ((p as Record<string, unknown>)["count"] as number ?? 0),
+            (sum: number, p: unknown) => sum + safeNumber(safeRecord(p)["count"]),
             0,
           );
         }
@@ -944,13 +895,13 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
       }
       case "microsoft.containerservice/managedclusters": {
         // AKS control plane is free; cost is in node pools
-        const pools = resource.properties["agentPoolProfiles"] as unknown[];
-        if (Array.isArray(pools)) {
+        const aksPools = safeArray(resource.properties["agentPoolProfiles"]);
+        if (aksPools.length > 0) {
           let total = 0;
-          for (const pool of pools) {
-            const p = pool as Record<string, unknown>;
-            const vmSize = String(p["vmSize"] ?? "").toLowerCase();
-            const count = (p["count"] as number) ?? 1;
+          for (const pool of aksPools) {
+            const p = safeRecord(pool);
+            const vmSize = safeString(p["vmSize"]).toLowerCase();
+            const count = safeNumber(p["count"], 1);
             const perVm = AZURE_VM_COSTS[vmSize];
             if (perVm) total += perVm * count;
           }
@@ -1044,476 +995,233 @@ export class AzureDiscoveryAdapter implements GraphDiscoveryAdapter {
    * Returns null if the extension is unavailable.
    */
   private async getAzureCredentialsManager(): Promise<unknown | null> {
-    if (this._credentialsManager !== undefined) return this._credentialsManager as unknown | null;
-    try {
+    return this._managers.getOrCreate("credentials", async () => {
       const mod = await import("@espada/azure/credentials");
-      this._credentialsManager = mod.createCredentialsManager({
+      return mod.createCredentialsManager({
         defaultSubscription: this.config.subscriptionId,
         defaultTenantId: this.config.tenantId,
       });
-      return this._credentialsManager;
-    } catch {
-      this._credentialsManager = null;
-      return null;
-    }
+    });
   }
 
   /** Helper: create a manager via its factory, using the shared credentials manager. */
-  private async _createManager<T>(
+  private async _createManager(
     importFn: () => Promise<{ [key: string]: unknown }>,
     factoryName: string,
-  ): Promise<T | null> {
+  ): Promise<unknown> {
     const cm = await this.getAzureCredentialsManager();
-    if (!cm) return null;
+    if (!cm) throw new Error("Credentials manager unavailable");
     const mod = await importFn();
     const factory = mod[factoryName];
-    if (typeof factory !== "function") return null;
-    return factory(cm, this.config.subscriptionId) as T;
+    if (typeof factory !== "function") throw new Error(`Factory ${factoryName} not found`);
+    return factory(cm, this.config.subscriptionId);
   }
 
   private async getVMManager(): Promise<unknown | null> {
-    if (this._vmManager !== undefined) return this._vmManager as unknown | null;
-    if (this.config.managers?.vm !== undefined) { this._vmManager = this.config.managers.vm; return this._vmManager as unknown | null; }
-    try {
-      this._vmManager = await this._createManager(() => import("@espada/azure/vms"), "createVMManager");
-      return this._vmManager as unknown | null;
-    } catch { this._vmManager = null; return null; }
+    return this._managers.getOrCreate("vm", () => this._createManager(() => import("@espada/azure/vms"), "createVMManager"), this.config.managers?.vm);
   }
 
   private async getContainerManager(): Promise<unknown | null> {
-    if (this._containerManager !== undefined) return this._containerManager as unknown | null;
-    if (this.config.managers?.container !== undefined) { this._containerManager = this.config.managers.container; return this._containerManager as unknown | null; }
-    try {
-      this._containerManager = await this._createManager(() => import("@espada/azure/containers"), "createContainerManager");
-      return this._containerManager as unknown | null;
-    } catch { this._containerManager = null; return null; }
+    return this._managers.getOrCreate("container", () => this._createManager(() => import("@espada/azure/containers"), "createContainerManager"), this.config.managers?.container);
   }
 
   private async getNetworkManager(): Promise<unknown | null> {
-    if (this._networkManager !== undefined) return this._networkManager as unknown | null;
-    if (this.config.managers?.network !== undefined) { this._networkManager = this.config.managers.network; return this._networkManager as unknown | null; }
-    try {
-      this._networkManager = await this._createManager(() => import("@espada/azure/network"), "createNetworkManager");
-      return this._networkManager as unknown | null;
-    } catch { this._networkManager = null; return null; }
+    return this._managers.getOrCreate("network", () => this._createManager(() => import("@espada/azure/network"), "createNetworkManager"), this.config.managers?.network);
   }
 
   private async getSQLManager(): Promise<unknown | null> {
-    if (this._sqlManager !== undefined) return this._sqlManager as unknown | null;
-    if (this.config.managers?.sql !== undefined) { this._sqlManager = this.config.managers.sql; return this._sqlManager as unknown | null; }
-    try {
-      this._sqlManager = await this._createManager(() => import("@espada/azure/sql"), "createSQLManager");
-      return this._sqlManager as unknown | null;
-    } catch { this._sqlManager = null; return null; }
+    return this._managers.getOrCreate("sql", () => this._createManager(() => import("@espada/azure/sql"), "createSQLManager"), this.config.managers?.sql);
   }
 
   private async getCosmosDBManager(): Promise<unknown | null> {
-    if (this._cosmosdbManager !== undefined) return this._cosmosdbManager as unknown | null;
-    if (this.config.managers?.cosmosdb !== undefined) { this._cosmosdbManager = this.config.managers.cosmosdb; return this._cosmosdbManager as unknown | null; }
-    try {
-      this._cosmosdbManager = await this._createManager(() => import("@espada/azure/cosmosdb"), "createCosmosDBManager");
-      return this._cosmosdbManager as unknown | null;
-    } catch { this._cosmosdbManager = null; return null; }
+    return this._managers.getOrCreate("cosmosdb", () => this._createManager(() => import("@espada/azure/cosmosdb"), "createCosmosDBManager"), this.config.managers?.cosmosdb);
   }
 
   private async getStorageManager(): Promise<unknown | null> {
-    if (this._storageManager !== undefined) return this._storageManager as unknown | null;
-    if (this.config.managers?.storage !== undefined) { this._storageManager = this.config.managers.storage; return this._storageManager as unknown | null; }
-    try {
-      this._storageManager = await this._createManager(() => import("@espada/azure/storage"), "createStorageManager");
-      return this._storageManager as unknown | null;
-    } catch { this._storageManager = null; return null; }
+    return this._managers.getOrCreate("storage", () => this._createManager(() => import("@espada/azure/storage"), "createStorageManager"), this.config.managers?.storage);
   }
 
   private async getFunctionsManager(): Promise<unknown | null> {
-    if (this._functionsManager !== undefined) return this._functionsManager as unknown | null;
-    if (this.config.managers?.functions !== undefined) { this._functionsManager = this.config.managers.functions; return this._functionsManager as unknown | null; }
-    try {
-      this._functionsManager = await this._createManager(() => import("@espada/azure/functions"), "createFunctionsManager");
-      return this._functionsManager as unknown | null;
-    } catch { this._functionsManager = null; return null; }
+    return this._managers.getOrCreate("functions", () => this._createManager(() => import("@espada/azure/functions"), "createFunctionsManager"), this.config.managers?.functions);
   }
 
   /** Web App manager — uses @espada/azure/webapp subpath. */
   private async getWebAppManager(): Promise<unknown | null> {
-    if (this._webappManager !== undefined) return this._webappManager as unknown | null;
-    if (this.config.managers?.webapp !== undefined) { this._webappManager = this.config.managers.webapp; return this._webappManager as unknown | null; }
-    try {
-      this._webappManager = await this._createManager(() => import("@espada/azure/webapp"), "createWebAppManager");
-      return this._webappManager as unknown | null;
-    } catch { this._webappManager = null; return null; }
+    return this._managers.getOrCreate("webapp", () => this._createManager(() => import("@espada/azure/webapp"), "createWebAppManager"), this.config.managers?.webapp);
   }
 
   private async getKeyVaultManager(): Promise<unknown | null> {
-    if (this._keyvaultManager !== undefined) return this._keyvaultManager as unknown | null;
-    if (this.config.managers?.keyvault !== undefined) { this._keyvaultManager = this.config.managers.keyvault; return this._keyvaultManager as unknown | null; }
-    try {
-      this._keyvaultManager = await this._createManager(() => import("@espada/azure/keyvault"), "createKeyVaultManager");
-      return this._keyvaultManager as unknown | null;
-    } catch { this._keyvaultManager = null; return null; }
+    return this._managers.getOrCreate("keyvault", () => this._createManager(() => import("@espada/azure/keyvault"), "createKeyVaultManager"), this.config.managers?.keyvault);
   }
 
   private async getServiceBusManager(): Promise<unknown | null> {
-    if (this._servicebusManager !== undefined) return this._servicebusManager as unknown | null;
-    if (this.config.managers?.servicebus !== undefined) { this._servicebusManager = this.config.managers.servicebus; return this._servicebusManager as unknown | null; }
-    try {
-      this._servicebusManager = await this._createManager(() => import("@espada/azure/servicebus"), "createServiceBusManager");
-      return this._servicebusManager as unknown | null;
-    } catch { this._servicebusManager = null; return null; }
+    return this._managers.getOrCreate("servicebus", () => this._createManager(() => import("@espada/azure/servicebus"), "createServiceBusManager"), this.config.managers?.servicebus);
   }
 
   /** Event Hubs manager — uses @espada/azure/eventhubs subpath. */
   private async getEventHubsManager(): Promise<unknown | null> {
-    if (this._eventhubsManager !== undefined) return this._eventhubsManager as unknown | null;
-    if (this.config.managers?.eventhubs !== undefined) { this._eventhubsManager = this.config.managers.eventhubs; return this._eventhubsManager as unknown | null; }
-    try {
-      this._eventhubsManager = await this._createManager(() => import("@espada/azure/eventhubs"), "createEventHubsManager");
-      return this._eventhubsManager as unknown | null;
-    } catch { this._eventhubsManager = null; return null; }
+    return this._managers.getOrCreate("eventhubs", () => this._createManager(() => import("@espada/azure/eventhubs"), "createEventHubsManager"), this.config.managers?.eventhubs);
   }
 
   private async getEventGridManager(): Promise<unknown | null> {
-    if (this._eventgridManager !== undefined) return this._eventgridManager as unknown | null;
-    if (this.config.managers?.eventgrid !== undefined) { this._eventgridManager = this.config.managers.eventgrid; return this._eventgridManager as unknown | null; }
-    try {
-      this._eventgridManager = await this._createManager(() => import("@espada/azure/eventgrid"), "createEventGridManager");
-      return this._eventgridManager as unknown | null;
-    } catch { this._eventgridManager = null; return null; }
+    return this._managers.getOrCreate("eventgrid", () => this._createManager(() => import("@espada/azure/eventgrid"), "createEventGridManager"), this.config.managers?.eventgrid);
   }
 
   private async getDNSManager(): Promise<unknown | null> {
-    if (this._dnsManager !== undefined) return this._dnsManager as unknown | null;
-    if (this.config.managers?.dns !== undefined) { this._dnsManager = this.config.managers.dns; return this._dnsManager as unknown | null; }
-    try {
-      this._dnsManager = await this._createManager(() => import("@espada/azure/dns"), "createDNSManager");
-      return this._dnsManager as unknown | null;
-    } catch { this._dnsManager = null; return null; }
+    return this._managers.getOrCreate("dns", () => this._createManager(() => import("@espada/azure/dns"), "createDNSManager"), this.config.managers?.dns);
   }
 
   private async getRedisManager(): Promise<unknown | null> {
-    if (this._redisManager !== undefined) return this._redisManager as unknown | null;
-    if (this.config.managers?.redis !== undefined) { this._redisManager = this.config.managers.redis; return this._redisManager as unknown | null; }
-    try {
-      this._redisManager = await this._createManager(() => import("@espada/azure/redis"), "createRedisManager");
-      return this._redisManager as unknown | null;
-    } catch { this._redisManager = null; return null; }
+    return this._managers.getOrCreate("redis", () => this._createManager(() => import("@espada/azure/redis"), "createRedisManager"), this.config.managers?.redis);
   }
 
   private async getCDNManager(): Promise<unknown | null> {
-    if (this._cdnManager !== undefined) return this._cdnManager as unknown | null;
-    if (this.config.managers?.cdn !== undefined) { this._cdnManager = this.config.managers.cdn; return this._cdnManager as unknown | null; }
-    try {
-      this._cdnManager = await this._createManager(() => import("@espada/azure/cdn"), "createCDNManager");
-      return this._cdnManager as unknown | null;
-    } catch { this._cdnManager = null; return null; }
+    return this._managers.getOrCreate("cdn", () => this._createManager(() => import("@espada/azure/cdn"), "createCDNManager"), this.config.managers?.cdn);
   }
 
   private async getAIManager(): Promise<unknown | null> {
-    if (this._aiManager !== undefined) return this._aiManager as unknown | null;
-    if (this.config.managers?.ai !== undefined) { this._aiManager = this.config.managers.ai; return this._aiManager as unknown | null; }
-    try {
-      this._aiManager = await this._createManager(() => import("@espada/azure/ai"), "createAIManager");
-      return this._aiManager as unknown | null;
-    } catch { this._aiManager = null; return null; }
+    return this._managers.getOrCreate("ai", () => this._createManager(() => import("@espada/azure/ai"), "createAIManager"), this.config.managers?.ai);
   }
 
   private async getBackupManager(): Promise<unknown | null> {
-    if (this._backupManager !== undefined) return this._backupManager as unknown | null;
-    if (this.config.managers?.backup !== undefined) { this._backupManager = this.config.managers.backup; return this._backupManager as unknown | null; }
-    try {
-      this._backupManager = await this._createManager(() => import("@espada/azure/backup"), "createBackupManager");
-      return this._backupManager as unknown | null;
-    } catch { this._backupManager = null; return null; }
+    return this._managers.getOrCreate("backup", () => this._createManager(() => import("@espada/azure/backup"), "createBackupManager"), this.config.managers?.backup);
   }
 
   /** Firewall manager — uses @espada/azure/firewall subpath. */
   private async getFirewallManager(): Promise<unknown | null> {
-    if (this._firewallManager !== undefined) return this._firewallManager as unknown | null;
-    if (this.config.managers?.firewall !== undefined) { this._firewallManager = this.config.managers.firewall; return this._firewallManager as unknown | null; }
-    try {
-      this._firewallManager = await this._createManager(() => import("@espada/azure/firewall"), "createFirewallManager");
-      return this._firewallManager as unknown | null;
-    } catch { this._firewallManager = null; return null; }
+    return this._managers.getOrCreate("firewall", () => this._createManager(() => import("@espada/azure/firewall"), "createFirewallManager"), this.config.managers?.firewall);
   }
 
   /** Application Gateway manager — uses @espada/azure/appgateway subpath. */
   private async getAppGatewayManager(): Promise<unknown | null> {
-    if (this._appgatewayManager !== undefined) return this._appgatewayManager as unknown | null;
-    if (this.config.managers?.appgateway !== undefined) { this._appgatewayManager = this.config.managers.appgateway; return this._appgatewayManager as unknown | null; }
-    try {
-      this._appgatewayManager = await this._createManager(() => import("@espada/azure/appgateway"), "createAppGatewayManager");
-      return this._appgatewayManager as unknown | null;
-    } catch { this._appgatewayManager = null; return null; }
+    return this._managers.getOrCreate("appgateway", () => this._createManager(() => import("@espada/azure/appgateway"), "createAppGatewayManager"), this.config.managers?.appgateway);
   }
 
   /** Front Door manager — uses @espada/azure/frontdoor subpath. */
   private async getFrontDoorManager(): Promise<unknown | null> {
-    if (this._frontdoorManager !== undefined) return this._frontdoorManager as unknown | null;
-    if (this.config.managers?.frontdoor !== undefined) { this._frontdoorManager = this.config.managers.frontdoor; return this._frontdoorManager as unknown | null; }
-    try {
-      this._frontdoorManager = await this._createManager(() => import("@espada/azure/frontdoor"), "createFrontDoorManager");
-      return this._frontdoorManager as unknown | null;
-    } catch { this._frontdoorManager = null; return null; }
+    return this._managers.getOrCreate("frontdoor", () => this._createManager(() => import("@espada/azure/frontdoor"), "createFrontDoorManager"), this.config.managers?.frontdoor);
   }
 
   private async getCostManager(): Promise<unknown | null> {
-    if (this._costManager !== undefined) return this._costManager as unknown | null;
-    if (this.config.managers?.cost !== undefined) { this._costManager = this.config.managers.cost; return this._costManager as unknown | null; }
-    try {
-      this._costManager = await this._createManager(() => import("@espada/azure/cost"), "createCostManager");
-      return this._costManager as unknown | null;
-    } catch { this._costManager = null; return null; }
+    return this._managers.getOrCreate("cost", () => this._createManager(() => import("@espada/azure/cost"), "createCostManager"), this.config.managers?.cost);
   }
 
   private async getMonitorManager(): Promise<unknown | null> {
-    if (this._monitorManager !== undefined) return this._monitorManager as unknown | null;
-    if (this.config.managers?.monitor !== undefined) { this._monitorManager = this.config.managers.monitor; return this._monitorManager as unknown | null; }
-    try {
-      this._monitorManager = await this._createManager(() => import("@espada/azure/monitor"), "createMonitorManager");
-      return this._monitorManager as unknown | null;
-    } catch { this._monitorManager = null; return null; }
+    return this._managers.getOrCreate("monitor", () => this._createManager(() => import("@espada/azure/monitor"), "createMonitorManager"), this.config.managers?.monitor);
   }
 
   private async getSecurityManager(): Promise<unknown | null> {
-    if (this._securityManager !== undefined) return this._securityManager as unknown | null;
-    if (this.config.managers?.security !== undefined) { this._securityManager = this.config.managers.security; return this._securityManager as unknown | null; }
-    try {
-      this._securityManager = await this._createManager(() => import("@espada/azure/security"), "createSecurityManager");
-      return this._securityManager as unknown | null;
-    } catch { this._securityManager = null; return null; }
+    return this._managers.getOrCreate("security", () => this._createManager(() => import("@espada/azure/security"), "createSecurityManager"), this.config.managers?.security);
   }
 
   private async getIAMManager(): Promise<unknown | null> {
-    if (this._iamManager !== undefined) return this._iamManager as unknown | null;
-    if (this.config.managers?.iam !== undefined) { this._iamManager = this.config.managers.iam; return this._iamManager as unknown | null; }
-    try {
-      this._iamManager = await this._createManager(() => import("@espada/azure/iam"), "createIAMManager");
-      return this._iamManager as unknown | null;
-    } catch { this._iamManager = null; return null; }
+    return this._managers.getOrCreate("iam", () => this._createManager(() => import("@espada/azure/iam"), "createIAMManager"), this.config.managers?.iam);
   }
 
   private async getTaggingManager(): Promise<unknown | null> {
-    if (this._taggingManager !== undefined) return this._taggingManager as unknown | null;
-    if (this.config.managers?.tagging !== undefined) { this._taggingManager = this.config.managers.tagging; return this._taggingManager as unknown | null; }
-    try {
-      this._taggingManager = await this._createManager(() => import("@espada/azure/tagging"), "createTaggingManager");
-      return this._taggingManager as unknown | null;
-    } catch { this._taggingManager = null; return null; }
+    return this._managers.getOrCreate("tagging", () => this._createManager(() => import("@espada/azure/tagging"), "createTaggingManager"), this.config.managers?.tagging);
   }
 
   private async getActivityLogManager(): Promise<unknown | null> {
-    if (this._activitylogManager !== undefined) return this._activitylogManager as unknown | null;
-    if (this.config.managers?.activitylog !== undefined) { this._activitylogManager = this.config.managers.activitylog; return this._activitylogManager as unknown | null; }
-    try {
-      this._activitylogManager = await this._createManager(() => import("@espada/azure/activitylog"), "createActivityLogManager");
-      return this._activitylogManager as unknown | null;
-    } catch { this._activitylogManager = null; return null; }
+    return this._managers.getOrCreate("activitylog", () => this._createManager(() => import("@espada/azure/activitylog"), "createActivityLogManager"), this.config.managers?.activitylog);
   }
 
   // --- New manager getters ---
 
   private async getPolicyManager(): Promise<unknown | null> {
-    if (this._policyManager !== undefined) return this._policyManager as unknown | null;
-    if (this.config.managers?.policy !== undefined) { this._policyManager = this.config.managers.policy; return this._policyManager as unknown | null; }
-    try {
-      this._policyManager = await this._createManager(() => import("@espada/azure/policy"), "createPolicyManager");
-      return this._policyManager as unknown | null;
-    } catch { this._policyManager = null; return null; }
+    return this._managers.getOrCreate("policy", () => this._createManager(() => import("@espada/azure/policy"), "createPolicyManager"), this.config.managers?.policy);
   }
 
   private async getComplianceManager(): Promise<unknown | null> {
-    if (this._complianceManager !== undefined) return this._complianceManager as unknown | null;
-    if (this.config.managers?.compliance !== undefined) { this._complianceManager = this.config.managers.compliance; return this._complianceManager as unknown | null; }
-    try {
-      this._complianceManager = await this._createManager(() => import("@espada/azure/compliance"), "createComplianceManager");
-      return this._complianceManager as unknown | null;
-    } catch { this._complianceManager = null; return null; }
+    return this._managers.getOrCreate("compliance", () => this._createManager(() => import("@espada/azure/compliance"), "createComplianceManager"), this.config.managers?.compliance);
   }
 
   private async getDevOpsManager(): Promise<unknown | null> {
-    if (this._devopsManager !== undefined) return this._devopsManager as unknown | null;
-    if (this.config.managers?.devops !== undefined) { this._devopsManager = this.config.managers.devops; return this._devopsManager as unknown | null; }
-    try {
-      this._devopsManager = await this._createManager(() => import("@espada/azure/devops"), "createDevOpsManager");
-      return this._devopsManager as unknown | null;
-    } catch { this._devopsManager = null; return null; }
+    return this._managers.getOrCreate("devops", () => this._createManager(() => import("@espada/azure/devops"), "createDevOpsManager"), this.config.managers?.devops);
   }
 
   private async getAutomationManager(): Promise<unknown | null> {
-    if (this._automationManager !== undefined) return this._automationManager as unknown | null;
-    if (this.config.managers?.automation !== undefined) { this._automationManager = this.config.managers.automation; return this._automationManager as unknown | null; }
-    try {
-      this._automationManager = await this._createManager(() => import("@espada/azure/automation"), "createAutomationManager");
-      return this._automationManager as unknown | null;
-    } catch { this._automationManager = null; return null; }
+    return this._managers.getOrCreate("automation", () => this._createManager(() => import("@espada/azure/automation"), "createAutomationManager"), this.config.managers?.automation);
   }
 
   private async getAPIManagementManager(): Promise<unknown | null> {
-    if (this._apimanagementManager !== undefined) return this._apimanagementManager as unknown | null;
-    if (this.config.managers?.apimanagement !== undefined) { this._apimanagementManager = this.config.managers.apimanagement; return this._apimanagementManager as unknown | null; }
-    try {
-      this._apimanagementManager = await this._createManager(() => import("@espada/azure/apimanagement"), "createAPIManagementManager");
-      return this._apimanagementManager as unknown | null;
-    } catch { this._apimanagementManager = null; return null; }
+    return this._managers.getOrCreate("apimanagement", () => this._createManager(() => import("@espada/azure/apimanagement"), "createAPIManagementManager"), this.config.managers?.apimanagement);
   }
 
   private async getLogicManager(): Promise<unknown | null> {
-    if (this._logicManager !== undefined) return this._logicManager as unknown | null;
-    if (this.config.managers?.logic !== undefined) { this._logicManager = this.config.managers.logic; return this._logicManager as unknown | null; }
-    try {
-      this._logicManager = await this._createManager(() => import("@espada/azure/logic"), "createLogicManager");
-      return this._logicManager as unknown | null;
-    } catch { this._logicManager = null; return null; }
+    return this._managers.getOrCreate("logic", () => this._createManager(() => import("@espada/azure/logic"), "createLogicManager"), this.config.managers?.logic);
   }
 
   private async getDataFactoryManager(): Promise<unknown | null> {
-    if (this._datafactoryManager !== undefined) return this._datafactoryManager as unknown | null;
-    if (this.config.managers?.datafactory !== undefined) { this._datafactoryManager = this.config.managers.datafactory; return this._datafactoryManager as unknown | null; }
-    try {
-      this._datafactoryManager = await this._createManager(() => import("@espada/azure/datafactory"), "createDataFactoryManager");
-      return this._datafactoryManager as unknown | null;
-    } catch { this._datafactoryManager = null; return null; }
+    return this._managers.getOrCreate("datafactory", () => this._createManager(() => import("@espada/azure/datafactory"), "createDataFactoryManager"), this.config.managers?.datafactory);
   }
 
   private async getResourcesManager(): Promise<unknown | null> {
-    if (this._resourcesManager !== undefined) return this._resourcesManager as unknown | null;
-    if (this.config.managers?.resources !== undefined) { this._resourcesManager = this.config.managers.resources; return this._resourcesManager as unknown | null; }
-    try {
-      this._resourcesManager = await this._createManager(() => import("@espada/azure/resources"), "createResourcesManager");
-      return this._resourcesManager as unknown | null;
-    } catch { this._resourcesManager = null; return null; }
+    return this._managers.getOrCreate("resources", () => this._createManager(() => import("@espada/azure/resources"), "createResourcesManager"), this.config.managers?.resources);
   }
 
   private async getSubscriptionsManager(): Promise<unknown | null> {
-    if (this._subscriptionsManager !== undefined) return this._subscriptionsManager as unknown | null;
-    if (this.config.managers?.subscriptions !== undefined) { this._subscriptionsManager = this.config.managers.subscriptions; return this._subscriptionsManager as unknown | null; }
-    try {
+    return this._managers.getOrCreate("subscriptions", async () => {
       const cm = await this.getAzureCredentialsManager();
-      if (!cm) { this._subscriptionsManager = null; return null; }
+      if (!cm) throw new Error("Credentials manager unavailable");
       const mod = await import("@espada/azure/subscriptions");
       const factory = mod["createSubscriptionManager"];
-      if (typeof factory !== "function") { this._subscriptionsManager = null; return null; }
+      if (typeof factory !== "function") throw new Error("Factory createSubscriptionManager not found");
       // subscriptions manager takes only credentialsManager (no subscriptionId)
-      this._subscriptionsManager = factory(cm as any);
-      return this._subscriptionsManager as unknown | null;
-    } catch { this._subscriptionsManager = null; return null; }
+      return factory(cm as never);
+    }, this.config.managers?.subscriptions);
   }
 
   private async getEnterpriseManager(): Promise<unknown | null> {
-    if (this._enterpriseManager !== undefined) return this._enterpriseManager as unknown | null;
-    if (this.config.managers?.enterprise !== undefined) { this._enterpriseManager = this.config.managers.enterprise; return this._enterpriseManager as unknown | null; }
-    try {
-      this._enterpriseManager = await this._createManager(() => import("@espada/azure/enterprise"), "createEnterpriseManager");
-      return this._enterpriseManager as unknown | null;
-    } catch { this._enterpriseManager = null; return null; }
+    return this._managers.getOrCreate("enterprise", () => this._createManager(() => import("@espada/azure/enterprise"), "createEnterpriseManager"), this.config.managers?.enterprise);
   }
 
   private async getSynapseManager(): Promise<unknown | null> {
-    if (this._synapseManager !== undefined) return this._synapseManager as unknown | null;
-    if (this.config.managers?.synapse !== undefined) { this._synapseManager = this.config.managers.synapse; return this._synapseManager as unknown | null; }
-    try {
-      this._synapseManager = await this._createManager(() => import("@espada/azure/synapse"), "createSynapseManager");
-      return this._synapseManager as unknown | null;
-    } catch { this._synapseManager = null; return null; }
+    return this._managers.getOrCreate("synapse", () => this._createManager(() => import("@espada/azure/synapse"), "createSynapseManager"), this.config.managers?.synapse);
   }
 
   private async getPurviewManager(): Promise<unknown | null> {
-    if (this._purviewManager !== undefined) return this._purviewManager as unknown | null;
-    if (this.config.managers?.purview !== undefined) { this._purviewManager = this.config.managers.purview; return this._purviewManager as unknown | null; }
-    try {
-      this._purviewManager = await this._createManager(() => import("@espada/azure/purview"), "createPurviewManager");
-      return this._purviewManager as unknown | null;
-    } catch { this._purviewManager = null; return null; }
+    return this._managers.getOrCreate("purview", () => this._createManager(() => import("@espada/azure/purview"), "createPurviewManager"), this.config.managers?.purview);
   }
 
   private async getHybridManager(): Promise<unknown | null> {
-    if (this._hybridManager !== undefined) return this._hybridManager as unknown | null;
-    if (this.config.managers?.hybrid !== undefined) { this._hybridManager = this.config.managers.hybrid; return this._hybridManager as unknown | null; }
-    try {
-      this._hybridManager = await this._createManager(() => import("@espada/azure/hybrid"), "createHybridManager");
-      return this._hybridManager as unknown | null;
-    } catch { this._hybridManager = null; return null; }
+    return this._managers.getOrCreate("hybrid", () => this._createManager(() => import("@espada/azure/hybrid"), "createHybridManager"), this.config.managers?.hybrid);
   }
 
   private async getBastionManager(): Promise<unknown | null> {
-    if (this._bastionManager !== undefined) return this._bastionManager as unknown | null;
-    if (this.config.managers?.bastion !== undefined) { this._bastionManager = this.config.managers.bastion; return this._bastionManager as unknown | null; }
-    try {
-      this._bastionManager = await this._createManager(() => import("@espada/azure/bastion"), "createBastionManager");
-      return this._bastionManager as unknown | null;
-    } catch { this._bastionManager = null; return null; }
+    return this._managers.getOrCreate("bastion", () => this._createManager(() => import("@espada/azure/bastion"), "createBastionManager"), this.config.managers?.bastion);
   }
 
   private async getTrafficManagerManager(): Promise<unknown | null> {
-    if (this._trafficmanagerManager !== undefined) return this._trafficmanagerManager as unknown | null;
-    if (this.config.managers?.trafficmanager !== undefined) { this._trafficmanagerManager = this.config.managers.trafficmanager; return this._trafficmanagerManager as unknown | null; }
-    try {
-      this._trafficmanagerManager = await this._createManager(() => import("@espada/azure/trafficmanager"), "createTrafficManagerManager");
-      return this._trafficmanagerManager as unknown | null;
-    } catch { this._trafficmanagerManager = null; return null; }
+    return this._managers.getOrCreate("trafficmanager", () => this._createManager(() => import("@espada/azure/trafficmanager"), "createTrafficManagerManager"), this.config.managers?.trafficmanager);
   }
 
   private async getSpringAppsManager(): Promise<unknown | null> {
-    if (this._springappsManager !== undefined) return this._springappsManager as unknown | null;
-    if (this.config.managers?.springapps !== undefined) { this._springappsManager = this.config.managers.springapps; return this._springappsManager as unknown | null; }
-    try {
-      this._springappsManager = await this._createManager(() => import("@espada/azure/springapps"), "createSpringAppsManager");
-      return this._springappsManager as unknown | null;
-    } catch { this._springappsManager = null; return null; }
+    return this._managers.getOrCreate("springapps", () => this._createManager(() => import("@espada/azure/springapps"), "createSpringAppsManager"), this.config.managers?.springapps);
   }
 
   private async getStaticWebAppsManager(): Promise<unknown | null> {
-    if (this._staticwebappsManager !== undefined) return this._staticwebappsManager as unknown | null;
-    if (this.config.managers?.staticwebapps !== undefined) { this._staticwebappsManager = this.config.managers.staticwebapps; return this._staticwebappsManager as unknown | null; }
-    try {
-      this._staticwebappsManager = await this._createManager(() => import("@espada/azure/staticwebapps"), "createStaticWebAppsManager");
-      return this._staticwebappsManager as unknown | null;
-    } catch { this._staticwebappsManager = null; return null; }
+    return this._managers.getOrCreate("staticwebapps", () => this._createManager(() => import("@espada/azure/staticwebapps"), "createStaticWebAppsManager"), this.config.managers?.staticwebapps);
   }
 
   private async getSignalRManager(): Promise<unknown | null> {
-    if (this._signalrManager !== undefined) return this._signalrManager as unknown | null;
-    if (this.config.managers?.signalr !== undefined) { this._signalrManager = this.config.managers.signalr; return this._signalrManager as unknown | null; }
-    try {
-      this._signalrManager = await this._createManager(() => import("@espada/azure/signalr"), "createSignalRManager");
-      return this._signalrManager as unknown | null;
-    } catch { this._signalrManager = null; return null; }
+    return this._managers.getOrCreate("signalr", () => this._createManager(() => import("@espada/azure/signalr"), "createSignalRManager"), this.config.managers?.signalr);
   }
 
   private async getDigitalTwinsManager(): Promise<unknown | null> {
-    if (this._digitaltwinsManager !== undefined) return this._digitaltwinsManager as unknown | null;
-    if (this.config.managers?.digitaltwins !== undefined) { this._digitaltwinsManager = this.config.managers.digitaltwins; return this._digitaltwinsManager as unknown | null; }
-    try {
-      this._digitaltwinsManager = await this._createManager(() => import("@espada/azure/digitaltwins"), "createDigitalTwinsManager");
-      return this._digitaltwinsManager as unknown | null;
-    } catch { this._digitaltwinsManager = null; return null; }
+    return this._managers.getOrCreate("digitaltwins", () => this._createManager(() => import("@espada/azure/digitaltwins"), "createDigitalTwinsManager"), this.config.managers?.digitaltwins);
   }
 
   private async getNotificationHubsManager(): Promise<unknown | null> {
-    if (this._notificationhubsManager !== undefined) return this._notificationhubsManager as unknown | null;
-    if (this.config.managers?.notificationhubs !== undefined) { this._notificationhubsManager = this.config.managers.notificationhubs; return this._notificationhubsManager as unknown | null; }
-    try {
-      this._notificationhubsManager = await this._createManager(() => import("@espada/azure/notificationhubs"), "createNotificationHubsManager");
-      return this._notificationhubsManager as unknown | null;
-    } catch { this._notificationhubsManager = null; return null; }
+    return this._managers.getOrCreate("notificationhubs", () => this._createManager(() => import("@espada/azure/notificationhubs"), "createNotificationHubsManager"), this.config.managers?.notificationhubs);
   }
 
   private async getMapsManager(): Promise<unknown | null> {
-    if (this._mapsManager !== undefined) return this._mapsManager as unknown | null;
-    if (this.config.managers?.maps !== undefined) { this._mapsManager = this.config.managers.maps; return this._mapsManager as unknown | null; }
-    try {
-      this._mapsManager = await this._createManager(() => import("@espada/azure/maps"), "createMapsManager");
-      return this._mapsManager as unknown | null;
-    } catch { this._mapsManager = null; return null; }
+    return this._managers.getOrCreate("maps", () => this._createManager(() => import("@espada/azure/maps"), "createMapsManager"), this.config.managers?.maps);
   }
 
   private async getDatabaseManager(): Promise<unknown | null> {
-    if (this._databaseManager !== undefined) return this._databaseManager as unknown | null;
-    if (this.config.managers?.database !== undefined) { this._databaseManager = this.config.managers.database; return this._databaseManager as unknown | null; }
-    try {
-      this._databaseManager = await this._createManager(() => import("@espada/azure/database"), "createDatabaseManager");
-      return this._databaseManager as unknown | null;
-    } catch { this._databaseManager = null; return null; }
+    return this._managers.getOrCreate("database", () => this._createManager(() => import("@espada/azure/database"), "createDatabaseManager"), this.config.managers?.database);
   }
 
   // ===========================================================================
@@ -1822,7 +1530,7 @@ const AZURE_REDIS_COSTS: Record<string, number> = {
 function resolveAzureField(resource: AzureResourceRecord, path: string): string[] {
   const obj = path.startsWith("properties.")
     ? resource.properties
-    : (resource as unknown as Record<string, unknown>);
+    : toRecord(resource);
 
   const adjustedPath = path.startsWith("properties.")
     ? path.slice("properties.".length)

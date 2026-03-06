@@ -2,13 +2,17 @@
  * IAM Creation Step Handler
  *
  * Creates equivalent IAM roles and policies on the target provider.
+ * Uses resolveProviderAdapter() → adapter.iam.createRole() / createPolicy()
  * Handles cross-provider IAM translation:
  *   AWS IAM → Azure AD Roles / GCP IAM Bindings
  *   Azure AD → AWS IAM Roles / GCP IAM Bindings
  *   GCP IAM → AWS IAM Roles / Azure AD Roles
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import type { NormalizedIAMRole, NormalizedIAMPolicy } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 /**
  * IAM policy translation map — maps common AWS managed policy patterns
@@ -53,29 +57,37 @@ export const createIAMHandler: MigrationStepHandler = {
 
     log.info(`[create-iam] Creating ${roles.length} roles and ${policies.length} policies on ${targetProvider}`);
 
-    const createdRoles: Array<{ sourceId: string; sourceName: string; targetId: string; targetName: string }> = [];
-    const createdPolicies: Array<{ sourceId: string; sourceName: string; targetId: string; targetName: string }> = [];
+    const createdRoles: Array<{ sourceId: string; sourceName: string; targetId: string; targetName: string; arn?: string }> = [];
+    const createdPolicies: Array<{ sourceId: string; sourceName: string; targetId: string; targetName: string; arn?: string }> = [];
     const warnings: string[] = [];
 
-    const targetCredentials = ctx.targetCredentials as
-      | { iam?: { createRole: (r: unknown) => Promise<{ id: string }>; createPolicy: (p: unknown) => Promise<{ id: string }> } }
-      | undefined;
+    const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    const adapter = credentials
+      ? await resolveProviderAdapter(targetProvider as MigrationProvider, credentials)
+      : undefined;
 
     for (const role of roles) {
       const roleName = String(role.name ?? "");
       const translatedName = translateRoleName(roleName, targetProvider);
 
-      if (targetCredentials?.iam) {
-        const result = await targetCredentials.iam.createRole({
+      if (adapter) {
+        const normalizedRole: NormalizedIAMRole = {
+          id: String(role.id ?? ""),
           name: translatedName,
-          description: role.description,
-          trustPolicy: role.trustPolicy,
-        });
+          provider: targetProvider,
+          description: String(role.description ?? `Migrated from ${role.provider ?? "source"}`),
+          trustPolicy: (role.trustPolicy ?? undefined) as Record<string, unknown> | undefined,
+          inlinePolicies: (role.inlinePolicies ?? []) as NormalizedIAMPolicy[],
+          attachedPolicyArns: (role.attachedPolicyArns ?? []) as string[],
+          tags: (role.tags ?? {}) as Record<string, string>,
+        };
+        const result = await adapter.iam.createRole(normalizedRole);
         createdRoles.push({
           sourceId: String(role.id),
           sourceName: roleName,
           targetId: result.id,
           targetName: translatedName,
+          arn: result.arn,
         });
       } else {
         createdRoles.push({
@@ -98,16 +110,24 @@ export const createIAMHandler: MigrationStepHandler = {
         warnings.push(`No direct mapping for policy "${policyName}"; creating custom equivalent`);
       }
 
-      if (targetCredentials?.iam) {
-        const result = await targetCredentials.iam.createPolicy({
+      if (adapter) {
+        const normalizedPolicy: NormalizedIAMPolicy = {
+          id: String(policy.id ?? ""),
           name: targetName,
-          document: policy.document ?? policy.documentHash,
-        });
+          provider: targetProvider,
+          description: String(policy.description ?? `Migrated from ${policy.provider ?? "source"}`),
+          document: (policy.document ?? {}) as Record<string, unknown>,
+          isManaged: Boolean(policy.isManaged),
+          attachedTo: (policy.attachedTo ?? []) as string[],
+          tags: (policy.tags ?? {}) as Record<string, string>,
+        };
+        const result = await adapter.iam.createPolicy(normalizedPolicy);
         createdPolicies.push({
           sourceId: String(policy.id),
           sourceName: policyName,
           targetId: result.id,
           targetName,
+          arn: result.arn,
         });
       } else {
         createdPolicies.push({
@@ -133,21 +153,20 @@ export const createIAMHandler: MigrationStepHandler = {
 
   async rollback(ctx: MigrationStepContext, outputs: Record<string, unknown>): Promise<void> {
     const { log } = ctx;
+    const targetProvider = (outputs.targetProvider ?? ctx.globalParams.targetProvider) as string;
     const createdRoles = (outputs.createdRoles ?? []) as Array<{ targetId: string; targetName: string }>;
     const createdPolicies = (outputs.createdPolicies ?? []) as Array<{ targetId: string; targetName: string }>;
 
     log.info(`[create-iam] Rolling back ${createdRoles.length} roles, ${createdPolicies.length} policies`);
 
-    const targetCredentials = ctx.targetCredentials as
-      | { iam?: { deleteRole: (id: string) => Promise<void>; deletePolicy: (id: string) => Promise<void> } }
-      | undefined;
-
-    if (targetCredentials?.iam) {
+    const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    if (credentials) {
+      const adapter = await resolveProviderAdapter(targetProvider as MigrationProvider, credentials);
       for (const policy of createdPolicies) {
-        await targetCredentials.iam.deletePolicy(policy.targetId);
+        await adapter.iam.deletePolicy(policy.targetId).catch(() => {});
       }
       for (const role of createdRoles) {
-        await targetCredentials.iam.deleteRole(role.targetId);
+        await adapter.iam.deleteRole(role.targetId).catch(() => {});
       }
     }
 
@@ -156,13 +175,10 @@ export const createIAMHandler: MigrationStepHandler = {
 };
 
 function translateRoleName(name: string, targetProvider: string): string {
-  // Sanitize to target provider naming conventions
   switch (targetProvider) {
     case "azure":
-      // Azure uses display names, allow spaces
       return name.replace(/_/g, " ");
     case "gcp":
-      // GCP roles must be lowercase with underscores
       return name.toLowerCase().replace(/[^a-z0-9_]/g, "_");
     default:
       return name;

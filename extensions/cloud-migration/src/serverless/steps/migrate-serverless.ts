@@ -2,6 +2,8 @@
  * Serverless Function Migration Step Handler
  *
  * Migrates Lambda/Cloud Functions/Azure Functions between providers.
+ * Uses resolveProviderAdapter() → adapter.serverless for real SDK calls.
+ *
  * Handles:
  *   - Code package download + re-deployment
  *   - Runtime translation (e.g., Node.js → Node.js, Python → Python)
@@ -10,7 +12,10 @@
  *   - Trigger/event source mapping
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import type { NormalizedLambdaFunction } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 /** Runtime compatibility map. */
 const RUNTIME_MAP: Record<string, Record<string, string>> = {
@@ -76,15 +81,18 @@ export const migrateServerlessHandler: MigrationStepHandler = {
       sourceRuntime: string;
       targetRuntime: string;
       triggersTranslated: number;
+      arn?: string;
     }> = [];
     const warnings: string[] = [];
 
-    const sourceAdapter = ctx.sourceCredentials as
-      | { serverless?: { getFunctionCode: (id: string) => Promise<Buffer> } }
-      | undefined;
-    const targetAdapter = ctx.targetCredentials as
-      | { serverless?: { deployFunction: (fn: unknown, code: Buffer) => Promise<{ id: string }> } }
-      | undefined;
+    const sourceCreds = ctx.sourceCredentials as ProviderCredentialConfig | undefined;
+    const targetCreds = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    const sourceAdapter = sourceCreds
+      ? await resolveProviderAdapter(sourceProvider as MigrationProvider, sourceCreds)
+      : undefined;
+    const targetAdapter = targetCreds
+      ? await resolveProviderAdapter(targetProvider as MigrationProvider, targetCreds)
+      : undefined;
 
     for (const fn of functions) {
       const name = String(fn.name ?? "");
@@ -103,32 +111,40 @@ export const migrateServerlessHandler: MigrationStepHandler = {
         originalType: t.type,
       }));
 
-      // Check for untranslatable triggers
       for (const t of translatedTriggers) {
         if (t.type === String(t.originalType)) {
           warnings.push(`Function "${name}": trigger type "${t.type}" has no direct ${targetProvider} equivalent`);
         }
       }
 
-      // Get code package and deploy
-      let code: Buffer<ArrayBufferLike> = Buffer.alloc(0);
-      if (sourceAdapter?.serverless && fn.id) {
-        code = await sourceAdapter.serverless.getFunctionCode(String(fn.id));
+      // Get code package from source adapter
+      let code: Buffer = Buffer.alloc(0);
+      if (sourceAdapter && fn.id) {
+        try {
+          code = await sourceAdapter.serverless.getFunctionCode(String(fn.id));
+        } catch (err) {
+          log.info(`[migrate-serverless] Could not download code for ${name}: ${err instanceof Error ? err.message : err}`);
+        }
       }
 
-      if (targetAdapter?.serverless) {
-        const result = await targetAdapter.serverless.deployFunction(
-          {
-            name,
-            runtime: targetRuntime,
-            handler: fn.handler,
-            memoryMB: fn.memoryMB,
-            timeoutSec: fn.timeoutSec,
-            environment: fn.environment,
-            triggers: translatedTriggers,
-          },
-          code,
-        );
+      if (targetAdapter) {
+        const normalizedFn: NormalizedLambdaFunction = {
+          id: String(fn.id ?? ""),
+          name,
+          provider: targetProvider,
+          runtime: targetRuntime,
+          handler: String(fn.handler ?? "index.handler"),
+          memoryMB: Number(fn.memoryMB ?? 128),
+          timeoutSec: Number(fn.timeoutSec ?? 30),
+          codeUri: "",
+          codeSizeBytes: code.length,
+          environment: (fn.environment ?? {}) as Record<string, string>,
+          layers: (fn.layers ?? []) as string[],
+          triggers: translatedTriggers as any[],
+          tags: (fn.tags ?? {}) as Record<string, string>,
+        };
+
+        const result = await targetAdapter.serverless.deployFunction(normalizedFn, code);
         migratedFunctions.push({
           sourceId: String(fn.id ?? ""),
           sourceName: name,
@@ -136,6 +152,7 @@ export const migrateServerlessHandler: MigrationStepHandler = {
           sourceRuntime,
           targetRuntime,
           triggersTranslated: translatedTriggers.length,
+          arn: result.arn,
         });
       } else {
         migratedFunctions.push({
@@ -155,22 +172,22 @@ export const migrateServerlessHandler: MigrationStepHandler = {
       migratedFunctions,
       functionsCount: migratedFunctions.length,
       warnings,
+      targetProvider,
     };
   },
 
   async rollback(ctx: MigrationStepContext, outputs: Record<string, unknown>): Promise<void> {
     const { log } = ctx;
+    const targetProvider = (outputs.targetProvider ?? ctx.globalParams.targetProvider) as string;
     const migratedFunctions = (outputs.migratedFunctions ?? []) as Array<{ targetId: string }>;
 
     log.info(`[migrate-serverless] Rolling back ${migratedFunctions.length} functions`);
 
-    const targetAdapter = ctx.targetCredentials as
-      | { serverless?: { deleteFunction: (id: string) => Promise<void> } }
-      | undefined;
-
-    if (targetAdapter?.serverless) {
+    const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    if (credentials) {
+      const adapter = await resolveProviderAdapter(targetProvider as MigrationProvider, credentials);
       for (const fn of migratedFunctions) {
-        await targetAdapter.serverless.deleteFunction(fn.targetId);
+        await adapter.serverless.deleteFunction(fn.targetId).catch(() => {});
       }
     }
 

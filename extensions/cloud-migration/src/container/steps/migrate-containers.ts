@@ -4,18 +4,16 @@
  * Migrates container services (ECS/EKS → AKS/GKE/K8s) and container
  * registries (ECR → ACR/GCR/Artifact Registry).
  *
- * This handler:
- *   1. Extracts service definitions from source (task defs, deployments)
- *   2. Translates to target-native format (ECS Task Def → K8s Deployment)
- *   3. Creates equivalent services on target
- *   4. Migrates container images between registries
+ * Uses resolveProviderAdapter() → adapter.containers to call real cloud APIs.
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import type { NormalizedContainerService } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 /** Maps ECS/EKS concepts → target equivalents. */
 const CONTAINER_PLATFORM_MAP: Record<string, string> = {
-  // Source (AWS ECS/EKS) → Target concepts
   "ecs→aks": "Azure Container Instances / AKS Deployment",
   "ecs→gke": "GKE Deployment / Cloud Run",
   "ecs→kubernetes": "Kubernetes Deployment",
@@ -51,13 +49,10 @@ export const migrateContainersHandler: MigrationStepHandler = {
 
     const warnings: string[] = [];
 
-    // Migrate container services
-    const targetAdapter = ctx.targetCredentials as
-      | { containers?: {
-          createService: (s: unknown) => Promise<{ id: string }>;
-          copyImage: (src: string, tgt: string, tag: string) => Promise<{ digest: string }>;
-        } }
-      | undefined;
+    const targetCreds = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    const targetAdapter = targetCreds
+      ? await resolveProviderAdapter(targetProvider as MigrationProvider, targetCreds)
+      : undefined;
 
     for (const svc of services) {
       const sourceType = String(svc.type ?? "ecs");
@@ -68,13 +63,20 @@ export const migrateContainersHandler: MigrationStepHandler = {
 
       const serviceDefs = (svc.services ?? []) as Array<Record<string, unknown>>;
 
-      if (targetAdapter?.containers) {
-        const result = await targetAdapter.containers.createService({
-          name: svc.name,
-          type: getTargetPlatform(targetProvider),
+      if (targetAdapter) {
+        const normalizedService: NormalizedContainerService = {
+          id: String(svc.id ?? ""),
+          name: String(svc.name ?? ""),
+          provider: targetProvider,
+          type: getTargetPlatform(targetProvider) as NormalizedContainerService["type"],
+          region: String(svc.region ?? ""),
+          clusterArn: svc.clusterArn as string | undefined,
           services: serviceDefs.map((sd) => translateServiceDef(sd, targetProvider)),
-          nodeGroups: svc.nodeGroups,
-        });
+          nodeGroups: (svc.nodeGroups ?? []) as NormalizedContainerService["nodeGroups"],
+          tags: (svc.tags ?? {}) as Record<string, string>,
+        };
+
+        const result = await targetAdapter.containers.createService(normalizedService);
         migratedServices.push({
           sourceId: String(svc.id),
           sourceName: String(svc.name),
@@ -92,7 +94,6 @@ export const migrateContainersHandler: MigrationStepHandler = {
         });
       }
 
-      // Note platform-specific warnings
       if (sourceType === "ecs" && targetProvider !== "aws") {
         warnings.push(
           `ECS service "${svc.name}": Fargate launch type requires Kubernetes equivalent; ` +
@@ -106,8 +107,12 @@ export const migrateContainersHandler: MigrationStepHandler = {
       const sourceUri = String(img.uri ?? img.sourceUri ?? "");
       const tag = String(img.tag ?? "latest");
 
-      if (targetAdapter?.containers) {
-        const result = await targetAdapter.containers.copyImage(sourceUri, String(params.targetRegistryUri ?? ""), tag);
+      if (targetAdapter) {
+        const result = await targetAdapter.containers.copyImage(
+          sourceUri,
+          String(params.targetRegistryUri ?? ""),
+          tag,
+        );
         migratedImages.push({ sourceUri, targetUri: `${params.targetRegistryUri}:${tag}`, digest: result.digest });
       } else {
         migratedImages.push({ sourceUri, targetUri: `target-registry/${tag}`, digest: "simulated" });
@@ -124,22 +129,22 @@ export const migrateContainersHandler: MigrationStepHandler = {
       servicesCount: migratedServices.length,
       imagesCount: migratedImages.length,
       warnings,
+      targetProvider,
     };
   },
 
   async rollback(ctx: MigrationStepContext, outputs: Record<string, unknown>): Promise<void> {
     const { log } = ctx;
+    const targetProvider = (outputs.targetProvider ?? ctx.globalParams.targetProvider) as string;
     const migratedServices = (outputs.migratedServices ?? []) as Array<{ targetId: string }>;
 
     log.info(`[migrate-containers] Rolling back ${migratedServices.length} container services`);
 
-    const targetAdapter = ctx.targetCredentials as
-      | { containers?: { deleteService: (id: string) => Promise<void> } }
-      | undefined;
-
-    if (targetAdapter?.containers) {
+    const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    if (credentials) {
+      const adapter = await resolveProviderAdapter(targetProvider as MigrationProvider, credentials);
       for (const svc of migratedServices) {
-        await targetAdapter.containers.deleteService(svc.targetId);
+        await adapter.containers.deleteService(svc.targetId).catch(() => {});
       }
     }
 
@@ -159,15 +164,12 @@ function getTargetPlatform(provider: string): string {
   }
 }
 
-function translateServiceDef(def: Record<string, unknown>, targetProvider: string): Record<string, unknown> {
-  // Translate ECS task definition → K8s-style
+function translateServiceDef(def: Record<string, unknown>, targetProvider: string): any {
   const translated = { ...def };
 
   if (targetProvider !== "aws") {
-    // Convert ECS CPU units (1024 = 1 vCPU) → K8s millicores
     const cpu = Number(def.cpu ?? 256);
     translated.cpuMillicores = Math.round((cpu / 1024) * 1000);
-    // Convert MiB → MiB (same unit, just make explicit)
     translated.memoryMiB = Number(def.memoryMB ?? def.memory ?? 512);
   }
 

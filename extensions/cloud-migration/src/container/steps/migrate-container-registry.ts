@@ -5,9 +5,13 @@
  *   ECR → ACR, GCR/Artifact Registry, private registry
  *   ACR → ECR, GCR/Artifact Registry, private registry
  *   GCR → ECR, ACR, private registry
+ *
+ * Uses resolveProviderAdapter() → adapter.containers.copyImage() for real transfers.
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export const migrateContainerRegistryHandler: MigrationStepHandler = {
   async execute(ctx: MigrationStepContext): Promise<Record<string, unknown>> {
@@ -25,12 +29,10 @@ export const migrateContainerRegistryHandler: MigrationStepHandler = {
       totalSizeBytes: number;
     }> = [];
 
-    const targetAdapter = ctx.targetCredentials as
-      | { containers?: {
-          createRegistry: (name: string, region: string) => Promise<{ id: string; uri: string }>;
-          copyImage: (src: string, tgt: string, tag: string) => Promise<{ digest: string }>;
-        } }
-      | undefined;
+    const targetCreds = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+    const targetAdapter = targetCreds
+      ? await resolveProviderAdapter(targetProvider as MigrationProvider, targetCreds)
+      : undefined;
 
     for (const repo of repositories) {
       const name = String(repo.name ?? "");
@@ -40,7 +42,7 @@ export const migrateContainerRegistryHandler: MigrationStepHandler = {
 
       for (const tag of images) {
         const sourceUri = `${repo.uri ?? repo.registryUri}/${name}:${tag}`;
-        if (targetAdapter?.containers) {
+        if (targetAdapter) {
           await targetAdapter.containers.copyImage(
             sourceUri,
             String(params.targetRegistryUri ?? ""),

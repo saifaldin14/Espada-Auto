@@ -36,6 +36,7 @@ import type {
   GraphResourceType,
   CloudProvider,
 } from "../types.js";
+import { ManagerCache, safeRecord, safeString } from "./validators.js";
 import type {
   GraphDiscoveryAdapter,
   DiscoverOptions,
@@ -164,34 +165,8 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   private assumedCredentials: unknown | null = null;
   private sdkAvailable: boolean | null = null;
 
-  // ---- @espada/aws lazy-loaded manager instances ----
-  // `undefined` = not yet initialized. `null` = unavailable.
-  private _credentialsManager: unknown | undefined = undefined;
-  private _clientPoolManager: unknown | undefined = undefined;
-  private _discoveryManager: unknown | undefined = undefined;
-  private _costManager: unknown | undefined = undefined;
-  private _cloudTrailManager: unknown | undefined = undefined;
-  private _securityManager: unknown | undefined = undefined;
-  private _taggingManager: unknown | undefined = undefined;
-  private _lambdaManager: unknown | undefined = undefined;
-  private _observabilityManager: unknown | undefined = undefined;
-  private _s3Manager: unknown | undefined = undefined;
-  private _elastiCacheManager: unknown | undefined = undefined;
-  private _organizationManager: unknown | undefined = undefined;
-  private _backupManager: unknown | undefined = undefined;
-  private _complianceManager: unknown | undefined = undefined;
-  private _automationManager: unknown | undefined = undefined;
-  private _ec2Manager: unknown | undefined = undefined;
-  private _rdsManager: unknown | undefined = undefined;
-  private _cicdManager: unknown | undefined = undefined;
-  private _cognitoManager: unknown | undefined = undefined;
-  private _containerManager: unknown | undefined = undefined;
-  private _networkManager: unknown | undefined = undefined;
-  private _dynamodbManager: unknown | undefined = undefined;
-  private _apigatewayManager: unknown | undefined = undefined;
-  private _sqsManager: unknown | undefined = undefined;
-  private _snsManager: unknown | undefined = undefined;
-  private _route53Manager: unknown | undefined = undefined;
+  // ---- @espada/aws lazy-loaded manager instances (via type-safe ManagerCache) ----
+  private _managers = new ManagerCache();
 
   constructor(config: AwsAdapterConfig) {
     this.config = config;
@@ -1221,46 +1196,24 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
   // @espada/aws Manager Lazy-Loading
   // ===========================================================================
 
-  /**
-   * Lazily get or create an AWSCredentialsManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
+  // ===========================================================================
+  // @espada/aws Manager Lazy-Loading (via ManagerCache)
+  // ===========================================================================
+
   private async getCredentialsManager(): Promise<unknown | null> {
-    if (this._credentialsManager !== undefined) return this._credentialsManager as unknown | null;
-
-    if (this.config.managers?.credentials) {
-      this._credentialsManager = this.config.managers.credentials;
-      return this._credentialsManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("credentials", async () => {
       const mod = await import("@espada/aws/credentials");
       const cm = mod.createCredentialsManager({
         defaultProfile: this.config.profile,
         defaultRegion: "us-east-1",
       });
       await (cm as { initialize: () => Promise<void> }).initialize();
-      this._credentialsManager = cm;
       return cm;
-    } catch {
-      this._credentialsManager = null;
-      return null;
-    }
+    }, this.config.managers?.credentials);
   }
 
-  /**
-   * Lazily get or create an AWSClientPoolManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getClientPoolManager(): Promise<unknown | null> {
-    if (this._clientPoolManager !== undefined) return this._clientPoolManager as unknown | null;
-
-    if (this.config.managers?.clientPool) {
-      this._clientPoolManager = this.config.managers.clientPool;
-      return this._clientPoolManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("clientPool", async () => {
       const mod = await import("@espada/aws/client-pool");
       const pool = mod.createClientPool({
         maxClientsPerService: 5,
@@ -1268,70 +1221,30 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
         clientTTL: 3600000,
         defaultRegion: "us-east-1",
       });
-
-      // Initialize pool with credentials if available
       const creds = await this.resolveCredentials();
       if (creds) {
         await (pool as { initialize: (c: unknown) => Promise<void> }).initialize(creds);
       }
-
-      this._clientPoolManager = pool;
       return pool;
-    } catch {
-      this._clientPoolManager = null;
-      return null;
-    }
+    }, this.config.managers?.clientPool);
   }
 
-  /**
-   * Lazily get or create an AWSServiceDiscovery from @espada/aws.
-   * Returns null if the extension or CredentialsManager is unavailable.
-   */
   private async getServiceDiscovery(): Promise<unknown | null> {
-    if (this._discoveryManager !== undefined) return this._discoveryManager as unknown | null;
-
-    if (this.config.managers?.discovery) {
-      this._discoveryManager = this.config.managers.discovery;
-      return this._discoveryManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("discovery", async () => {
       const cm = await this.getCredentialsManager();
-      if (!cm) { this._discoveryManager = null; return null; }
-
+      if (!cm) throw new Error("credentials unavailable");
       const pool = await this.getClientPoolManager();
       const mod = await import("@espada/aws/discovery");
-      // eslint-disable-next-line -- dynamic import loses type info; runtime validated
-      this._discoveryManager = mod.createServiceDiscovery(cm as never, (pool ?? undefined) as never);
-      return this._discoveryManager as unknown;
-    } catch {
-      this._discoveryManager = null;
-      return null;
-    }
+      return mod.createServiceDiscovery(cm as never, (pool ?? undefined) as never);
+    }, this.config.managers?.discovery);
   }
 
-  /**
-   * Get or lazily create a CostManager instance from `@espada/aws`.
-   *
-   * Returns null if the aws extension package is not available (e.g. standalone
-   * deployment without the workspace). In that case the static pricing
-   * tables are used as fallback.
-   */
   private async getCostManagerInstance(): Promise<unknown | null> {
-    if (this._costManager !== undefined) return this._costManager as unknown | null;
-
-    if (this.config.managers?.cost) {
-      this._costManager = this.config.managers.cost;
-      return this._costManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("cost", async () => {
       const mod = await import("@espada/aws/cost");
       const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
-
-      // Forward credentials when explicitly available
       if (this.assumedCredentials) {
-        const creds = this.assumedCredentials as Record<string, unknown>;
+        const creds = safeRecord(this.assumedCredentials);
         config["credentials"] = {
           accessKeyId: creds["accessKeyId"],
           secretAccessKey: creds["secretAccessKey"],
@@ -1350,595 +1263,195 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
           // profile resolution failed — let CostManager try default chain
         }
       }
-
-      this._costManager = mod.createCostManager(config);
-      return this._costManager as unknown;
-    } catch {
-      this._costManager = null;
-      return null;
-    }
+      return mod.createCostManager(config);
+    }, this.config.managers?.cost);
   }
 
-  /**
-   * Lazily get or create a CloudTrailManager from @espada/aws.
-   * Returns null if the extension or CredentialsManager is unavailable.
-   */
   private async getCloudTrailManager(): Promise<unknown | null> {
-    if (this._cloudTrailManager !== undefined) return this._cloudTrailManager as unknown | null;
-
-    if (this.config.managers?.cloudtrail) {
-      this._cloudTrailManager = this.config.managers.cloudtrail;
-      return this._cloudTrailManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("cloudtrail", async () => {
       const cm = await this.getCredentialsManager();
-      if (!cm) { this._cloudTrailManager = null; return null; }
-
+      if (!cm) throw new Error("credentials unavailable");
       const mod = await import("@espada/aws/cloudtrail");
-      // eslint-disable-next-line -- dynamic import loses type info; runtime validated
-      this._cloudTrailManager = mod.createCloudTrailManager(cm as never, "us-east-1");
-      return this._cloudTrailManager as unknown;
-    } catch {
-      this._cloudTrailManager = null;
-      return null;
-    }
+      return mod.createCloudTrailManager(cm as never, "us-east-1");
+    }, this.config.managers?.cloudtrail);
   }
 
-  /**
-   * Lazily get or create a SecurityManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getSecurityManager(): Promise<unknown | null> {
-    if (this._securityManager !== undefined) return this._securityManager as unknown | null;
-
-    if (this.config.managers?.security) {
-      this._securityManager = this.config.managers.security;
-      return this._securityManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("security", async () => {
       const mod = await import("@espada/aws/security");
       const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
-
-      // Forward credentials
       if (this.assumedCredentials) {
-        const creds = this.assumedCredentials as Record<string, unknown>;
+        const creds = safeRecord(this.assumedCredentials);
         config["credentials"] = {
           accessKeyId: creds["accessKeyId"],
           secretAccessKey: creds["secretAccessKey"],
           sessionToken: creds["sessionToken"],
         };
       }
-
-      this._securityManager = mod.createSecurityManager(config);
-      return this._securityManager as unknown;
-    } catch {
-      this._securityManager = null;
-      return null;
-    }
+      return mod.createSecurityManager(config);
+    }, this.config.managers?.security);
   }
 
   // ===========================================================================
   // @espada/aws Extended Manager Lazy-Loading
   // ===========================================================================
 
-  /**
-   * Lazily get or create a TaggingManager from @espada/aws.
-   * Returns null if the extension or CredentialsManager is unavailable.
-   */
   private async getTaggingManager(): Promise<unknown | null> {
-    if (this._taggingManager !== undefined) return this._taggingManager as unknown | null;
-
-    if (this.config.managers?.tagging) {
-      this._taggingManager = this.config.managers.tagging;
-      return this._taggingManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("tagging", async () => {
       const cm = await this.getCredentialsManager();
-      if (!cm) { this._taggingManager = null; return null; }
-
+      if (!cm) throw new Error("credentials unavailable");
       const mod = await import("@espada/aws/tagging");
-      this._taggingManager = mod.createTaggingManager(cm as never);
-      return this._taggingManager as unknown;
-    } catch {
-      this._taggingManager = null;
-      return null;
-    }
+      return mod.createTaggingManager(cm as never);
+    }, this.config.managers?.tagging);
   }
 
-  /**
-   * Lazily get or create a LambdaManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getLambdaManager(): Promise<unknown | null> {
-    if (this._lambdaManager !== undefined) return this._lambdaManager as unknown | null;
-
-    if (this.config.managers?.lambda) {
-      this._lambdaManager = this.config.managers.lambda;
-      return this._lambdaManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("lambda", async () => {
       const mod = await import("@espada/aws/lambda");
-      const config = this.buildManagerConfig();
-      this._lambdaManager = new mod.LambdaManager(config);
-      return this._lambdaManager as unknown;
-    } catch {
-      this._lambdaManager = null;
-      return null;
-    }
+      return new mod.LambdaManager(this.buildManagerConfig());
+    }, this.config.managers?.lambda);
   }
 
-  /**
-   * Lazily get or create an ObservabilityManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getObservabilityManager(): Promise<unknown | null> {
-    if (this._observabilityManager !== undefined) return this._observabilityManager as unknown | null;
-
-    if (this.config.managers?.observability) {
-      this._observabilityManager = this.config.managers.observability;
-      return this._observabilityManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("observability", async () => {
       const mod = await import("@espada/aws/observability");
-      const config = this.buildManagerConfig();
-      this._observabilityManager = new mod.ObservabilityManager(config);
-      return this._observabilityManager as unknown;
-    } catch {
-      this._observabilityManager = null;
-      return null;
-    }
+      return new mod.ObservabilityManager(this.buildManagerConfig());
+    }, this.config.managers?.observability);
   }
 
-  /**
-   * Lazily get or create an S3Manager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getS3Manager(): Promise<unknown | null> {
-    if (this._s3Manager !== undefined) return this._s3Manager as unknown | null;
-
-    if (this.config.managers?.s3) {
-      this._s3Manager = this.config.managers.s3;
-      return this._s3Manager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("s3", async () => {
       const mod = await import("@espada/aws/s3");
-      const config = this.buildManagerConfig();
-      this._s3Manager = new mod.S3Manager(config);
-      return this._s3Manager as unknown;
-    } catch {
-      this._s3Manager = null;
-      return null;
-    }
+      return new mod.S3Manager(this.buildManagerConfig());
+    }, this.config.managers?.s3);
   }
 
-  /**
-   * Lazily get or create an ElastiCacheManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getElastiCacheManager(): Promise<unknown | null> {
-    if (this._elastiCacheManager !== undefined) return this._elastiCacheManager as unknown | null;
-
-    if (this.config.managers?.elasticache) {
-      this._elastiCacheManager = this.config.managers.elasticache;
-      return this._elastiCacheManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("elasticache", async () => {
       const mod = await import("@espada/aws/elasticache");
-      const config = this.buildManagerConfig();
-      this._elastiCacheManager = mod.createElastiCacheManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._elastiCacheManager as unknown;
-    } catch {
-      this._elastiCacheManager = null;
-      return null;
-    }
+      return mod.createElastiCacheManager(this.buildRegionCredConfig());
+    }, this.config.managers?.elasticache);
   }
 
-  /**
-   * Lazily get or create an OrganizationManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getOrganizationManager(): Promise<unknown | null> {
-    if (this._organizationManager !== undefined) return this._organizationManager as unknown | null;
-
-    if (this.config.managers?.organization) {
-      this._organizationManager = this.config.managers.organization;
-      return this._organizationManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("organization", async () => {
       const mod = await import("@espada/aws/organization");
-      const config = this.buildManagerConfig();
-      this._organizationManager = mod.createOrganizationManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._organizationManager as unknown;
-    } catch {
-      this._organizationManager = null;
-      return null;
-    }
+      return mod.createOrganizationManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.organization);
   }
 
-  /**
-   * Lazily get or create a BackupManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getBackupManager(): Promise<unknown | null> {
-    if (this._backupManager !== undefined) return this._backupManager as unknown | null;
-
-    if (this.config.managers?.backup) {
-      this._backupManager = this.config.managers.backup;
-      return this._backupManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("backup", async () => {
       const mod = await import("@espada/aws/backup");
-      const config = this.buildManagerConfig();
-      this._backupManager = mod.createBackupManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._backupManager as unknown;
-    } catch {
-      this._backupManager = null;
-      return null;
-    }
+      return mod.createBackupManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.backup);
   }
 
-  /**
-   * Lazily get or create a ComplianceManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getComplianceManager(): Promise<unknown | null> {
-    if (this._complianceManager !== undefined) return this._complianceManager as unknown | null;
-
-    if (this.config.managers?.compliance) {
-      this._complianceManager = this.config.managers.compliance;
-      return this._complianceManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("compliance", async () => {
       const mod = await import("@espada/aws/compliance");
-      const config = this.buildManagerConfig();
-      this._complianceManager = new mod.AWSComplianceManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._complianceManager as unknown;
-    } catch {
-      this._complianceManager = null;
-      return null;
-    }
+      return new mod.AWSComplianceManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.compliance);
   }
 
-  /**
-   * Lazily get or create an AutomationManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getAutomationManager(): Promise<unknown | null> {
-    if (this._automationManager !== undefined) return this._automationManager as unknown | null;
-
-    if (this.config.managers?.automation) {
-      this._automationManager = this.config.managers.automation;
-      return this._automationManager as unknown;
-    }
-
-    try {
+    return this._managers.getOrCreate("automation", async () => {
       const mod = await import("@espada/aws/automation");
-      const config = this.buildManagerConfig();
-      this._automationManager = new mod.AWSAutomationManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._automationManager as unknown;
-    } catch {
-      this._automationManager = null;
-      return null;
-    }
+      return new mod.AWSAutomationManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.automation);
   }
 
-  /**
-   * Lazily get or create an AWSEC2Manager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getEC2Manager(): Promise<unknown | null> {
-    if (this._ec2Manager !== undefined) return this._ec2Manager as unknown | null;
-
-    if (this.config.managers?.ec2 !== undefined) {
-      this._ec2Manager = this.config.managers.ec2;
-      return this._ec2Manager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("ec2", async () => {
       const mod = await import("@espada/aws/ec2");
       const creds = await this.getCredentialsManager();
-      if (!creds) { this._ec2Manager = null; return null; }
-      this._ec2Manager = mod.createEC2Manager(creds as any, "us-east-1");
-      return this._ec2Manager as unknown;
-    } catch {
-      this._ec2Manager = null;
-      return null;
-    }
+      if (!creds) throw new Error("credentials unavailable");
+      return mod.createEC2Manager(creds as never, "us-east-1");
+    }, this.config.managers?.ec2);
   }
 
-  /**
-   * Lazily get or create an RDSManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getRDSManager(): Promise<unknown | null> {
-    if (this._rdsManager !== undefined) return this._rdsManager as unknown | null;
-
-    if (this.config.managers?.rds !== undefined) {
-      this._rdsManager = this.config.managers.rds;
-      return this._rdsManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("rds", async () => {
       const mod = await import("@espada/aws/rds");
-      const config = this.buildManagerConfig();
-      this._rdsManager = mod.createRDSManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._rdsManager as unknown;
-    } catch {
-      this._rdsManager = null;
-      return null;
-    }
+      return mod.createRDSManager(this.buildRegionCredConfig());
+    }, this.config.managers?.rds);
   }
 
-  /**
-   * Lazily get or create a CICDManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getCICDManager(): Promise<unknown | null> {
-    if (this._cicdManager !== undefined) return this._cicdManager as unknown | null;
-
-    if (this.config.managers?.cicd !== undefined) {
-      this._cicdManager = this.config.managers.cicd;
-      return this._cicdManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("cicd", async () => {
       const mod = await import("@espada/aws/cicd");
-      const config = this.buildManagerConfig();
-      this._cicdManager = mod.createCICDManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._cicdManager as unknown;
-    } catch {
-      this._cicdManager = null;
-      return null;
-    }
+      return mod.createCICDManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.cicd);
   }
 
-  /**
-   * Lazily get or create a CognitoManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getCognitoManager(): Promise<unknown | null> {
-    if (this._cognitoManager !== undefined) return this._cognitoManager as unknown | null;
-
-    if (this.config.managers?.cognito !== undefined) {
-      this._cognitoManager = this.config.managers.cognito;
-      return this._cognitoManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("cognito", async () => {
       const mod = await import("@espada/aws/cognito");
-      const config = this.buildManagerConfig();
-      this._cognitoManager = mod.createCognitoManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._cognitoManager as unknown;
-    } catch {
-      this._cognitoManager = null;
-      return null;
-    }
+      return mod.createCognitoManager(this.buildRegionCredConfig());
+    }, this.config.managers?.cognito);
   }
 
-  /**
-   * Lazily get or create a ContainerManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getContainerManager(): Promise<unknown | null> {
-    if (this._containerManager !== undefined) return this._containerManager as unknown | null;
-
-    if (this.config.managers?.containers !== undefined) {
-      this._containerManager = this.config.managers.containers;
-      return this._containerManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("containers", async () => {
       const mod = await import("@espada/aws/containers");
-      const config = this.buildManagerConfig();
-      this._containerManager = mod.createContainerManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._containerManager as unknown;
-    } catch {
-      this._containerManager = null;
-      return null;
-    }
+      return mod.createContainerManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.containers);
   }
 
-  /**
-   * Lazily get or create a NetworkManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getNetworkManager(): Promise<unknown | null> {
-    if (this._networkManager !== undefined) return this._networkManager as unknown | null;
-
-    if (this.config.managers?.network !== undefined) {
-      this._networkManager = this.config.managers.network;
-      return this._networkManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("network", async () => {
       const mod = await import("@espada/aws/network");
-      const config = this.buildManagerConfig();
-      this._networkManager = mod.createNetworkManager({
-        defaultRegion: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._networkManager as unknown;
-    } catch {
-      this._networkManager = null;
-      return null;
-    }
+      return mod.createNetworkManager(this.buildDefaultRegionCredConfig());
+    }, this.config.managers?.network);
   }
 
-  /**
-   * Lazily get or create a DynamoDBManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getDynamoDBManager(): Promise<unknown | null> {
-    if (this._dynamodbManager !== undefined) return this._dynamodbManager as unknown | null;
-
-    if (this.config.managers?.dynamodb !== undefined) {
-      this._dynamodbManager = this.config.managers.dynamodb;
-      return this._dynamodbManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("dynamodb", async () => {
       const mod = await import("@espada/aws/dynamodb");
-      const config = this.buildManagerConfig();
-      this._dynamodbManager = mod.createDynamoDBManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._dynamodbManager as unknown;
-    } catch {
-      this._dynamodbManager = null;
-      return null;
-    }
+      return mod.createDynamoDBManager(this.buildRegionCredConfig());
+    }, this.config.managers?.dynamodb);
   }
 
-  /**
-   * Lazily get or create an APIGatewayManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getAPIGatewayManager(): Promise<unknown | null> {
-    if (this._apigatewayManager !== undefined) return this._apigatewayManager as unknown | null;
-
-    if (this.config.managers?.apigateway !== undefined) {
-      this._apigatewayManager = this.config.managers.apigateway;
-      return this._apigatewayManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("apigateway", async () => {
       const mod = await import("@espada/aws/apigateway");
-      const config = this.buildManagerConfig();
-      this._apigatewayManager = mod.createAPIGatewayManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._apigatewayManager as unknown;
-    } catch {
-      this._apigatewayManager = null;
-      return null;
-    }
+      return mod.createAPIGatewayManager(this.buildRegionCredConfig());
+    }, this.config.managers?.apigateway);
   }
 
-  /**
-   * Lazily get or create an SQSManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getSQSManager(): Promise<unknown | null> {
-    if (this._sqsManager !== undefined) return this._sqsManager as unknown | null;
-
-    if (this.config.managers?.sqs !== undefined) {
-      this._sqsManager = this.config.managers.sqs;
-      return this._sqsManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("sqs", async () => {
       const mod = await import("@espada/aws/sqs");
-      const config = this.buildManagerConfig();
-      this._sqsManager = mod.createSQSManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._sqsManager as unknown;
-    } catch {
-      this._sqsManager = null;
-      return null;
-    }
+      return mod.createSQSManager(this.buildRegionCredConfig());
+    }, this.config.managers?.sqs);
   }
 
-  /**
-   * Lazily get or create an SNSManager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getSNSManager(): Promise<unknown | null> {
-    if (this._snsManager !== undefined) return this._snsManager as unknown | null;
-
-    if (this.config.managers?.sns !== undefined) {
-      this._snsManager = this.config.managers.sns;
-      return this._snsManager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("sns", async () => {
       const mod = await import("@espada/aws/sns");
-      const config = this.buildManagerConfig();
-      this._snsManager = mod.createSNSManager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._snsManager as unknown;
-    } catch {
-      this._snsManager = null;
-      return null;
-    }
+      return mod.createSNSManager(this.buildRegionCredConfig());
+    }, this.config.managers?.sns);
   }
 
-  /**
-   * Lazily get or create a Route53Manager from @espada/aws.
-   * Returns null if the extension is unavailable.
-   */
   private async getRoute53Manager(): Promise<unknown | null> {
-    if (this._route53Manager !== undefined) return this._route53Manager as unknown | null;
-
-    if (this.config.managers?.route53 !== undefined) {
-      this._route53Manager = this.config.managers.route53;
-      return this._route53Manager as unknown | null;
-    }
-
-    try {
+    return this._managers.getOrCreate("route53", async () => {
       const mod = await import("@espada/aws/route53");
-      const config = this.buildManagerConfig();
-      this._route53Manager = mod.createRoute53Manager({
-        region: (config["defaultRegion"] as string) ?? "us-east-1",
-        credentials: config["credentials"] as { accessKeyId: string; secretAccessKey: string; sessionToken?: string } | undefined,
-      });
-      return this._route53Manager as unknown;
-    } catch {
-      this._route53Manager = null;
-      return null;
-    }
+      return mod.createRoute53Manager(this.buildRegionCredConfig());
+    }, this.config.managers?.route53);
   }
+
+  // ===========================================================================
+  // Config Builders
+  // ===========================================================================
 
   /**
    * Build a standard config object for @espada/aws managers that take
-   * `{ region?, credentials? }` style configuration.
+   * `{ defaultRegion?, credentials? }` style configuration.
    */
   private buildManagerConfig(): Record<string, unknown> {
     const config: Record<string, unknown> = { defaultRegion: "us-east-1" };
     if (this.assumedCredentials) {
-      const creds = this.assumedCredentials as Record<string, unknown>;
+      const creds = safeRecord(this.assumedCredentials);
       config["credentials"] = {
         accessKeyId: creds["accessKeyId"],
         secretAccessKey: creds["secretAccessKey"],
@@ -1946,6 +1459,24 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
       };
     }
     return config;
+  }
+
+  /** Config for managers expecting `{ region, credentials? }` */
+  private buildRegionCredConfig(): Record<string, unknown> {
+    const base = this.buildManagerConfig();
+    return {
+      region: safeString(base["defaultRegion"] as string, "us-east-1"),
+      credentials: base["credentials"],
+    };
+  }
+
+  /** Config for managers expecting `{ defaultRegion, credentials? }` */
+  private buildDefaultRegionCredConfig(): Record<string, unknown> {
+    const base = this.buildManagerConfig();
+    return {
+      defaultRegion: safeString(base["defaultRegion"] as string, "us-east-1"),
+      credentials: base["credentials"],
+    };
   }
 
   // ===========================================================================
@@ -2385,38 +1916,17 @@ export class AwsDiscoveryAdapter implements GraphDiscoveryAdapter {
    * Call when the adapter is no longer needed.
    */
   async dispose(): Promise<void> {
-    if (this._clientPoolManager && typeof this._clientPoolManager === "object") {
+    // Attempt graceful shutdown of the client pool
+    const pool = this._managers.has("clientPool")
+      ? await this._managers.getOrCreate("clientPool", async () => null)
+      : null;
+    if (pool && typeof pool === "object") {
       try {
-        await (this._clientPoolManager as { destroy?: () => void }).destroy?.();
+        await (pool as { destroy?: () => void }).destroy?.();
       } catch {
         // Ignore cleanup errors
       }
     }
-    this._credentialsManager = undefined;
-    this._clientPoolManager = undefined;
-    this._discoveryManager = undefined;
-    this._costManager = undefined;
-    this._cloudTrailManager = undefined;
-    this._securityManager = undefined;
-    this._taggingManager = undefined;
-    this._lambdaManager = undefined;
-    this._observabilityManager = undefined;
-    this._s3Manager = undefined;
-    this._elastiCacheManager = undefined;
-    this._organizationManager = undefined;
-    this._backupManager = undefined;
-    this._complianceManager = undefined;
-    this._automationManager = undefined;
-    this._ec2Manager = undefined;
-    this._rdsManager = undefined;
-    this._cicdManager = undefined;
-    this._cognitoManager = undefined;
-    this._containerManager = undefined;
-    this._networkManager = undefined;
-    this._dynamodbManager = undefined;
-    this._apigatewayManager = undefined;
-    this._sqsManager = undefined;
-    this._snsManager = undefined;
-    this._route53Manager = undefined;
+    this._managers.clear();
   }
 }
