@@ -29,6 +29,10 @@ import type {
   ListObjectsOutput,
   ObjectDataOutput,
   PutObjectOutput,
+  MultipartUploadInit,
+  UploadPartParams,
+  UploadPartOutput,
+  CompleteMultipartUploadParams,
   DNSZoneInfo,
   CreateDNSZoneParams,
   NetworkVPCInfo,
@@ -130,6 +134,27 @@ export class AWSProviderAdapter implements CloudProviderAdapter {
       credentials: creds.credentials,
     });
     return this._s3Manager;
+  }
+
+  /**
+   * Get the raw S3Client for direct multi-part upload operations.
+   * The S3Manager wraps common high-level operations, but multi-part
+   * requires direct S3Client access for CreateMultipartUpload / UploadPart /
+   * CompleteMultipartUpload / AbortMultipartUpload commands.
+   */
+  private _s3Client: any = null;
+  async getS3Client(): Promise<any> {
+    if (this._s3Client) return this._s3Client;
+
+    const credManager = await this.getCredentialsManager();
+    const creds = await credManager.getCredentials();
+    // @ts-ignore — @aws-sdk/client-s3 is dynamically loaded at runtime
+    const { S3Client } = await import("@aws-sdk/client-s3");
+    this._s3Client = new S3Client({
+      region: this.config.region,
+      credentials: creds.credentials,
+    });
+    return this._s3Client;
   }
 
   /**
@@ -550,6 +575,118 @@ class AWSStorageAdapter implements StorageAdapter {
   async setBucketTags(bucketName: string, tags: Record<string, string>): Promise<void> {
     const s3 = await this.adapter.getS3Manager();
     await s3.setBucketTagging(bucketName, tags);
+  }
+
+  // =========================================================================
+  // Multi-part Upload (S3 CreateMultipartUpload API)
+  // =========================================================================
+
+  async initiateMultipartUpload(
+    bucketName: string,
+    key: string,
+    metadata?: Record<string, string>,
+  ): Promise<MultipartUploadInit> {
+    const s3 = await this.adapter.getS3Manager();
+
+    // Use the underlying S3 client from the manager for multipart operations
+    const client = await this.adapter.getS3Client();
+    // @ts-ignore — @aws-sdk/client-s3 is dynamically loaded at runtime
+    const { CreateMultipartUploadCommand } = await import("@aws-sdk/client-s3");
+
+    const contentType = metadata?.["Content-Type"] ?? "application/octet-stream";
+    const sanitizedMeta: Record<string, string> = {};
+    for (const [k, v] of Object.entries(metadata ?? {})) {
+      if (k === "Content-Type") continue;
+      sanitizedMeta[k] = v;
+    }
+
+    const response = await client.send(
+      new CreateMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        ContentType: contentType,
+        Metadata: Object.keys(sanitizedMeta).length > 0 ? sanitizedMeta : undefined,
+      }),
+    );
+
+    if (!response.UploadId) {
+      throw new Error("Failed to initiate multipart upload — no UploadId returned");
+    }
+
+    return {
+      uploadId: response.UploadId,
+      bucketName,
+      key,
+    };
+  }
+
+  async uploadPart(params: UploadPartParams): Promise<UploadPartOutput> {
+    const client = await this.adapter.getS3Client();
+    // @ts-ignore — @aws-sdk/client-s3 is dynamically loaded at runtime
+    const { UploadPartCommand } = await import("@aws-sdk/client-s3");
+
+    const buf = Buffer.isBuffer(params.data) ? params.data : Buffer.from(params.data);
+
+    const response = await client.send(
+      new UploadPartCommand({
+        Bucket: params.bucketName,
+        Key: params.key,
+        UploadId: params.uploadId,
+        PartNumber: params.partNumber,
+        Body: buf,
+        ContentLength: buf.length,
+      }),
+    );
+
+    if (!response.ETag) {
+      throw new Error(`Upload part ${params.partNumber} failed — no ETag returned`);
+    }
+
+    return {
+      partNumber: params.partNumber,
+      etag: response.ETag,
+    };
+  }
+
+  async completeMultipartUpload(params: CompleteMultipartUploadParams): Promise<PutObjectOutput> {
+    const client = await this.adapter.getS3Client();
+    // @ts-ignore — @aws-sdk/client-s3 is dynamically loaded at runtime
+    const { CompleteMultipartUploadCommand } = await import("@aws-sdk/client-s3");
+
+    const response = await client.send(
+      new CompleteMultipartUploadCommand({
+        Bucket: params.bucketName,
+        Key: params.key,
+        UploadId: params.uploadId,
+        MultipartUpload: {
+          Parts: params.parts
+            .sort((a, b) => a.partNumber - b.partNumber)
+            .map((p) => ({
+              PartNumber: p.partNumber,
+              ETag: p.etag,
+            })),
+        },
+      }),
+    );
+
+    return {
+      etag: response.ETag ?? undefined,
+      versionId: response.VersionId ?? undefined,
+    };
+  }
+
+  async abortMultipartUpload(bucketName: string, key: string, uploadId: string): Promise<void> {
+    const client = await this.adapter.getS3Client();
+    // @ts-ignore — @aws-sdk/client-s3 is dynamically loaded at runtime
+    const { AbortMultipartUploadCommand } = await import("@aws-sdk/client-s3");
+
+    await client.send(
+      new AbortMultipartUploadCommand({
+        Bucket: bucketName,
+        Key: key,
+        UploadId: uploadId,
+      }),
+    );
   }
 }
 

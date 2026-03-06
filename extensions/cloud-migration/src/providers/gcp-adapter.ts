@@ -30,6 +30,10 @@ import type {
   ListObjectsOutput,
   ObjectDataOutput,
   PutObjectOutput,
+  MultipartUploadInit,
+  UploadPartParams,
+  UploadPartOutput,
+  CompleteMultipartUploadParams,
   DNSZoneInfo,
   CreateDNSZoneParams,
   NetworkVPCInfo,
@@ -764,6 +768,226 @@ class GCPStorageAdapter implements StorageAdapter {
     if (!res.ok) {
       throw new Error(`GCP set bucket labels failed: ${res.status} ${res.statusText}`);
     }
+  }
+
+  // =========================================================================
+  // Multi-part Upload (GCS Resumable Upload API)
+  // =========================================================================
+  //
+  // GCS uses "resumable uploads" as its multi-part upload mechanism:
+  //   1. POST to initiate → returns a resumable upload URI
+  //   2. PUT chunks to the resumable URI
+  //   3. Final PUT completes the upload (no explicit commit step)
+  //   4. DELETE the resumable URI to abort
+  //
+  // For simplicity with the step handler interface, we map:
+  //   initiate → POST to get resumable URI (stored as uploadId)
+  //   uploadPart → PUT chunk with Content-Range header
+  //   complete → PUT final chunk (0-length if all parts sent)
+  //   abort → DELETE the resumable URI
+  //
+
+  /** Track resumable upload state: uploadId → { uri, totalBytes, uploadedParts } */
+  private resumableUploads = new Map<string, { uri: string; parts: Map<number, UploadPartOutput> }>();
+
+  async initiateMultipartUpload(
+    bucket: string,
+    key: string,
+    metadata?: Record<string, string>,
+  ): Promise<MultipartUploadInit> {
+    const credMgr = await this.parent.getCredentialsManager();
+    const token = await credMgr.getAccessToken();
+
+    const contentType = metadata?.["Content-Type"] ?? "application/octet-stream";
+
+    // Initiate a resumable upload
+    const url = `https://storage.googleapis.com/upload/storage/v1/b/${bucket}/o?uploadType=resumable&name=${encodeURIComponent(key)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": contentType,
+      },
+      body: JSON.stringify({
+        name: key,
+        metadata: metadata ? Object.fromEntries(
+          Object.entries(metadata).filter(([k]) => k !== "Content-Type"),
+        ) : undefined,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`GCP initiate resumable upload failed: ${res.status} ${res.statusText}`);
+    }
+
+    const resumableUri = res.headers.get("Location");
+    if (!resumableUri) {
+      throw new Error("GCP resumable upload did not return a Location header");
+    }
+
+    // Use the resumable URI as the uploadId
+    const uploadId = `gcs-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    this.resumableUploads.set(uploadId, { uri: resumableUri, parts: new Map() });
+
+    return {
+      uploadId,
+      bucketName: bucket,
+      key,
+    };
+  }
+
+  async uploadPart(params: UploadPartParams): Promise<UploadPartOutput> {
+    const uploadState = this.resumableUploads.get(params.uploadId);
+    if (!uploadState) {
+      throw new Error(`No resumable upload found for uploadId: ${params.uploadId}`);
+    }
+
+    const credMgr = await this.parent.getCredentialsManager();
+    const token = await credMgr.getAccessToken();
+
+    const buf = Buffer.isBuffer(params.data) ? params.data : Buffer.from(params.data);
+
+    // For GCS resumable uploads, we upload each part as a separate PUT
+    // with Content-Range header. However, for compose-style multipart
+    // (which is simpler), we upload each part as a temporary object
+    // and then compose them in the complete step.
+    //
+    // Compose approach: upload as temporary object, then compose
+    const tempKey = `__multipart_staging/${params.uploadId}/part-${String(params.partNumber).padStart(6, "0")}`;
+
+    const uploadUrl = `https://storage.googleapis.com/upload/storage/v1/b/${params.bucketName}/o?uploadType=media&name=${encodeURIComponent(tempKey)}`;
+    const res = await fetch(uploadUrl, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/octet-stream",
+      },
+      body: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer,
+    });
+
+    if (!res.ok) {
+      throw new Error(`GCP upload part ${params.partNumber} failed: ${res.status} ${res.statusText}`);
+    }
+
+    const result: UploadPartOutput = {
+      partNumber: params.partNumber,
+      etag: tempKey, // Store the temp key as "etag" for compose
+    };
+
+    uploadState.parts.set(params.partNumber, result);
+    return result;
+  }
+
+  async completeMultipartUpload(params: CompleteMultipartUploadParams): Promise<PutObjectOutput> {
+    const uploadState = this.resumableUploads.get(params.uploadId);
+    if (!uploadState) {
+      throw new Error(`No resumable upload found for uploadId: ${params.uploadId}`);
+    }
+
+    const credMgr = await this.parent.getCredentialsManager();
+    const token = await credMgr.getAccessToken();
+
+    // Use GCS compose API to combine all staged parts into the final object
+    // GCS compose supports up to 32 source objects per call, so we may
+    // need to compose in rounds for very large uploads.
+    const sortedParts = params.parts
+      .sort((a, b) => a.partNumber - b.partNumber)
+      .map((p) => p.etag); // These are temp object keys
+
+    // Compose in batches of 32 (GCS limit)
+    let currentSources = sortedParts;
+    let round = 0;
+
+    while (currentSources.length > 1) {
+      const nextSources: string[] = [];
+      const batchSize = 32;
+
+      for (let i = 0; i < currentSources.length; i += batchSize) {
+        const batch = currentSources.slice(i, i + batchSize);
+        const isLastRound = currentSources.length <= batchSize;
+        const destName = isLastRound
+          ? params.key
+          : `__multipart_staging/${params.uploadId}/compose-round-${round}-${i}`;
+
+        const composeUrl = `https://storage.googleapis.com/storage/v1/b/${params.bucketName}/o/${encodeURIComponent(destName)}/compose`;
+        const res = await fetch(composeUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourceObjects: batch.map((name) => ({ name })),
+            destination: { name: destName },
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`GCP compose failed: ${res.status} ${res.statusText}`);
+        }
+
+        nextSources.push(destName);
+      }
+
+      // Clean up intermediate compose results (not the final one)
+      if (currentSources !== sortedParts) {
+        for (const src of currentSources) {
+          if (src !== params.key) {
+            try {
+              const delUrl = `https://storage.googleapis.com/storage/v1/b/${params.bucketName}/o/${encodeURIComponent(src)}`;
+              await fetch(delUrl, {
+                method: "DELETE",
+                headers: { Authorization: `Bearer ${token}` },
+              });
+            } catch { /* best-effort cleanup */ }
+          }
+        }
+      }
+
+      currentSources = nextSources;
+      round++;
+    }
+
+    // Clean up original temp parts
+    for (const tempKey of sortedParts) {
+      if (tempKey !== params.key) {
+        try {
+          const delUrl = `https://storage.googleapis.com/storage/v1/b/${params.bucketName}/o/${encodeURIComponent(tempKey)}`;
+          await fetch(delUrl, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch { /* best-effort cleanup */ }
+      }
+    }
+
+    this.resumableUploads.delete(params.uploadId);
+
+    return {
+      etag: undefined, // GCS compose doesn't return an ETag directly
+    };
+  }
+
+  async abortMultipartUpload(bucketName: string, _key: string, uploadId: string): Promise<void> {
+    const uploadState = this.resumableUploads.get(uploadId);
+    if (!uploadState) return;
+
+    const credMgr = await this.parent.getCredentialsManager();
+    const token = await credMgr.getAccessToken();
+
+    // Delete all staged temp objects
+    for (const [_, part] of uploadState.parts) {
+      try {
+        const delUrl = `https://storage.googleapis.com/storage/v1/b/${bucketName}/o/${encodeURIComponent(part.etag)}`;
+        await fetch(delUrl, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch { /* best-effort cleanup */ }
+    }
+
+    this.resumableUploads.delete(uploadId);
   }
 }
 

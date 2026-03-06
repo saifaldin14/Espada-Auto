@@ -29,6 +29,10 @@ import type {
   ListObjectsOutput,
   ObjectDataOutput,
   PutObjectOutput,
+  MultipartUploadInit,
+  UploadPartParams,
+  UploadPartOutput,
+  CompleteMultipartUploadParams,
   DNSZoneInfo,
   CreateDNSZoneParams,
   NetworkVPCInfo,
@@ -542,6 +546,60 @@ class AzureComputeAdapter implements ComputeAdapter {
 class AzureStorageAdapter implements StorageAdapter {
   constructor(private adapter: AzureProviderAdapter) {}
 
+  // ---------------------------------------------------------------------------
+  // Blob Service Client resolution (data plane)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Resolve a BlobServiceClient for the given storage account.
+   *
+   * Uses the credential obtained from AzureCredentialsManager and the
+   * well-known blob endpoint URL `https://<account>.blob.core.windows.net`.
+   *
+   * Falls back to account key–based connection string if SAS/AD token is
+   * not available.
+   */
+  private async getBlobServiceClient(accountName: string): Promise<any> {
+    const credManager = await this.adapter.getCredentialsManager();
+    const { credential } = await credManager.getCredential();
+    // @ts-ignore — @azure/storage-blob is dynamically loaded at runtime
+    const { BlobServiceClient } = await import("@azure/storage-blob");
+    const url = `https://${accountName}.blob.core.windows.net`;
+    return new BlobServiceClient(url, credential);
+  }
+
+  /**
+   * Resolve a ContainerClient for a specific container within an account.
+   */
+  private async getContainerClient(accountName: string, containerName: string): Promise<any> {
+    const blobSvc = await this.getBlobServiceClient(accountName);
+    return blobSvc.getContainerClient(containerName);
+  }
+
+  /**
+   * Parse Azure bucket naming convention.
+   *
+   * Cloud-migration uses "bucket" as a generic term. On Azure this maps to
+   * `<storageAccount>/<container>`.  When callers pass a single name we
+   * treat the first `/`-delimited segment as the storage account name and
+   * the remainder as the container name.  If there is no `/` we default the
+   * container to "migration-data".
+   */
+  private parseBucketName(bucketName: string): { accountName: string; containerName: string } {
+    const slashIdx = bucketName.indexOf("/");
+    if (slashIdx > 0) {
+      return {
+        accountName: bucketName.substring(0, slashIdx),
+        containerName: bucketName.substring(slashIdx + 1),
+      };
+    }
+    return { accountName: bucketName, containerName: "migration-data" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bucket (Storage Account + Container) operations
+  // ---------------------------------------------------------------------------
+
   async listBuckets(region?: string): Promise<NormalizedBucket[]> {
     const storageMgr = await this.adapter.getStorageManager();
     const accounts = await storageMgr.listStorageAccounts();
@@ -562,7 +620,8 @@ class AzureStorageAdapter implements StorageAdapter {
   async getBucket(bucketName: string): Promise<NormalizedBucket | null> {
     const storageMgr = await this.adapter.getStorageManager();
     try {
-      const account = await storageMgr.getStorageAccount(bucketName);
+      const { accountName } = this.parseBucketName(bucketName);
+      const account = await storageMgr.getStorageAccount(accountName);
       if (!account) return null;
       return {
         id: account.id ?? bucketName,
@@ -605,34 +664,143 @@ class AzureStorageAdapter implements StorageAdapter {
   }
 
   async listObjects(bucketName: string, opts?: ListObjectsOpts): Promise<ListObjectsOutput> {
-    // Azure Blob Storage: list blobs in a container
-    const storageMgr = await this.adapter.getStorageManager();
+    const { accountName, containerName } = this.parseBucketName(bucketName);
+
     try {
-      const containers = await storageMgr.listContainers(bucketName, "espada-migration");
-      // Return container list as objects for compatibility
+      const containerClient = await this.getContainerClient(accountName, containerName);
+
+      const objects: ListObjectsOutput["objects"] = [];
+      let count = 0;
+      const maxKeys = opts?.maxKeys ?? 1000;
+
+      // Azure SDK uses iter-based pagination with byPage()
+      const listOpts: Record<string, unknown> = {};
+      if (opts?.prefix) listOpts.prefix = opts.prefix;
+
+      const iter = containerClient.listBlobsFlat(listOpts).byPage({
+        maxPageSize: maxKeys,
+        ...(opts?.continuationToken ? { continuationToken: opts.continuationToken } : {}),
+      });
+
+      // We only consume the first page for each call (caller paginates)
+      const page = await iter.next();
+      const segment = page.value;
+
+      if (segment?.segment?.blobItems) {
+        for (const blob of segment.segment.blobItems) {
+          objects.push({
+            key: blob.name,
+            sizeBytes: blob.properties?.contentLength ?? 0,
+            lastModified: blob.properties?.lastModified?.toISOString() ?? new Date().toISOString(),
+            etag: blob.properties?.etag ?? undefined,
+            storageClass: blob.properties?.accessTier ?? undefined,
+          });
+          count++;
+        }
+      }
+
+      const nextMarker = segment?.continuationToken;
+
       return {
-        objects: (containers ?? []).map((c: any) => ({
-          key: c.name ?? "",
-          sizeBytes: 0,
-          lastModified: c.lastModified ?? new Date().toISOString(),
-        })),
-        truncated: false,
+        objects,
+        truncated: !!nextMarker,
+        continuationToken: nextMarker ?? undefined,
+        totalCount: count,
       };
-    } catch {
-      return { objects: [], truncated: false };
+    } catch (err) {
+      // If the container doesn't exist, fall back to listing containers
+      // (legacy compatibility path)
+      try {
+        const storageMgr = await this.adapter.getStorageManager();
+        const containers = await storageMgr.listContainers("espada-migration", accountName);
+        return {
+          objects: (containers ?? []).map((c: any) => ({
+            key: c.name ?? "",
+            sizeBytes: 0,
+            lastModified: c.lastModified ?? new Date().toISOString(),
+          })),
+          truncated: false,
+        };
+      } catch {
+        return { objects: [], truncated: false };
+      }
     }
   }
 
   async getObjectUrl(bucketName: string, key: string, expiresInSec?: number): Promise<string> {
-    // Azure generates SAS URLs — requires BlobServiceClient
-    return `https://${bucketName}.blob.core.windows.net/${key}`;
+    const { accountName, containerName } = this.parseBucketName(bucketName);
+
+    try {
+      const containerClient = await this.getContainerClient(accountName, containerName);
+      const blobClient = containerClient.getBlobClient(key);
+
+      if (expiresInSec) {
+        // Generate a user-delegation SAS with the requested expiry
+        const blobSvc = await this.getBlobServiceClient(accountName);
+        const { BlobSASPermissions, generateBlobSASQueryParameters, SASProtocol } =
+          // @ts-ignore — @azure/storage-blob is dynamically loaded at runtime
+          await import("@azure/storage-blob");
+
+        const now = new Date();
+        const expiry = new Date(now.getTime() + expiresInSec * 1000);
+
+        // Obtain a user delegation key for SAS signing
+        const delegationKey = await blobSvc.getUserDelegationKey(now, expiry);
+
+        const sasParams = generateBlobSASQueryParameters(
+          {
+            containerName,
+            blobName: key,
+            permissions: BlobSASPermissions.parse("r"),
+            startsOn: now,
+            expiresOn: expiry,
+            protocol: SASProtocol.Https,
+          },
+          delegationKey,
+          accountName,
+        );
+
+        return `${blobClient.url}?${sasParams.toString()}`;
+      }
+
+      return blobClient.url;
+    } catch {
+      // Fallback to static URL if SAS generation fails
+      return `https://${accountName}.blob.core.windows.net/${containerName}/${key}`;
+    }
   }
 
   async getObject(bucketName: string, key: string): Promise<ObjectDataOutput> {
-    // Azure Blob download would use BlobClient.download()
+    const { accountName, containerName } = this.parseBucketName(bucketName);
+
+    const containerClient = await this.getContainerClient(accountName, containerName);
+    const blobClient = containerClient.getBlobClient(key);
+    const response = await blobClient.download(0);
+
+    // Collect the readable stream into a Buffer
+    const chunks: Buffer[] = [];
+    const readable = response.readableStreamBody;
+    if (readable) {
+      for await (const chunk of readable as AsyncIterable<Buffer>) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+    }
+
+    const data = chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
+
+    // Collect metadata
+    const metadata: Record<string, string> = {};
+    if (response.metadata) {
+      for (const [k, v] of Object.entries(response.metadata)) {
+        if (v !== undefined && v !== null) metadata[k] = String(v);
+      }
+    }
+
     return {
-      data: Buffer.alloc(0),
-      contentType: "application/octet-stream",
+      data,
+      contentType: response.contentType ?? "application/octet-stream",
+      etag: response.etag ?? undefined,
+      metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
     };
   }
 
@@ -642,20 +810,183 @@ class AzureStorageAdapter implements StorageAdapter {
     data: Buffer | Uint8Array,
     metadata?: Record<string, string>,
   ): Promise<PutObjectOutput> {
-    // Azure Blob upload would use BlockBlobClient.upload()
-    return {};
+    const { accountName, containerName } = this.parseBucketName(bucketName);
+
+    const containerClient = await this.getContainerClient(accountName, containerName);
+
+    // Ensure the container exists (create if needed with no public access)
+    try {
+      await containerClient.createIfNotExists({ access: undefined });
+    } catch {
+      // Container may already exist — that's fine
+    }
+
+    const blockBlobClient = containerClient.getBlockBlobClient(key);
+
+    // Separate Content-Type from user metadata (Azure metadata cannot contain hyphens
+    // so we pass contentType through blobHTTPHeaders)
+    const contentType = metadata?.["Content-Type"] ?? "application/octet-stream";
+    const storageClass = metadata?.["Storage-Class"];
+    const blobMetadata: Record<string, string> = {};
+    for (const [k, v] of Object.entries(metadata ?? {})) {
+      if (k === "Content-Type" || k === "Storage-Class") continue;
+      // Azure metadata keys must be valid C# identifiers — strip hyphens
+      blobMetadata[k.replace(/-/g, "_")] = v;
+    }
+
+    const uploadOpts: Record<string, unknown> = {
+      blobHTTPHeaders: { blobContentType: contentType },
+      metadata: Object.keys(blobMetadata).length > 0 ? blobMetadata : undefined,
+      ...(storageClass ? { tier: storageClass } : {}),
+    };
+
+    const buf = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    const response = await blockBlobClient.upload(buf, buf.length, uploadOpts);
+
+    return {
+      etag: response.etag ?? undefined,
+      versionId: response.versionId ?? undefined,
+    };
   }
 
   async deleteObject(bucketName: string, key: string): Promise<void> {
-    // Azure Blob delete would use BlobClient.delete()
+    const { accountName, containerName } = this.parseBucketName(bucketName);
+
+    try {
+      const containerClient = await this.getContainerClient(accountName, containerName);
+      const blobClient = containerClient.getBlobClient(key);
+      await blobClient.delete({ deleteSnapshots: "include" });
+    } catch {
+      // Blob may already be deleted
+    }
   }
 
   async setBucketVersioning(bucketName: string, enabled: boolean): Promise<void> {
-    // Azure: set blob service properties for versioning
+    const { accountName } = this.parseBucketName(bucketName);
+
+    try {
+      const blobSvc = await this.getBlobServiceClient(accountName);
+      const currentProps = await blobSvc.getProperties();
+      await blobSvc.setProperties({
+        ...currentProps,
+        blobAnalyticsLogging: currentProps.blobAnalyticsLogging,
+        minuteMetrics: currentProps.minuteMetrics,
+        hourMetrics: currentProps.hourMetrics,
+        cors: currentProps.cors,
+        deleteRetentionPolicy: currentProps.deleteRetentionPolicy,
+        // Note: isVersioningEnabled is a read-only property on BlobServiceProperties
+        // Versioning must be enabled through the ARM management plane
+      });
+
+      // Use ARM API to toggle versioning
+      const storageMgr = await this.adapter.getStorageManager();
+      const client = await storageMgr["getStorageClient"]?.() ?? null;
+      if (client) {
+        // ARM-level property update
+        await client.blobServices.setServiceProperties(
+          "espada-migration",
+          accountName,
+          "default",
+          { isVersioningEnabled: enabled },
+        );
+      }
+    } catch {
+      // Versioning toggle is best-effort — may require elevated permissions
+    }
   }
 
   async setBucketTags(bucketName: string, tags: Record<string, string>): Promise<void> {
-    // Azure: update storage account tags
+    const { accountName } = this.parseBucketName(bucketName);
+
+    try {
+      const storageMgr = await this.adapter.getStorageManager();
+      // Use the ARM storage client to update account tags
+      const client = await (storageMgr as any)["getStorageClient"]?.();
+      if (client) {
+        await client.storageAccounts.update("espada-migration", accountName, { tags });
+      }
+    } catch {
+      // Tag update is best-effort
+    }
+  }
+
+  // =========================================================================
+  // Multi-part Upload (Azure Staged Block Upload)
+  // =========================================================================
+  //
+  // Azure Blob Storage uses a "staged block" model rather than S3-style
+  // multipart uploads. The flow is:
+  //   1. initiateMultipartUpload → returns a synthetic uploadId (block ID prefix)
+  //   2. uploadPart → stageBlock() for each part
+  //   3. completeMultipartUpload → commitBlockList() to finalise
+  //   4. abortMultipartUpload → unstaged blocks auto-expire (no explicit abort)
+  //
+
+  async initiateMultipartUpload(
+    bucketName: string,
+    key: string,
+    metadata?: Record<string, string>,
+  ): Promise<MultipartUploadInit> {
+    // Azure doesn't have an explicit "initiate" call — we generate a block ID prefix
+    // that will be used to stage blocks. The prefix ensures uniqueness per upload.
+    const uploadId = `mpu-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    return {
+      uploadId,
+      bucketName,
+      key,
+    };
+  }
+
+  async uploadPart(params: UploadPartParams): Promise<UploadPartOutput> {
+    const { accountName, containerName } = this.parseBucketName(params.bucketName);
+
+    const containerClient = await this.getContainerClient(accountName, containerName);
+
+    // Ensure container exists
+    try {
+      await containerClient.createIfNotExists({ access: undefined });
+    } catch { /* may already exist */ }
+
+    const blockBlobClient = containerClient.getBlockBlobClient(params.key);
+
+    // Generate a block ID from the uploadId + part number
+    // Block IDs must be base64-encoded and all the same length
+    const blockIdRaw = `${params.uploadId}-${String(params.partNumber).padStart(6, "0")}`;
+    const blockId = Buffer.from(blockIdRaw).toString("base64");
+
+    const buf = Buffer.isBuffer(params.data) ? params.data : Buffer.from(params.data);
+    await blockBlobClient.stageBlock(blockId, buf, buf.length);
+
+    return {
+      partNumber: params.partNumber,
+      etag: blockId, // Return the block ID as "etag" for the complete call
+    };
+  }
+
+  async completeMultipartUpload(params: CompleteMultipartUploadParams): Promise<PutObjectOutput> {
+    const { accountName, containerName } = this.parseBucketName(params.bucketName);
+
+    const containerClient = await this.getContainerClient(accountName, containerName);
+    const blockBlobClient = containerClient.getBlockBlobClient(params.key);
+
+    // Commit the block list — parts.etag contains the base64 block IDs
+    const blockList = params.parts
+      .sort((a, b) => a.partNumber - b.partNumber)
+      .map((p) => p.etag);
+
+    const response = await blockBlobClient.commitBlockList(blockList);
+
+    return {
+      etag: response.etag ?? undefined,
+      versionId: response.versionId ?? undefined,
+    };
+  }
+
+  async abortMultipartUpload(_bucketName: string, _key: string, _uploadId: string): Promise<void> {
+    // Azure does not require explicit abort for staged blocks.
+    // Uncommitted blocks are automatically garbage-collected after 7 days.
+    // No-op here.
   }
 }
 

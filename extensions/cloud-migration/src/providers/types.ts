@@ -264,6 +264,66 @@ export interface StorageAdapter {
    * Set bucket tags.
    */
   setBucketTags(bucketName: string, tags: Record<string, string>): Promise<void>;
+
+  // =========================================================================
+  // Multi-part Upload Operations
+  // =========================================================================
+
+  /**
+   * Initiate a multi-part upload for a large object.
+   * Returns an uploadId that must be passed to subsequent part uploads
+   * and the complete/abort calls.
+   *
+   * - **AWS**: CreateMultipartUpload
+   * - **Azure**: Each staged block acts as a part; the "uploadId" is a synthetic token
+   * - **GCP**: Resumable upload (initiateResumableUpload)
+   */
+  initiateMultipartUpload(bucketName: string, key: string, metadata?: Record<string, string>): Promise<MultipartUploadInit>;
+
+  /**
+   * Upload a single part of a multi-part upload.
+   * Parts are 1-indexed. Each part must be at least 5 MB (except the last).
+   *
+   * Returns the ETag / block ID needed for the complete call.
+   */
+  uploadPart(params: UploadPartParams): Promise<UploadPartOutput>;
+
+  /**
+   * Finalise the multi-part upload by combining all uploaded parts.
+   * After this call the object becomes available under the target key.
+   */
+  completeMultipartUpload(params: CompleteMultipartUploadParams): Promise<PutObjectOutput>;
+
+  /**
+   * Abort a multi-part upload and discard all uploaded parts.
+   */
+  abortMultipartUpload(bucketName: string, key: string, uploadId: string): Promise<void>;
+}
+
+export interface MultipartUploadInit {
+  uploadId: string;
+  bucketName: string;
+  key: string;
+}
+
+export interface UploadPartParams {
+  bucketName: string;
+  key: string;
+  uploadId: string;
+  partNumber: number;
+  data: Buffer | Uint8Array;
+}
+
+export interface UploadPartOutput {
+  partNumber: number;
+  etag: string;
+}
+
+export interface CompleteMultipartUploadParams {
+  bucketName: string;
+  key: string;
+  uploadId: string;
+  parts: Array<{ partNumber: number; etag: string }>;
 }
 
 export interface CreateBucketParams {

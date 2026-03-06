@@ -21,6 +21,11 @@ import { importImageHandler } from "./compute/steps/import-image.js";
 import { provisionVMHandler } from "./compute/steps/provision-vm.js";
 import { verifyBootHandler } from "./compute/steps/verify-boot.js";
 import { cutoverHandler } from "./compute/steps/cutover.js";
+import { remediateBootHandler } from "./compute/steps/remediate-boot.js";
+import { decommissionSourceHandler } from "./compute/steps/decommission-source.js";
+
+// Governance step handlers
+import { approvalGateHandler } from "./governance/approval-gate-handler.js";
 
 // Data step handlers
 import { inventorySourceHandler } from "./data/steps/inventory-source.js";
@@ -28,6 +33,12 @@ import { createTargetHandler } from "./data/steps/create-target.js";
 import { transferObjectsHandler } from "./data/steps/transfer-objects.js";
 import { verifyIntegrityHandler } from "./data/steps/verify-integrity.js";
 import { syncMetadataHandler } from "./data/steps/sync-metadata.js";
+
+// Database step handlers
+import { exportDatabaseHandler } from "./data/steps/export-database.js";
+import { transferDatabaseHandler } from "./data/steps/transfer-database.js";
+import { importDatabaseHandler } from "./data/steps/import-database.js";
+import { verifySchemaHandler } from "./data/steps/verify-schema.js";
 
 // Network step handlers
 import { mapNetworkHandler } from "./network/steps/map-network.js";
@@ -53,6 +64,11 @@ const STEP_HANDLER_REGISTRY: Array<{
   { type: "provision-vm", handler: provisionVMHandler, requiresRollback: true },
   { type: "verify-boot", handler: verifyBootHandler, requiresRollback: false },
   { type: "cutover", handler: cutoverHandler, requiresRollback: true },
+  { type: "remediate-boot", handler: remediateBootHandler, requiresRollback: false },
+  { type: "decommission-source", handler: decommissionSourceHandler, requiresRollback: true },
+
+  // Governance pipeline
+  { type: "approval-gate", handler: approvalGateHandler, requiresRollback: false },
 
   // Data pipeline
   { type: "inventory-source", handler: inventorySourceHandler, requiresRollback: false },
@@ -60,6 +76,12 @@ const STEP_HANDLER_REGISTRY: Array<{
   { type: "transfer-objects", handler: transferObjectsHandler, requiresRollback: false },
   { type: "verify-integrity", handler: verifyIntegrityHandler, requiresRollback: false },
   { type: "sync-metadata", handler: syncMetadataHandler, requiresRollback: false },
+
+  // Database pipeline
+  { type: "export-database", handler: exportDatabaseHandler, requiresRollback: true },
+  { type: "transfer-database", handler: transferDatabaseHandler, requiresRollback: true },
+  { type: "import-database", handler: importDatabaseHandler, requiresRollback: true },
+  { type: "verify-schema", handler: verifySchemaHandler, requiresRollback: false },
 
   // Network pipeline
   { type: "map-network", handler: mapNetworkHandler, requiresRollback: false },

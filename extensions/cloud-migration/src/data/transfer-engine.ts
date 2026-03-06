@@ -3,12 +3,33 @@
  *
  * Coordinates multi-part, parallel object transfer between cloud
  * storage providers with per-chunk integrity verification.
+ *
+ * For production use, prefer the streaming transfer engine which supports
+ * resumable transfers, delta/incremental sync, multi-part uploads, and
+ * bandwidth throttling:
+ *
+ *   import { createStreamingTransfer } from "./streaming-transfer-engine.js";
+ *
+ * This module remains the default for backward compatibility and lightweight
+ * migrations where the full streaming engine is not needed.
  */
 
 import type { TransferManifest, IntegrityReport, MigrationProvider, TransferObjectEntry } from "../types.js";
 import type { ObjectTransferConfig, ObjectTransferProgress, ObjectTransferResult } from "./types.js";
 import { mapStorageClass } from "./types.js";
 import type { CloudProviderAdapter } from "../providers/types.js";
+
+// Re-export the streaming engine for easy access
+export {
+  createStreamingTransfer,
+  serializeCheckpoint,
+  deserializeCheckpoint,
+  getStreamingStorageClassMappings,
+} from "./streaming-transfer-engine.js";
+export type {
+  StreamingTransferOptions,
+  TransferCheckpoint,
+} from "./streaming-transfer-engine.js";
 
 // =============================================================================
 // Transfer Engine
