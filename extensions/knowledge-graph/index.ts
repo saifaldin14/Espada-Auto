@@ -11,10 +11,15 @@ import { GraphEngine } from "./src/core/engine.js";
 import { InMemoryGraphStorage } from "./src/storage/index.js";
 import { SQLiteGraphStorage } from "./src/storage/index.js";
 import { registerGraphTools, registerGovernanceTools } from "./src/tools/tools.js";
+import { registerIntegrationTools } from "./src/tools/integration-tools.js";
 import { registerGraphCli } from "./src/cli/cli.js";
 import { registerInfraCli } from "./src/cli/infra-cli.js";
 import { ChangeGovernor } from "./src/core/governance.js";
 import type { GraphStorage, CloudProvider } from "./src/types.js";
+import {
+  IntegrationManager,
+  type ExternalExtensions,
+} from "./src/integrations/index.js";
 
 // Re-export public API for programmatic use by other extensions
 export { GraphEngine } from "./src/core/engine.js";
@@ -23,6 +28,8 @@ export { AdapterRegistry, AwsDiscoveryAdapter } from "./src/adapters/index.js";
 export { exportTopology } from "./src/reporting/export.js";
 export { ChangeGovernor, calculateRiskScore } from "./src/core/governance.js";
 export type { ChangeRequest, RiskAssessment} from "./src/core/governance.js";
+export { IntegrationManager } from "./src/integrations/index.js";
+export type { IntegrationContext, ExtensionAvailability } from "./src/integrations/index.js";
 
 // =============================================================================
 // Plugin Configuration
@@ -92,7 +99,8 @@ export default {
     // The infra CLI creates its own storage per-invocation, so it doesn't need
     // the plugin-level engine/storage.
     api.registerCli(
-      (ctx) => registerInfraCli({ program: ctx.program, logger: ctx.logger, workspaceDir: ctx.workspaceDir }),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- commander@14 (SDK) vs @12 (local) structural compat
+      (ctx) => registerInfraCli({ program: ctx.program as any, logger: ctx.logger, workspaceDir: ctx.workspaceDir }),
       { commands: ["infra"] },
     );
 
@@ -116,8 +124,37 @@ export default {
       api.logger.error(`Knowledge graph storage init failed: ${err}`);
     });
 
+    // -- Resolve sibling extension interfaces --------------------------------
+    const ext: ExternalExtensions = {};
+
+    // Probe each sibling extension. We use try/catch because getService
+    // may throw or not exist if the extension is not installed.
+    const svc = (api as Record<string, unknown>).getService as
+      | ((extId: string, name: string) => unknown)
+      | undefined;
+
+    if (typeof svc === "function") {
+      try { ext.authEngine = svc("enterprise-auth", "RbacEngine") as typeof ext.authEngine; } catch { /* not available */ }
+      try { ext.auditLogger = svc("audit-trail", "AuditLogger") as typeof ext.auditLogger; } catch { /* not available */ }
+      try { ext.complianceEvaluator = svc("compliance", "ComplianceEvaluator") as typeof ext.complianceEvaluator; } catch { /* not available */ }
+      try { ext.waiverStore = svc("compliance", "WaiverStore") as typeof ext.waiverStore; } catch { /* not available */ }
+      try { ext.policyEngine = svc("policy-engine", "PolicyEvaluationEngine") as typeof ext.policyEngine; } catch { /* not available */ }
+      try { ext.budgetManager = svc("cost-governance", "BudgetManager") as typeof ext.budgetManager; } catch { /* not available */ }
+      try { ext.terraformBridge = svc("terraform", "GraphBridge") as typeof ext.terraformBridge; } catch { /* not available */ }
+      try { ext.alertIngestor = svc("alerting-integration", "AlertIngestor") as typeof ext.alertIngestor; } catch { /* not available */ }
+    }
+
+    // -- Initialize integration manager ----------------------------------------
+    const integrations = new IntegrationManager({
+      engine,
+      storage,
+      logger: api.logger,
+      extensions: ext,
+    });
+
     // -- Register agent tools -------------------------------------------------
     registerGraphTools(api, engine, storage);
+    registerIntegrationTools(api, integrations);
 
     // -- Initialize governance layer -------------------------------------------
     const governor = new ChangeGovernor(engine, storage);
@@ -125,7 +162,8 @@ export default {
 
     // -- Register graph CLI (needs engine + storage) --------------------------
     api.registerCli(
-      (ctx) => registerGraphCli(ctx, engine, storage),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- commander@14 (SDK) vs @12 (local) structural compat
+      (ctx) => registerGraphCli({ ...ctx, program: ctx.program as any }, engine, storage),
       { commands: ["graph"] },
     );
 
@@ -181,10 +219,11 @@ export default {
 
             // Run drift detection after full sync
             if (mergedConfig.sync.enableDriftDetection) {
-              const drift = await engine.detectDrift();
-              if (drift.driftedNodes.length > 0 || drift.disappearedNodes.length > 0) {
+              const driftResult = await integrations.detectDriftAndAlert();
+              if (driftResult.driftedCount > 0 || driftResult.disappearedCount > 0) {
                 ctx.logger.warn(
-                  `Drift detected: ${drift.driftedNodes.length} drifted, ${drift.disappearedNodes.length} disappeared`,
+                  `Drift detected: ${driftResult.driftedCount} drifted, ${driftResult.disappearedCount} disappeared` +
+                  (driftResult.alertsSent > 0 ? ` (${driftResult.alertsSent} alerts sent)` : ""),
                 );
               }
             }
@@ -228,6 +267,37 @@ export default {
       const filter = provider ? { provider } : {};
       const topo = await engine.getTopology(filter);
       respond(true, { nodeCount: topo.nodes.length, edgeCount: topo.edges.length });
+    });
+
+    // -- Integration gateway methods ------------------------------------------
+
+    api.registerGatewayMethod("knowledge-graph/integrations", async ({ respond }) => {
+      respond(true, {
+        available: integrations.available,
+        summary: integrations.availableSummary,
+      });
+    });
+
+    api.registerGatewayMethod("knowledge-graph/compliance", async ({ params, respond }) => {
+      const { framework } = (params ?? {}) as { framework?: string };
+      if (framework) {
+        const result = await integrations.compliance.evaluate(framework as any);
+        respond(true, result);
+      } else {
+        const results = await integrations.compliance.evaluateAll();
+        respond(true, results);
+      }
+    });
+
+    api.registerGatewayMethod("knowledge-graph/policy-check", async ({ params, respond }) => {
+      const { nodeId } = params as { nodeId: string };
+      const result = await integrations.policy.evaluateNode(nodeId);
+      respond(true, result);
+    });
+
+    api.registerGatewayMethod("knowledge-graph/cost-summary", async ({ respond }) => {
+      const summary = await integrations.cost.getCostSummary();
+      respond(true, summary);
     });
   },
 };

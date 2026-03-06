@@ -16,6 +16,15 @@
   "dependencies": [
     "@espada/infrastructure"
   ],
+  "optionalDependencies": [
+    "@espada/enterprise-auth",
+    "@espada/audit-trail",
+    "@espada/compliance",
+    "@espada/policy-engine",
+    "@espada/cost-governance",
+    "@espada/terraform",
+    "@espada/alerting-integration"
+  ],
   "configSchema": {
     "type": "object",
     "properties": {
