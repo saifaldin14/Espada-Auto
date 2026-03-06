@@ -126,6 +126,124 @@ export const STORAGE_CLASS_MAP: Record<string, Record<string, string>> = {
     COLDLINE: "Archive",
     ARCHIVE: "Archive",
   },
+  // On-Premises → AWS
+  "on-premises→aws": {
+    STANDARD: "STANDARD",
+    COLD: "STANDARD_IA",
+    ARCHIVE: "GLACIER",
+  },
+  // On-Premises → Azure
+  "on-premises→azure": {
+    STANDARD: "Hot",
+    COLD: "Cool",
+    ARCHIVE: "Archive",
+  },
+  // On-Premises → GCP
+  "on-premises→gcp": {
+    STANDARD: "STANDARD",
+    COLD: "NEARLINE",
+    ARCHIVE: "COLDLINE",
+  },
+  // AWS → On-Premises
+  "aws→on-premises": {
+    STANDARD: "STANDARD",
+    STANDARD_IA: "COLD",
+    ONEZONE_IA: "COLD",
+    GLACIER: "ARCHIVE",
+    GLACIER_DEEP_ARCHIVE: "ARCHIVE",
+    INTELLIGENT_TIERING: "STANDARD",
+  },
+  // Azure → On-Premises
+  "azure→on-premises": {
+    Hot: "STANDARD",
+    Cool: "COLD",
+    Archive: "ARCHIVE",
+  },
+  // GCP → On-Premises
+  "gcp→on-premises": {
+    STANDARD: "STANDARD",
+    NEARLINE: "COLD",
+    COLDLINE: "ARCHIVE",
+    ARCHIVE: "ARCHIVE",
+  },
+  // VMware ↔ cloud (same as on-premises)
+  "vmware→aws": {
+    STANDARD: "STANDARD",
+    COLD: "STANDARD_IA",
+    ARCHIVE: "GLACIER",
+  },
+  "vmware→azure": {
+    STANDARD: "Hot",
+    COLD: "Cool",
+    ARCHIVE: "Archive",
+  },
+  "vmware→gcp": {
+    STANDARD: "STANDARD",
+    COLD: "NEARLINE",
+    ARCHIVE: "COLDLINE",
+  },
+  "aws→vmware": {
+    STANDARD: "STANDARD",
+    STANDARD_IA: "COLD",
+    GLACIER: "ARCHIVE",
+    GLACIER_DEEP_ARCHIVE: "ARCHIVE",
+    INTELLIGENT_TIERING: "STANDARD",
+  },
+  "azure→vmware": {
+    Hot: "STANDARD",
+    Cool: "COLD",
+    Archive: "ARCHIVE",
+  },
+  "gcp→vmware": {
+    STANDARD: "STANDARD",
+    NEARLINE: "COLD",
+    COLDLINE: "ARCHIVE",
+    ARCHIVE: "ARCHIVE",
+  },
+  // Nutanix ↔ cloud
+  "nutanix→aws": {
+    STANDARD: "STANDARD",
+    COLD: "STANDARD_IA",
+    ARCHIVE: "GLACIER",
+  },
+  "nutanix→azure": {
+    STANDARD: "Hot",
+    COLD: "Cool",
+    ARCHIVE: "Archive",
+  },
+  "nutanix→gcp": {
+    STANDARD: "STANDARD",
+    COLD: "NEARLINE",
+    ARCHIVE: "COLDLINE",
+  },
+  "aws→nutanix": {
+    STANDARD: "STANDARD",
+    STANDARD_IA: "COLD",
+    GLACIER: "ARCHIVE",
+    GLACIER_DEEP_ARCHIVE: "ARCHIVE",
+    INTELLIGENT_TIERING: "STANDARD",
+  },
+  "azure→nutanix": {
+    Hot: "STANDARD",
+    Cool: "COLD",
+    Archive: "ARCHIVE",
+  },
+  "gcp→nutanix": {
+    STANDARD: "STANDARD",
+    NEARLINE: "COLD",
+    COLDLINE: "ARCHIVE",
+    ARCHIVE: "ARCHIVE",
+  },
+  // On-Prem ↔ On-Prem (identity)
+  "on-premises→on-premises": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "vmware→vmware": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "nutanix→nutanix": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "vmware→on-premises": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "on-premises→vmware": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "nutanix→on-premises": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "on-premises→nutanix": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "vmware→nutanix": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
+  "nutanix→vmware": { STANDARD: "STANDARD", COLD: "COLD", ARCHIVE: "ARCHIVE" },
 };
 
 /**

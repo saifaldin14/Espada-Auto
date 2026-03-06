@@ -50,13 +50,15 @@ describe("cloud-migration — extension contract", () => {
     "migration/audit",
     "migration/policy",
     "migration/diagnostics/reset",
+    "migration/agent/health",
+    "migration/agent/discover",
   ] as const;
 
-  it("registers all 14 gateway methods", () => {
+  it("registers all 16 gateway methods", () => {
     for (const name of EXPECTED_GATEWAYS) {
       expect(gateways.has(name), `missing gateway: ${name}`).toBe(true);
     }
-    expect(gateways.size).toBe(14);
+    expect(gateways.size).toBe(16);
   });
 
   // ─── Tool registration ────────────────────────────────────────

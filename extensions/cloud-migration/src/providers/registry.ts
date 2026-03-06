@@ -16,6 +16,9 @@ import type {
   AWSCredentialConfig,
   AzureCredentialConfig,
   GCPCredentialConfig,
+  VMwareCredentialConfig,
+  NutanixCredentialConfig,
+  OnPremCredentialConfig,
 } from "./types.js";
 
 // =============================================================================
@@ -65,13 +68,21 @@ class ProviderRegistry {
         adapter = createGCPAdapter(credentials as GCPCredentialConfig);
         break;
       }
-      case "on-premises":
-      case "vmware":
-      case "nutanix":
-        throw new Error(
-          `Provider '${provider}' is not yet supported for automated migration. ` +
-          `Supported providers: aws, azure, gcp.`,
-        );
+      case "vmware": {
+        const { createVMwareAdapter } = await import("./vmware-adapter.js");
+        adapter = createVMwareAdapter(credentials as VMwareCredentialConfig);
+        break;
+      }
+      case "nutanix": {
+        const { createNutanixAdapter } = await import("./nutanix-adapter.js");
+        adapter = createNutanixAdapter(credentials as NutanixCredentialConfig);
+        break;
+      }
+      case "on-premises": {
+        const { createOnPremAdapter } = await import("./onprem-adapter.js");
+        adapter = createOnPremAdapter(credentials as OnPremCredentialConfig);
+        break;
+      }
       default:
         throw new Error(`Unknown migration provider: ${provider}`);
     }
@@ -84,7 +95,14 @@ class ProviderRegistry {
    * Check whether a specific provider is supported for automated migration.
    */
   isSupported(provider: MigrationProvider): boolean {
-    return provider === "aws" || provider === "azure" || provider === "gcp";
+    return (
+      provider === "aws" ||
+      provider === "azure" ||
+      provider === "gcp" ||
+      provider === "vmware" ||
+      provider === "nutanix" ||
+      provider === "on-premises"
+    );
   }
 
   /**
@@ -119,6 +137,18 @@ class ProviderRegistry {
       case "gcp": {
         const gcp = config as GCPCredentialConfig;
         return `gcp::${gcp.projectId}::${gcp.keyFilePath ?? "default"}`;
+      }
+      case "vmware": {
+        const vmw = config as VMwareCredentialConfig;
+        return `vmware::${vmw.vcenterHost}::${vmw.datacenter ?? "default"}::${vmw.username}`;
+      }
+      case "nutanix": {
+        const ntx = config as NutanixCredentialConfig;
+        return `nutanix::${ntx.prismHost}::${ntx.clusterUuid ?? "default"}::${ntx.username}`;
+      }
+      case "on-premises": {
+        const op = config as OnPremCredentialConfig;
+        return `on-premises::${op.agentEndpoint.host}:${op.agentEndpoint.port}::${op.platform}`;
       }
       default:
         return `${provider}::${JSON.stringify(config)}`;

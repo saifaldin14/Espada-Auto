@@ -38,11 +38,11 @@ describe("ProviderRegistry", () => {
     expect(reg.isSupported("gcp")).toBe(true);
   });
 
-  it("isSupported returns false for on-premises, vmware, nutanix", () => {
+  it("isSupported returns true for on-premises, vmware, nutanix", () => {
     const reg = getProviderRegistry();
-    expect(reg.isSupported("on-premises")).toBe(false);
-    expect(reg.isSupported("vmware")).toBe(false);
-    expect(reg.isSupported("nutanix")).toBe(false);
+    expect(reg.isSupported("on-premises")).toBe(true);
+    expect(reg.isSupported("vmware")).toBe(true);
+    expect(reg.isSupported("nutanix")).toBe(true);
   });
 
   it("clear resets cached adapters", () => {

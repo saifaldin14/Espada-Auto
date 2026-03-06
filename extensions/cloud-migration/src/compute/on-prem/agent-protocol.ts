@@ -108,13 +108,103 @@ export interface AgentExportProgress {
 // =============================================================================
 
 /**
+ * Internal helper: perform an HTTP request to the agent.
+ * Uses Node's built-in fetch (Node 18+). Falls back to https/http modules.
+ */
+async function agentFetch<T>(
+  baseUrl: string,
+  path: string,
+  apiKey: string,
+  opts: {
+    method?: string;
+    body?: unknown;
+    timeoutMs?: number;
+  } = {},
+): Promise<T> {
+  const method = opts.method ?? "GET";
+  const url = `${baseUrl}${path}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-Api-Key": apiKey,
+  };
+  const controller = new AbortController();
+  const timeout = opts.timeoutMs ?? 30_000;
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const fetchOpts: RequestInit = {
+      method,
+      headers,
+      signal: controller.signal,
+    };
+    if (opts.body !== undefined) {
+      fetchOpts.body = JSON.stringify(opts.body);
+    }
+    const response = await fetch(url, fetchOpts);
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      throw new Error(
+        `Agent request failed: ${method} ${path} → ${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`,
+      );
+    }
+    return (await response.json()) as T;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Default retry configuration for agent operations. */
+export interface AgentRetryConfig {
+  maxRetries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+}
+
+const DEFAULT_RETRY: AgentRetryConfig = {
+  maxRetries: 3,
+  baseDelayMs: 1_000,
+  maxDelayMs: 15_000,
+};
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  config: AgentRetryConfig = DEFAULT_RETRY,
+): Promise<T> {
+  let lastError: Error | undefined;
+  for (let attempt = 0; attempt <= config.maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (attempt < config.maxRetries) {
+        const delay = Math.min(
+          config.baseDelayMs * Math.pow(2, attempt),
+          config.maxDelayMs,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
+  }
+  throw lastError;
+}
+
+/**
  * Client for communicating with on-prem migration agents.
+ *
+ * All operations communicate with the agent via HTTPS REST API.
+ * The agent runs inside the customer datacenter and exposes:
+ *   - /api/v1/capabilities    — Agent health & feature flags
+ *   - /api/v1/vms             — VM inventory discovery
+ *   - /api/v1/snapshots       — Snapshot lifecycle
+ *   - /api/v1/exports         — Disk image export tasks
  */
 export class MigrationAgentClient {
   private endpoint: AgentEndpoint;
+  private retryConfig: AgentRetryConfig;
 
-  constructor(endpoint: AgentEndpoint) {
+  constructor(endpoint: AgentEndpoint, retryConfig?: AgentRetryConfig) {
     this.endpoint = endpoint;
+    this.retryConfig = retryConfig ?? DEFAULT_RETRY;
   }
 
   get baseUrl(): string {
@@ -125,74 +215,298 @@ export class MigrationAgentClient {
    * Check agent health and capabilities.
    */
   async getCapabilities(): Promise<AgentCapabilities> {
-    // In a real implementation, this would call the agent's /capabilities endpoint
-    return {
-      snapshotSupport: true,
-      incrementalSync: false,
-      liveExport: false,
-      changedBlockTracking: false,
-      maxConcurrentExports: 2,
-    };
+    return withRetry(
+      () => agentFetch<AgentCapabilities>(
+        this.baseUrl,
+        "/api/v1/capabilities",
+        this.endpoint.apiKey,
+        { timeoutMs: 10_000 },
+      ),
+      this.retryConfig,
+    );
   }
 
   /**
    * Discover VMs managed by the agent.
    */
   async discoverVMs(request?: AgentInventoryRequest): Promise<AgentVMInfo[]> {
-    const _filters = request?.filters;
-    // real impl: GET {baseUrl}/vms?filters=...
-    return [];
+    return withRetry(
+      () => agentFetch<AgentVMInfo[]>(
+        this.baseUrl,
+        "/api/v1/vms",
+        this.endpoint.apiKey,
+        { method: "POST", body: request ?? {} },
+      ),
+      this.retryConfig,
+    );
   }
 
   /**
    * Create a snapshot of a VM.
    */
   async createSnapshot(request: AgentSnapshotRequest): Promise<AgentSnapshotResponse> {
-    // real impl: POST {baseUrl}/vms/{vmId}/snapshots
-    return {
-      snapshotId: `snap-agent-${request.vmId}-${Date.now()}`,
-      vmId: request.vmId,
-      name: request.name,
-      createdAt: new Date().toISOString(),
-      diskSnapshots: [],
-    };
+    return withRetry(
+      () => agentFetch<AgentSnapshotResponse>(
+        this.baseUrl,
+        `/api/v1/vms/${encodeURIComponent(request.vmId)}/snapshots`,
+        this.endpoint.apiKey,
+        { method: "POST", body: request },
+      ),
+      this.retryConfig,
+    );
   }
 
   /**
    * Delete a snapshot.
    */
   async deleteSnapshot(vmId: string, snapshotId: string): Promise<void> {
-    const _key = `${vmId}/${snapshotId}`;
-    // real impl: DELETE {baseUrl}/vms/{vmId}/snapshots/{snapshotId}
+    await withRetry(
+      () => agentFetch<unknown>(
+        this.baseUrl,
+        `/api/v1/vms/${encodeURIComponent(vmId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+        this.endpoint.apiKey,
+        { method: "DELETE" },
+      ),
+      this.retryConfig,
+    );
   }
 
   /**
    * Start an export task.
    */
   async startExport(request: AgentExportRequest): Promise<string> {
-    // real impl: POST {baseUrl}/exports
-    return `export-task-${Date.now()}`;
+    const result = await withRetry(
+      () => agentFetch<{ taskId: string }>(
+        this.baseUrl,
+        "/api/v1/exports",
+        this.endpoint.apiKey,
+        { method: "POST", body: request },
+      ),
+      this.retryConfig,
+    );
+    return result.taskId;
   }
 
   /**
    * Get export progress.
    */
   async getExportProgress(taskId: string): Promise<AgentExportProgress> {
-    // real impl: GET {baseUrl}/exports/{taskId}
-    return {
-      taskId,
-      status: "complete",
-      progressPercent: 100,
-      bytesTransferred: 0,
-      estimatedRemainingMs: 0,
-    };
+    return withRetry(
+      () => agentFetch<AgentExportProgress>(
+        this.baseUrl,
+        `/api/v1/exports/${encodeURIComponent(taskId)}`,
+        this.endpoint.apiKey,
+      ),
+      this.retryConfig,
+    );
   }
 
   /**
    * Cancel an export task.
    */
   async cancelExport(taskId: string): Promise<void> {
-    const _id = taskId;
-    // real impl: DELETE {baseUrl}/exports/{taskId}
+    await withRetry(
+      () => agentFetch<unknown>(
+        this.baseUrl,
+        `/api/v1/exports/${encodeURIComponent(taskId)}`,
+        this.endpoint.apiKey,
+        { method: "DELETE" },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Poll an export task until it reaches a terminal state.
+   * @returns The final export progress (status === "complete" or "failed").
+   */
+  async waitForExport(
+    taskId: string,
+    opts?: { pollIntervalMs?: number; timeoutMs?: number; onProgress?: (p: AgentExportProgress) => void },
+  ): Promise<AgentExportProgress> {
+    const pollInterval = opts?.pollIntervalMs ?? 5_000;
+    const timeout = opts?.timeoutMs ?? 3_600_000; // 1 hour default
+    const start = Date.now();
+
+    while (Date.now() - start < timeout) {
+      const progress = await this.getExportProgress(taskId);
+      opts?.onProgress?.(progress);
+
+      if (progress.status === "complete" || progress.status === "failed") {
+        return progress;
+      }
+
+      await new Promise((r) => setTimeout(r, pollInterval));
+    }
+
+    throw new Error(`Export task ${taskId} timed out after ${timeout}ms`);
+  }
+
+  /**
+   * Import a disk image into the on-prem hypervisor.
+   * The agent pulls the image from the specified source and creates a VM disk.
+   */
+  async importImage(params: {
+    sourceUrl: string;
+    format: "vmdk" | "qcow2" | "raw" | "vhd";
+    targetDatastore?: string;
+    vmName?: string;
+  }): Promise<{ diskId: string; importTaskId: string }> {
+    return withRetry(
+      () => agentFetch<{ diskId: string; importTaskId: string }>(
+        this.baseUrl,
+        "/api/v1/imports",
+        this.endpoint.apiKey,
+        { method: "POST", body: params },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Provision a VM on the on-prem hypervisor from an imported disk.
+   */
+  async provisionVM(params: {
+    diskId: string;
+    vmName: string;
+    cpuCores: number;
+    memoryMB: number;
+    networkName?: string;
+    tags?: Record<string, string>;
+  }): Promise<{ vmId: string; ipAddress?: string }> {
+    return withRetry(
+      () => agentFetch<{ vmId: string; ipAddress?: string }>(
+        this.baseUrl,
+        "/api/v1/vms",
+        this.endpoint.apiKey,
+        { method: "PUT", body: params },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Get the status of a VM.
+   */
+  async getVMStatus(vmId: string): Promise<{ vmId: string; powerState: string; ipAddress?: string }> {
+    return withRetry(
+      () => agentFetch<{ vmId: string; powerState: string; ipAddress?: string }>(
+        this.baseUrl,
+        `/api/v1/vms/${encodeURIComponent(vmId)}/status`,
+        this.endpoint.apiKey,
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Stop a VM.
+   */
+  async stopVM(vmId: string): Promise<void> {
+    await withRetry(
+      () => agentFetch<unknown>(
+        this.baseUrl,
+        `/api/v1/vms/${encodeURIComponent(vmId)}/stop`,
+        this.endpoint.apiKey,
+        { method: "POST" },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Terminate/delete a VM.
+   */
+  async terminateVM(vmId: string): Promise<void> {
+    await withRetry(
+      () => agentFetch<unknown>(
+        this.baseUrl,
+        `/api/v1/vms/${encodeURIComponent(vmId)}`,
+        this.endpoint.apiKey,
+        { method: "DELETE" },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * List DNS records managed by the on-prem DNS server.
+   */
+  async listDNSRecords(zoneId?: string): Promise<Array<{ name: string; type: string; ttl: number; values: string[] }>> {
+    const path = zoneId ? `/api/v1/dns/zones/${encodeURIComponent(zoneId)}/records` : "/api/v1/dns/records";
+    return withRetry(
+      () => agentFetch<Array<{ name: string; type: string; ttl: number; values: string[] }>>(
+        this.baseUrl,
+        path,
+        this.endpoint.apiKey,
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Create or update a DNS record.
+   */
+  async upsertDNSRecord(zoneId: string, record: { name: string; type: string; ttl: number; values: string[] }): Promise<void> {
+    await withRetry(
+      () => agentFetch<unknown>(
+        this.baseUrl,
+        `/api/v1/dns/zones/${encodeURIComponent(zoneId)}/records`,
+        this.endpoint.apiKey,
+        { method: "PUT", body: record },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * List firewall/security rules on the on-prem infrastructure.
+   */
+  async listFirewallRules(): Promise<Array<{
+    id: string; name: string; direction: string; action: string;
+    protocol: string; portRange: { from: number; to: number };
+    source: string; destination: string; priority: number;
+  }>> {
+    return withRetry(
+      () => agentFetch(
+        this.baseUrl,
+        "/api/v1/network/firewall-rules",
+        this.endpoint.apiKey,
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * Create firewall/security rules on the on-prem infrastructure.
+   */
+  async createFirewallRules(rules: Array<{
+    name: string; direction: string; action: string;
+    protocol: string; portRange: { from: number; to: number };
+    source: string; destination: string; priority: number;
+  }>): Promise<{ createdCount: number; ruleIds: string[] }> {
+    return withRetry(
+      () => agentFetch(
+        this.baseUrl,
+        "/api/v1/network/firewall-rules",
+        this.endpoint.apiKey,
+        { method: "POST", body: { rules } },
+      ),
+      this.retryConfig,
+    );
+  }
+
+  /**
+   * List network segments/VLANs.
+   */
+  async listNetworks(): Promise<Array<{ id: string; name: string; cidr?: string; vlanId?: number }>> {
+    return withRetry(
+      () => agentFetch(
+        this.baseUrl,
+        "/api/v1/network/segments",
+        this.endpoint.apiKey,
+      ),
+      this.retryConfig,
+    );
   }
 }

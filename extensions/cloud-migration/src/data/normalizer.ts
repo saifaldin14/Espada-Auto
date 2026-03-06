@@ -85,6 +85,35 @@ export interface GCSBucketInfo {
 // Normalizers
 // =============================================================================
 
+/**
+ * On-premises / VMware / Nutanix S3-compatible bucket info.
+ * Represents MinIO, Nutanix Objects, or Ceph RGW buckets.
+ */
+export interface OnPremBucketInfo {
+  name: string;
+  endpoint: string;
+  region?: string;
+  versioning?: boolean;
+  objectCount?: number;
+  totalSizeBytes?: number;
+  tags?: Record<string, string>;
+}
+
+export function normalizeOnPremBucket(bucket: OnPremBucketInfo, provider: MigrationProvider): NormalizedBucket {
+  return {
+    id: `${provider}:${bucket.name}`,
+    name: bucket.name,
+    provider,
+    region: bucket.region ?? "on-premises",
+    versioning: bucket.versioning ?? false,
+    encryption: { enabled: false, type: "none" },
+    objectCount: bucket.objectCount ?? 0,
+    totalSizeBytes: bucket.totalSizeBytes ?? 0,
+    lifecycleRules: [],
+    tags: bucket.tags ?? {},
+  };
+}
+
 export function normalizeS3Bucket(bucket: S3BucketInfo): NormalizedBucket {
   const encryption: BucketEncryption = bucket.encryption?.algorithm === "aws:kms"
     ? { enabled: true, type: "customer-managed", keyId: bucket.encryption.kmsKeyId }
@@ -166,7 +195,7 @@ export function normalizeGCSBucket(bucket: GCSBucketInfo): NormalizedBucket {
  * Universal normalizer dispatcher.
  */
 export function normalizeBucket(
-  data: S3BucketInfo | AzureBlobContainerInfo | GCSBucketInfo,
+  data: S3BucketInfo | AzureBlobContainerInfo | GCSBucketInfo | OnPremBucketInfo,
   provider: MigrationProvider,
 ): NormalizedBucket {
   switch (provider) {
@@ -176,6 +205,10 @@ export function normalizeBucket(
       return normalizeAzureBlobContainer(data as AzureBlobContainerInfo);
     case "gcp":
       return normalizeGCSBucket(data as GCSBucketInfo);
+    case "on-premises":
+    case "vmware":
+    case "nutanix":
+      return normalizeOnPremBucket(data as OnPremBucketInfo, provider);
     default:
       throw new Error(`Unsupported storage provider: ${provider}`);
   }

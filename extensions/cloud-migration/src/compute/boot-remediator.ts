@@ -108,6 +108,26 @@ const RECIPES: Record<string, BootRemediationRecipe> = {
     grubFixes: [],
     description: "VMware boot remediation: Install open-vm-tools, VMware drivers, remove cloud agents",
   },
+  nutanix: {
+    targetProvider: "nutanix",
+    installPackages: [
+      "qemu-guest-agent",
+    ],
+    removePackages: [
+      "walinuxagent",
+      "google-guest-agent",
+      "aws-cfn-bootstrap",
+      "open-vm-tools",
+    ],
+    enableServices: ["qemu-guest-agent"],
+    disableServices: ["waagent", "google-guest-agent", "cloud-init", "vmtoolsd"],
+    kernelModules: ["virtio_blk", "virtio_net", "virtio_scsi"],
+    grubFixes: [
+      "sed -i '/console=/d' /etc/default/grub 2>/dev/null || true",
+      "update-grub || grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true",
+    ],
+    description: "Nutanix AHV boot remediation: Install qemu-guest-agent, virtio drivers for AHV, remove cloud/VMware agents",
+  },
 };
 
 // =============================================================================

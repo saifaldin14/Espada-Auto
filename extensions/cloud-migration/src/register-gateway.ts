@@ -678,4 +678,89 @@ export function registerGateway(api: PluginApi): void {
       opts.respond(false, undefined, { code: "RESET_FAILED", message: String(error) });
     }
   });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // migration/agent/health — Check on-prem migration agent health
+  // ─────────────────────────────────────────────────────────────────────────
+  api.registerGatewayMethod("migration/agent/health", async (opts) => {
+    diag().gatewayAttempts++;
+    try {
+      const params = (opts.params ?? {}) as {
+        provider: MigrationProvider;
+        credentials: unknown;
+      };
+
+      if (!params.provider || !params.credentials) {
+        opts.respond(false, undefined, {
+          code: "INVALID_PARAMS",
+          message: "provider and credentials are required",
+        });
+        return;
+      }
+
+      const { resolveProviderAdapter: resolve } = await import("./providers/registry.js");
+      const adapter = await resolve(
+        params.provider,
+        params.credentials as import("./providers/types.js").ProviderCredentialConfig,
+      );
+      const health = await adapter.healthCheck();
+
+      diag().gatewaySuccesses++;
+      opts.respond(true, { data: health });
+    } catch (error) {
+      diag().gatewayFailures++;
+      diag().lastError = String(error);
+      opts.respond(false, undefined, { code: "AGENT_HEALTH_FAILED", message: String(error) });
+    }
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // migration/agent/discover — Discover VMs via on-prem agent
+  // ─────────────────────────────────────────────────────────────────────────
+  api.registerGatewayMethod("migration/agent/discover", async (opts) => {
+    diag().gatewayAttempts++;
+    try {
+      const params = (opts.params ?? {}) as {
+        provider: MigrationProvider;
+        region?: string;
+        credentials: unknown;
+      };
+
+      if (!params.provider || !params.credentials) {
+        opts.respond(false, undefined, {
+          code: "INVALID_PARAMS",
+          message: "provider and credentials are required",
+        });
+        return;
+      }
+
+      const { resolveProviderAdapter: resolve } = await import("./providers/registry.js");
+      const adapter = await resolve(
+        params.provider,
+        params.credentials as import("./providers/types.js").ProviderCredentialConfig,
+      );
+      const vms = await adapter.compute.listVMs(params.region ?? "default");
+
+      diag().gatewaySuccesses++;
+      opts.respond(true, {
+        data: {
+          provider: params.provider,
+          vmCount: vms.length,
+          vms: vms.map((vm) => ({
+            id: vm.id,
+            name: vm.name,
+            cpuCores: vm.cpuCores,
+            memoryGB: vm.memoryGB,
+            osType: vm.osType,
+            diskCount: vm.disks.length,
+            totalDiskGB: vm.disks.reduce((s, d) => s + d.sizeGB, 0),
+          })),
+        },
+      });
+    } catch (error) {
+      diag().gatewayFailures++;
+      diag().lastError = String(error);
+      opts.respond(false, undefined, { code: "DISCOVER_FAILED", message: String(error) });
+    }
+  });
 }

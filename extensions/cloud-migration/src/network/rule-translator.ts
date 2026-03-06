@@ -17,6 +17,9 @@ const RULE_LIMITS: Record<string, { maxRulesPerGroup: number; maxGroups: number;
   aws: { maxRulesPerGroup: 60, maxGroups: 2500, priorityBased: false },
   azure: { maxRulesPerGroup: 1000, maxGroups: 5000, priorityBased: true },
   gcp: { maxRulesPerGroup: 0, maxGroups: 0, priorityBased: true }, // GCP uses VPC firewall rules, not groups
+  "on-premises": { maxRulesPerGroup: 10000, maxGroups: 0, priorityBased: true }, // iptables/nftables — virtually unlimited
+  vmware: { maxRulesPerGroup: 10000, maxGroups: 0, priorityBased: true }, // NSX-T distributed firewall
+  nutanix: { maxRulesPerGroup: 10000, maxGroups: 0, priorityBased: true }, // Flow micro-segmentation
 };
 
 // =============================================================================
@@ -27,6 +30,9 @@ const PROTOCOL_MAP: Record<string, Record<string, string>> = {
   aws: { "-1": "all", "6": "tcp", "17": "udp", "1": "icmp" },
   azure: { "*": "all", Tcp: "tcp", Udp: "udp", Icmp: "icmp" },
   gcp: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+  "on-premises": { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+  vmware: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+  nutanix: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
 };
 
 function normalizeProtocol(protocol: string, provider: string): string {
@@ -40,6 +46,9 @@ function denormalizeProtocol(protocol: string, targetProvider: string): string {
     aws: { all: "-1", tcp: "6", udp: "17", icmp: "1" },
     azure: { all: "*", tcp: "Tcp", udp: "Udp", icmp: "Icmp" },
     gcp: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+    "on-premises": { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+    vmware: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
+    nutanix: { all: "all", tcp: "tcp", udp: "udp", icmp: "icmp" },
   };
   const map = reverseMap[targetProvider];
   if (!map) return protocol;

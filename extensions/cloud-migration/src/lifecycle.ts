@@ -23,6 +23,8 @@ import { verifyBootHandler } from "./compute/steps/verify-boot.js";
 import { cutoverHandler } from "./compute/steps/cutover.js";
 import { remediateBootHandler } from "./compute/steps/remediate-boot.js";
 import { decommissionSourceHandler } from "./compute/steps/decommission-source.js";
+import { verifyAgentHandler } from "./compute/steps/verify-agent.js";
+import { setupStagingHandler } from "./compute/steps/setup-staging.js";
 
 // Governance step handlers
 import { approvalGateHandler } from "./governance/approval-gate-handler.js";
@@ -66,6 +68,10 @@ const STEP_HANDLER_REGISTRY: Array<{
   { type: "cutover", handler: cutoverHandler, requiresRollback: true },
   { type: "remediate-boot", handler: remediateBootHandler, requiresRollback: false },
   { type: "decommission-source", handler: decommissionSourceHandler, requiresRollback: true },
+
+  // On-premises pipeline
+  { type: "verify-agent", handler: verifyAgentHandler, requiresRollback: false },
+  { type: "setup-staging", handler: setupStagingHandler, requiresRollback: false },
 
   // Governance pipeline
   { type: "approval-gate", handler: approvalGateHandler, requiresRollback: false },

@@ -257,10 +257,12 @@ export type ImageConversion = {
 
 /** Image format conversion matrix — source → target format for each cloud. */
 export const IMAGE_FORMAT_MATRIX: Record<string, { intermediate: ImageFormat; targets: Record<string, ImageFormat> }> = {
-  aws: { intermediate: "raw", targets: { azure: "vhd", gcp: "raw", "on-premises": "vmdk" } },
-  azure: { intermediate: "raw", targets: { aws: "raw", gcp: "raw", "on-premises": "vmdk" } },
-  gcp: { intermediate: "raw", targets: { aws: "raw", azure: "vhd", "on-premises": "vmdk" } },
-  "on-premises": { intermediate: "raw", targets: { aws: "raw", azure: "vhd", gcp: "raw" } },
+  aws: { intermediate: "raw", targets: { azure: "vhd", gcp: "raw", "on-premises": "vmdk", vmware: "vmdk", nutanix: "qcow2" } },
+  azure: { intermediate: "raw", targets: { aws: "raw", gcp: "raw", "on-premises": "vmdk", vmware: "vmdk", nutanix: "qcow2" } },
+  gcp: { intermediate: "raw", targets: { aws: "raw", azure: "vhd", "on-premises": "vmdk", vmware: "vmdk", nutanix: "qcow2" } },
+  "on-premises": { intermediate: "raw", targets: { aws: "raw", azure: "vhd", gcp: "raw", vmware: "vmdk", nutanix: "qcow2" } },
+  vmware: { intermediate: "vmdk", targets: { aws: "raw", azure: "vhd", gcp: "raw", "on-premises": "vmdk", nutanix: "qcow2" } },
+  nutanix: { intermediate: "qcow2", targets: { aws: "raw", azure: "vhd", gcp: "raw", "on-premises": "vmdk", vmware: "vmdk" } },
 };
 
 // =============================================================================
@@ -402,6 +404,9 @@ export type MigrationStepType =
   | "create-security-rules"
   | "migrate-dns"
   | "verify-connectivity"
+  // On-premises pipeline
+  | "verify-agent"
+  | "setup-staging"
   // Cross-cutting
   | "cutover"
   | "approval-gate"

@@ -286,19 +286,104 @@ export function generatePlan(params: {
   };
 
   // Generate steps for each resource type
+  // For on-prem providers, prepend agent verification and staging setup
+  const onPremProviders = new Set<MigrationProvider>(["on-premises", "vmware", "nutanix"]);
+  const sourceIsOnPrem = onPremProviders.has(sourceProvider);
+  const targetIsOnPrem = onPremProviders.has(targetProvider);
+
+  const preflightStepIds: string[] = [];
+
+  if (sourceIsOnPrem) {
+    const verifySourceId = `preflight-verify-source-agent`;
+    steps.push({
+      id: verifySourceId,
+      type: "verify-agent",
+      name: `Verify ${sourceProvider} agent`,
+      description: `Pre-flight check: source migration agent on ${sourceProvider}`,
+      params: { provider: sourceProvider, region: "source" },
+      dependsOn: [],
+      timeoutMs: 60_000,
+      pipeline: "compute",
+      resourceType: "vm",
+      requiresRollback: false,
+    });
+    preflightStepIds.push(verifySourceId);
+
+    const stagingSourceId = `preflight-staging-source`;
+    steps.push({
+      id: stagingSourceId,
+      type: "setup-staging",
+      name: `Setup source staging storage`,
+      description: `Ensure S3-compatible staging bucket on ${sourceProvider}`,
+      params: { provider: sourceProvider, region: "source" },
+      dependsOn: [verifySourceId],
+      timeoutMs: 120_000,
+      pipeline: "compute",
+      resourceType: "vm",
+      requiresRollback: false,
+    });
+    preflightStepIds.push(stagingSourceId);
+  }
+
+  if (targetIsOnPrem) {
+    const verifyTargetId = `preflight-verify-target-agent`;
+    steps.push({
+      id: verifyTargetId,
+      type: "verify-agent",
+      name: `Verify ${targetProvider} agent`,
+      description: `Pre-flight check: target migration agent on ${targetProvider}`,
+      params: { provider: targetProvider, region: "target" },
+      dependsOn: [],
+      timeoutMs: 60_000,
+      pipeline: "compute",
+      resourceType: "vm",
+      requiresRollback: false,
+    });
+    preflightStepIds.push(verifyTargetId);
+
+    const stagingTargetId = `preflight-staging-target`;
+    steps.push({
+      id: stagingTargetId,
+      type: "setup-staging",
+      name: `Setup target staging storage`,
+      description: `Ensure S3-compatible staging bucket on ${targetProvider}`,
+      params: { provider: targetProvider, region: "target" },
+      dependsOn: [verifyTargetId],
+      timeoutMs: 120_000,
+      pipeline: "compute",
+      resourceType: "vm",
+      requiresRollback: false,
+    });
+    preflightStepIds.push(stagingTargetId);
+  }
+
   if (resourceTypes.includes("security-rules") || resourceTypes.includes("vm")) {
-    steps.push(...generateNetworkSteps(sourceProvider, targetProvider, securityRules));
+    const networkSteps = generateNetworkSteps(sourceProvider, targetProvider, securityRules);
+    // Make network steps depend on preflight if we have on-prem
+    if (preflightStepIds.length > 0 && networkSteps.length > 0) {
+      const firstNetStep = networkSteps[0];
+      firstNetStep.dependsOn = [...preflightStepIds, ...firstNetStep.dependsOn];
+    }
+    steps.push(...networkSteps);
   }
 
   if (resourceTypes.includes("object-storage")) {
     for (const bucket of buckets) {
-      steps.push(...generateDataSteps(bucket, sourceProvider, targetProvider));
+      const dataSteps = generateDataSteps(bucket, sourceProvider, targetProvider);
+      if (preflightStepIds.length > 0 && dataSteps.length > 0) {
+        dataSteps[0].dependsOn = [...preflightStepIds, ...dataSteps[0].dependsOn];
+      }
+      steps.push(...dataSteps);
     }
   }
 
   if (resourceTypes.includes("vm")) {
     for (const vm of vms) {
-      steps.push(...generateComputeSteps(vm, sourceProvider, targetProvider));
+      const computeSteps = generateComputeSteps(vm, sourceProvider, targetProvider);
+      if (preflightStepIds.length > 0 && computeSteps.length > 0) {
+        computeSteps[0].dependsOn = [...preflightStepIds, ...computeSteps[0].dependsOn];
+      }
+      steps.push(...computeSteps);
     }
   }
 

@@ -472,5 +472,91 @@ export function registerCli(api: PluginApi): void {
         }
         output(getDiagnosticsSnapshot());
       });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // espada migration agent-health
+    // ─────────────────────────────────────────────────────────────────────
+    migration
+      .command("agent-health")
+      .description("Check on-prem migration agent health and connectivity")
+      .option("--provider <provider>", "On-prem provider (vmware, nutanix, on-premises)")
+      .option("--host <host>", "Agent host address")
+      .option("--port <port>", "Agent port (default: 8443)")
+      .option("--api-key <key>", "Agent API key")
+      .action(async (...args: unknown[]) => {
+        const opts = args[args.length - 1] as Record<string, string>;
+        const provider = (opts.provider ?? "on-premises") as MigrationProvider;
+        const host = opts.host ?? "localhost";
+        const port = Number(opts.port ?? 8443);
+        const apiKey = opts["api-key"] ?? opts.apiKey ?? "";
+
+        try {
+          const { MigrationAgentClient } = await import("./compute/on-prem/agent-protocol.js");
+          const client = new MigrationAgentClient({
+            host,
+            port,
+            protocol: "https",
+            apiKey,
+          });
+
+          const caps = await client.getCapabilities();
+          output({
+            provider,
+            host: `${host}:${port}`,
+            reachable: true,
+            capabilities: caps,
+          });
+        } catch (error) {
+          output({
+            provider,
+            host: `${host}:${port}`,
+            reachable: false,
+            error: String(error),
+          });
+        }
+      });
+
+    // ─────────────────────────────────────────────────────────────────────
+    // espada migration discover
+    // ─────────────────────────────────────────────────────────────────────
+    migration
+      .command("discover")
+      .description("Discover VMs on an on-prem environment via the migration agent")
+      .option("--provider <provider>", "On-prem provider (vmware, nutanix, on-premises)")
+      .option("--host <host>", "Agent host address")
+      .option("--port <port>", "Agent port (default: 8443)")
+      .option("--api-key <key>", "Agent API key")
+      .action(async (...args: unknown[]) => {
+        const opts = args[args.length - 1] as Record<string, string>;
+        const host = opts.host ?? "localhost";
+        const port = Number(opts.port ?? 8443);
+        const apiKey = opts["api-key"] ?? opts.apiKey ?? "";
+
+        try {
+          const { MigrationAgentClient } = await import("./compute/on-prem/agent-protocol.js");
+          const client = new MigrationAgentClient({
+            host,
+            port,
+            protocol: "https",
+            apiKey,
+          });
+
+          const vms = await client.discoverVMs({});
+          output({
+            vmCount: vms.length,
+            vms: vms.map((vm) => ({
+              id: vm.id,
+              name: vm.name,
+              cpuCores: vm.cpuCores,
+              memoryMB: vm.memoryMB,
+              guestOS: vm.guestOS,
+              powerState: vm.powerState,
+              diskCount: vm.disks.length,
+            })),
+          });
+        } catch (error) {
+          output({ error: String(error) });
+        }
+      });
   });
 }

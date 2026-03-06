@@ -18,6 +18,9 @@ const SUPPORTED_RECORD_TYPES: Record<string, Set<string>> = {
   aws: new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT", "CAA", "NAPTR", "DS"]),
   azure: new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT", "CAA"]),
   gcp: new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT", "CAA", "DS", "IPSECKEY", "SPF"]),
+  "on-premises": new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT"]),
+  vmware: new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT"]),
+  nutanix: new Set(["A", "AAAA", "CNAME", "MX", "NS", "PTR", "SOA", "SRV", "TXT"]),
 };
 
 /** Provider-specific alias record types */
@@ -25,6 +28,9 @@ const ALIAS_RECORD_TYPES: Record<string, string> = {
   aws: "ALIAS", // Route53 alias records
   azure: "ALIAS", // Azure alias records (different underlying mechanism)
   gcp: "CNAME", // GCP doesn't have alias — must use CNAME or static IP
+  "on-premises": "CNAME", // On-prem DNS (BIND/AD) — use CNAME for aliases
+  vmware: "CNAME",
+  nutanix: "CNAME",
 };
 
 /**

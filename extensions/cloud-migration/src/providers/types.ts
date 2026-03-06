@@ -529,7 +529,10 @@ export interface LoadBalancerInfo {
 export type ProviderCredentialConfig =
   | AWSCredentialConfig
   | AzureCredentialConfig
-  | GCPCredentialConfig;
+  | GCPCredentialConfig
+  | VMwareCredentialConfig
+  | NutanixCredentialConfig
+  | OnPremCredentialConfig;
 
 export interface AWSCredentialConfig {
   provider: "aws";
@@ -555,6 +558,86 @@ export interface GCPCredentialConfig {
   region?: string;
   keyFilePath?: string;
   serviceAccountKey?: string;
+}
+
+export interface VMwareCredentialConfig {
+  provider: "vmware";
+  vcenterHost: string;
+  username: string;
+  authType: "password" | "certificate";
+  password?: string;
+  certificatePath?: string;
+  datacenter?: string;
+  cluster?: string;
+  insecure?: boolean;
+  /** On-prem migration agent endpoint for snapshot/export operations. */
+  agentEndpoint?: {
+    host: string;
+    port: number;
+    protocol: "https" | "grpc";
+    apiKey: string;
+    tlsVerify?: boolean;
+  };
+  /** S3-compatible storage endpoint for staging (e.g., MinIO). */
+  stagingStorage?: {
+    endpoint: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucket: string;
+    region?: string;
+    forcePathStyle?: boolean;
+  };
+}
+
+export interface NutanixCredentialConfig {
+  provider: "nutanix";
+  prismHost: string;
+  port?: number;
+  username: string;
+  authType: "password" | "certificate";
+  password?: string;
+  certificatePath?: string;
+  clusterUuid?: string;
+  insecure?: boolean;
+  /** On-prem migration agent endpoint. */
+  agentEndpoint?: {
+    host: string;
+    port: number;
+    protocol: "https" | "grpc";
+    apiKey: string;
+    tlsVerify?: boolean;
+  };
+  /** S3-compatible storage endpoint for staging (Nutanix Objects or MinIO). */
+  stagingStorage?: {
+    endpoint: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucket: string;
+    region?: string;
+    forcePathStyle?: boolean;
+  };
+}
+
+export interface OnPremCredentialConfig {
+  provider: "on-premises";
+  platform: "kvm" | "hyper-v" | "generic";
+  /** On-prem migration agent endpoint (required for all on-prem operations). */
+  agentEndpoint: {
+    host: string;
+    port: number;
+    protocol: "https" | "grpc";
+    apiKey: string;
+    tlsVerify?: boolean;
+  };
+  /** S3-compatible storage endpoint for staging (MinIO, Ceph, etc.). */
+  stagingStorage?: {
+    endpoint: string;
+    accessKeyId: string;
+    secretAccessKey: string;
+    bucket: string;
+    region?: string;
+    forcePathStyle?: boolean;
+  };
 }
 
 /**
