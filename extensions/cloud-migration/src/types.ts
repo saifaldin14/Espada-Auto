@@ -233,6 +233,8 @@ export type TransferObjectEntry = {
   sizeBytes: number;
   sourceChecksum: string;
   targetChecksum?: string;
+  /** SHA-256 computed inline during transfer (before upload). */
+  inlineSha256?: string;
   status: "pending" | "transferring" | "verifying" | "completed" | "failed";
   error?: string;
   startedAt?: string;
@@ -316,7 +318,7 @@ export type IntegrityReport = {
   durationMs: number;
 };
 
-export type IntegrityLevel = "object-level" | "volume-level" | "schema-level";
+export type IntegrityLevel = "object-level" | "volume-level" | "schema-level" | "row-level" | "reconciliation";
 
 export type IntegrityCheck = {
   name: string;
@@ -410,7 +412,9 @@ export type MigrationStepType =
   // Cross-cutting
   | "cutover"
   | "approval-gate"
-  | "decommission-source";
+  | "decommission-source"
+  // Enterprise SLA
+  | "reconcile";
 
 export type MigrationStepCondition = {
   stepId: string;

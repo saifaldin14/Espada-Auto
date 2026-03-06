@@ -74,6 +74,8 @@ export interface ObjectTransferResult {
   durationMs: number;
   manifest: TransferManifest;
   integrityReport: IntegrityReport;
+  /** SHA-256 hashes computed inline during transfer, keyed by object key. */
+  inlineChecksums?: Map<string, string>;
 }
 
 // =============================================================================

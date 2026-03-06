@@ -285,6 +285,189 @@ export function verifySchemaIntegrity(params: {
 }
 
 // =============================================================================
+// Row-Level Verification (Enterprise SLA)
+// =============================================================================
+
+/**
+ * A single row's checksum for cross-comparison between source and target.
+ */
+export interface RowChecksum {
+  table: string;
+  /** Primary key value(s) serialized as a string. */
+  primaryKey: string;
+  /** SHA-256 of the concatenated column values. */
+  checksum: string;
+}
+
+/**
+ * Result of row-level checksum verification for a table.
+ */
+export interface RowIntegrityResult {
+  table: string;
+  totalRows: number;
+  sampledRows: number;
+  matchedRows: number;
+  mismatchedRows: number;
+  missingInTarget: number;
+  extraInTarget: number;
+  passed: boolean;
+  mismatches: Array<{ primaryKey: string; sourceChecksum: string; targetChecksum: string }>;
+}
+
+/**
+ * Compute SHA-256 checksum for a row (all column values concatenated).
+ *
+ * @param columnValues - The ordered values of the row's columns.
+ * @returns SHA-256 hex string.
+ */
+export function computeRowChecksum(columnValues: unknown[]): string {
+  const serialized = columnValues.map((v) => (v === null || v === undefined ? "\\0" : String(v))).join("|");
+  return createHash("sha256").update(serialized).digest("hex");
+}
+
+/**
+ * Verify row-level integrity between source and target databases.
+ *
+ * Compares SHA-256 checksums of individual rows (or a sample) from source
+ * and target tables. This catches corruption, truncation, and encoding
+ * issues that row-count and schema checks miss.
+ *
+ * @param params.jobId - Migration job ID.
+ * @param params.databaseId - Identifier for the database being migrated.
+ * @param params.sourceRows - Row checksums from the source database.
+ * @param params.targetRows - Row checksums from the target database.
+ * @param params.sampleRate - Fraction of rows to verify (0-1, default 1.0).
+ * @returns IntegrityReport with row-level verification results.
+ */
+export function verifyRowIntegrity(params: {
+  jobId: string;
+  databaseId: string;
+  sourceRows: RowChecksum[];
+  targetRows: RowChecksum[];
+  sampleRate?: number;
+}): IntegrityReport {
+  const { jobId, databaseId, sourceRows, targetRows, sampleRate = 1.0 } = params;
+  const diag = getPluginState().diagnostics;
+  const startMs = Date.now();
+  const checks: IntegrityCheck[] = [];
+
+  // Group by table
+  const sourceByTable = groupRowsByTable(sourceRows);
+  const targetByTable = groupRowsByTable(targetRows);
+
+  const allTables = new Set([...sourceByTable.keys(), ...targetByTable.keys()]);
+  const tableResults: RowIntegrityResult[] = [];
+
+  for (const table of allTables) {
+    const srcRows = sourceByTable.get(table) ?? [];
+    const tgtRows = targetByTable.get(table) ?? [];
+
+    // Sample source rows if sampleRate < 1
+    const sampled = sampleRate < 1.0
+      ? srcRows.filter(() => Math.random() < sampleRate)
+      : srcRows;
+
+    // Build target lookup
+    const targetMap = new Map(tgtRows.map((r) => [r.primaryKey, r.checksum]));
+
+    let matched = 0;
+    let mismatched = 0;
+    let missingInTarget = 0;
+    const mismatches: Array<{ primaryKey: string; sourceChecksum: string; targetChecksum: string }> = [];
+
+    for (const row of sampled) {
+      const targetChecksum = targetMap.get(row.primaryKey);
+      if (targetChecksum === undefined) {
+        missingInTarget++;
+      } else if (targetChecksum === row.checksum) {
+        matched++;
+      } else {
+        mismatched++;
+        if (mismatches.length < 10) {
+          mismatches.push({
+            primaryKey: row.primaryKey,
+            sourceChecksum: row.checksum,
+            targetChecksum,
+          });
+        }
+      }
+    }
+
+    // Check for extra rows in target
+    const sourceKeySet = new Set(srcRows.map((r) => r.primaryKey));
+    const extraInTarget = tgtRows.filter((r) => !sourceKeySet.has(r.primaryKey)).length;
+
+    const result: RowIntegrityResult = {
+      table,
+      totalRows: srcRows.length,
+      sampledRows: sampled.length,
+      matchedRows: matched,
+      mismatchedRows: mismatched,
+      missingInTarget,
+      extraInTarget,
+      passed: mismatched === 0 && missingInTarget === 0 && extraInTarget === 0,
+      mismatches,
+    };
+    tableResults.push(result);
+
+    checks.push({
+      name: `row-checksum:${table}`,
+      passed: result.passed,
+      expected: sampled.length,
+      actual: matched,
+      details: !result.passed
+        ? `${mismatched} mismatches, ${missingInTarget} missing, ${extraInTarget} extra in ${table}`
+        : `All ${matched} sampled rows match in ${table}`,
+    });
+  }
+
+  // Aggregate check
+  const allPassed = tableResults.every((r) => r.passed);
+  checks.push({
+    name: "row-integrity-overall",
+    passed: allPassed,
+    expected: tableResults.length,
+    actual: tableResults.filter((r) => r.passed).length,
+    details: allPassed
+      ? `All ${tableResults.length} tables passed row-level verification`
+      : `${tableResults.filter((r) => !r.passed).length} tables failed row-level verification`,
+  });
+
+  const durationMs = Date.now() - startMs;
+
+  diag.integrityChecks++;
+  if (allPassed) diag.integrityPassed++;
+  else diag.integrityFailed++;
+
+  return {
+    jobId,
+    resourceId: databaseId,
+    resourceType: "database",
+    level: "row-level" as IntegrityLevel,
+    passed: allPassed,
+    checks,
+    checkedAt: new Date().toISOString(),
+    durationMs,
+  };
+}
+
+/**
+ * Group row checksums by table name.
+ */
+function groupRowsByTable(rows: RowChecksum[]): Map<string, RowChecksum[]> {
+  const map = new Map<string, RowChecksum[]>();
+  for (const row of rows) {
+    const existing = map.get(row.table);
+    if (existing) {
+      existing.push(row);
+    } else {
+      map.set(row.table, [row]);
+    }
+  }
+  return map;
+}
+
+// =============================================================================
 // Aggregate Verification
 // =============================================================================
 

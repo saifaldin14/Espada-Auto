@@ -5,7 +5,7 @@
  * Provides topological sort, concurrency layers, auto-rollback, and event lifecycle.
  */
 
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 
 import type {
   MigrationJob,
@@ -143,6 +143,76 @@ export function resolveOutputRefs(
     }
   }
   return resolved;
+}
+
+// =============================================================================
+// Idempotency Registry (Enterprise SLA)
+// =============================================================================
+
+/**
+ * Completed operation record used for idempotency enforcement.
+ */
+export interface IdempotencyRecord {
+  idempotencyKey: string;
+  jobId: string;
+  stepId: string;
+  status: "succeeded" | "failed";
+  outputs: Record<string, unknown>;
+  completedAt: string;
+}
+
+/**
+ * In-memory idempotency registry.
+ *
+ * In a production deployment this would be backed by a durable store
+ * (e.g., DynamoDB, Cosmos DB, or PostgreSQL) with TTL-based expiry.
+ * The in-memory implementation is sufficient for single-process execution
+ * and demonstrates the contract.
+ */
+const idempotencyRegistry = new Map<string, IdempotencyRecord>();
+
+/**
+ * Generate a deterministic idempotency key from job ID, step ID, and params.
+ *
+ * The key is a SHA-256 hash of the concatenated values, ensuring that
+ * the same operation with the same parameters always yields the same key.
+ */
+export function generateIdempotencyKey(
+  jobId: string,
+  stepId: string,
+  params: Record<string, unknown>,
+): string {
+  const payload = JSON.stringify([jobId, stepId, params]);
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+/**
+ * Check if an operation has already been completed with this key.
+ * Returns the cached result if found, or null if the operation should proceed.
+ */
+export function checkIdempotency(key: string): IdempotencyRecord | null {
+  return idempotencyRegistry.get(key) ?? null;
+}
+
+/**
+ * Record a completed operation for future idempotency checks.
+ */
+export function recordIdempotency(record: IdempotencyRecord): void {
+  idempotencyRegistry.set(record.idempotencyKey, record);
+}
+
+/**
+ * Clear the idempotency registry. Used during service reset / testing.
+ */
+export function clearIdempotencyRegistry(): void {
+  idempotencyRegistry.clear();
+}
+
+/**
+ * Get the current size of the idempotency registry (for diagnostics).
+ */
+export function getIdempotencyRegistrySize(): number {
+  return idempotencyRegistry.size;
 }
 
 // =============================================================================
@@ -581,6 +651,34 @@ export async function executePlan(
             return;
           }
 
+          // Idempotency check: skip execution if this exact operation completed before
+          const idempotencyKey = generateIdempotencyKey(plan.jobId, step.id, merged);
+          const existing = checkIdempotency(idempotencyKey);
+          if (existing && existing.status === "succeeded") {
+            stepState.status = "succeeded";
+            stepState.outputs = existing.outputs;
+            stepState.startedAt = existing.completedAt;
+            stepState.completedAt = existing.completedAt;
+
+            // Restore outputs for downstream steps
+            for (const [key, value] of Object.entries(existing.outputs)) {
+              execState.resolvedOutputs.set(`${step.id}.outputs.${key}`, value);
+            }
+
+            emitEvent({
+              type: "step:complete",
+              jobId: plan.jobId,
+              stepId: step.id,
+              stepName: step.name,
+              timestamp: new Date().toISOString(),
+              message: `Step "${step.name}" skipped (idempotent — already completed)`,
+              outputs: existing.outputs,
+            });
+
+            completedSteps.push(step);
+            return;
+          }
+
           const ctx: MigrationStepContext = {
             params: merged,
             globalParams: plan.globalParams,
@@ -590,6 +688,18 @@ export async function executePlan(
           };
 
           await executeStep(step, handler, ctx, stepState, plan.jobId, options);
+
+          // Record successful execution in idempotency registry
+          if (stepState.status === "succeeded") {
+            recordIdempotency({
+              idempotencyKey,
+              jobId: plan.jobId,
+              stepId: step.id,
+              status: "succeeded",
+              outputs: stepState.outputs,
+              completedAt: stepState.completedAt ?? new Date().toISOString(),
+            });
+          }
 
           // Store outputs for downstream steps
           for (const [key, value] of Object.entries(stepState.outputs)) {

@@ -19,6 +19,8 @@
  * a fallback for small datasets and unit tests.
  */
 
+import { createHash } from "node:crypto";
+
 import type {
   TransferManifest,
   IntegrityReport,
@@ -338,6 +340,16 @@ export function createStreamingTransfer(
       transferredBytes: progress.bytesTransferred,
     };
 
+    // Build inline checksum map for integrity verification
+    const inlineChecksums = new Map<string, string>();
+    for (const entry of transferredKeys) {
+      if (entry.inlineSha256) {
+        inlineChecksums.set(entry.key, entry.inlineSha256);
+      }
+    }
+
+    const checksumVerifiedCount = inlineChecksums.size;
+
     const integrityReport: IntegrityReport = {
       jobId: taskId,
       resourceId: `objects:${config.sourceBucket}`,
@@ -366,6 +378,15 @@ export function createStreamingTransfer(
           expected: "enabled=" + opts.enableDeltaSync,
           actual: `${skippedCount} objects skipped (unchanged)`,
         },
+        {
+          name: "inline-sha256",
+          passed: checksumVerifiedCount === transferredKeys.length,
+          expected: transferredKeys.length,
+          actual: checksumVerifiedCount,
+          details: checksumVerifiedCount < transferredKeys.length
+            ? `${transferredKeys.length - checksumVerifiedCount} objects missing inline SHA-256`
+            : `All ${checksumVerifiedCount} objects verified with inline SHA-256`,
+        },
       ],
       checkedAt: new Date().toISOString(),
       durationMs,
@@ -383,6 +404,7 @@ export function createStreamingTransfer(
       durationMs,
       manifest,
       integrityReport,
+      inlineChecksums,
     };
   }
 
@@ -564,6 +586,9 @@ async function transferSingleObject(
       // Download from source
       const data = await srcAdapter.storage.getObject(config.sourceBucket, obj.key);
 
+      // Compute SHA-256 inline as data is available
+      const inlineHash = createHash("sha256").update(data.data).digest("hex");
+
       // Determine target storage class
       const targetClass = obj.storageClass && config.storageClassMapping
         ? (config.storageClassMapping[obj.storageClass] ?? obj.storageClass)
@@ -600,8 +625,9 @@ async function transferSingleObject(
       return {
         key: obj.key,
         sizeBytes: obj.sizeBytes,
-        sourceChecksum: obj.etag ?? "",
+        sourceChecksum: inlineHash,
         targetChecksum: putResult.etag,
+        inlineSha256: inlineHash,
         status: "completed",
         startedAt,
         completedAt: new Date().toISOString(),

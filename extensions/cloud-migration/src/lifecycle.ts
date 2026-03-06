@@ -9,6 +9,7 @@
 import type { MigrationStepType } from "./types.js";
 import { getPluginState, resetPluginState } from "./state.js";
 import { registerStepHandler } from "./core/migration-engine.js";
+import { clearIdempotencyRegistry } from "./core/migration-engine.js";
 import { getAuditLogger, resetAuditLogger } from "./governance/audit-logger.js";
 import { resetProviderRegistry } from "./providers/registry.js";
 
@@ -47,6 +48,9 @@ import { mapNetworkHandler } from "./network/steps/map-network.js";
 import { createSecurityRulesHandler } from "./network/steps/create-security-rules.js";
 import { migrateDNSHandler } from "./network/steps/migrate-dns.js";
 import { verifyConnectivityHandler } from "./network/steps/verify-connectivity.js";
+
+// Reconciliation step handler (Enterprise SLA)
+import { reconcileHandler } from "./data/steps/reconcile.js";
 
 /**
  * All step handlers mapped to their step type.
@@ -94,6 +98,9 @@ const STEP_HANDLER_REGISTRY: Array<{
   { type: "create-security-rules", handler: createSecurityRulesHandler, requiresRollback: true },
   { type: "migrate-dns", handler: migrateDNSHandler, requiresRollback: true },
   { type: "verify-connectivity", handler: verifyConnectivityHandler, requiresRollback: false },
+
+  // Enterprise SLA pipeline
+  { type: "reconcile", handler: reconcileHandler, requiresRollback: false },
 ];
 
 /**
@@ -120,6 +127,7 @@ export function registerLifecycle(
       resetPluginState();
       resetAuditLogger();
       resetProviderRegistry();
+      clearIdempotencyRegistry();
 
       // 2. Register all step handlers with the engine
       for (const entry of STEP_HANDLER_REGISTRY) {
@@ -182,6 +190,7 @@ export function registerLifecycle(
       // Reset state
       resetPluginState();
       resetProviderRegistry();
+      clearIdempotencyRegistry();
 
       logger.info("[cloud-migration] Migration engine service stopped");
     },
