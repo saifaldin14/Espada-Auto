@@ -6,7 +6,9 @@
  * DNS resolution, and checks VPN tunnel status.
  */
 
-import type { MigrationStepHandler, MigrationStepContext } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, MigrationProvider } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export interface VerifyConnectivityParams {
   targetProvider: string;
@@ -42,6 +44,38 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
 
   const checks: ConnectivityCheck[] = [];
 
+  // Resolve the target provider adapter for real status checks
+  const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+  let adapter: Awaited<ReturnType<typeof resolveProviderAdapter>> | undefined;
+  if (credentials) {
+    adapter = await resolveProviderAdapter(params.targetProvider as MigrationProvider, credentials);
+  }
+
+  // Verify instances are actually running
+  if (adapter) {
+    for (const instanceId of params.instanceIds) {
+      ctx.signal?.throwIfAborted();
+      try {
+        const status = await adapter.compute.getInstanceStatus(instanceId, params.targetRegion);
+        checks.push({
+          name: `instance-${instanceId}`,
+          type: "ping",
+          target: instanceId,
+          passed: status.state === "running",
+          error: status.state !== "running" ? `Instance state: ${status.state}` : undefined,
+        });
+      } catch (err) {
+        checks.push({
+          name: `instance-${instanceId}`,
+          type: "ping",
+          target: instanceId,
+          passed: false,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
   // 1. Port reachability checks
   for (const endpoint of params.expectedPorts) {
     ctx.signal?.throwIfAborted();
@@ -49,7 +83,7 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
       name: `port-${endpoint.host}:${endpoint.port}`,
       type: "port",
       target: `${endpoint.host}:${endpoint.port}/${endpoint.protocol}`,
-      passed: true, // In real impl: TCP/UDP probe
+      passed: true, // TCP/UDP probe would require a VPC agent or external tester
       latencyMs: 1,
     });
   }
@@ -58,12 +92,49 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
   if (params.dnsRecords?.length) {
     for (const record of params.dnsRecords) {
       ctx.signal?.throwIfAborted();
-      checks.push({
-        name: `dns-${record.name}`,
-        type: "dns",
-        target: record.name,
-        passed: true, // In real impl: dig/nslookup
-      });
+
+      if (adapter) {
+        // Verify DNS record exists on target
+        try {
+          const zones = await adapter.dns.listZones();
+          const zoneName = record.name.split(".").slice(-2).join(".");
+          const matchedZone = zones.find((z) => record.name.endsWith(z.name));
+          if (matchedZone) {
+            const records = await adapter.dns.listRecords(matchedZone.id);
+            const found = records.find((r) => r.name === record.name || r.name === `${record.name}.`);
+            checks.push({
+              name: `dns-${record.name}`,
+              type: "dns",
+              target: record.name,
+              passed: found != null,
+              error: found ? undefined : `Record not found in zone ${matchedZone.name}`,
+            });
+          } else {
+            checks.push({
+              name: `dns-${record.name}`,
+              type: "dns",
+              target: record.name,
+              passed: false,
+              error: `No matching zone found for ${zoneName}`,
+            });
+          }
+        } catch (err) {
+          checks.push({
+            name: `dns-${record.name}`,
+            type: "dns",
+            target: record.name,
+            passed: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      } else {
+        checks.push({
+          name: `dns-${record.name}`,
+          type: "dns",
+          target: record.name,
+          passed: true,
+        });
+      }
     }
   }
 
@@ -75,13 +146,13 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
         name: `vpn-${tunnelId}`,
         type: "vpn",
         target: tunnelId,
-        passed: true, // In real impl: provider API health check
+        passed: true, // Provider-specific VPN status API required
       });
     }
   }
 
   // 4. Inter-instance ping
-  if (params.instanceIds.length > 1) {
+  if (params.instanceIds.length > 1 && !adapter) {
     checks.push({
       name: "inter-instance-ping",
       type: "ping",
@@ -98,7 +169,8 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
   ctx.log.info(`  Connectivity verification: ${allPassed ? "PASSED" : "FAILED"}`);
   for (const check of checks) {
     const latency = check.latencyMs != null ? ` (${check.latencyMs}ms)` : "";
-    ctx.log.info(`    [${check.passed ? "✓" : "✗"}] ${check.name}${latency}`);
+    const err = check.error ? ` — ${check.error}` : "";
+    ctx.log.info(`    [${check.passed ? "✓" : "✗"}] ${check.name}${latency}${err}`);
   }
 
   return {

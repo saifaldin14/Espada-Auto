@@ -10,6 +10,7 @@ import type { MigrationStepType } from "./types.js";
 import { getPluginState, resetPluginState } from "./state.js";
 import { registerStepHandler } from "./core/migration-engine.js";
 import { getAuditLogger, resetAuditLogger } from "./governance/audit-logger.js";
+import { resetProviderRegistry } from "./providers/registry.js";
 
 // Compute step handlers
 import { snapshotSourceHandler } from "./compute/steps/snapshot-source.js";
@@ -90,6 +91,7 @@ export function registerLifecycle(
       // 1. Reset state for a clean start
       resetPluginState();
       resetAuditLogger();
+      resetProviderRegistry();
 
       // 2. Register all step handlers with the engine
       for (const entry of STEP_HANDLER_REGISTRY) {
@@ -151,6 +153,7 @@ export function registerLifecycle(
 
       // Reset state
       resetPluginState();
+      resetProviderRegistry();
 
       logger.info("[cloud-migration] Migration engine service stopped");
     },

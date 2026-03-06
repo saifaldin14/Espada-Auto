@@ -6,7 +6,9 @@
  * tags, and notifications.
  */
 
-import type { MigrationStepHandler, MigrationStepContext, NormalizedBucket } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, NormalizedBucket, MigrationProvider } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export interface SyncMetadataParams {
   sourceBucket: NormalizedBucket;
@@ -36,11 +38,18 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
 
   ctx.signal?.throwIfAborted();
 
+  // Resolve the target provider adapter
+  const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+  let adapter: Awaited<ReturnType<typeof resolveProviderAdapter>> | undefined;
+  if (credentials) {
+    adapter = await resolveProviderAdapter(params.targetProvider as MigrationProvider, credentials);
+  }
+
   // Lifecycle rules
   if (params.syncLifecycleRules && params.sourceBucket.lifecycleRules.length > 0) {
     ctx.log.info(`  Translating ${params.sourceBucket.lifecycleRules.length} lifecycle rule(s)`);
-    // In real impl: translate lifecycle rules to target format
-    // Some rules may not have direct equivalents
+    // Lifecycle rule translation is provider-specific and complex;
+    // for now we track the count — full translation would be per-provider
     lifecycleRulesSynced = params.sourceBucket.lifecycleRules.length;
   }
 
@@ -48,12 +57,31 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
   if (params.syncTags && Object.keys(params.sourceBucket.tags).length > 0) {
     const tagCount = Object.keys(params.sourceBucket.tags).length;
     ctx.log.info(`  Applying ${tagCount} tag(s)`);
-    // Check provider tag limits
+
     const maxTags = params.targetProvider === "aws" ? 50 : params.targetProvider === "gcp" ? 64 : 50;
     if (tagCount > maxTags) {
       warnings.push(`Source has ${tagCount} tags but ${params.targetProvider} allows max ${maxTags}`);
     }
     tagsSynced = Math.min(tagCount, maxTags);
+
+    if (adapter) {
+      // Apply tags via real provider SDK
+      const tagsToApply: Record<string, string> = {};
+      const entries = Object.entries(params.sourceBucket.tags).slice(0, maxTags);
+      for (const [k, v] of entries) {
+        tagsToApply[k] = v;
+      }
+      tagsToApply["espada:migration"] = "true";
+
+      await adapter.storage.setBucketTags(params.targetBucket, tagsToApply);
+      ctx.log.info(`  Applied ${tagsSynced} tags via SDK`);
+    }
+  }
+
+  // Versioning — match source's versioning status
+  if (adapter && params.sourceBucket.versioning) {
+    await adapter.storage.setBucketVersioning(params.targetBucket, true);
+    ctx.log.info(`  Enabled versioning via SDK`);
   }
 
   // CORS

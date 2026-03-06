@@ -5,8 +5,10 @@
  * and checksums between source and target.
  */
 
-import type { MigrationStepHandler, MigrationStepContext, IntegrityReport } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, IntegrityReport, MigrationProvider } from "../../types.js";
 import { verifyObjectIntegrity } from "../../core/integrity-verifier.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export interface VerifyIntegrityParams {
   sourceBucket: string;
@@ -32,7 +34,64 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
 
   ctx.signal?.throwIfAborted();
 
-  // In real impl: list both buckets, compare counts, then spot-check checksums
+  // Resolve both provider adapters for real listing
+  const sourceCreds = ctx.sourceCredentials as ProviderCredentialConfig | undefined;
+  const targetCreds = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+
+  if (sourceCreds && targetCreds) {
+    const sourceAdapter = await resolveProviderAdapter(params.sourceProvider as MigrationProvider, sourceCreds);
+    const targetAdapter = await resolveProviderAdapter(params.targetProvider as MigrationProvider, targetCreds);
+
+    // List objects from both sides
+    const sourceList = await sourceAdapter.storage.listObjects(params.sourceBucket, { maxKeys: 10000 });
+    const targetList = await targetAdapter.storage.listObjects(params.targetBucket, { maxKeys: 10000 });
+
+    // Build object sets for integrity check
+    const sourceObjects = sourceList.objects.map((o) => ({
+      key: o.key,
+      sizeBytes: o.sizeBytes,
+      etag: o.etag,
+      lastModified: o.lastModified ?? new Date().toISOString(),
+      storageClass: o.storageClass ?? "STANDARD",
+      metadata: {} as Record<string, string>,
+    }));
+    const targetObjects = targetList.objects.map((o) => ({
+      key: o.key,
+      sizeBytes: o.sizeBytes,
+      etag: o.etag,
+      lastModified: o.lastModified ?? new Date().toISOString(),
+      storageClass: o.storageClass ?? "STANDARD",
+      metadata: {} as Record<string, string>,
+    }));
+
+    // Sample if needed
+    const sampled = sampleRate < 1
+      ? sourceObjects.filter(() => Math.random() < sampleRate)
+      : sourceObjects;
+
+    const report = verifyObjectIntegrity({
+      jobId: `verify-${params.sourceBucket}-${Date.now()}`,
+      sourceObjects: sampled,
+      targetObjects,
+    });
+
+    const passed = report.passed;
+    const checksChecked = report.checks.length;
+    const mismatches = report.checks.filter((c) => !c.passed).length;
+
+    ctx.log.info(`  Verification (SDK): ${passed ? "PASSED" : "FAILED"}`);
+    ctx.log.info(`  Source objects: ${sourceObjects.length}, Target objects: ${targetObjects.length}`);
+    ctx.log.info(`  Checks: ${checksChecked}, Mismatches: ${mismatches}`);
+
+    return {
+      report: report as unknown as Record<string, unknown>,
+      passed,
+      objectsChecked: checksChecked,
+      mismatches,
+    };
+  }
+
+  // Fallback: stub behavior
   const report = verifyObjectIntegrity({
     jobId: `verify-${params.sourceBucket}-${Date.now()}`,
     sourceObjects: [],

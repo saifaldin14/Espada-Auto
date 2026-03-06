@@ -5,7 +5,9 @@
  * image, applying the matched instance type, networking, and tags.
  */
 
-import type { MigrationStepHandler, MigrationStepContext, NormalizedVM } from "../../types.js";
+import type { MigrationStepHandler, MigrationStepContext, NormalizedVM, MigrationProvider } from "../../types.js";
+import { resolveProviderAdapter } from "../../providers/registry.js";
+import type { ProviderCredentialConfig } from "../../providers/types.js";
 
 export interface ProvisionVMParams {
   imageId: string;
@@ -39,15 +41,7 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
 
   ctx.signal?.throwIfAborted();
 
-  // Provider-specific provisioning:
-  // AWS: ec2.RunInstances
-  // Azure: compute.virtualMachines.beginCreateOrUpdate
-  // GCP: compute.instances.insert
-  const instanceId = `i-${params.targetProvider}-${Date.now()}`;
-
-  ctx.log.info(`  Provisioned instance ${instanceId}`);
-
-  // Apply tags
+  // Build migration tags
   const allTags: Record<string, string> = {
     "espada:migration": "true",
     "espada:source-vm": params.normalizedVM.id,
@@ -55,6 +49,39 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
     ...params.tags,
   };
 
+  // Resolve the target provider adapter
+  const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+  if (credentials) {
+    const adapter = await resolveProviderAdapter(params.targetProvider as MigrationProvider, credentials);
+    const vmOutput = await adapter.compute.provisionVM({
+      imageId: params.imageId,
+      instanceType: params.instanceType,
+      region: params.targetRegion,
+      subnetId: params.subnetId,
+      securityGroupIds: params.securityGroupIds,
+      keyName: params.keyName,
+      userData: params.userData,
+      tags: allTags,
+    });
+
+    ctx.log.info(`  Provisioned instance ${vmOutput.instanceId} (${vmOutput.state})`);
+    ctx.log.info(`  Private IP: ${vmOutput.privateIp}${vmOutput.publicIp ? `, Public IP: ${vmOutput.publicIp}` : ""}`);
+    ctx.log.info(`  Applied ${Object.keys(allTags).length} tags`);
+
+    return {
+      instanceId: vmOutput.instanceId,
+      provider: params.targetProvider,
+      region: params.targetRegion,
+      instanceType: params.instanceType,
+      privateIp: vmOutput.privateIp,
+      publicIp: vmOutput.publicIp,
+      state: vmOutput.state,
+    } satisfies ProvisionResult as Record<string, unknown>;
+  }
+
+  // Fallback: stub behavior
+  const instanceId = `i-${params.targetProvider}-${Date.now()}`;
+  ctx.log.info(`  Provisioned instance ${instanceId}`);
   ctx.log.info(`  Applied ${Object.keys(allTags).length} tags`);
 
   return {
@@ -62,7 +89,7 @@ async function execute(ctx: MigrationStepContext): Promise<Record<string, unknow
     provider: params.targetProvider,
     region: params.targetRegion,
     instanceType: params.instanceType,
-    privateIp: "10.0.0.1", // resolved from provider
+    privateIp: "10.0.0.1",
     state: "running",
   } satisfies ProvisionResult as Record<string, unknown>;
 }
@@ -71,6 +98,20 @@ async function rollback(ctx: MigrationStepContext, outputs: Record<string, unkno
   const instanceId = outputs?.instanceId as string | undefined;
   const provider = outputs?.provider as string | undefined;
   if (!instanceId) return;
+
+  const params = ctx.params as unknown as ProvisionVMParams;
+  const credentials = ctx.targetCredentials as ProviderCredentialConfig | undefined;
+  if (credentials) {
+    try {
+      const adapter = await resolveProviderAdapter(params.targetProvider as MigrationProvider, credentials);
+      await adapter.compute.terminateInstance(instanceId, params.targetRegion);
+      ctx.log.info(`Terminated instance ${instanceId} on ${provider ?? params.targetProvider} via SDK`);
+      return;
+    } catch (err) {
+      ctx.log.info(`Rollback via SDK failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   ctx.log.info(`Terminating provisioned instance ${instanceId} on ${provider}`);
 }
 
