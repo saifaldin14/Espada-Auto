@@ -15,6 +15,43 @@ import type {
   NormalizedBucket,
   NormalizedSecurityRule,
   NormalizedDNSRecord,
+  NormalizedIAMRole,
+  NormalizedIAMPolicy,
+  NormalizedSecret,
+  NormalizedKMSKey,
+  NormalizedLambdaFunction,
+  NormalizedAPIGateway,
+  NormalizedContainerService,
+  NormalizedContainerRegistry,
+  NormalizedQueue,
+  NormalizedNotificationTopic,
+  NormalizedCDN,
+  NormalizedCertificate,
+  NormalizedWAFRule,
+  NormalizedNoSQLDatabase,
+  NormalizedCacheCluster,
+  NormalizedAutoScalingGroup,
+  NormalizedLoadBalancer,
+  NormalizedVPCResource,
+  NormalizedStepFunction,
+  NormalizedEventBus,
+  NormalizedFileSystem,
+  NormalizedTransitGateway,
+  NormalizedVPNConnection,
+  NormalizedVPCEndpoint,
+  NormalizedParameter,
+  NormalizedIAMUser,
+  NormalizedIAMGroup,
+  NormalizedIdentityProvider,
+  NormalizedLogGroup,
+  NormalizedAlarm,
+  NormalizedDataPipeline,
+  NormalizedStream,
+  NormalizedGraphDatabase,
+  NormalizedDataWarehouse,
+  NormalizedBucketPolicy,
+  NormalizedListenerRule,
+  NormalizedNetworkACL,
 } from "../types.js";
 
 // =============================================================================
@@ -42,6 +79,39 @@ export interface CloudProviderAdapter {
 
   /** Network/security operations (VPCs, security groups, firewall rules). */
   readonly network: NetworkAdapter;
+
+  /** IAM / Identity operations (roles, policies). Optional — not all providers expose this. */
+  readonly iam?: IAMAdapter;
+
+  /** Secrets management operations. Optional. */
+  readonly secrets?: SecretsAdapter;
+
+  /** Container orchestration operations (ECS/EKS/AKS/GKE). Optional. */
+  readonly containers?: ContainerAdapter;
+
+  /** Serverless / FaaS operations (Lambda/Functions/Cloud Functions). Optional. */
+  readonly serverless?: ServerlessAdapter;
+
+  /** Messaging operations (queues, topics). Optional. */
+  readonly messaging?: MessagingAdapter;
+
+  /** CDN / Edge operations. Optional. */
+  readonly cdn?: CDNAdapter;
+
+  /** Orchestration / workflow operations (Step Functions / EventBridge). Optional. */
+  readonly orchestration?: OrchestrationAdapter;
+
+  /** Shared file storage operations (EFS / Azure Files / Filestore). Optional. */
+  readonly fileStorage?: FileStorageAdapter;
+
+  /** Monitoring and observability operations (CloudWatch / Azure Monitor / Stackdriver). Optional. */
+  readonly monitoring?: MonitoringAdapter;
+
+  /** Analytics / data pipeline operations (Glue / Kinesis / Redshift / Neptune). Optional. */
+  readonly analytics?: AnalyticsAdapter;
+
+  /** Configuration management (Parameter Store / App Configuration). Optional. */
+  readonly configuration?: ConfigurationAdapter;
 
   /** Test provider connectivity / credentials. */
   healthCheck(): Promise<ProviderHealthResult>;
@@ -517,6 +587,481 @@ export interface LoadBalancerInfo {
   type: "application" | "network" | "classic" | "gateway";
   scheme: "internal" | "external";
   dnsName?: string;
+}
+
+// =============================================================================
+// IAM Adapter
+// =============================================================================
+
+export interface IAMAdapter {
+  /** List all IAM roles in the account. */
+  listRoles(): Promise<NormalizedIAMRole[]>;
+
+  /** List all IAM policies (customer-managed). */
+  listPolicies(): Promise<NormalizedIAMPolicy[]>;
+
+  /** Create an IAM role equivalent on the target provider. */
+  createRole(role: NormalizedIAMRole): Promise<{ id: string; arn?: string }>;
+
+  /** Create an IAM policy equivalent. */
+  createPolicy(policy: NormalizedIAMPolicy): Promise<{ id: string; arn?: string }>;
+
+  /** Attach a policy to a role. */
+  attachPolicy(roleId: string, policyId: string): Promise<void>;
+
+  /** Delete an IAM role (for rollback). */
+  deleteRole(roleId: string): Promise<void>;
+
+  /** Delete an IAM policy (for rollback). */
+  deletePolicy(policyId: string): Promise<void>;
+}
+
+// =============================================================================
+// Secrets Adapter
+// =============================================================================
+
+export interface SecretsAdapter {
+  /** List all secrets. */
+  listSecrets(): Promise<NormalizedSecret[]>;
+
+  /** Get a secret value (runtime only, not serialized). */
+  getSecretValue(secretId: string): Promise<{ value: string; versionId?: string }>;
+
+  /** Create a secret on the target. */
+  createSecret(secret: NormalizedSecret, value: string): Promise<{ id: string }>;
+
+  /** Delete a secret (for rollback). */
+  deleteSecret(secretId: string): Promise<void>;
+
+  /** List KMS keys. */
+  listKMSKeys(): Promise<NormalizedKMSKey[]>;
+
+  /** Create a KMS key equivalent (key material is NOT transferred). */
+  createKMSKey(key: NormalizedKMSKey): Promise<{ id: string; arn?: string }>;
+}
+
+// =============================================================================
+// Container Adapter
+// =============================================================================
+
+export interface ContainerAdapter {
+  /** List container services/clusters. */
+  listServices(): Promise<NormalizedContainerService[]>;
+
+  /** List container registries. */
+  listRegistries(): Promise<NormalizedContainerRegistry[]>;
+
+  /** Create a container service/cluster equivalent. */
+  createService(service: NormalizedContainerService): Promise<{ id: string; endpoint?: string }>;
+
+  /** Create a container registry. */
+  createRegistry(name: string, region: string): Promise<{ id: string; uri: string }>;
+
+  /** Copy an image between registries. */
+  copyImage(sourceUri: string, targetRegistryUri: string, targetTag: string): Promise<{ digest: string }>;
+
+  /** Delete a container service (rollback). */
+  deleteService(serviceId: string): Promise<void>;
+
+  /** Delete a container registry (rollback). */
+  deleteRegistry(registryId: string): Promise<void>;
+
+  /** List auto-scaling groups. */
+  listAutoScalingGroups(region?: string): Promise<NormalizedAutoScalingGroup[]>;
+
+  /** Create an auto-scaling group equivalent. */
+  createAutoScalingGroup(group: NormalizedAutoScalingGroup): Promise<{ id: string }>;
+}
+
+// =============================================================================
+// Serverless Adapter
+// =============================================================================
+
+export interface ServerlessAdapter {
+  /** List Lambda/Cloud Functions. */
+  listFunctions(): Promise<NormalizedLambdaFunction[]>;
+
+  /** List API Gateways. */
+  listAPIGateways(): Promise<NormalizedAPIGateway[]>;
+
+  /** Deploy a function on the target provider. */
+  deployFunction(fn: NormalizedLambdaFunction, codePackage: Buffer): Promise<{ id: string; arn?: string }>;
+
+  /** Create an API Gateway equivalent. */
+  createAPIGateway(gw: NormalizedAPIGateway): Promise<{ id: string; endpoint: string }>;
+
+  /** Download function code from source. */
+  getFunctionCode(functionId: string): Promise<Buffer>;
+
+  /** Delete a function (rollback). */
+  deleteFunction(functionId: string): Promise<void>;
+
+  /** Delete an API Gateway (rollback). */
+  deleteAPIGateway(gatewayId: string): Promise<void>;
+}
+
+// =============================================================================
+// Messaging Adapter
+// =============================================================================
+
+export interface MessagingAdapter {
+  /** List queues. */
+  listQueues(): Promise<NormalizedQueue[]>;
+
+  /** List topics. */
+  listTopics(): Promise<NormalizedNotificationTopic[]>;
+
+  /** Create a queue. */
+  createQueue(queue: NormalizedQueue): Promise<{ id: string; url: string }>;
+
+  /** Create a topic. */
+  createTopic(topic: NormalizedNotificationTopic): Promise<{ id: string; arn?: string }>;
+
+  /** Delete a queue (rollback). */
+  deleteQueue(queueId: string): Promise<void>;
+
+  /** Delete a topic (rollback). */
+  deleteTopic(topicId: string): Promise<void>;
+}
+
+// =============================================================================
+// CDN Adapter
+// =============================================================================
+
+export interface CDNAdapter {
+  /** List CDN distributions. */
+  listDistributions(): Promise<NormalizedCDN[]>;
+
+  /** List certificates. */
+  listCertificates(): Promise<NormalizedCertificate[]>;
+
+  /** List WAF rule sets. */
+  listWAFRules(): Promise<NormalizedWAFRule[]>;
+
+  /** Create a CDN distribution. */
+  createDistribution(cdn: NormalizedCDN): Promise<{ id: string; domainName: string }>;
+
+  /** Import a certificate. */
+  importCertificate(cert: NormalizedCertificate, privateKey: string, chain: string): Promise<{ id: string; arn?: string }>;
+
+  /** Create a WAF rule set. */
+  createWAFRule(rule: NormalizedWAFRule): Promise<{ id: string }>;
+
+  /** Delete a CDN distribution (rollback). */
+  deleteDistribution(distributionId: string): Promise<void>;
+
+  /** Delete a certificate (rollback). */
+  deleteCertificate(certId: string): Promise<void>;
+
+  /** Delete a WAF rule set (rollback). */
+  deleteWAFRule(ruleId: string): Promise<void>;
+
+  /** List NoSQL databases. */
+  listNoSQLDatabases?(): Promise<NormalizedNoSQLDatabase[]>;
+
+  /** List cache clusters. */
+  listCacheClusters?(): Promise<NormalizedCacheCluster[]>;
+}
+
+// =============================================================================
+// Extended Network Adapter (VPC/Subnet/RouteTable/LB creation)
+// =============================================================================
+
+export interface ExtendedNetworkAdapter extends NetworkAdapter {
+  /** Create a VPC/VNet. */
+  createVPC(params: CreateVPCParams): Promise<NetworkVPCInfo>;
+
+  /** Create a subnet. */
+  createSubnet(params: CreateSubnetParams): Promise<NetworkSubnetInfo>;
+
+  /** Create a route table. */
+  createRouteTable(params: CreateRouteTableParams): Promise<{ id: string }>;
+
+  /** Create a load balancer. */
+  createLoadBalancer(params: CreateLoadBalancerParams): Promise<LoadBalancerInfo>;
+
+  /** Delete a VPC (rollback). */
+  deleteVPC(vpcId: string, region?: string): Promise<void>;
+
+  /** Delete a subnet (rollback). */
+  deleteSubnet(subnetId: string, region?: string): Promise<void>;
+
+  /** Delete a load balancer (rollback). */
+  deleteLoadBalancer(lbId: string, region?: string): Promise<void>;
+
+  /** Create transit gateway. */
+  createTransitGateway(tgw: NormalizedTransitGateway): Promise<{ id: string }>;
+
+  /** Delete a transit gateway (rollback). */
+  deleteTransitGateway(tgwId: string, region?: string): Promise<void>;
+
+  /** Create a VPN connection. */
+  createVPNConnection(vpn: NormalizedVPNConnection): Promise<{ id: string }>;
+
+  /** Delete a VPN connection (rollback). */
+  deleteVPNConnection(vpnId: string, region?: string): Promise<void>;
+
+  /** Create a VPC endpoint. */
+  createVPCEndpoint(endpoint: NormalizedVPCEndpoint): Promise<{ id: string }>;
+
+  /** Delete a VPC endpoint (rollback). */
+  deleteVPCEndpoint(endpointId: string, region?: string): Promise<void>;
+
+  /** Create a network ACL. */
+  createNetworkACL(nacl: NormalizedNetworkACL): Promise<{ id: string }>;
+
+  /** Delete a network ACL (rollback). */
+  deleteNetworkACL(naclId: string, region?: string): Promise<void>;
+
+  /** Create listener rules on a load balancer. */
+  createListenerRules(listenerArn: string, rules: NormalizedListenerRule[]): Promise<Array<{ id: string }>>;
+
+  /** Delete listener rules (rollback). */
+  deleteListenerRules(ruleIds: string[]): Promise<void>;
+
+  /** List transit gateways. */
+  listTransitGateways(region?: string): Promise<NormalizedTransitGateway[]>;
+
+  /** List VPN connections. */
+  listVPNConnections(region?: string): Promise<NormalizedVPNConnection[]>;
+
+  /** List VPC endpoints. */
+  listVPCEndpoints(region?: string): Promise<NormalizedVPCEndpoint[]>;
+
+  /** List network ACLs. */
+  listNetworkACLs(region?: string): Promise<NormalizedNetworkACL[]>;
+}
+
+export interface CreateVPCParams {
+  name: string;
+  cidrBlock: string;
+  region: string;
+  enableDnsHostnames?: boolean;
+  enableInternetGateway?: boolean;
+  tags?: Record<string, string>;
+}
+
+export interface CreateSubnetParams {
+  vpcId: string;
+  name: string;
+  cidrBlock: string;
+  availabilityZone: string;
+  public?: boolean;
+  tags?: Record<string, string>;
+}
+
+export interface CreateRouteTableParams {
+  vpcId: string;
+  name: string;
+  routes: Array<{ destination: string; target: string }>;
+  tags?: Record<string, string>;
+}
+
+export interface CreateLoadBalancerParams {
+  name: string;
+  type: "application" | "network";
+  scheme: "internal" | "external";
+  vpcId?: string;
+  subnetIds: string[];
+  listeners: Array<{
+    port: number;
+    protocol: "HTTP" | "HTTPS" | "TCP" | "TLS";
+    targetPort: number;
+    certificateArn?: string;
+  }>;
+  tags?: Record<string, string>;
+}
+
+// =============================================================================
+// Orchestration Adapter (Step Functions / EventBridge)
+// =============================================================================
+
+export interface OrchestrationAdapter {
+  /** List step functions / workflow state machines. */
+  listStepFunctions(): Promise<NormalizedStepFunction[]>;
+
+  /** List event buses. */
+  listEventBuses(): Promise<NormalizedEventBus[]>;
+
+  /** Create a step function / workflow. */
+  createStepFunction(sf: NormalizedStepFunction): Promise<{ id: string; arn?: string }>;
+
+  /** Create an event bus. */
+  createEventBus(bus: NormalizedEventBus): Promise<{ id: string; arn?: string }>;
+
+  /** Replicate event bus rules onto a target bus. */
+  createEventRules(busId: string, rules: NormalizedEventBus["rules"]): Promise<Array<{ id: string }>>;
+
+  /** Delete a step function (rollback). */
+  deleteStepFunction(sfId: string): Promise<void>;
+
+  /** Delete an event bus (rollback). */
+  deleteEventBus(busId: string): Promise<void>;
+}
+
+// =============================================================================
+// File Storage Adapter (EFS / Azure Files / Filestore)
+// =============================================================================
+
+export interface FileStorageAdapter {
+  /** List shared file systems. */
+  listFileSystems(region?: string): Promise<NormalizedFileSystem[]>;
+
+  /** Create a shared file system. */
+  createFileSystem(fs: NormalizedFileSystem): Promise<{ id: string; dnsName?: string }>;
+
+  /** Create mount targets in subnets. */
+  createMountTargets(fsId: string, targets: NormalizedFileSystem["mountTargets"]): Promise<Array<{ id: string }>>;
+
+  /** Sync files from source FS to target FS. */
+  syncFiles(sourcePath: string, targetFsId: string, targetPath: string): Promise<{ filesCopied: number; bytesTransferred: number }>;
+
+  /** Delete a file system (rollback). */
+  deleteFileSystem(fsId: string, region?: string): Promise<void>;
+}
+
+// =============================================================================
+// Monitoring Adapter (CloudWatch / Azure Monitor / Stackdriver)
+// =============================================================================
+
+export interface MonitoringAdapter {
+  /** List log groups. */
+  listLogGroups(): Promise<NormalizedLogGroup[]>;
+
+  /** List alarms. */
+  listAlarms(): Promise<NormalizedAlarm[]>;
+
+  /** Create a log group. */
+  createLogGroup(lg: NormalizedLogGroup): Promise<{ id: string }>;
+
+  /** Create subscription filters on a log group. */
+  createSubscriptionFilters(logGroupId: string, filters: NormalizedLogGroup["subscriptionFilters"]): Promise<void>;
+
+  /** Create metric filters on a log group. */
+  createMetricFilters(logGroupId: string, filters: NormalizedLogGroup["metricFilters"]): Promise<void>;
+
+  /** Create an alarm. */
+  createAlarm(alarm: NormalizedAlarm): Promise<{ id: string }>;
+
+  /** Delete a log group (rollback). */
+  deleteLogGroup(logGroupId: string): Promise<void>;
+
+  /** Delete an alarm (rollback). */
+  deleteAlarm(alarmId: string): Promise<void>;
+}
+
+// =============================================================================
+// Analytics Adapter (Glue / Kinesis / Redshift / Neptune)
+// =============================================================================
+
+export interface AnalyticsAdapter {
+  /** List data pipelines (Glue jobs / Data Factory / Dataflow). */
+  listDataPipelines(): Promise<NormalizedDataPipeline[]>;
+
+  /** List real-time streams (Kinesis / Event Hubs / Pub/Sub). */
+  listStreams(): Promise<NormalizedStream[]>;
+
+  /** List graph databases (Neptune / Cosmos Gremlin). */
+  listGraphDatabases(): Promise<NormalizedGraphDatabase[]>;
+
+  /** List data warehouses (Redshift / Synapse / BigQuery). */
+  listDataWarehouses(): Promise<NormalizedDataWarehouse[]>;
+
+  /** Create a data pipeline. */
+  createDataPipeline(pipeline: NormalizedDataPipeline): Promise<{ id: string }>;
+
+  /** Create a real-time stream. */
+  createStream(stream: NormalizedStream): Promise<{ id: string; arn?: string }>;
+
+  /** Create a graph database cluster. */
+  createGraphDatabase(db: NormalizedGraphDatabase): Promise<{ id: string; endpoint: string }>;
+
+  /** Create a data warehouse cluster. */
+  createDataWarehouse(dw: NormalizedDataWarehouse): Promise<{ id: string; endpoint: string }>;
+
+  /** Export graph database data (dump). */
+  exportGraphData(dbId: string, format: "nquads" | "csv" | "neptune-csv"): Promise<{ exportPath: string; sizeBytes: number }>;
+
+  /** Import graph database data. */
+  importGraphData(dbId: string, sourcePath: string, format: "nquads" | "csv" | "neptune-csv"): Promise<{ importedTriples: number }>;
+
+  /** Export data warehouse schemas and data. */
+  exportWarehouseData(dwId: string): Promise<{ exportPath: string; sizeBytes: number; tableCount: number }>;
+
+  /** Import data warehouse schemas and data. */
+  importWarehouseData(dwId: string, sourcePath: string): Promise<{ importedTables: number }>;
+
+  /** Delete a data pipeline (rollback). */
+  deleteDataPipeline(pipelineId: string): Promise<void>;
+
+  /** Delete a stream (rollback). */
+  deleteStream(streamId: string): Promise<void>;
+
+  /** Delete a graph database (rollback). */
+  deleteGraphDatabase(dbId: string): Promise<void>;
+
+  /** Delete a data warehouse (rollback). */
+  deleteDataWarehouse(dwId: string): Promise<void>;
+}
+
+// =============================================================================
+// Configuration Adapter (Parameter Store / App Configuration)
+// =============================================================================
+
+export interface ConfigurationAdapter {
+  /** List all parameters. */
+  listParameters(): Promise<NormalizedParameter[]>;
+
+  /** Get a parameter value (resolved at runtime). */
+  getParameterValue(paramId: string): Promise<{ value: string; type: string }>;
+
+  /** Create a parameter. */
+  createParameter(param: NormalizedParameter, value: string): Promise<{ id: string; version: number }>;
+
+  /** Delete a parameter (rollback). */
+  deleteParameter(paramId: string): Promise<void>;
+}
+
+// =============================================================================
+// Advanced IAM Adapter (Users, Groups, Identity Providers)
+// =============================================================================
+
+export interface AdvancedIAMAdapter extends IAMAdapter {
+  /** List IAM users. */
+  listUsers(): Promise<NormalizedIAMUser[]>;
+
+  /** List IAM groups. */
+  listGroups(): Promise<NormalizedIAMGroup[]>;
+
+  /** List identity providers (SAML/OIDC/Cognito). */
+  listIdentityProviders(): Promise<NormalizedIdentityProvider[]>;
+
+  /** Create an IAM user. */
+  createUser(user: NormalizedIAMUser): Promise<{ id: string; arn?: string }>;
+
+  /** Create an IAM group. */
+  createGroup(group: NormalizedIAMGroup): Promise<{ id: string; arn?: string }>;
+
+  /** Add a user to a group. */
+  addUserToGroup(userId: string, groupId: string): Promise<void>;
+
+  /** Create an identity provider (SAML/OIDC). */
+  createIdentityProvider(idp: NormalizedIdentityProvider): Promise<{ id: string; arn?: string }>;
+
+  /** Delete an IAM user (rollback). */
+  deleteUser(userId: string): Promise<void>;
+
+  /** Delete an IAM group (rollback). */
+  deleteGroup(groupId: string): Promise<void>;
+
+  /** Delete an identity provider (rollback). */
+  deleteIdentityProvider(idpId: string): Promise<void>;
+
+  /** List bucket/resource policies. */
+  listBucketPolicies(): Promise<NormalizedBucketPolicy[]>;
+
+  /** Apply a bucket policy on the target. */
+  applyBucketPolicy(policy: NormalizedBucketPolicy): Promise<void>;
 }
 
 // =============================================================================

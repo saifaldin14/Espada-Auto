@@ -52,6 +52,77 @@ import { verifyConnectivityHandler } from "./network/steps/verify-connectivity.j
 // Reconciliation step handler (Enterprise SLA)
 import { reconcileHandler } from "./data/steps/reconcile.js";
 
+// Identity step handlers
+import { extractIAMHandler } from "./identity/steps/extract-iam.js";
+import { createIAMHandler } from "./identity/steps/create-iam.js";
+import { migrateSecretsHandler } from "./identity/steps/migrate-secrets.js";
+import { migrateKMSHandler } from "./identity/steps/migrate-kms.js";
+
+// Container step handlers
+import { migrateContainersHandler } from "./container/steps/migrate-containers.js";
+import { migrateContainerRegistryHandler } from "./container/steps/migrate-container-registry.js";
+
+// Serverless step handlers
+import { migrateServerlessHandler } from "./serverless/steps/migrate-serverless.js";
+import { migrateAPIGatewayHandler } from "./serverless/steps/migrate-api-gateway.js";
+
+// Infrastructure step handlers (VPC, subnet, route-table, load-balancer)
+import { createVPCHandler } from "./network/steps/create-vpc.js";
+import { createSubnetHandler } from "./network/steps/create-subnet.js";
+import { createRouteTableHandler } from "./network/steps/create-route-table.js";
+import { createLoadBalancerHandler } from "./network/steps/create-load-balancer.js";
+
+// Messaging step handlers
+import { migrateQueuesHandler } from "./messaging/steps/migrate-queues.js";
+import { migrateTopicsHandler } from "./messaging/steps/migrate-topics.js";
+
+// Edge / CDN step handlers
+import { migrateCDNHandler } from "./edge/steps/migrate-cdn.js";
+import { migrateCertificatesHandler } from "./edge/steps/migrate-certificates.js";
+import { migrateWAFHandler } from "./edge/steps/migrate-waf.js";
+
+// NoSQL / Cache step handlers
+import { migrateNoSQLHandler } from "./data/steps/migrate-nosql.js";
+import { migrateCacheHandler } from "./data/steps/migrate-cache.js";
+
+// Auto scaling step handler
+import { migrateAutoScalingHandler } from "./compute/steps/migrate-auto-scaling.js";
+
+// Orchestration step handlers (Step Functions / EventBridge)
+import { migrateStepFunctionsHandler } from "./orchestration/steps/migrate-step-functions.js";
+import { migrateEventBusHandler } from "./orchestration/steps/migrate-event-bus.js";
+
+// File storage step handler
+import { migrateFileSystemHandler } from "./data/steps/migrate-file-system.js";
+
+// Advanced network step handlers
+import { migrateTransitGatewayHandler } from "./network/steps/migrate-transit-gateway.js";
+import { migrateVPNHandler } from "./network/steps/migrate-vpn.js";
+import { migrateVPCEndpointHandler } from "./network/steps/migrate-vpc-endpoint.js";
+import { migrateNetworkACLHandler } from "./network/steps/migrate-network-acl.js";
+import { migrateListenerRulesHandler } from "./network/steps/migrate-listener-rules.js";
+
+// Parameter store step handler
+import { migrateParametersHandler } from "./identity/steps/migrate-parameters.js";
+
+// Advanced identity step handlers
+import { migrateIAMUsersHandler } from "./identity/steps/migrate-iam-users.js";
+import { migrateIAMGroupsHandler } from "./identity/steps/migrate-iam-groups.js";
+import { migrateIdentityProviderHandler } from "./identity/steps/migrate-identity-provider.js";
+
+// Monitoring step handlers
+import { migrateLogGroupsHandler } from "./monitoring/steps/migrate-log-groups.js";
+import { migrateAlarmsHandler } from "./monitoring/steps/migrate-alarms.js";
+
+// Analytics step handlers
+import { migrateDataPipelineHandler } from "./analytics/steps/migrate-data-pipeline.js";
+import { migrateStreamHandler } from "./analytics/steps/migrate-stream.js";
+import { migrateGraphDatabaseHandler } from "./analytics/steps/migrate-graph-database.js";
+import { migrateDataWarehouseHandler } from "./analytics/steps/migrate-data-warehouse.js";
+
+// Bucket policies step handler
+import { migrateBucketPoliciesHandler } from "./data/steps/migrate-bucket-policies.js";
+
 /**
  * All step handlers mapped to their step type.
  * Used during service start to register every handler with the engine.
@@ -101,6 +172,77 @@ const STEP_HANDLER_REGISTRY: Array<{
 
   // Enterprise SLA pipeline
   { type: "reconcile", handler: reconcileHandler, requiresRollback: false },
+
+  // Identity pipeline
+  { type: "extract-iam", handler: extractIAMHandler, requiresRollback: false },
+  { type: "create-iam", handler: createIAMHandler, requiresRollback: true },
+  { type: "migrate-secrets", handler: migrateSecretsHandler, requiresRollback: true },
+  { type: "migrate-kms", handler: migrateKMSHandler, requiresRollback: false },
+
+  // Container pipeline
+  { type: "migrate-containers", handler: migrateContainersHandler, requiresRollback: true },
+  { type: "migrate-container-registry", handler: migrateContainerRegistryHandler, requiresRollback: false },
+
+  // Serverless pipeline
+  { type: "migrate-serverless", handler: migrateServerlessHandler, requiresRollback: true },
+  { type: "migrate-api-gateway", handler: migrateAPIGatewayHandler, requiresRollback: true },
+
+  // Infrastructure pipeline (VPC, subnets, routes, LBs)
+  { type: "create-vpc", handler: createVPCHandler, requiresRollback: true },
+  { type: "create-subnet", handler: createSubnetHandler, requiresRollback: true },
+  { type: "create-route-table", handler: createRouteTableHandler, requiresRollback: true },
+  { type: "create-load-balancer", handler: createLoadBalancerHandler, requiresRollback: true },
+
+  // Messaging pipeline
+  { type: "migrate-queues", handler: migrateQueuesHandler, requiresRollback: true },
+  { type: "migrate-topics", handler: migrateTopicsHandler, requiresRollback: true },
+
+  // Edge / CDN pipeline
+  { type: "migrate-cdn", handler: migrateCDNHandler, requiresRollback: true },
+  { type: "migrate-certificates", handler: migrateCertificatesHandler, requiresRollback: true },
+  { type: "migrate-waf", handler: migrateWAFHandler, requiresRollback: true },
+
+  // NoSQL / Cache pipeline
+  { type: "migrate-nosql", handler: migrateNoSQLHandler, requiresRollback: false },
+  { type: "migrate-cache", handler: migrateCacheHandler, requiresRollback: true },
+
+  // Auto scaling pipeline
+  { type: "migrate-auto-scaling", handler: migrateAutoScalingHandler, requiresRollback: true },
+
+  // Orchestration pipeline (Step Functions / EventBridge)
+  { type: "migrate-step-functions", handler: migrateStepFunctionsHandler, requiresRollback: true },
+  { type: "migrate-event-bus", handler: migrateEventBusHandler, requiresRollback: true },
+
+  // File storage pipeline
+  { type: "migrate-file-system", handler: migrateFileSystemHandler, requiresRollback: true },
+
+  // Advanced network pipeline
+  { type: "migrate-transit-gateway", handler: migrateTransitGatewayHandler, requiresRollback: true },
+  { type: "migrate-vpn-connection", handler: migrateVPNHandler, requiresRollback: true },
+  { type: "migrate-vpc-endpoint", handler: migrateVPCEndpointHandler, requiresRollback: true },
+  { type: "migrate-network-acl", handler: migrateNetworkACLHandler, requiresRollback: true },
+  { type: "migrate-listener-rules", handler: migrateListenerRulesHandler, requiresRollback: true },
+
+  // Parameter store pipeline
+  { type: "migrate-parameters", handler: migrateParametersHandler, requiresRollback: true },
+
+  // Advanced identity pipeline
+  { type: "migrate-iam-users", handler: migrateIAMUsersHandler, requiresRollback: true },
+  { type: "migrate-iam-groups", handler: migrateIAMGroupsHandler, requiresRollback: true },
+  { type: "migrate-identity-provider", handler: migrateIdentityProviderHandler, requiresRollback: true },
+
+  // Monitoring pipeline
+  { type: "migrate-log-groups", handler: migrateLogGroupsHandler, requiresRollback: true },
+  { type: "migrate-alarms", handler: migrateAlarmsHandler, requiresRollback: true },
+
+  // Analytics pipeline
+  { type: "migrate-data-pipeline", handler: migrateDataPipelineHandler, requiresRollback: true },
+  { type: "migrate-stream", handler: migrateStreamHandler, requiresRollback: true },
+  { type: "migrate-graph-database", handler: migrateGraphDatabaseHandler, requiresRollback: true },
+  { type: "migrate-data-warehouse", handler: migrateDataWarehouseHandler, requiresRollback: true },
+
+  // Storage policies pipeline
+  { type: "migrate-bucket-policies", handler: migrateBucketPoliciesHandler, requiresRollback: false },
 ];
 
 /**

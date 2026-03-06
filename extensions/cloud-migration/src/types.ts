@@ -29,7 +29,47 @@ export type MigrationResourceType =
   | "database"
   | "dns"
   | "security-rules"
-  | "load-balancer";
+  | "load-balancer"
+  // Enterprise resource types
+  | "iam-role"
+  | "iam-policy"
+  | "secret"
+  | "kms-key"
+  | "lambda-function"
+  | "api-gateway"
+  | "container-service"
+  | "container-registry"
+  | "vpc"
+  | "subnet"
+  | "route-table"
+  | "queue"
+  | "notification-topic"
+  | "cdn"
+  | "certificate"
+  | "waf-rule"
+  | "nosql-database"
+  | "cache"
+  | "auto-scaling-group"
+  // Full-estate enterprise resource types
+  | "step-function"
+  | "event-bus"
+  | "file-system"
+  | "transit-gateway"
+  | "vpn-connection"
+  | "vpc-endpoint"
+  | "parameter-store"
+  | "iam-user"
+  | "iam-group"
+  | "identity-provider"
+  | "log-group"
+  | "alarm"
+  | "data-pipeline"
+  | "stream"
+  | "graph-database"
+  | "data-warehouse"
+  | "bucket-policy"
+  | "listener-rule"
+  | "network-acl";
 
 /** A specific migration direction. */
 export type MigrationDirection = {
@@ -213,6 +253,686 @@ export type NormalizedDNSRecord = {
 };
 
 // =============================================================================
+// Normalized Enterprise Resource Types (IAM, Secrets, Containers, Serverless)
+// =============================================================================
+
+/** Provider-agnostic IAM role. */
+export type NormalizedIAMRole = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  arn?: string;
+  description?: string;
+  trustPolicy?: Record<string, unknown>;
+  inlinePolicies: NormalizedIAMPolicy[];
+  attachedPolicyArns: string[];
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic IAM policy. */
+export type NormalizedIAMPolicy = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  arn?: string;
+  description?: string;
+  document: Record<string, unknown>;
+  isManaged: boolean;
+  attachedTo: string[];
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic secret. */
+export type NormalizedSecret = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  description?: string;
+  /** The actual value is resolved at runtime, never serialized. */
+  valueRef: string;
+  rotationEnabled: boolean;
+  rotationDays?: number;
+  kmsKeyId?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic KMS/encryption key. */
+export type NormalizedKMSKey = {
+  id: string;
+  alias?: string;
+  provider: MigrationProvider;
+  keyType: "symmetric" | "asymmetric";
+  usage: "encrypt-decrypt" | "sign-verify";
+  state: "enabled" | "disabled" | "pending-deletion";
+  rotationEnabled: boolean;
+  /** Key material cannot be transferred; we migrate policy + re-encrypt. */
+  policy?: Record<string, unknown>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic Lambda/Cloud Function. */
+export type NormalizedLambdaFunction = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  runtime: string;
+  handler: string;
+  memoryMB: number;
+  timeoutSec: number;
+  codeUri: string;
+  codeSizeBytes: number;
+  environment: Record<string, string>;
+  layers: string[];
+  vpcConfig?: { subnetIds: string[]; securityGroupIds: string[] };
+  triggers: Array<{ type: string; sourceArn?: string; config: Record<string, unknown> }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic API Gateway. */
+export type NormalizedAPIGateway = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "rest" | "http" | "websocket";
+  endpoint: string;
+  routes: Array<{
+    path: string;
+    method: string;
+    integration: string;
+    authType?: string;
+  }>;
+  stages: string[];
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic container service (ECS/EKS/AKS/GKE). */
+export type NormalizedContainerService = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "ecs" | "eks" | "aks" | "gke" | "kubernetes" | "docker-compose";
+  region: string;
+  clusterArn?: string;
+  services: NormalizedContainerServiceDef[];
+  nodeGroups: Array<{
+    name: string;
+    instanceType: string;
+    desiredCount: number;
+    minCount: number;
+    maxCount: number;
+  }>;
+  tags: Record<string, string>;
+};
+
+export type NormalizedContainerServiceDef = {
+  name: string;
+  image: string;
+  cpu: number;
+  memoryMB: number;
+  desiredCount: number;
+  ports: Array<{ containerPort: number; hostPort?: number; protocol: "tcp" | "udp" }>;
+  environment: Record<string, string>;
+  healthCheck?: { path: string; intervalSec: number };
+};
+
+/** Provider-agnostic container registry (ECR/ACR/GCR/Artifact Registry). */
+export type NormalizedContainerRegistry = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  uri: string;
+  repositories: Array<{
+    name: string;
+    imageCount: number;
+    totalSizeBytes: number;
+    tags: string[];
+  }>;
+  scanOnPush: boolean;
+  encryption: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic VPC for migration purposes. */
+export type NormalizedVPCResource = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  region: string;
+  cidrBlocks: string[];
+  subnets: Array<{
+    id: string;
+    name: string;
+    cidrBlock: string;
+    availabilityZone: string;
+    public: boolean;
+  }>;
+  routeTables: Array<{
+    id: string;
+    name: string;
+    routes: Array<{ destination: string; target: string }>;
+  }>;
+  internetGateway: boolean;
+  natGateway: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic load balancer for migration. */
+export type NormalizedLoadBalancer = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "application" | "network" | "classic" | "gateway";
+  scheme: "internal" | "external";
+  vpcId?: string;
+  listeners: Array<{
+    port: number;
+    protocol: "HTTP" | "HTTPS" | "TCP" | "UDP" | "TLS";
+    targetGroupArn?: string;
+    certificateArn?: string;
+  }>;
+  targetGroups: Array<{
+    name: string;
+    port: number;
+    protocol: string;
+    healthCheckPath?: string;
+    targets: string[];
+  }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic message queue (SQS/Azure Queue/Cloud Tasks). */
+export type NormalizedQueue = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "standard" | "fifo";
+  visibilityTimeoutSec: number;
+  retentionDays: number;
+  delaySeconds: number;
+  deadLetterQueue?: string;
+  encryption: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic notification topic (SNS/Event Grid/Pub/Sub). */
+export type NormalizedNotificationTopic = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  subscriptions: Array<{
+    protocol: "email" | "sms" | "https" | "sqs" | "lambda" | "http";
+    endpoint: string;
+  }>;
+  encryption: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic CDN distribution (CloudFront/Azure CDN/Cloud CDN). */
+export type NormalizedCDN = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  domainName: string;
+  origins: Array<{
+    id: string;
+    domainName: string;
+    originPath?: string;
+    protocol: "http-only" | "https-only" | "match-viewer";
+  }>;
+  certificateArn?: string;
+  wafAclId?: string;
+  priceClass?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic SSL/TLS certificate. */
+export type NormalizedCertificate = {
+  id: string;
+  domainName: string;
+  provider: MigrationProvider;
+  subjectAlternativeNames: string[];
+  issuer: string;
+  status: "issued" | "pending" | "expired" | "revoked";
+  notBefore: string;
+  notAfter: string;
+  type: "imported" | "managed";
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic WAF rule set. */
+export type NormalizedWAFRule = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  rules: Array<{
+    name: string;
+    priority: number;
+    action: "allow" | "block" | "count";
+    condition: string;
+  }>;
+  scope: "regional" | "global";
+  associatedResources: string[];
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic NoSQL database (DynamoDB/CosmosDB/Firestore/Datastore). */
+export type NormalizedNoSQLDatabase = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  engine: "dynamodb" | "cosmosdb" | "firestore" | "mongodb" | "cassandra";
+  tables: Array<{
+    name: string;
+    partitionKey: string;
+    sortKey?: string;
+    itemCount: number;
+    sizeBytes: number;
+    gsiCount: number;
+    streamEnabled: boolean;
+  }>;
+  region: string;
+  encryption: boolean;
+  backupEnabled: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic cache cluster (ElastiCache/Azure Cache/Memorystore). */
+export type NormalizedCacheCluster = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  engine: "redis" | "memcached";
+  version: string;
+  nodeType: string;
+  nodeCount: number;
+  port: number;
+  endpoint: string;
+  encryption: boolean;
+  authEnabled: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic auto scaling group. */
+export type NormalizedAutoScalingGroup = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  minSize: number;
+  maxSize: number;
+  desiredSize: number;
+  launchTemplate?: string;
+  instanceType: string;
+  imageId: string;
+  subnetIds: string[];
+  targetGroupArns: string[];
+  healthCheckType: "ec2" | "elb";
+  scalingPolicies: Array<{
+    name: string;
+    type: "target-tracking" | "step" | "simple";
+    metric: string;
+    targetValue?: number;
+  }>;
+  tags: Record<string, string>;
+};
+
+// =============================================================================
+// Normalized Full-Estate Enterprise Resource Types
+// =============================================================================
+
+/** Provider-agnostic Step Functions / workflow state machine. */
+export type NormalizedStepFunction = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "standard" | "express";
+  definition: Record<string, unknown>;
+  roleArn?: string;
+  loggingConfig?: { level: "ALL" | "ERROR" | "FATAL" | "OFF"; destinationArn?: string };
+  tracingEnabled: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic event bus (EventBridge / Event Grid / Eventarc). */
+export type NormalizedEventBus = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  isDefault: boolean;
+  rules: Array<{
+    name: string;
+    eventPattern: Record<string, unknown>;
+    targets: Array<{ id: string; arn: string; inputTransformer?: Record<string, unknown> }>;
+    state: "enabled" | "disabled";
+    scheduleExpression?: string;
+  }>;
+  schemaRegistryArn?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic file system (EFS / Azure Files / Filestore). */
+export type NormalizedFileSystem = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "nfs" | "smb" | "lustre" | "zfs";
+  sizeGB: number;
+  throughputMode: "bursting" | "provisioned" | "elastic";
+  performanceMode: "general-purpose" | "max-io";
+  encrypted: boolean;
+  mountTargets: Array<{
+    subnetId: string;
+    securityGroupIds: string[];
+    ipAddress: string;
+  }>;
+  accessPoints: Array<{
+    id: string;
+    path: string;
+    posixUser?: { uid: number; gid: number };
+  }>;
+  region: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic transit gateway. */
+export type NormalizedTransitGateway = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  region: string;
+  asnNumber: number;
+  attachments: Array<{
+    id: string;
+    type: "vpc" | "vpn" | "direct-connect" | "peering";
+    resourceId: string;
+    state: "available" | "pending" | "deleting";
+  }>;
+  routeTables: Array<{
+    id: string;
+    name: string;
+    routes: Array<{ destination: string; attachmentId: string; state: "active" | "blackhole" }>;
+  }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic VPN connection. */
+export type NormalizedVPNConnection = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "site-to-site" | "client";
+  customerGatewayIp: string;
+  customerGatewayAsn?: number;
+  tunnels: Array<{
+    outsideIp: string;
+    insideCidr: string;
+    preSharedKey?: string;
+    status: "up" | "down";
+  }>;
+  staticRoutes: string[];
+  bgpEnabled: boolean;
+  transitGatewayId?: string;
+  vpcId?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic VPC endpoint (Private Link / interface/gateway endpoint). */
+export type NormalizedVPCEndpoint = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "interface" | "gateway";
+  serviceName: string;
+  vpcId: string;
+  subnetIds: string[];
+  securityGroupIds: string[];
+  privateDnsEnabled: boolean;
+  policyDocument?: Record<string, unknown>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic parameter store entry (SSM Parameter Store / App Configuration / Runtime Configurator). */
+export type NormalizedParameter = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "string" | "secure-string" | "string-list";
+  /** Value reference — secure values resolved at runtime, never serialized. */
+  valueRef: string;
+  version: number;
+  tier: "standard" | "advanced";
+  kmsKeyId?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic IAM user. */
+export type NormalizedIAMUser = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  arn?: string;
+  groupIds: string[];
+  attachedPolicyArns: string[];
+  inlinePolicies: NormalizedIAMPolicy[];
+  hasConsoleAccess: boolean;
+  hasApiKeys: boolean;
+  mfaEnabled: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic IAM group. */
+export type NormalizedIAMGroup = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  arn?: string;
+  memberUserIds: string[];
+  attachedPolicyArns: string[];
+  inlinePolicies: NormalizedIAMPolicy[];
+};
+
+/** Provider-agnostic identity provider (SSO / Cognito / Identity Center / Azure AD B2C). */
+export type NormalizedIdentityProvider = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "saml" | "oidc" | "user-pool" | "identity-pool";
+  metadataUrl?: string;
+  clientIds: string[];
+  userCount: number;
+  userAttributes: string[];
+  mfaConfig: "off" | "optional" | "required";
+  customDomain?: string;
+  triggers: Array<{ event: string; functionArn: string }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic log group. */
+export type NormalizedLogGroup = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  retentionDays: number;
+  storedSizeBytes: number;
+  kmsKeyId?: string;
+  subscriptionFilters: Array<{
+    name: string;
+    filterPattern: string;
+    destinationArn: string;
+  }>;
+  metricFilters: Array<{
+    name: string;
+    filterPattern: string;
+    metricName: string;
+    metricNamespace: string;
+  }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic monitoring alarm. */
+export type NormalizedAlarm = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  metricName: string;
+  namespace: string;
+  statistic: "Average" | "Sum" | "Minimum" | "Maximum" | "SampleCount" | "p99" | "p95" | "p90";
+  threshold: number;
+  comparisonOperator: "GreaterThanThreshold" | "LessThanThreshold" | "GreaterThanOrEqualToThreshold" | "LessThanOrEqualToThreshold";
+  evaluationPeriods: number;
+  periodSec: number;
+  actions: string[];
+  dimensions: Array<{ name: string; value: string }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic data pipeline (Glue jobs / Data Factory / Dataflow). */
+export type NormalizedDataPipeline = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "etl" | "streaming" | "crawler" | "workflow";
+  schedule?: string;
+  sourceConnections: Array<{
+    type: string;
+    connectionString: string;
+    database?: string;
+    table?: string;
+  }>;
+  targetConnections: Array<{
+    type: string;
+    connectionString: string;
+    database?: string;
+    table?: string;
+  }>;
+  scriptLocation?: string;
+  workerType?: string;
+  numberOfWorkers?: number;
+  glueVersion?: string;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic real-time stream (Kinesis / Event Hubs / Pub/Sub). */
+export type NormalizedStream = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  type: "data-stream" | "firehose" | "event-hub";
+  shardCount: number;
+  retentionHours: number;
+  consumers: Array<{
+    name: string;
+    type: "shared" | "enhanced-fan-out";
+    destinationArn?: string;
+  }>;
+  encryption: boolean;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic graph database (Neptune / Cosmos DB Gremlin / Neo4j). */
+export type NormalizedGraphDatabase = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  engine: "neptune" | "cosmosdb-gremlin" | "neo4j" | "janusgraph";
+  queryLanguages: Array<"gremlin" | "sparql" | "opencypher">;
+  instanceClass: string;
+  storageGB: number;
+  encrypted: boolean;
+  clusterMode: boolean;
+  replicaCount: number;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic data warehouse (Redshift / Synapse / BigQuery). */
+export type NormalizedDataWarehouse = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  engine: "redshift" | "synapse" | "bigquery" | "snowflake";
+  nodeType: string;
+  nodeCount: number;
+  storageGB: number;
+  encrypted: boolean;
+  databases: Array<{
+    name: string;
+    schemas: string[];
+    tableCounts: number;
+    totalSizeGB: number;
+  }>;
+  tags: Record<string, string>;
+};
+
+/** Provider-agnostic bucket/resource policy. */
+export type NormalizedBucketPolicy = {
+  id: string;
+  bucketName: string;
+  provider: MigrationProvider;
+  policy: Record<string, unknown>;
+  publicAccessBlock: {
+    blockPublicAcls: boolean;
+    ignorePublicAcls: boolean;
+    blockPublicPolicy: boolean;
+    restrictPublicBuckets: boolean;
+  };
+  corsRules: Array<{
+    allowedOrigins: string[];
+    allowedMethods: string[];
+    allowedHeaders: string[];
+    maxAgeSeconds: number;
+  }>;
+  eventNotifications: Array<{
+    event: string;
+    targetType: "lambda" | "sqs" | "sns" | "eventbridge";
+    targetArn: string;
+    filterPrefix?: string;
+    filterSuffix?: string;
+  }>;
+};
+
+/** Provider-agnostic load balancer listener rule. */
+export type NormalizedListenerRule = {
+  id: string;
+  listenerArn: string;
+  provider: MigrationProvider;
+  priority: number;
+  conditions: Array<{
+    field: "path-pattern" | "host-header" | "http-header" | "source-ip" | "query-string" | "http-request-method";
+    values: string[];
+    httpHeaderConfig?: { headerName: string; values: string[] };
+  }>;
+  actions: Array<{
+    type: "forward" | "redirect" | "fixed-response" | "authenticate-oidc" | "authenticate-cognito";
+    targetGroupArn?: string;
+    redirectConfig?: { protocol: string; port: string; host: string; path: string; statusCode: "HTTP_301" | "HTTP_302" };
+    fixedResponseConfig?: { statusCode: string; contentType: string; messageBody: string };
+  }>;
+};
+
+/** Provider-agnostic network ACL. */
+export type NormalizedNetworkACL = {
+  id: string;
+  name: string;
+  provider: MigrationProvider;
+  vpcId: string;
+  subnetAssociations: string[];
+  inboundRules: Array<{
+    ruleNumber: number;
+    protocol: "tcp" | "udp" | "icmp" | "*";
+    portRange: { from: number; to: number };
+    cidrBlock: string;
+    action: "allow" | "deny";
+  }>;
+  outboundRules: Array<{
+    ruleNumber: number;
+    protocol: "tcp" | "udp" | "icmp" | "*";
+    portRange: { from: number; to: number };
+    cidrBlock: string;
+    action: "allow" | "deny";
+  }>;
+  tags: Record<string, string>;
+};
+
+// =============================================================================
 // Transfer Types
 // =============================================================================
 
@@ -373,7 +1093,7 @@ export type MigrationStep = {
   dependsOn: string[];
   condition?: MigrationStepCondition;
   timeoutMs: number;
-  pipeline: "compute" | "data" | "network" | "governance";
+  pipeline: "compute" | "data" | "network" | "governance" | "identity" | "container" | "serverless" | "messaging" | "infrastructure" | "monitoring" | "orchestration" | "analytics" | "storage-policy";
   resourceType: MigrationResourceType;
   requiresRollback: boolean;
   tags?: Record<string, string>;
@@ -414,7 +1134,60 @@ export type MigrationStepType =
   | "approval-gate"
   | "decommission-source"
   // Enterprise SLA
-  | "reconcile";
+  | "reconcile"
+  // IAM & Secrets pipeline
+  | "extract-iam"
+  | "create-iam"
+  | "migrate-secrets"
+  | "migrate-kms"
+  // Container & Serverless pipeline
+  | "migrate-containers"
+  | "migrate-serverless"
+  | "migrate-api-gateway"
+  | "migrate-container-registry"
+  // VPC / Infrastructure pipeline
+  | "create-vpc"
+  | "create-subnet"
+  | "create-route-table"
+  | "create-load-balancer"
+  // Messaging & CDN pipeline
+  | "migrate-queues"
+  | "migrate-topics"
+  | "migrate-cdn"
+  | "migrate-certificates"
+  | "migrate-waf"
+  // NoSQL / Cache pipeline
+  | "migrate-nosql"
+  | "migrate-cache"
+  // Auto Scaling
+  | "migrate-auto-scaling"
+  // Orchestration / Event-Driven pipeline
+  | "migrate-step-functions"
+  | "migrate-event-bus"
+  // Shared File Storage pipeline
+  | "migrate-file-system"
+  // Advanced Networking pipeline
+  | "migrate-transit-gateway"
+  | "migrate-vpn-connection"
+  | "migrate-vpc-endpoint"
+  | "migrate-network-acl"
+  | "migrate-listener-rules"
+  // Configuration & Parameters pipeline
+  | "migrate-parameters"
+  // Identity advanced pipeline
+  | "migrate-iam-users"
+  | "migrate-iam-groups"
+  | "migrate-identity-provider"
+  // Monitoring & Observability pipeline
+  | "migrate-log-groups"
+  | "migrate-alarms"
+  // Analytics / Streaming pipeline
+  | "migrate-data-pipeline"
+  | "migrate-stream"
+  | "migrate-graph-database"
+  | "migrate-data-warehouse"
+  // Storage policies pipeline
+  | "migrate-bucket-policies";
 
 export type MigrationStepCondition = {
   stepId: string;
@@ -719,7 +1492,7 @@ export type SemanticDiff = {
 // Database Migration Types
 // =============================================================================
 
-export type DatabaseType = "postgresql" | "mysql";
+export type DatabaseType = "postgresql" | "mysql" | "sqlserver" | "oracle" | "mariadb";
 
 export type DatabaseMigrationConfig = {
   sourceType: DatabaseType;

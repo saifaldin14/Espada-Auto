@@ -16,6 +16,14 @@ describe("compatibility-matrix", () => {
   const PROVIDERS: MigrationProvider[] = ["aws", "azure", "gcp", "on-premises", "vmware", "nutanix"];
   const RESOURCE_TYPES: MigrationResourceType[] = [
     "vm", "disk", "object-storage", "database", "dns", "security-rules", "load-balancer",
+    "iam-role", "iam-policy", "secret", "kms-key", "lambda-function", "api-gateway",
+    "container-service", "container-registry", "vpc", "subnet", "route-table",
+    "queue", "notification-topic", "cdn", "certificate", "waf-rule",
+    "nosql-database", "cache", "auto-scaling-group",
+    "step-function", "event-bus", "file-system", "transit-gateway", "vpn-connection",
+    "vpc-endpoint", "parameter-store", "iam-user", "iam-group", "identity-provider",
+    "log-group", "alarm", "data-pipeline", "stream", "graph-database",
+    "data-warehouse", "bucket-policy", "listener-rule", "network-acl",
   ];
 
   describe("checkCompatibility", () => {

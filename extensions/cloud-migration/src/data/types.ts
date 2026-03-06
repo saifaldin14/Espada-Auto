@@ -267,7 +267,7 @@ export function mapStorageClass(
 // =============================================================================
 
 export interface DatabaseConnection {
-  engine: "postgresql" | "mysql" | "mariadb";
+  engine: "postgresql" | "mysql" | "mariadb" | "sqlserver" | "oracle";
   host: string;
   port: number;
   database: string;
