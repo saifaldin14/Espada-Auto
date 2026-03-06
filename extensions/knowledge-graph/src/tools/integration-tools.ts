@@ -97,7 +97,7 @@ export function registerIntegrationTools(
           provider?: string;
         };
 
-        const filter = provider ? { provider: provider as any } : undefined;
+        const filter = provider ? { provider: provider as import("../../src/types.js").CloudProvider } : undefined;
 
         if (framework) {
           const result = await mgr.compliance.evaluate(framework, filter);
@@ -329,7 +329,7 @@ export function registerIntegrationTools(
       }),
       async execute(_toolCallId, params) {
         const { provider } = params as { provider?: string };
-        const filter = provider ? { provider: provider as any } : undefined;
+        const filter = provider ? { provider: provider as import("../../src/types.js").CloudProvider } : undefined;
         const summary = await mgr.cost.getCostSummary(filter);
 
         const lines = [
@@ -347,15 +347,13 @@ export function registerIntegrationTools(
         ];
 
         // Add budget status if available
-        const budgets = await mgr.cost.getBudgets();
+        const budgets = mgr.cost.getBudgets();
         if (budgets.length > 0) {
           lines.push("", "### Budget Status", "| Budget | Limit | Spend | Status |", "|--------|-------|-------|--------|");
           for (const b of budgets) {
             const pct = ((b.currentSpend / b.monthlyLimit) * 100).toFixed(0);
-            const status = b.currentSpend > b.monthlyLimit ? "🔴 EXCEEDED" :
-              b.currentSpend > b.monthlyLimit * b.criticalThreshold ? "🟠 CRITICAL" :
-              b.currentSpend > b.monthlyLimit * b.warningThreshold ? "🟡 WARNING" : "🟢 OK";
-            lines.push(`| ${b.name} | $${b.monthlyLimit.toFixed(0)} | $${b.currentSpend.toFixed(0)} (${pct}%) | ${status} |`);
+            const icon = b.status === "exceeded" ? "🔴" : b.status === "critical" ? "🟠" : b.status === "warning" ? "🟡" : "🟢";
+            lines.push(`| ${b.name} | $${b.monthlyLimit.toFixed(0)} | $${b.currentSpend.toFixed(0)} (${pct}%) | ${icon} ${b.status.toUpperCase()} |`);
           }
         }
 

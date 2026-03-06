@@ -25,8 +25,9 @@ import type {
 import type {
   IntegrationContext,
   ParsedResource,
-
+  PolicyDefinition,
 } from "./types.js";
+import { withTimeout } from "./resilience.js";
 
 // =============================================================================
 // Terraform Bridge
@@ -150,15 +151,17 @@ export class TerraformBridge {
 
   /**
    * Get Terraform addresses for all managed nodes in the graph.
+   * Returns just the TF address strings.
    */
-  async getTerraformAddresses(): Promise<Map<string, string>> {
+  async getTerraformAddresses(): Promise<string[]> {
     const nodes = await this.getTerraformManagedNodes();
-    const addresses = new Map<string, string>();
+    const addresses: string[] = [];
 
     for (const node of nodes) {
-      const tfAddress = (node.metadata as Record<string, unknown>).tfAddress;
+      const meta = node.metadata as Record<string, unknown>;
+      const tfAddress = (meta.terraformAddress ?? meta.tfAddress) as string | undefined;
       if (typeof tfAddress === "string") {
-        addresses.set(node.id, tfAddress);
+        addresses.push(tfAddress);
       }
     }
 
@@ -259,6 +262,9 @@ export class TerraformBridge {
   private async runPolicyChecks(nodes: GraphNodeInput[]): Promise<string[]> {
     if (!this.ctx.ext.policyEngine) return [];
 
+    const policies = await this.loadPolicies();
+    if (policies.length === 0) return [];
+
     const violations: string[] = [];
     for (const node of nodes.slice(0, 50)) {
       // Limit policy checks to first 50 nodes for performance
@@ -275,7 +281,7 @@ export class TerraformBridge {
             metadata: node.metadata,
           },
         };
-        const result = await this.ctx.ext.policyEngine.evaluateAll(input);
+        const result = this.ctx.ext.policyEngine.evaluateAll(policies, input);
         if (result.denied) {
           violations.push(...result.denials.map((d) => `${node.name}: ${d}`));
         }
@@ -285,6 +291,19 @@ export class TerraformBridge {
     }
 
     return violations;
+  }
+
+  private async loadPolicies(): Promise<PolicyDefinition[]> {
+    if (!this.ctx.ext.policyStorage) return [];
+    try {
+      return await withTimeout(
+        this.ctx.ext.policyStorage.list({ enabled: true }),
+        5_000,
+        "policyStorage.list",
+      );
+    } catch {
+      return [];
+    }
   }
 
   private emitAudit(operation: string, metadata: Record<string, unknown>): void {

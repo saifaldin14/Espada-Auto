@@ -82,10 +82,10 @@ export class CostBridge {
       return [];
     }
 
-    const budgets = this.ctx.ext.budgetManager.list();
+    const budgets = this.ctx.ext.budgetManager.listBudgets();
     return budgets.map((b) => ({
       ...b,
-      status: this.ctx.ext.budgetManager!.getStatus(b.id) ?? "ok",
+      status: this.ctx.ext.budgetManager!.getStatus(b),
     }));
   }
 
@@ -101,14 +101,14 @@ export class CostBridge {
       return { synced: 0, budgets: [] };
     }
 
-    const budgets = this.ctx.ext.budgetManager.list();
+    const budgets = this.ctx.ext.budgetManager.listBudgets();
     const syncedBudgets: Array<{ id: string; name: string; spend: number; status: BudgetStatus }> = [];
 
     for (const budget of budgets) {
       const spend = await this.computeBudgetSpend(budget);
-      this.ctx.ext.budgetManager.updateSpend(budget.id, spend);
-
-      const status = this.ctx.ext.budgetManager.getStatus(budget.id) ?? "ok";
+      const updated = this.ctx.ext.budgetManager.updateSpend(budget.id, spend);
+      const fullBudget = updated ?? budget;
+      const status = this.ctx.ext.budgetManager.getStatus(fullBudget);
       syncedBudgets.push({
         id: budget.id,
         name: budget.name,

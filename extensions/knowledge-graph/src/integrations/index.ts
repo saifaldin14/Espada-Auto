@@ -20,13 +20,16 @@ import {
   type IntegrationContext,
   type BridgeLogger,
   type AuthEngine,
+  type UserResolver,
   type AuditLoggerLike,
   type ComplianceEvaluator,
   type WaiverStore,
   type PolicyEvaluationEngine,
+  type PolicyStorageLike,
   type BudgetManagerLike,
   type TerraformGraphBridge,
-  type AlertIngestor,
+  type AlertingExtension,
+  type AlertingConfig,
   NOOP_LOGGER,
 } from "./types.js";
 
@@ -72,13 +75,15 @@ export type GatewayProbe = (method: string, params?: Record<string, unknown>) =>
  */
 export type ExternalExtensions = {
   authEngine?: AuthEngine;
+  userResolver?: UserResolver;
   auditLogger?: AuditLoggerLike;
   complianceEvaluator?: ComplianceEvaluator;
   waiverStore?: WaiverStore;
   policyEngine?: PolicyEvaluationEngine;
+  policyStorage?: PolicyStorageLike;
   budgetManager?: BudgetManagerLike;
   terraformBridge?: TerraformGraphBridge;
-  alertIngestor?: AlertIngestor;
+  alertingExtension?: AlertingExtension;
 };
 
 // =============================================================================
@@ -94,6 +99,8 @@ export type IntegrationManagerOptions = {
    * these from gateway calls / service references.
    */
   extensions?: ExternalExtensions;
+  /** Alerting routing configuration (rules, channels, sender). */
+  alertingConfig?: AlertingConfig;
 };
 
 /**
@@ -122,6 +129,7 @@ export class IntegrationManager {
       logger: this.logger,
       available,
       ext,
+      alertingConfig: opts.alertingConfig,
     };
 
     this.compliance = new ComplianceBridge(this.ctx);
@@ -273,7 +281,7 @@ function detectAvailability(ext: ExternalExtensions): ExtensionAvailability {
     policyEngine: !!ext.policyEngine,
     costGovernance: !!ext.budgetManager,
     terraform: !!ext.terraformBridge,
-    alertingIntegration: !!ext.alertIngestor,
+    alertingIntegration: !!ext.alertingExtension,
   };
 }
 

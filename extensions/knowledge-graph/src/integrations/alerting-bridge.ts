@@ -20,7 +20,9 @@ import type {
   IntegrationContext,
   AlertSeverity,
   NormalisedAlert,
+  DispatchRecord,
 } from "./types.js";
+import { withTimeout } from "./resilience.js";
 
 // =============================================================================
 // Alert Kind — types of KG events that generate alerts
@@ -42,6 +44,7 @@ export type KGAlertKind =
 
 export class AlertingBridge {
   private alertCounter = 0;
+  private static readonly MAX_ALERT_COUNTER = 1_000_000;
 
   constructor(
     private readonly ctx: IntegrationContext,
@@ -51,7 +54,7 @@ export class AlertingBridge {
    * Check if the alerting extension is available.
    */
   get available(): boolean {
-    return this.ctx.available.alertingIntegration && !!this.ctx.ext.alertIngestor;
+    return this.ctx.available.alertingIntegration && !!this.ctx.ext.alertingExtension;
   }
 
   /**
@@ -242,7 +245,7 @@ export class AlertingBridge {
     node?: GraphNode;
     details?: Record<string, unknown>;
   }): NormalisedAlert {
-    this.alertCounter++;
+    this.alertCounter = (this.alertCounter + 1) % AlertingBridge.MAX_ALERT_COUNTER;
     const now = new Date().toISOString();
 
     return {
@@ -280,21 +283,45 @@ export class AlertingBridge {
 
   /**
    * Dispatch alerts through the alerting-integration extension.
+   * Uses resolveRoutes() to find matching routing rules, then
+   * dispatchToChannels() to send to matched channels.
    */
   private async dispatchAlerts(alerts: NormalisedAlert[]): Promise<AlertDispatchResult> {
-    if (!this.ctx.ext.alertIngestor || alerts.length === 0) {
+    const ext = this.ctx.ext.alertingExtension;
+    const config = this.ctx.alertingConfig;
+    if (!ext || !config || alerts.length === 0) {
       return { sent: 0, failed: 0, alertIds: [] };
     }
 
     let sent = 0;
     let failed = 0;
     const alertIds: string[] = [];
+    const sender = config.sender ?? ext.defaultSender;
 
     for (const alert of alerts) {
       try {
-        const result = await this.ctx.ext.alertIngestor.ingestAlert(alert);
-        alertIds.push(result.alertId);
-        sent++;
+        // Find matching routes for this alert
+        const routes = ext.resolveRoutes(alert, config.rules, config.channels);
+
+        let dispatched = 0;
+        for (const route of routes) {
+          const records: DispatchRecord[] = await withTimeout(
+            ext.dispatchToChannels(
+              alert,
+              route.channels,
+              route.rule.id,
+              sender,
+              route.rule.template,
+            ),
+            10_000,
+            `alerting.dispatch(${alert.id})`,
+          );
+          dispatched += records.filter((r) => r.status === "sent").length;
+        }
+
+        alertIds.push(alert.id);
+        if (dispatched > 0) sent++;
+        else if (routes.length === 0) sent++; // No routes = alert accepted but no dispatch needed
 
         // Audit each dispatched alert
         if (this.ctx.ext.auditLogger) {
@@ -308,7 +335,8 @@ export class AlertingBridge {
             metadata: {
               bridge: "alerting",
               kind: alert.details.kind,
-              dispatched: result.dispatched,
+              routes: routes.length,
+              dispatched,
             },
           });
         }

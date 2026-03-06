@@ -18,13 +18,16 @@ import type {
 import type {
   IntegrationContext,
   AuthEngine,
+  AuthUser,
   AuditLoggerLike,
   ComplianceEvaluator,
   WaiverStore,
   PolicyEvaluationEngine,
+  PolicyStorageLike,
   BudgetManagerLike,
   TerraformGraphBridge,
-  AlertIngestor,
+  AlertingExtension,
+  AlertingConfig,
   BridgeLogger,
 } from "../../src/integrations/types.js";
 import {
@@ -58,15 +61,19 @@ function makeNode(id: string, overrides?: Partial<GraphNodeInput>): GraphNodeInp
     metadata: {},
     costMonthly: 100,
     owner: null,
+    createdAt: null,
     ...overrides,
   };
 }
 
 function makeEdge(source: string, target: string): GraphEdgeInput {
   return {
+    id: `${source}->${target}`,
     sourceNodeId: source,
     targetNodeId: target,
-    edgeType: "depends_on",
+    relationshipType: "depends-on",
+    confidence: 1,
+    discoveredVia: "config-scan",
     metadata: {},
   };
 }
@@ -94,8 +101,8 @@ function createMockAuthEngine(opts?: { allowAll?: boolean }): AuthEngine {
     }),
     getUserPermissions: vi.fn().mockResolvedValue(
       opts?.allowAll !== false
-        ? ["infra.read", "infra.write", "infra.delete", "infra.admin"]
-        : [],
+        ? new Set(["infra.read", "infra.write", "infra.delete", "infra.admin"])
+        : new Set(),
     ),
   };
 }
@@ -108,7 +115,7 @@ function createMockAuditLogger(): AuditLoggerLike & { log: ReturnType<typeof vi.
 
 function createMockPolicyEngine(): PolicyEvaluationEngine {
   return {
-    evaluateAll: vi.fn().mockResolvedValue({
+    evaluateAll: vi.fn().mockReturnValue({
       allowed: true,
       denied: false,
       warnings: [],
@@ -122,7 +129,7 @@ function createMockPolicyEngine(): PolicyEvaluationEngine {
       evaluatedAt: new Date().toISOString(),
       totalDurationMs: 5,
     }),
-    evaluate: vi.fn().mockResolvedValue({
+    evaluate: vi.fn().mockReturnValue({
       policyId: "p1",
       policyName: "test-policy",
       allowed: true,
@@ -137,17 +144,36 @@ function createMockPolicyEngine(): PolicyEvaluationEngine {
   };
 }
 
+function createMockPolicyStorage(): PolicyStorageLike {
+  return {
+    list: vi.fn().mockResolvedValue([
+      {
+        id: "pol-1",
+        name: "test-policy",
+        description: "Test",
+        type: "access",
+        enabled: true,
+        severity: "medium",
+        labels: [],
+        rules: [],
+        createdAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      },
+    ]),
+  };
+}
+
 function createMockBudgetManager(): BudgetManagerLike {
   return {
-    list: vi.fn().mockReturnValue([
+    listBudgets: vi.fn().mockReturnValue([
       {
         id: "b1",
         name: "Production",
         scope: "environment",
         scopeId: "prod",
         monthlyLimit: 10000,
-        warningThreshold: 0.8,
-        criticalThreshold: 0.95,
+        warningThreshold: 80,
+        criticalThreshold: 100,
         currentSpend: 7500,
         currency: "USD",
         createdAt: "2024-01-01T00:00:00Z",
@@ -155,21 +181,46 @@ function createMockBudgetManager(): BudgetManagerLike {
       },
     ]),
     getStatus: vi.fn().mockReturnValue("warning"),
-    updateSpend: vi.fn(),
+    updateSpend: vi.fn().mockReturnValue(null),
   };
 }
 
-function createMockAlertIngestor(): AlertIngestor & { ingestAlert: ReturnType<typeof vi.fn> } {
-  let counter = 0;
+function createMockAlertingExtension(): AlertingExtension {
+  let dispatchCounter = 0;
   return {
-    ingestAlert: vi.fn().mockImplementation(async () => ({
-      alertId: `alert-${++counter}`,
-      dispatched: 1,
-    })),
+    resolveRoutes: vi.fn().mockImplementation((_alert, _rules, _channelMap) => {
+      // Default: return one route with one channel
+      return [{
+        rule: { id: "r1", name: "catch-all", priority: 1, enabled: true, conditions: [], channelIds: ["ch1"], stopOnMatch: false, createdAt: "2024-01-01" },
+        channels: [{ id: "ch1", name: "default", type: "webhook", config: {}, createdAt: "2024-01-01" }],
+      }];
+    }),
+    dispatchToChannels: vi.fn().mockImplementation(async (alert) => {
+      dispatchCounter++;
+      return [{
+        id: `dispatch-${dispatchCounter}`,
+        alertId: alert.id,
+        channelId: "ch1",
+        ruleId: "r1",
+        status: "sent",
+        message: alert.title,
+        dispatchedAt: new Date().toISOString(),
+      }];
+    }),
+    defaultSender: vi.fn().mockResolvedValue({ success: true }),
   };
 }
 
-async function setupContext(extOverrides?: Partial<IntegrationContext["ext"]>): Promise<{
+function createMockAlertingConfig(): AlertingConfig {
+  const channels = new Map();
+  channels.set("ch1", { id: "ch1", name: "default", type: "webhook", config: {}, createdAt: "2024-01-01" });
+  return {
+    rules: [{ id: "r1", name: "catch-all", priority: 1, enabled: true, conditions: [], channelIds: ["ch1"], stopOnMatch: false, createdAt: "2024-01-01" }],
+    channels,
+  };
+}
+
+async function setupContext(extOverrides?: Partial<IntegrationContext["ext"]>, alertingConfig?: AlertingConfig): Promise<{
   storage: GraphStorage;
   engine: GraphEngine;
   ctx: IntegrationContext;
@@ -206,10 +257,10 @@ async function setupContext(extOverrides?: Partial<IntegrationContext["ext"]>): 
     policyEngine: !!ext.policyEngine,
     costGovernance: !!ext.budgetManager,
     terraform: !!ext.terraformBridge,
-    alertingIntegration: !!ext.alertIngestor,
+    alertingIntegration: !!ext.alertingExtension,
   };
 
-  const ctx: IntegrationContext = { engine, storage, logger, available, ext };
+  const ctx: IntegrationContext = { engine, storage, logger, available, ext, alertingConfig };
 
   return { storage, engine, ctx, logger };
 }
@@ -367,8 +418,8 @@ describe("ComplianceBridge", () => {
     const bridge = new ComplianceBridge(ctx);
 
     const results = await bridge.evaluateAll();
-    expect(Array.isArray(results)).toBe(true);
-    expect(results.length).toBeGreaterThan(0);
+    expect(results instanceof Map).toBe(true);
+    expect(results.size).toBeGreaterThan(0);
   });
 });
 
@@ -379,23 +430,24 @@ describe("ComplianceBridge", () => {
 describe("PolicyBridge", () => {
   it("evaluates a node with graph context", async () => {
     const policyEngine = createMockPolicyEngine();
-    const { ctx } = await setupContext({ policyEngine });
+    const policyStorage = createMockPolicyStorage();
+    const { ctx } = await setupContext({ policyEngine, policyStorage });
     const bridge = new PolicyBridge(ctx);
 
-    const result = await bridge.evaluateNode("node-1", { includeGraphContext: true });
+    const result = await bridge.evaluateNode("node-1");
     expect(result).toBeTruthy();
     expect(result!.allowed).toBe(true);
     expect(policyEngine.evaluateAll).toHaveBeenCalled();
 
-    // Verify graph context was passed
-    const callArgs = (policyEngine.evaluateAll as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(callArgs.resource).toBeTruthy();
-    expect(callArgs.resource.id).toBe("node-1");
-    expect(callArgs.graph).toBeTruthy();
+    // Verify policies and graph context were passed
+    const callArgs = (policyEngine.evaluateAll as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[0]).toBeTruthy(); // policies array
+    expect(callArgs[1].resource).toBeTruthy();
+    expect(callArgs[1].resource.id).toBe("node-1");
   });
 
   it("returns null for non-existent nodes", async () => {
-    const { ctx } = await setupContext({ policyEngine: createMockPolicyEngine() });
+    const { ctx } = await setupContext({ policyEngine: createMockPolicyEngine(), policyStorage: createMockPolicyStorage() });
     const bridge = new PolicyBridge(ctx);
 
     const result = await bridge.evaluateNode("non-existent");
@@ -412,15 +464,16 @@ describe("PolicyBridge", () => {
 
   it("pre-mutation check includes blast radius for deletes", async () => {
     const policyEngine = createMockPolicyEngine();
-    const { ctx } = await setupContext({ policyEngine });
+    const policyStorage = createMockPolicyStorage();
+    const { ctx } = await setupContext({ policyEngine, policyStorage });
     const bridge = new PolicyBridge(ctx);
 
-    const result = await bridge.preMutationCheck("node-1", "delete", "user-1");
+    const result = await bridge.preMutationCheck("node-1", "delete");
     expect(result).toBeTruthy();
 
-    const callArgs = (policyEngine.evaluateAll as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(callArgs.graph).toBeTruthy();
-    expect(callArgs.graph.blastRadius).toBeGreaterThan(0);
+    const callArgs = (policyEngine.evaluateAll as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[1].graph).toBeTruthy();
+    expect(callArgs[1].graph.blastRadius).toBeGreaterThan(0);
   });
 });
 
@@ -435,7 +488,7 @@ describe("CostBridge", () => {
 
     const summary = await bridge.getCostSummary();
     expect(summary.totalMonthly).toBeGreaterThan(0);
-    expect(summary.resourceCount).toBe(4);
+    expect(summary.nodeCount).toBe(4);
     expect(summary.byProvider.aws).toBeTruthy();
   });
 
@@ -444,7 +497,7 @@ describe("CostBridge", () => {
     const bridge = new CostBridge(ctx);
 
     const summary = await bridge.getCostSummary({ provider: "azure" as CloudProvider });
-    expect(summary.resourceCount).toBe(1);
+    expect(summary.nodeCount).toBe(1);
     expect(summary.byProvider.azure).toBeTruthy();
   });
 
@@ -453,7 +506,7 @@ describe("CostBridge", () => {
     const { ctx } = await setupContext({ budgetManager });
     const bridge = new CostBridge(ctx);
 
-    const budgets = await bridge.getBudgets();
+    const budgets = bridge.getBudgets();
     expect(budgets.length).toBe(1);
     expect(budgets[0].name).toBe("Production");
   });
@@ -462,7 +515,7 @@ describe("CostBridge", () => {
     const { ctx } = await setupContext();
     const bridge = new CostBridge(ctx);
 
-    const budgets = await bridge.getBudgets();
+    const budgets = bridge.getBudgets();
     expect(budgets).toEqual([]);
   });
 
@@ -483,8 +536,9 @@ describe("CostBridge", () => {
 
 describe("AlertingBridge", () => {
   it("dispatches drift alerts", async () => {
-    const alertIngestor = createMockAlertIngestor();
-    const { ctx } = await setupContext({ alertIngestor });
+    const alertingExtension = createMockAlertingExtension();
+    const alertingConfig = createMockAlertingConfig();
+    const { ctx } = await setupContext({ alertingExtension }, alertingConfig);
     const bridge = new AlertingBridge(ctx);
 
     expect(bridge.available).toBe(true);
@@ -504,23 +558,41 @@ describe("AlertingBridge", () => {
           metadata: {},
           costMonthly: 100,
           owner: null,
-          firstSeenAt: "2024-01-01T00:00:00Z",
+          createdAt: null,
+          discoveredAt: "2024-01-01T00:00:00Z",
+          updatedAt: "2024-06-01T00:00:00Z",
           lastSeenAt: "2024-06-01T00:00:00Z",
-          lastSyncedAt: "2024-06-01T00:00:00Z",
         },
-        changes: [{ field: "status", previousValue: "running", newValue: "stopped" }],
+        changes: [{
+          id: "chg-1",
+          targetId: "node-1",
+          changeType: "node-updated" as const,
+          field: "status",
+          previousValue: "running",
+          newValue: "stopped",
+          detectedAt: new Date().toISOString(),
+          detectedVia: "sync" as const,
+          correlationId: null,
+          initiator: null,
+          initiatorType: null,
+          metadata: {},
+        }],
       }],
       disappearedNodes: [],
+      newNodes: [],
+      scannedAt: new Date().toISOString(),
     });
 
     expect(result.sent).toBe(1);
     expect(result.alertIds.length).toBe(1);
-    expect(alertIngestor.ingestAlert).toHaveBeenCalled();
+    expect(alertingExtension.resolveRoutes).toHaveBeenCalled();
+    expect(alertingExtension.dispatchToChannels).toHaveBeenCalled();
   });
 
   it("batches compliance violations by severity", async () => {
-    const alertIngestor = createMockAlertIngestor();
-    const { ctx } = await setupContext({ alertIngestor });
+    const alertingExtension = createMockAlertingExtension();
+    const alertingConfig = createMockAlertingConfig();
+    const { ctx } = await setupContext({ alertingExtension }, alertingConfig);
     const bridge = new AlertingBridge(ctx);
 
     const result = await bridge.alertComplianceViolations([

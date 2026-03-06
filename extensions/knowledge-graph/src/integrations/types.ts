@@ -97,15 +97,41 @@ export type EnterprisePermission =
   | "gateway.admin";
 
 /**
- * Minimal interface for the enterprise-auth RbacEngine.
- * Allows the auth bridge to work without importing the full extension.
+ * Minimal User type matching enterprise-auth's User interface.
+ * Required by RbacEngine.authorize() which needs the full user object
+ * to check roles, disabled status, etc.
  */
-export interface AuthEngine {
-  authorize(userId: string, permission: EnterprisePermission): Promise<AuthResult>;
-  getUserPermissions(userId: string): Promise<EnterprisePermission[]>;
+export type AuthUser = {
+  id: string;
+  email: string;
+  name: string;
+  roles: string[];
+  mfaEnabled: boolean;
+  disabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+  ssoProviderId?: string;
+  externalId?: string;
+};
+
+/**
+ * Optional interface for resolving a full AuthUser from a user ID.
+ * Backed by enterprise-auth's AuthStorage.getUser().
+ */
+export interface UserResolver {
+  getUser(id: string): Promise<AuthUser | null>;
 }
 
-export interface AuthResult {
+/**
+ * Minimal interface for the enterprise-auth RbacEngine.
+ * Matches the real RbacEngine class signatures.
+ */
+export interface AuthEngine {
+  authorize(user: AuthUser, required: EnterprisePermission | EnterprisePermission[]): Promise<AuthorizationResult>;
+  getUserPermissions(user: AuthUser): Promise<Set<EnterprisePermission>>;
+}
+
+export interface AuthorizationResult {
   allowed: boolean;
   reason: string;
   missingPermissions: EnterprisePermission[];
@@ -290,12 +316,40 @@ export type AggregatedPolicyResult = {
   totalDurationMs: number;
 };
 
+/** PolicyDefinition as expected by the policy-engine extension. */
+export type PolicyDefinition = {
+  id: string;
+  name: string;
+  description: string;
+  type: string;
+  enabled: boolean;
+  severity: string;
+  labels: string[];
+  rules: PolicyRule[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PolicyRule = {
+  id: string;
+  description: string;
+  condition: Record<string, unknown>;
+  action: "deny" | "warn" | "require_approval" | "notify";
+  message: string;
+};
+
 /**
  * Minimal interface for the policy-engine's evaluation engine.
+ * Note: real PolicyEvaluationEngine methods are SYNCHRONOUS.
  */
 export interface PolicyEvaluationEngine {
-  evaluateAll(input: PolicyEvaluationInput): Promise<AggregatedPolicyResult>;
-  evaluate(policyId: string, input: PolicyEvaluationInput): Promise<PolicyResult>;
+  evaluateAll(policies: PolicyDefinition[], input: PolicyEvaluationInput): AggregatedPolicyResult;
+  evaluate(policy: PolicyDefinition, input: PolicyEvaluationInput): PolicyResult;
+}
+
+/** Storage interface for loading policy definitions. */
+export interface PolicyStorageLike {
+  list(filter?: { type?: string; enabled?: boolean; severity?: string }): Promise<PolicyDefinition[]>;
 }
 
 // =============================================================================
@@ -319,10 +373,14 @@ export type Budget = {
   updatedAt: string;
 };
 
+/**
+ * Minimal interface for the cost-governance BudgetManager.
+ * All methods are SYNCHRONOUS (real implementation uses readFileSync/writeFileSync).
+ */
 export interface BudgetManagerLike {
-  list(): Budget[];
-  getStatus(id: string): BudgetStatus | null;
-  updateSpend(id: string, amount: number): void;
+  listBudgets(): Budget[];
+  getStatus(budget: Budget): BudgetStatus;
+  updateSpend(id: string, currentSpend: number): Budget | null;
 }
 
 // =============================================================================
@@ -381,12 +439,82 @@ export type NormalisedAlert = {
   receivedAt: string;
   sourceUrl: string;
   details: Record<string, unknown>;
+  rawPayload?: unknown;
   tags: string[];
 };
 
-export interface AlertIngestor {
-  ingestAlert(alert: NormalisedAlert): Promise<{ alertId: string; dispatched: number }>;
+// -- Alerting routing types -------------------------------------------------
+
+export type RoutingRule = {
+  id: string;
+  name: string;
+  priority: number;
+  enabled: boolean;
+  conditions: Array<{ field: string; operator: string; value: string }>;
+  channelIds: string[];
+  template?: string;
+  stopOnMatch: boolean;
+  createdAt: string;
+};
+
+export type DispatchChannel = {
+  id: string;
+  name: string;
+  type: string;
+  config: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type ChannelSender = (
+  channel: DispatchChannel,
+  message: string,
+) => Promise<{ success: boolean; error?: string }>;
+
+export type DispatchRecord = {
+  id: string;
+  alertId: string;
+  channelId: string;
+  ruleId: string;
+  status: string;
+  message: string;
+  dispatchedAt: string;
+  error?: string;
+};
+
+export type RouteMatch = {
+  rule: RoutingRule;
+  channels: DispatchChannel[];
+};
+
+/**
+ * Interface for the alerting-integration extension.
+ * Uses the lower-level route resolution + dispatch APIs (not ingestAlert)
+ * because our bridge already constructs NormalisedAlert objects.
+ */
+export interface AlertingExtension {
+  resolveRoutes(
+    alert: NormalisedAlert,
+    rules: RoutingRule[],
+    channelMap: Map<string, DispatchChannel>,
+  ): RouteMatch[];
+
+  dispatchToChannels(
+    alert: NormalisedAlert,
+    channels: DispatchChannel[],
+    ruleId: string,
+    sender: ChannelSender,
+    template?: string,
+  ): Promise<DispatchRecord[]>;
+
+  defaultSender: ChannelSender;
 }
+
+/** Alerting configuration for the KG bridge. */
+export type AlertingConfig = {
+  rules: RoutingRule[];
+  channels: Map<string, DispatchChannel>;
+  sender?: ChannelSender;
+};
 
 // =============================================================================
 // Integration Context — passed to all bridges
@@ -408,14 +536,18 @@ export type IntegrationContext = {
   /** External extension interfaces (populated during init). */
   ext: {
     authEngine?: AuthEngine;
+    userResolver?: UserResolver;
     auditLogger?: AuditLoggerLike;
     complianceEvaluator?: ComplianceEvaluator;
     waiverStore?: WaiverStore;
     policyEngine?: PolicyEvaluationEngine;
+    policyStorage?: PolicyStorageLike;
     budgetManager?: BudgetManagerLike;
     terraformBridge?: TerraformGraphBridge;
-    alertIngestor?: AlertIngestor;
+    alertingExtension?: AlertingExtension;
   };
+  /** Alerting routing configuration (rules, channels, sender). */
+  alertingConfig?: AlertingConfig;
 };
 
 // =============================================================================

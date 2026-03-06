@@ -23,17 +23,53 @@ import type {
   PolicyGraphContext,
   PolicyEvaluationInput,
   AggregatedPolicyResult,
+  PolicyDefinition,
 } from "./types.js";
 import { graphNodeToPolicyResource, buildGraphContext } from "./types.js";
+import { withTimeout, CircuitBreaker } from "./resilience.js";
 
 // =============================================================================
 // Policy Bridge
 // =============================================================================
 
 export class PolicyBridge {
+  private readonly breaker = new CircuitBreaker("policy", 5, 30_000);
+  private cachedPolicies: PolicyDefinition[] | null = null;
+  private policiesCachedAt = 0;
+  private static readonly POLICY_CACHE_TTL_MS = 60_000; // 1 minute
+
   constructor(
     private readonly ctx: IntegrationContext,
   ) {}
+
+  /**
+   * Load enabled policies from the policy storage.
+   * Caches for 60s to avoid repeated storage reads.
+   */
+  private async loadPolicies(): Promise<PolicyDefinition[]> {
+    const now = Date.now();
+    if (this.cachedPolicies && now - this.policiesCachedAt < PolicyBridge.POLICY_CACHE_TTL_MS) {
+      return this.cachedPolicies;
+    }
+
+    if (!this.ctx.ext.policyStorage) {
+      return [];
+    }
+
+    try {
+      const policies = await withTimeout(
+        this.ctx.ext.policyStorage.list({ enabled: true }),
+        5_000,
+        "policyStorage.list",
+      );
+      this.cachedPolicies = policies;
+      this.policiesCachedAt = now;
+      return policies;
+    } catch (err) {
+      this.ctx.logger.error(`Failed to load policies: ${err}`);
+      return this.cachedPolicies ?? [];
+    }
+  }
 
   /**
    * Evaluate all active policies against a specific graph node.
@@ -63,7 +99,8 @@ export class PolicyBridge {
     }
 
     const input = await this.buildNodeInput(node, opts);
-    const result = await this.ctx.ext.policyEngine.evaluateAll(input);
+    const policies = await this.loadPolicies();
+    const result = this.ctx.ext.policyEngine.evaluateAll(policies, input);
 
     // Emit audit event
     this.emitAudit("evaluateNode", nodeId, result);
@@ -92,7 +129,8 @@ export class PolicyBridge {
     for (const node of nodes) {
       try {
         const input = await this.buildNodeInput(node, opts);
-        const result = await this.ctx.ext.policyEngine.evaluateAll(input);
+        const policies = await this.loadPolicies();
+        const result = this.ctx.ext.policyEngine.evaluateAll(policies, input);
         results.set(node.id, result);
       } catch (err) {
         this.ctx.logger.error(`Policy evaluation failed for ${node.id}: ${err}`);
@@ -152,7 +190,10 @@ export class PolicyBridge {
       );
     }
 
-    const result = await this.ctx.ext.policyEngine.evaluateAll(input);
+    const result = await this.breaker.execute(async () => {
+      const policies = await this.loadPolicies();
+      return this.ctx.ext.policyEngine!.evaluateAll(policies, input);
+    });
 
     this.emitAudit(`preMutationCheck:${operation}`, nodeId, result);
 
@@ -204,7 +245,8 @@ export class PolicyBridge {
       // Node might not be in graph yet
     }
 
-    return this.ctx.ext.policyEngine.evaluateAll(input);
+    const policies = await this.loadPolicies();
+    return this.ctx.ext.policyEngine.evaluateAll(policies, input);
   }
 
   /**
@@ -235,7 +277,8 @@ export class PolicyBridge {
       actor,
     };
 
-    return this.ctx.ext.policyEngine.evaluateAll(input);
+    const policies = await this.loadPolicies();
+    return this.ctx.ext.policyEngine.evaluateAll(policies, input);
   }
 
   /**

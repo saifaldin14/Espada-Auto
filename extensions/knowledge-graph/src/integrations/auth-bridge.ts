@@ -35,13 +35,14 @@ import type {
 
 import type {
   AuthEngine,
-  AuthResult,
+  AuthorizationResult,
+  AuthUser,
   EnterprisePermission,
   AuditLoggerLike,
-
   BridgeLogger,
   IntegrationContext,
 } from "./types.js";
+import { withTimeout, CircuitBreaker } from "./resilience.js";
 
 // =============================================================================
 // Graph operation → Permission mapping
@@ -103,7 +104,7 @@ export class EnterpriseAccessDeniedError extends Error {
     public readonly userId: string,
     public readonly operation: string,
     public readonly permission: EnterprisePermission,
-    public readonly authResult: AuthResult,
+    public readonly authResult: AuthorizationResult,
   ) {
     super(
       `Enterprise auth denied: user=${userId} operation=${operation} ` +
@@ -122,15 +123,50 @@ export class EnterpriseAccessDeniedError extends Error {
  * operation. Emits audit events when an audit logger is available.
  */
 export class AuthenticatedGraphStorage implements GraphStorage {
+  private readonly breaker = new CircuitBreaker("auth", 5, 30_000);
+  private cachedUser: AuthUser | null = null;
+
   constructor(
     private readonly inner: GraphStorage,
     private readonly authEngine: AuthEngine,
     private readonly userId: string,
     private readonly logger: BridgeLogger,
     private readonly auditLogger?: AuditLoggerLike,
+    private readonly userResolver?: (id: string) => Promise<AuthUser | null>,
   ) {}
 
   // -- Internal helpers -------------------------------------------------------
+
+  /**
+   * Resolve the full AuthUser from userId.
+   * Caches the result to avoid repeated lookups per storage session.
+   */
+  private async resolveUser(): Promise<AuthUser> {
+    if (this.cachedUser) return this.cachedUser;
+
+    if (this.userResolver) {
+      const user = await this.userResolver(this.userId);
+      if (user) {
+        this.cachedUser = user;
+        return user;
+      }
+    }
+
+    // Fallback: construct minimal user (roles will be empty — RbacEngine
+    // will resolve roles from storage based on user.id)
+    const fallback: AuthUser = {
+      id: this.userId,
+      email: `${this.userId}@unknown`,
+      name: this.userId,
+      roles: [],
+      mfaEnabled: false,
+      disabled: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    this.cachedUser = fallback;
+    return fallback;
+  }
 
   private async authorize(operation: string): Promise<void> {
     const permission = OP_PERMISSION_MAP[operation];
@@ -140,7 +176,14 @@ export class AuthenticatedGraphStorage implements GraphStorage {
       return;
     }
 
-    const result = await this.authEngine.authorize(this.userId, permission);
+    const user = await this.resolveUser();
+    const result = await this.breaker.execute(() =>
+      withTimeout(
+        this.authEngine.authorize(user, permission),
+        5_000,
+        `auth.authorize(${operation})`,
+      ),
+    );
 
     if (!result.allowed) {
       this.emitAudit(operation, "denied", {
@@ -409,11 +452,16 @@ export function withEnterpriseAuth(
     return storage;
   }
 
+  const userResolver = ctx.ext.userResolver
+    ? (id: string) => ctx.ext.userResolver!.getUser(id)
+    : undefined;
+
   return new AuthenticatedGraphStorage(
     storage,
     ctx.ext.authEngine,
     userId,
     ctx.logger,
     ctx.ext.auditLogger,
+    userResolver,
   );
 }

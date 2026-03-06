@@ -20,6 +20,8 @@ import {
   IntegrationManager,
   type ExternalExtensions,
 } from "./src/integrations/index.js";
+import { validateServiceShape, SERVICE_SHAPES } from "./src/integrations/resilience.js";
+import type { AlertingConfig } from "./src/integrations/types.js";
 
 // Re-export public API for programmatic use by other extensions
 export { GraphEngine } from "./src/core/engine.js";
@@ -129,19 +131,86 @@ export default {
 
     // Probe each sibling extension. We use try/catch because getService
     // may throw or not exist if the extension is not installed.
+    // Shape validation ensures the returned service has the expected methods.
     const svc = (api as Record<string, unknown>).getService as
       | ((extId: string, name: string) => unknown)
       | undefined;
 
     if (typeof svc === "function") {
-      try { ext.authEngine = svc("enterprise-auth", "RbacEngine") as typeof ext.authEngine; } catch { /* not available */ }
-      try { ext.auditLogger = svc("audit-trail", "AuditLogger") as typeof ext.auditLogger; } catch { /* not available */ }
-      try { ext.complianceEvaluator = svc("compliance", "ComplianceEvaluator") as typeof ext.complianceEvaluator; } catch { /* not available */ }
+      try {
+        const authSvc = svc("enterprise-auth", "RbacEngine");
+        if (validateServiceShape(authSvc, SERVICE_SHAPES.authEngine, "authEngine")) {
+          ext.authEngine = authSvc as unknown as typeof ext.authEngine;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const userSvc = svc("enterprise-auth", "AuthStorage");
+        if (validateServiceShape(userSvc, SERVICE_SHAPES.userResolver, "userResolver")) {
+          ext.userResolver = userSvc as unknown as typeof ext.userResolver;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const auditSvc = svc("audit-trail", "AuditLogger");
+        if (validateServiceShape(auditSvc, SERVICE_SHAPES.auditLogger, "auditLogger")) {
+          ext.auditLogger = auditSvc as unknown as typeof ext.auditLogger;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const compSvc = svc("compliance", "ComplianceEvaluator");
+        if (validateServiceShape(compSvc, SERVICE_SHAPES.complianceEvaluator, "complianceEvaluator")) {
+          ext.complianceEvaluator = compSvc as unknown as typeof ext.complianceEvaluator;
+        }
+      } catch { /* not available */ }
+
       try { ext.waiverStore = svc("compliance", "WaiverStore") as typeof ext.waiverStore; } catch { /* not available */ }
-      try { ext.policyEngine = svc("policy-engine", "PolicyEvaluationEngine") as typeof ext.policyEngine; } catch { /* not available */ }
-      try { ext.budgetManager = svc("cost-governance", "BudgetManager") as typeof ext.budgetManager; } catch { /* not available */ }
-      try { ext.terraformBridge = svc("terraform", "GraphBridge") as typeof ext.terraformBridge; } catch { /* not available */ }
-      try { ext.alertIngestor = svc("alerting-integration", "AlertIngestor") as typeof ext.alertIngestor; } catch { /* not available */ }
+
+      try {
+        const policySvc = svc("policy-engine", "PolicyEvaluationEngine");
+        if (validateServiceShape(policySvc, SERVICE_SHAPES.policyEngine, "policyEngine")) {
+          ext.policyEngine = policySvc as unknown as typeof ext.policyEngine;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const policyStoreSvc = svc("policy-engine", "PolicyStorage");
+        if (validateServiceShape(policyStoreSvc, SERVICE_SHAPES.policyStorage, "policyStorage")) {
+          ext.policyStorage = policyStoreSvc as unknown as typeof ext.policyStorage;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const budgetSvc = svc("cost-governance", "BudgetManager");
+        if (validateServiceShape(budgetSvc, SERVICE_SHAPES.budgetManager, "budgetManager")) {
+          ext.budgetManager = budgetSvc as unknown as typeof ext.budgetManager;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const tfSvc = svc("terraform", "GraphBridge");
+        if (validateServiceShape(tfSvc, SERVICE_SHAPES.terraformBridge, "terraformBridge")) {
+          ext.terraformBridge = tfSvc as unknown as typeof ext.terraformBridge;
+        }
+      } catch { /* not available */ }
+
+      try {
+        const alertSvc = svc("alerting-integration", "functions");
+        if (validateServiceShape(alertSvc, SERVICE_SHAPES.alertingExtension, "alertingExtension")) {
+          ext.alertingExtension = alertSvc as unknown as typeof ext.alertingExtension;
+        }
+      } catch { /* not available */ }
+    }
+
+    // -- Alerting routing config (loaded from plugin config if available) ------
+    let alertingConfig: AlertingConfig | undefined;
+    if (ext.alertingExtension) {
+      // Default catch-all routing rule for KG events
+      alertingConfig = {
+        rules: [],
+        channels: new Map(),
+      };
     }
 
     // -- Initialize integration manager ----------------------------------------
@@ -150,6 +219,7 @@ export default {
       storage,
       logger: api.logger,
       extensions: ext,
+      alertingConfig,
     });
 
     // -- Register agent tools -------------------------------------------------
