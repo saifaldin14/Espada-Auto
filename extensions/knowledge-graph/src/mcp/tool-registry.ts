@@ -69,6 +69,22 @@ import {
 } from "../reporting/export-extended.js";
 import type { ExtendedExportFormat } from "../reporting/export-extended.js";
 import { ChangeGovernor } from "../core/governance.js";
+import {
+  analyzeChangeImpact,
+  formatImpactMarkdown,
+} from "../analysis/change-impact.js";
+import type { ChangeAction } from "../analysis/change-impact.js";
+import {
+  runRemediationAgent,
+  formatRemediationRunMarkdown,
+} from "../analysis/remediation-agent.js";
+import {
+  ContractEngine,
+  formatContractResultMarkdown,
+  formatContractSuiteMarkdown,
+} from "../contracts/engine.js";
+import { InMemoryContractStore } from "../contracts/store.js";
+import type { InfraContract } from "../contracts/types.js";
 
 // =============================================================================
 // Types
@@ -109,6 +125,11 @@ const EXTENDED_EXPORT_FORMATS = ["yaml", "csv", "openlineage"] as const;
 const PROVIDERS = ["aws", "azure", "gcp", "kubernetes", "custom"] as const;
 const RBAC_ROLES = ["viewer", "operator", "admin", "superadmin"] as const;
 const BENCHMARK_SCALES = ["1k", "10k", "100k"] as const;
+const CHANGE_ACTIONS = [
+  "destroy", "stop", "modify", "scale-down", "scale-up",
+  "reconfigure", "migrate", "detach",
+] as const;
+const IAC_FORMATS = ["terraform", "cloudformation", "pulumi", "opentofu"] as const;
 
 // =============================================================================
 // Registry Builder
@@ -847,6 +868,226 @@ export function buildToolRegistry(deps: ToolRegistryDeps): ToolDefinition[] {
       const filter = provider ? { filter: { provider: provider as CloudProvider } } : undefined;
       const output = await exportExtended(storage, format as ExtendedExportFormat, filter);
       return { content: [{ type: "text", text: output.content }], details: { format, nodeCount: output.nodeCount, edgeCount: output.edgeCount } };
+    },
+  });
+
+  // ─── 31. Change Impact Analysis ─────────────────────────────────────
+  add({
+    name: "kg_change_impact",
+    label: "Change Impact Analysis",
+    description:
+      "Analyze the full cross-cutting impact of a proposed infrastructure change. " +
+      "Combines blast radius, cost impact, compliance impact, affected teams, " +
+      "governance risk score, and a suggested safe execution path into one report.",
+    parameters: Type.Object({
+      resourceId: Type.String({ description: "The graph node ID of the resource to change" }),
+      action: stringEnum(CHANGE_ACTIONS, { description: "The proposed change action" }),
+      depth: Type.Optional(Type.Number({ description: "Max blast radius depth (default: 6)" })),
+      frameworks: Type.Optional(Type.Array(Type.String(), { description: "Compliance frameworks to evaluate" })),
+    }),
+    async execute(params) {
+      const { resourceId, action, depth, frameworks } = params as {
+        resourceId: string;
+        action: ChangeAction;
+        depth?: number;
+        frameworks?: string[];
+      };
+      const report = await analyzeChangeImpact(engine, storage, resourceId, action, {
+        maxDepth: depth,
+        frameworks: frameworks as any,
+      });
+      const markdown = formatImpactMarkdown(report);
+      return {
+        content: [{ type: "text", text: markdown }],
+        details: {
+          riskLevel: report.riskAssessment.level,
+          riskScore: report.riskAssessment.score,
+          affectedResources: report.affectedResources.length,
+          teamsAffected: report.teamsAffected.length,
+          costAtRisk: report.costImpact.downstreamCostAtRisk,
+        },
+      };
+    },
+  });
+
+  // ─── 32. Remediation Agent ──────────────────────────────────────────
+  add({
+    name: "kg_remediation_run",
+    label: "Autonomous Remediation",
+    description:
+      "Run the autonomous remediation agent. Detects compliance violations, " +
+      "generates IaC fixes, evaluates blast radius and risk, then auto-applies " +
+      "safe fixes, creates PRs for medium-risk, and blocks high-risk actions.",
+    parameters: Type.Object({
+      format: Type.Optional(stringEnum(IAC_FORMATS, { description: "IaC format (default: terraform)" })),
+      autoApplyThreshold: Type.Optional(Type.Number({ description: "Risk score below which to auto-apply (default: 25)" })),
+      blockThreshold: Type.Optional(Type.Number({ description: "Risk score above which to block (default: 70)" })),
+      maxActions: Type.Optional(Type.Number({ description: "Max violations to process (default: 100)" })),
+      dryRun: Type.Optional(Type.Boolean({ description: "If true, no fixes are actually applied (default: false)" })),
+      includeDrift: Type.Optional(Type.Boolean({ description: "Include drift-based remediation (default: true)" })),
+    }),
+    async execute(params) {
+      const { format, autoApplyThreshold, blockThreshold, maxActions, dryRun, includeDrift } = params as {
+        format?: string;
+        autoApplyThreshold?: number;
+        blockThreshold?: number;
+        maxActions?: number;
+        dryRun?: boolean;
+        includeDrift?: boolean;
+      };
+      const result = await runRemediationAgent(engine, storage, governor, {
+        format: (format ?? "terraform") as any,
+        autoApplyThreshold,
+        blockThreshold,
+        maxActionsPerRun: maxActions,
+        dryRun: dryRun ?? false,
+        includeDrift: includeDrift ?? true,
+      });
+      const markdown = formatRemediationRunMarkdown(result);
+      return {
+        content: [{ type: "text", text: markdown }],
+        details: {
+          totalViolations: result.totalViolations,
+          autoApplied: result.autoApplied,
+          prCreated: result.prCreated,
+          blocked: result.blocked,
+          manualReview: result.manualReview,
+        },
+      };
+    },
+  });
+
+  // ─── 33. Contract Evaluate ──────────────────────────────────────────
+  const contractStore = new InMemoryContractStore();
+  const contractEngine = new ContractEngine(engine, storage, temporal);
+
+  add({
+    name: "kg_contract_evaluate",
+    label: "Evaluate Contracts",
+    description:
+      "Evaluate all infrastructure contracts (unit tests for infrastructure). " +
+      "Shows which contracts pass/fail, broken dependencies, guardrail violations, " +
+      "and assertion results.",
+    parameters: Type.Object({}),
+    async execute() {
+      const suite = await contractEngine.evaluateAll(contractStore);
+      const markdown = formatContractSuiteMarkdown(suite);
+      return {
+        content: [{ type: "text", text: markdown }],
+        details: {
+          total: suite.totalContracts,
+          passed: suite.passed,
+          failed: suite.failed,
+          degraded: suite.degraded,
+        },
+      };
+    },
+  });
+
+  // ─── 34. Contract Upsert ────────────────────────────────────────────
+  add({
+    name: "kg_contract_upsert",
+    label: "Upsert Contract",
+    description:
+      "Create or update an infrastructure contract. A contract defines " +
+      "assertions (IQL queries that must pass), dependencies (node IDs), and " +
+      "guardrails (numeric thresholds on blast radius, cost, replicas, etc.).",
+    parameters: Type.Object({
+      contract: Type.Object({
+        id: Type.String({ description: "Unique contract ID" }),
+        name: Type.String({ description: "Human-readable name" }),
+        owner: Type.String({ description: "Owner team or person" }),
+        description: Type.Optional(Type.String({ description: "Contract description" })),
+        enabled: Type.Optional(Type.Boolean({ description: "Whether to evaluate (default: true)" })),
+        assertions: Type.Optional(Type.Array(Type.Object({
+          id: Type.String(),
+          description: Type.String(),
+          query: Type.String({ description: "IQL query" }),
+          expectation: Type.Object({
+            type: Type.String({ description: "non-empty | empty | count | cost | all-match" }),
+            min: Type.Optional(Type.Number()),
+            max: Type.Optional(Type.Number()),
+            maxMonthlyCost: Type.Optional(Type.Number()),
+          }),
+          severity: Type.Optional(Type.String({ description: "critical | high | medium | low | info" })),
+        }))),
+        dependencies: Type.Optional(Type.Array(Type.String(), { description: "Node IDs this contract depends on" })),
+        guardrails: Type.Optional(Type.Array(Type.Object({
+          id: Type.String(),
+          type: Type.String({ description: "max-blast-radius | max-monthly-cost | min-replicas | max-drift-age | max-dependency-depth | custom-iql" }),
+          description: Type.String(),
+          nodePattern: Type.Optional(Type.String()),
+          threshold: Type.Number(),
+          severity: Type.Optional(Type.String()),
+        }))),
+        tags: Type.Optional(Type.Record(Type.String(), Type.String())),
+      }),
+    }),
+    async execute(params) {
+      const { contract: raw } = params as { contract: Record<string, unknown> };
+      const now = new Date().toISOString();
+      const existing = contractStore.get(raw.id as string);
+      const full: InfraContract = {
+        id: raw.id as string,
+        name: raw.name as string,
+        owner: raw.owner as string,
+        description: (raw.description as string) ?? "",
+        enabled: (raw.enabled as boolean) ?? true,
+        assertions: (raw.assertions as any[]) ?? [],
+        dependencies: (raw.dependencies as string[]) ?? [],
+        guardrails: (raw.guardrails as any[]) ?? [],
+        tags: (raw.tags as Record<string, string>) ?? {},
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      contractStore.upsert(full);
+      return {
+        content: [{ type: "text", text: `✅ Contract **${full.name}** (${full.id}) saved.\n\n- ${full.assertions.length} assertions\n- ${full.dependencies.length} dependencies\n- ${full.guardrails.length} guardrails` }],
+        details: { id: full.id, name: full.name },
+      };
+    },
+  });
+
+  // ─── 35. Contract Check Change ──────────────────────────────────────
+  add({
+    name: "kg_contract_check_change",
+    label: "Check Change vs Contracts",
+    description:
+      "Check if a proposed change would break any infrastructure contracts. " +
+      "Returns all contracts that list the target node as a dependency, along " +
+      "with their current pass/fail status.",
+    parameters: Type.Object({
+      resourceId: Type.String({ description: "The node ID of the resource being changed" }),
+    }),
+    async execute(params) {
+      const { resourceId } = params as { resourceId: string };
+      const results = await contractEngine.checkChangeAgainstContracts(contractStore, resourceId);
+
+      if (results.length === 0) {
+        return {
+          content: [{ type: "text", text: `No infrastructure contracts depend on **${resourceId}**. Change is safe from a contracts perspective.` }],
+          details: { affectedContracts: 0 },
+        };
+      }
+
+      const lines = [
+        `## Contracts Affected by Change to ${resourceId}`,
+        "",
+        `**${results.length} contract(s)** depend on this resource.`,
+        "",
+        ...results.map((r) => {
+          const icon = r.status === "pass" ? "✅" : r.status === "fail" ? "❌" : "⚠️";
+          return `${icon} **${r.contractName}** (${r.contractId}) — ${r.status}\n  Owner: ${r.owner}`;
+        }),
+        "",
+        "### Detailed Results",
+        ...results.map((r) => formatContractResultMarkdown(r)),
+      ];
+
+      return {
+        content: [{ type: "text", text: lines.join("\n") }],
+        details: { affectedContracts: results.length, results: results.map((r) => ({ id: r.contractId, status: r.status })) },
+      };
     },
   });
 

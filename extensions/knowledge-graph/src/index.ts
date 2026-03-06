@@ -588,3 +588,58 @@ export type {
 // SaaS HTTP API server
 export { startApiServer } from "./api/server.js";
 export type { ApiServerOptions, ApiServerHandle } from "./api/server.js";
+
+// Change Impact Analyzer (Moat Feature #1)
+export {
+  analyzeChangeImpact,
+  formatImpactSummary,
+  formatImpactMarkdown,
+} from "./analysis/change-impact.js";
+export type {
+  ChangeAction,
+  AffectedResource,
+  CostImpact,
+  ComplianceImpact,
+  AffectedTeam,
+  SafePathStep,
+  ChangeImpactReport,
+  ChangeImpactOptions,
+} from "./analysis/change-impact.js";
+
+// Autonomous Remediation Agent (Moat Feature #2)
+export {
+  runRemediationAgent,
+  resetRemediationCounters,
+  formatRemediationRunMarkdown,
+} from "./analysis/remediation-agent.js";
+export type {
+  RemediationDecision,
+  RemediationAction,
+  RemediationRunResult,
+  RemediationAgentConfig,
+} from "./analysis/remediation-agent.js";
+
+// Infrastructure Contracts — unit tests for infrastructure (Moat Feature #3)
+export {
+  ContractEngine,
+  formatContractResultMarkdown,
+  formatContractSuiteMarkdown,
+} from "./contracts/engine.js";
+export { InMemoryContractStore } from "./contracts/store.js";
+export type {
+  InfraContract,
+  ContractAssertion,
+  AssertionExpectation,
+  ContractSeverity,
+  ContractGuardrail,
+  GuardrailType,
+  AssertionResult,
+  GuardrailResult,
+  DependencyResult,
+  ContractEvaluationResult,
+  ContractSuiteResult,
+  ContractStore,
+  ContractFilter,
+  ContractEvent,
+  ContractEventHandler,
+} from "./contracts/types.js";
