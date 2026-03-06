@@ -227,8 +227,13 @@ export class IntegrationManager {
     results: Awaited<ReturnType<ComplianceBridge["evaluateAll"]>>;
     alertsSent: number;
   }> {
-    const results = await this.compliance.evaluateAll(
-      opts?.frameworks ? { provider: undefined } : undefined,
+    const allResults = await this.compliance.evaluateAll();
+
+    // Filter results by requested frameworks if specified
+    const results = new Map(
+      opts?.frameworks && opts.frameworks.length > 0
+        ? [...allResults.entries()].filter(([fw]) => opts.frameworks!.includes(fw))
+        : allResults,
     );
 
     let alertsSent = 0;

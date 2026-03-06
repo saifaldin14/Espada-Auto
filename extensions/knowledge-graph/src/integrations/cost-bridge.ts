@@ -174,18 +174,28 @@ export class CostBridge {
   }
 
   /**
-   * Find resources with no cost data (potential untracked spend).
+   * Default resource types that typically don't have direct costs.
    */
-  async findUntrackedResources(filter?: NodeFilter): Promise<GraphNode[]> {
+  static readonly DEFAULT_FREE_RESOURCE_TYPES = [
+    "vpc", "subnet", "security-group", "route-table", "internet-gateway",
+  ] as const;
+
+  /**
+   * Find resources with no cost data (potential untracked spend).
+   * @param filter - Optional node filter.
+   * @param excludedTypes - Resource types to exclude (defaults to DEFAULT_FREE_RESOURCE_TYPES).
+   */
+  async findUntrackedResources(
+    filter?: NodeFilter,
+    excludedTypes?: string[],
+  ): Promise<GraphNode[]> {
+    const excluded = new Set(excludedTypes ?? CostBridge.DEFAULT_FREE_RESOURCE_TYPES);
     const nodes = await this.ctx.storage.queryNodes(filter ?? {});
     return nodes.filter(
       (n) =>
         n.costMonthly == null &&
         n.status === "running" &&
-        // Exclude resource types that typically don't have costs
-        !["vpc", "subnet", "security-group", "route-table", "internet-gateway"].includes(
-          n.resourceType,
-        ),
+        !excluded.has(n.resourceType),
     );
   }
 
@@ -221,7 +231,7 @@ export class CostBridge {
     return [...byDate.entries()]
       .sort(([a], [b]) => b.localeCompare(a)) // newest first
       .map(([date, entry]) => {
-        const result = { date, totalCost: Math.round(runningTotal * 100) / 100, changes: entry.count };
+        const result = { date, totalCost: Math.max(0, Math.round(runningTotal * 100) / 100), changes: entry.count };
         runningTotal -= entry.totalDelta;
         return result;
       })

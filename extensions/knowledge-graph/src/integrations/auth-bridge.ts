@@ -125,6 +125,9 @@ export class EnterpriseAccessDeniedError extends Error {
 export class AuthenticatedGraphStorage implements GraphStorage {
   private readonly breaker = new CircuitBreaker("auth", 5, 30_000);
   private cachedUser: AuthUser | null = null;
+  private cachedUserAt = 0;
+  private static readonly USER_CACHE_TTL_MS = 300_000; // 5 minutes
+  private readonly authTimeoutMs: number;
 
   constructor(
     private readonly inner: GraphStorage,
@@ -133,7 +136,10 @@ export class AuthenticatedGraphStorage implements GraphStorage {
     private readonly logger: BridgeLogger,
     private readonly auditLogger?: AuditLoggerLike,
     private readonly userResolver?: (id: string) => Promise<AuthUser | null>,
-  ) {}
+    authTimeoutMs?: number,
+  ) {
+    this.authTimeoutMs = authTimeoutMs ?? 5_000;
+  }
 
   // -- Internal helpers -------------------------------------------------------
 
@@ -142,12 +148,19 @@ export class AuthenticatedGraphStorage implements GraphStorage {
    * Caches the result to avoid repeated lookups per storage session.
    */
   private async resolveUser(): Promise<AuthUser> {
-    if (this.cachedUser) return this.cachedUser;
+    const now = Date.now();
+    if (this.cachedUser && (now - this.cachedUserAt) < AuthenticatedGraphStorage.USER_CACHE_TTL_MS) {
+      return this.cachedUser;
+    }
+
+    // Invalidate stale cache
+    this.cachedUser = null;
 
     if (this.userResolver) {
       const user = await this.userResolver(this.userId);
       if (user) {
         this.cachedUser = user;
+        this.cachedUserAt = Date.now();
         return user;
       }
     }
@@ -165,6 +178,7 @@ export class AuthenticatedGraphStorage implements GraphStorage {
       updatedAt: new Date().toISOString(),
     };
     this.cachedUser = fallback;
+    this.cachedUserAt = Date.now();
     return fallback;
   }
 
@@ -180,7 +194,7 @@ export class AuthenticatedGraphStorage implements GraphStorage {
     const result = await this.breaker.execute(() =>
       withTimeout(
         this.authEngine.authorize(user, permission),
-        5_000,
+        this.authTimeoutMs,
         `auth.authorize(${operation})`,
       ),
     );

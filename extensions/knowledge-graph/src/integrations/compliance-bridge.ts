@@ -19,15 +19,20 @@ import type {
   ComplianceFrameworkId,
   ComplianceEvaluationResult,
   ComplianceViolation,
+  ComplianceWaiver,
   ControlEvalNode,
 } from "./types.js";
-import { graphNodeToControlEvalNode } from "./types.js";
+import { graphNodeToControlEvalNode, createWaiverObject } from "./types.js";
+import { withTimeout, CircuitBreaker } from "./resilience.js";
 
 // =============================================================================
 // Compliance Bridge
 // =============================================================================
 
 export class ComplianceBridge {
+  private readonly breaker = new CircuitBreaker("compliance", 5, 30_000);
+  private static readonly EVAL_TIMEOUT_MS = 30_000;
+
   constructor(
     private readonly ctx: IntegrationContext,
   ) {}
@@ -55,10 +60,16 @@ export class ComplianceBridge {
         ? { isWaived: (cid: string, rid: string) => this.ctx.ext.waiverStore!.isWaived(cid, rid) }
         : undefined;
 
-      const result = this.ctx.ext.complianceEvaluator.evaluate(
-        frameworkId,
-        evalNodes,
-        waiverLookup,
+      const result = await this.breaker.execute(() =>
+        withTimeout(
+          Promise.resolve(this.ctx.ext.complianceEvaluator!.evaluate(
+            frameworkId,
+            evalNodes,
+            waiverLookup,
+          )),
+          ComplianceBridge.EVAL_TIMEOUT_MS,
+          `compliance.evaluate(${frameworkId})`,
+        ),
       );
 
       // Emit audit event for compliance scan
@@ -125,7 +136,7 @@ export class ComplianceBridge {
 
   /**
    * Create a compliance waiver — delegates to the compliance extension's
-   * waiver store if available.
+   * waiver store if available. Uses add() API matching real WaiverStore.
    */
   createWaiver(opts: {
     controlId: string;
@@ -133,18 +144,19 @@ export class ComplianceBridge {
     reason: string;
     approvedBy: string;
     expiresAt: string;
-  }): { id: string } | null {
+  }): ComplianceWaiver | null {
     if (!this.ctx.ext.waiverStore) {
       this.ctx.logger.warn("Waiver store unavailable — cannot create waiver");
       return null;
     }
 
-    const waiver = this.ctx.ext.waiverStore.create(opts);
+    const waiver = createWaiverObject(opts);
+    this.ctx.ext.waiverStore.add(waiver);
 
     // Audit the waiver creation
     if (this.ctx.ext.auditLogger) {
       this.ctx.ext.auditLogger.log({
-        eventType: "compliance_scanned",
+        eventType: "compliance_waiver_created",
         severity: "warn",
         actor: { id: opts.approvedBy, name: opts.approvedBy, roles: [] },
         operation: "kg.compliance.createWaiver",
@@ -155,6 +167,7 @@ export class ComplianceBridge {
           controlId: opts.controlId,
           resourceId: opts.resourceId,
           reason: opts.reason,
+          approvedAt: waiver.approvedAt,
           expiresAt: opts.expiresAt,
         },
       });
@@ -166,16 +179,17 @@ export class ComplianceBridge {
   /**
    * List active waivers.
    */
-  listWaivers(): Array<{
-    id: string;
-    controlId: string;
-    resourceId: string;
-    reason: string;
-    approvedBy: string;
-    expiresAt: string;
-  }> {
+  listWaivers(): ComplianceWaiver[] {
     if (!this.ctx.ext.waiverStore) return [];
-    return this.ctx.ext.waiverStore.list();
+    return this.ctx.ext.waiverStore.listActive();
+  }
+
+  /**
+   * Remove a waiver by ID.
+   */
+  removeWaiver(waiverId: string): boolean {
+    if (!this.ctx.ext.waiverStore) return false;
+    return this.ctx.ext.waiverStore.remove(waiverId);
   }
 
   /**

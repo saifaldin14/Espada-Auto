@@ -69,8 +69,8 @@ export class TerraformBridge {
 
     const startTime = Date.now();
     const nodes = this.ctx.ext.terraformBridge.stateToGraphNodes(resources);
-    // Edges handled by syncStateToGraph internally
-    void this.ctx.ext.terraformBridge.dependenciesToGraphEdges(resources);
+    // Note: dependenciesToGraphEdges() is handled internally by syncStateToGraph
+    // — no separate call needed.
 
     // Optional: run policy checks before syncing
     let policyViolations: string[] = [];

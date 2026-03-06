@@ -110,13 +110,15 @@ export class PolicyBridge {
 
   /**
    * Evaluate policies for a bulk set of nodes (e.g., all nodes returned by a filter).
-   * Returns per-node results.
+   * Returns per-node results. Limits batch to maxNodes (default 100) to avoid
+   * unbounded O(n × graph-traversal).
    */
   async evaluateNodes(
     filter: NodeFilter,
     opts?: {
       actor?: { id: string; roles: string[]; groups: string[] };
       environment?: string;
+      maxNodes?: number;
     },
   ): Promise<Map<string, AggregatedPolicyResult>> {
     if (!this.ctx.available.policyEngine || !this.ctx.ext.policyEngine) {
@@ -124,12 +126,20 @@ export class PolicyBridge {
     }
 
     const nodes = await this.ctx.storage.queryNodes(filter);
+    const limit = opts?.maxNodes ?? 100;
+    const batch = nodes.slice(0, limit);
     const results = new Map<string, AggregatedPolicyResult>();
 
-    for (const node of nodes) {
+    if (nodes.length > limit) {
+      this.ctx.logger.warn(
+        `evaluateNodes: truncated ${nodes.length} nodes to ${limit}. Pass maxNodes to increase.`,
+      );
+    }
+
+    const policies = await this.loadPolicies();
+    for (const node of batch) {
       try {
         const input = await this.buildNodeInput(node, opts);
-        const policies = await this.loadPolicies();
         const result = this.ctx.ext.policyEngine.evaluateAll(policies, input);
         results.set(node.id, result);
       } catch (err) {

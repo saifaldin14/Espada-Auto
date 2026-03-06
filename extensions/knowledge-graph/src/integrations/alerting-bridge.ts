@@ -43,9 +43,6 @@ export type KGAlertKind =
 // =============================================================================
 
 export class AlertingBridge {
-  private alertCounter = 0;
-  private static readonly MAX_ALERT_COUNTER = 1_000_000;
-
   constructor(
     private readonly ctx: IntegrationContext,
   ) {}
@@ -245,13 +242,16 @@ export class AlertingBridge {
     node?: GraphNode;
     details?: Record<string, unknown>;
   }): NormalisedAlert {
-    this.alertCounter = (this.alertCounter + 1) % AlertingBridge.MAX_ALERT_COUNTER;
     const now = new Date().toISOString();
+    const uuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const id = `kg-${opts.kind}-${uuid}`;
 
     return {
-      id: `kg-${opts.kind}-${Date.now()}-${this.alertCounter}`,
-      externalId: `kg-${opts.kind}-${this.alertCounter}`,
-      provider: "pagerduty", // Will be overridden by routing
+      id,
+      externalId: id,
+      provider: "knowledge-graph",
       severity: opts.severity,
       status: "triggered",
       title: opts.title,
@@ -272,6 +272,12 @@ export class AlertingBridge {
           account: opts.node.account,
         } : {}),
         ...(opts.details ?? {}),
+      },
+      rawPayload: {
+        source: "knowledge-graph",
+        kind: opts.kind,
+        node: opts.node ? { id: opts.node.id, name: opts.node.name } : undefined,
+        details: opts.details,
       },
       tags: [
         `kind:${opts.kind}`,

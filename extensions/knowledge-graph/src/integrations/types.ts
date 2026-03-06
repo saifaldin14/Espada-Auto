@@ -144,9 +144,10 @@ export interface AuthorizationResult {
 
 /**
  * Minimal interface for the audit-trail AuditLogger.
+ * Real log() returns an AuditEvent, but KG bridges don't use the return value.
  */
 export interface AuditLoggerLike {
-  log(event: AuditEventInput): void;
+  log(event: AuditEventInput): unknown;
 }
 
 export type AuditEventInput = {
@@ -229,25 +230,57 @@ export interface ComplianceEvaluator {
 }
 
 /**
+ * ComplianceWaiver — matches the real compliance extension's waiver type.
+ */
+export type ComplianceWaiver = {
+  id: string;
+  controlId: string;
+  resourceId: string;
+  reason: string;
+  approvedBy: string;
+  approvedAt: string;
+  expiresAt: string;
+};
+
+/**
  * Minimal interface for a waiver store.
+ * Matches real WaiverStore: add(), remove(), get(), list(), listActive(), isWaived().
  */
 export interface WaiverStore {
-  create(waiver: {
-    controlId: string;
-    resourceId: string;
-    reason: string;
-    approvedBy: string;
-    expiresAt: string;
-  }): { id: string };
-  list(): Array<{
-    id: string;
-    controlId: string;
-    resourceId: string;
-    reason: string;
-    approvedBy: string;
-    expiresAt: string;
-  }>;
+  add(waiver: ComplianceWaiver): void;
+  remove(waiverId: string): boolean;
+  get(waiverId: string): ComplianceWaiver | undefined;
+  list(): ComplianceWaiver[];
+  listActive(): ComplianceWaiver[];
   isWaived(controlId: string, resourceId: string): boolean;
+}
+
+/** Generate a unique waiver ID (mirrors compliance extension's generateWaiverId). */
+export function generateWaiverId(): string {
+  // crypto.randomUUID requires Node ≥ 19; fallback for older runtimes
+  const uuid = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `waiver-${uuid}`;
+}
+
+/** Helper to construct a full ComplianceWaiver object. */
+export function createWaiverObject(opts: {
+  controlId: string;
+  resourceId: string;
+  reason: string;
+  approvedBy: string;
+  expiresAt: string;
+}): ComplianceWaiver {
+  return {
+    id: generateWaiverId(),
+    controlId: opts.controlId,
+    resourceId: opts.resourceId,
+    reason: opts.reason,
+    approvedBy: opts.approvedBy,
+    approvedAt: new Date().toISOString(),
+    expiresAt: opts.expiresAt,
+  };
 }
 
 // =============================================================================
@@ -425,12 +458,27 @@ export interface TerraformGraphBridge {
 
 export type AlertSeverity = "critical" | "high" | "medium" | "low" | "info";
 
+/** Alert provider — matches real alerting-integration AlertProvider union. */
+export type AlertProvider = "pagerduty" | "opsgenie" | "cloudwatch" | "knowledge-graph";
+
+/** Alert status — matches real alerting-integration AlertStatus union. */
+export type AlertStatus = "triggered" | "acknowledged" | "resolved" | "suppressed";
+
+/** Match operator for routing rule conditions. */
+export type MatchOperator = "equals" | "contains" | "regex" | "any";
+
+/** Dispatch channel type. */
+export type DispatchChannelType = "slack" | "discord" | "msteams" | "telegram" | "matrix" | "webhook" | "custom";
+
+/** Dispatch status for delivery records. */
+export type DispatchStatus = "pending" | "sent" | "failed" | "suppressed";
+
 export type NormalisedAlert = {
   id: string;
   externalId: string;
-  provider: string;
+  provider: AlertProvider;
   severity: AlertSeverity;
-  status: string;
+  status: AlertStatus;
   title: string;
   description: string;
   service: string;
@@ -439,7 +487,7 @@ export type NormalisedAlert = {
   receivedAt: string;
   sourceUrl: string;
   details: Record<string, unknown>;
-  rawPayload?: unknown;
+  rawPayload: unknown;
   tags: string[];
 };
 
@@ -450,7 +498,7 @@ export type RoutingRule = {
   name: string;
   priority: number;
   enabled: boolean;
-  conditions: Array<{ field: string; operator: string; value: string }>;
+  conditions: Array<{ field: keyof NormalisedAlert; operator: MatchOperator; value: string }>;
   channelIds: string[];
   template?: string;
   stopOnMatch: boolean;
@@ -460,7 +508,7 @@ export type RoutingRule = {
 export type DispatchChannel = {
   id: string;
   name: string;
-  type: string;
+  type: DispatchChannelType;
   config: Record<string, unknown>;
   createdAt: string;
 };
@@ -475,7 +523,7 @@ export type DispatchRecord = {
   alertId: string;
   channelId: string;
   ruleId: string;
-  status: string;
+  status: DispatchStatus;
   message: string;
   dispatchedAt: string;
   error?: string;
