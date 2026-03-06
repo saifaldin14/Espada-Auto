@@ -1,0 +1,149 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Infrastructure Knowledge Graph — Release Pipeline
+#
+# Triggered by version tags (v*) or manual dispatch.
+# Builds, packages, and creates a GitHub release with artifacts.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: "Knowledge Graph Release"
+
+on:
+  push:
+    tags:
+      - "knowledge-graph-v*"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Dry run (build + package but skip release)"
+        required: false
+        default: "false"
+        type: boolean
+
+defaults:
+  run:
+    working-directory: extensions/knowledge-graph
+
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.23.0"
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Validate — full CI gate before release
+  # ═══════════════════════════════════════════════════════════════════════════
+  validate:
+    name: "Validate"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Test
+        run: pnpm test -- --reporter=verbose
+        env:
+          CI: true
+
+      - name: Build
+        run: pnpm build
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "📦 Version: $VERSION"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Package — create distributable tarball
+  # ═══════════════════════════════════════════════════════════════════════════
+  package:
+    name: "Package"
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm build
+
+      - name: Create package tarball
+        run: pnpm pack
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kg-package-${{ needs.validate.outputs.version }}
+          path: extensions/knowledge-graph/*.tgz
+          retention-days: 90
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Release — create GitHub release with artifacts
+  # ═══════════════════════════════════════════════════════════════════════════
+  release:
+    name: "Release"
+    needs: [validate, package]
+    if: ${{ github.event.inputs.dry-run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-package-${{ needs.validate.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Knowledge Graph v${{ needs.validate.outputs.version }}"
+          tag_name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: "*.tgz"
+          draft: false
+          prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

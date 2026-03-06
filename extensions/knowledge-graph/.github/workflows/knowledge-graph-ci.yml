@@ -1,0 +1,323 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# Infrastructure Knowledge Graph — CI Pipeline
+#
+# Triggers on every push/PR that touches the knowledge-graph extension.
+# Runs: typecheck → lint → test → build → security scan
+#
+# Uses the same runner/toolchain conventions as the repo-level CI.
+# ──────────────────────────────────────────────────────────────────────────────
+
+name: "Knowledge Graph CI"
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "extensions/knowledge-graph/**"
+      - ".github/workflows/knowledge-graph-*.yml"
+  pull_request:
+    paths:
+      - "extensions/knowledge-graph/**"
+      - ".github/workflows/knowledge-graph-*.yml"
+  workflow_dispatch:
+
+defaults:
+  run:
+    working-directory: extensions/knowledge-graph
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Cancel superseded runs on the same PR / branch
+concurrency:
+  group: kg-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ─── Shared env ──────────────────────────────────────────────────────────────
+env:
+  NODE_VERSION: "22"
+  PNPM_VERSION: "10.23.0"
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 1. Install — shared dependency install, cached for downstream jobs
+  # ═══════════════════════════════════════════════════════════════════════════
+  install:
+    name: "Install"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          check-latest: true
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "dir=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.dir }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Persist node_modules for downstream jobs
+      - name: Upload node_modules
+        uses: actions/upload-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+          retention-days: 1
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 2. Typecheck — catch type errors before anything else
+  # ═══════════════════════════════════════════════════════════════════════════
+  typecheck:
+    name: "Typecheck"
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Download node_modules
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+
+      - name: Run typecheck
+        run: pnpm typecheck
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 3. Lint — oxlint (fast, zero-config)
+  # ═══════════════════════════════════════════════════════════════════════════
+  lint:
+    name: "Lint"
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Download node_modules
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+
+      - name: Run linter
+        run: pnpm lint
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 4. Tests — vitest with JUnit output for CI integration
+  # ═══════════════════════════════════════════════════════════════════════════
+  test:
+    name: "Test"
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Download node_modules
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+
+      - name: Run tests
+        run: pnpm test -- --reporter=verbose --reporter=junit --outputFile=test-results.xml
+        env:
+          CI: true
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kg-test-results
+          path: extensions/knowledge-graph/test-results.xml
+          retention-days: 30
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 5. Build — compile TypeScript, verify dist output
+  # ═══════════════════════════════════════════════════════════════════════════
+  build:
+    name: "Build"
+    needs: [typecheck, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Download node_modules
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+
+      - name: Build
+        run: pnpm build
+
+      - name: Verify dist output
+        run: |
+          set -euo pipefail
+          test -f dist/index.js          || { echo "::error::dist/index.js missing"; exit 1; }
+          test -f dist/index.d.ts        || { echo "::error::dist/index.d.ts missing"; exit 1; }
+          test -f dist/mcp/server.js     || { echo "::error::dist/mcp/server.js missing"; exit 1; }
+          test -f dist/api/server.js     || { echo "::error::dist/api/server.js missing"; exit 1; }
+          test -f dist/bin/infra-graph.js || { echo "::error::dist/bin/infra-graph.js missing"; exit 1; }
+
+          JS_COUNT=$(find dist -name '*.js' | wc -l)
+          DTS_COUNT=$(find dist -name '*.d.ts' | wc -l)
+          SIZE=$(du -sh dist | cut -f1)
+          echo "### Build Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **JS files:** $JS_COUNT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Declaration files:** $DTS_COUNT" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Total size:** $SIZE" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kg-dist
+          path: extensions/knowledge-graph/dist
+          retention-days: 7
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 6. Security — secrets scan + dependency audit + banned patterns
+  # ═══════════════════════════════════════════════════════════════════════════
+  security:
+    name: "Security"
+    needs: install
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@${{ env.PNPM_VERSION }} --activate
+
+      - name: Download node_modules
+        uses: actions/download-artifact@v4
+        with:
+          name: kg-node-modules
+          path: extensions/knowledge-graph/node_modules
+
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high || true
+
+      - name: Check for hardcoded secrets
+        run: |
+          set -euo pipefail
+          PATTERNS='(AKIA[A-Z0-9]{16}|password\s*=\s*["\x27][^"\x27]{8,}|-----BEGIN (RSA |EC )?PRIVATE KEY)'
+          if grep -rPn "$PATTERNS" src/ --include='*.ts' | grep -v '\.test\.ts' | grep -v '// example' | grep -v 'placeholder'; then
+            echo "::error::Potential hardcoded secrets found in source files"
+            exit 1
+          fi
+          echo "✅ No hardcoded secrets detected"
+
+      - name: Check for banned patterns
+        run: |
+          set -euo pipefail
+          FOUND=0
+          if grep -rn 'eval(' src/ --include='*.ts' | grep -v '\.test\.ts' | grep -v '^\s*//'; then
+            echo "::error::eval() usage found in source files"
+            FOUND=1
+          fi
+          if grep -rn 'new Function(' src/ --include='*.ts' | grep -v '\.test\.ts' | grep -v '^\s*//'; then
+            echo "::error::new Function() usage found in source files"
+            FOUND=1
+          fi
+          if [ "$FOUND" -eq 1 ]; then exit 1; fi
+          echo "✅ No banned patterns found"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # 7. Summary — aggregate results for PR checks
+  # ═══════════════════════════════════════════════════════════════════════════
+  ci-status:
+    name: "CI Status"
+    if: always()
+    needs: [typecheck, lint, test, build, security]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## Knowledge Graph CI Results
+
+          | Check | Status |
+          |-------|--------|
+          | Typecheck | ${{ needs.typecheck.result == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | Lint | ${{ needs.lint.result == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | Test | ${{ needs.test.result == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | Build | ${{ needs.build.result == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | Security | ${{ needs.security.result == 'success' && '✅ Pass' || '❌ Fail' }} |
+          EOF
+        working-directory: .
+
+      - name: Check for failures
+        if: |
+          needs.typecheck.result == 'failure' ||
+          needs.lint.result == 'failure' ||
+          needs.test.result == 'failure' ||
+          needs.build.result == 'failure' ||
+          needs.security.result == 'failure'
+        run: |
+          echo "::error::One or more CI checks failed"
+          exit 1
+        working-directory: .
