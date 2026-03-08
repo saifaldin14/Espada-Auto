@@ -19,6 +19,9 @@
 
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { readFileSync, existsSync } from "node:fs";
+import { resolve as pathResolve, extname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { GraphEngine } from "../core/engine.js";
 import { InMemoryGraphStorage } from "../storage/memory-store.js";
 import { SQLiteGraphStorage } from "../storage/sqlite-store.js";
@@ -76,7 +79,7 @@ function securityHeaders(corsOrigin: string): Record<string, string> {
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-Key",
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "DENY",
+    "X-Frame-Options": "SAMEORIGIN",
     "Cache-Control": "no-store",
   };
 }
@@ -243,6 +246,42 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     // Convert :param to named capture groups
     const re = new RegExp("^" + pattern.replace(/:(\w+)/g, "(?<$1>[^/]+)") + "$");
     routes.push({ method, pattern: re, handler });
+  };
+
+  // ─── Static UI (React SPA) ───────────────────────────────────
+  const _apiDir = pathResolve(fileURLToPath(import.meta.url), "..");
+  const uiDistDir = pathResolve(_apiDir, "../../ui/dist");
+
+  const MIME_TYPES: Record<string, string> = {
+    ".html": "text/html; charset=utf-8",
+    ".js":   "application/javascript",
+    ".css":  "text/css",
+    ".json": "application/json",
+    ".svg":  "image/svg+xml",
+    ".png":  "image/png",
+    ".ico":  "image/x-icon",
+    ".woff": "font/woff",
+    ".woff2": "font/woff2",
+    ".map":  "application/json",
+  };
+
+  const serveStatic = (res: ServerResponse, filePath: string): boolean => {
+    if (!existsSync(filePath)) return false;
+    const ext = extname(filePath);
+    const mime = MIME_TYPES[ext] || "application/octet-stream";
+    const body = readFileSync(filePath);
+    const headers: Record<string, string | number> = {
+      "Content-Type": mime,
+      "Content-Length": body.length,
+      ...securityHeaders(corsOrigin),
+    };
+    // Cache hashed assets aggressively, HTML never cached
+    if (ext !== ".html") {
+      headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    }
+    res.writeHead(200, headers);
+    res.end(body);
+    return true;
   };
 
   // ─── Health ─────────────────────────────────────────────────────
@@ -461,6 +500,15 @@ export async function startApiServer(opts: ApiServerOptions): Promise<ApiServerH
     const matched = matchRoute(method, url, routes);
 
     if (!matched) {
+      // SPA static file serving: try exact file, then fall back to index.html
+      if (method === "GET") {
+        const safePath = url.replace(/\.\./g, "").replace(/\/\//g, "/");
+        const filePath = pathResolve(uiDistDir, safePath === "/" ? "index.html" : safePath.slice(1));
+        if (filePath.startsWith(uiDistDir) && serveStatic(res, filePath)) return;
+        // SPA fallback — serve index.html for client-side routing
+        const indexPath = pathResolve(uiDistDir, "index.html");
+        if (serveStatic(res, indexPath)) return;
+      }
       error(res, `Not found: ${method} ${url}`, 404, corsOrigin);
       return;
     }

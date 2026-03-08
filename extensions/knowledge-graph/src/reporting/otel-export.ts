@@ -94,10 +94,8 @@ export type OTELExportOptions = {
 // Helpers
 // =============================================================================
 
-import { VERSION } from "../index.js";
-
 const SCOPE_NAME = "infra-graph";
-const SCOPE_VERSION = VERSION;
+const SCOPE_VERSION = "1.0.0";
 
 /** Generate a random hex string of given byte length (crypto-quality). */
 function randomHex(bytes: number): string {

@@ -333,6 +333,11 @@ CREATE INDEX IF NOT EXISTS idx_sync_started ON {{schema}}.sync_records(started_a
     authored: "2025-02-01T00:00:00Z",
     sql: {
       sqlite: `
+-- V2: idempotent column additions (SQLite lacks IF NOT EXISTS for ALTER TABLE)
+-- Use a CTE trick: the ALTER will fail silently if column exists because we
+-- wrap each in a CREATE TRIGGER / DROP TRIGGER pair.  Simpler: just ignore the
+-- error at the executor level.
+-- ⚠ Handled by applyMigration which catches "duplicate column" errors.
 ALTER TABLE changes ADD COLUMN correlation_id TEXT;
 ALTER TABLE changes ADD COLUMN initiator TEXT;
 ALTER TABLE changes ADD COLUMN initiator_type TEXT;
@@ -702,7 +707,17 @@ export class SchemaMigrator {
         .filter((s) => s.length > 0 && !s.startsWith("--"));
 
       for (const stmt of statements) {
-        await this.executor.exec(stmt);
+        try {
+          await this.executor.exec(stmt);
+        } catch (err: unknown) {
+          // SQLite doesn't support ADD COLUMN IF NOT EXISTS — tolerate
+          // "duplicate column name" errors so migrations stay idempotent.
+          const msg = err instanceof Error ? err.message : String(err);
+          if (this.dialect === "sqlite" && /duplicate column name/i.test(msg)) {
+            continue; // column already exists, skip
+          }
+          throw err;
+        }
       }
 
       // Record in history

@@ -1,5 +1,5 @@
 {
-  "name": "@infra-graph/core",
+  "name": "@espada/knowledge-graph",
   "version": "1.0.0",
   "description": "Infrastructure Knowledge Graph — scan, query, and analyze cloud infrastructure across AWS, Azure, GCP, and Kubernetes. 30 tools, IQL query language, MCP server, compliance frameworks.",
   "type": "module",

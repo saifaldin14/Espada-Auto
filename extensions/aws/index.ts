@@ -15678,6 +15678,10 @@ Use this tool to:
             },
             transactItems: {
               type: "array",
+              items: {
+                type: "object",
+                description: "A transaction operation (Put, Delete, Update, or ConditionCheck)",
+              },
               description: "Transaction items for transact_write",
             },
             minCapacity: {
