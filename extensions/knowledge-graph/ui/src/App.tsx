@@ -19,6 +19,7 @@ import { CompliancePanel } from "./components/CompliancePanel";
 import { NodeDetail } from "./components/NodeDetail";
 import { Legend } from "./components/Legend";
 import { QueryEditor } from "./components/QueryEditor";
+import { ResizeHandle } from "./components/ResizeHandle";
 
 export function App() {
   const [view, setView] = useState<ViewId>("graph");
@@ -31,6 +32,8 @@ export function App() {
   const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [legendWidth, setLegendWidth] = useState(220);
+  const [detailWidth, setDetailWidth] = useState(340);
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -109,12 +112,21 @@ export function App() {
           <div className="content-area">
             {view === "graph" && topo && (
               <div className="graph-layout">
-                <Legend
-                  types={allTypes}
-                  activeFilter={typeFilter}
-                  onToggle={toggleType}
-                  onClear={() => setTypeFilter(new Set())}
-                />
+                <div className="resizable-panel" style={{ width: legendWidth }}>
+                  <Legend
+                    types={allTypes}
+                    activeFilter={typeFilter}
+                    onToggle={toggleType}
+                    onClear={() => setTypeFilter(new Set())}
+                  />
+                  <ResizeHandle
+                    side="right"
+                    width={legendWidth}
+                    onResize={setLegendWidth}
+                    minWidth={140}
+                    maxWidth={400}
+                  />
+                </div>
                 <GraphView
                   nodes={topo.nodes}
                   edges={topo.edges}
@@ -143,13 +155,25 @@ export function App() {
           </div>
 
           {showSidebar && (
-            <NodeDetail
-              node={selectedNode}
-              allEdges={topo?.edges ?? []}
-              allNodes={topo?.nodes ?? []}
-              onClose={() => setSelectedNodeId(null)}
-              onNavigate={(id) => setSelectedNodeId(id)}
-            />
+            <div
+              className="resizable-panel resizable-panel-right"
+              style={{ width: detailWidth }}
+            >
+              <ResizeHandle
+                side="left"
+                width={detailWidth}
+                onResize={setDetailWidth}
+                minWidth={240}
+                maxWidth={560}
+              />
+              <NodeDetail
+                node={selectedNode}
+                allEdges={topo?.edges ?? []}
+                allNodes={topo?.nodes ?? []}
+                onClose={() => setSelectedNodeId(null)}
+                onNavigate={(id) => setSelectedNodeId(id)}
+              />
+            </div>
           )}
         </main>
       )}

@@ -10,11 +10,14 @@
   },
   "dependencies": {
     "cytoscape": "^3.30.4",
+    "cytoscape-dagre": "^2.5.0",
+    "cytoscape-fcose": "^2.2.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@types/cytoscape": "^3.21.8",
+    "@types/cytoscape-dagre": "^2.3.4",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",

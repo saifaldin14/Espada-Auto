@@ -101,32 +101,71 @@ export interface ComplianceResult {
 export type ViewId = "graph" | "resources" | "query" | "cost" | "drift" | "compliance";
 
 export const RESOURCE_TYPE_COLORS: Record<string, string> = {
-  vpc: "#238636",
-  subnet: "#1f6feb",
-  "security-group": "#d29922",
-  "iam-role": "#8957e5",
-  storage: "#f85149",
-  "internet-gateway": "#3fb950",
-  "route-table": "#79c0ff",
-  compute: "#f778ba",
-  database: "#d2a8ff",
-  "load-balancer": "#56d364",
-  container: "#ff7b72",
-  "nat-gateway": "#ffa657",
-  "elastic-ip": "#a5d6ff",
-  custom: "#8b949e",
+  vpc: "#2ea043",
+  subnet: "#388bfd",
+  "security-group": "#e3b341",
+  "iam-role": "#a371f7",
+  storage: "#f47067",
+  "internet-gateway": "#57ab5a",
+  "route-table": "#6cb6ff",
+  compute: "#f692ce",
+  database: "#c4a5f7",
+  "load-balancer": "#46c252",
+  container: "#ff8a7a",
+  "nat-gateway": "#f0b050",
+  "elastic-ip": "#91cbff",
+  custom: "#768390",
+};
+
+/** Secondary (darker) color for each resource type — used for gradient fills */
+export const RESOURCE_TYPE_COLORS_DARK: Record<string, string> = {
+  vpc: "#196c2e",
+  subnet: "#1a5aad",
+  "security-group": "#9e7a18",
+  "iam-role": "#6e40a5",
+  storage: "#c24040",
+  "internet-gateway": "#2d6a3a",
+  "route-table": "#3d7ebd",
+  compute: "#c06098",
+  database: "#8c68c5",
+  "load-balancer": "#2d8839",
+  container: "#cc5d52",
+  "nat-gateway": "#b8832a",
+  "elastic-ip": "#5898cc",
+  custom: "#555d66",
+};
+
+/** Icon glyph for each resource type — shown inside the node */
+export const RESOURCE_TYPE_ICONS: Record<string, string> = {
+  vpc: "\u{1F310}",        // globe
+  subnet: "\u{1F5A7}",     // network
+  "security-group": "\u{1F6E1}",  // shield
+  "iam-role": "\u{1F511}",        // key
+  storage: "\u{1F4BE}",           // floppy
+  "internet-gateway": "\u{1F6AA}", // door
+  "route-table": "\u{1F5FA}",     // map
+  compute: "\u{1F5A5}",           // desktop
+  database: "\u{1F4CB}",          // clipboard
+  "load-balancer": "\u{2696}",    // balance
+  container: "\u{1F4E6}",         // package
+  "nat-gateway": "\u{1F504}",     // arrows
+  "elastic-ip": "\u{1F4CD}",      // pin
+  custom: "\u{2699}",             // gear
 };
 
 export const RESOURCE_TYPE_SHAPES: Record<string, string> = {
-  vpc: "roundrectangle",
+  vpc: "round-rectangle",
   subnet: "ellipse",
   "security-group": "diamond",
   "iam-role": "hexagon",
   storage: "barrel",
-  "internet-gateway": "triangle",
-  "route-table": "rectangle",
-  compute: "star",
-  database: "octagon",
-  "load-balancer": "vee",
-  custom: "pentagon",
+  "internet-gateway": "round-triangle",
+  "route-table": "round-rectangle",
+  compute: "round-rectangle",
+  database: "barrel",
+  "load-balancer": "round-diamond",
+  container: "round-hexagon",
+  "nat-gateway": "round-rectangle",
+  "elastic-ip": "ellipse",
+  custom: "round-pentagon",
 };
