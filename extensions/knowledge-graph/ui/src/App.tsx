@@ -18,6 +18,7 @@ import { DriftPanel } from "./components/DriftPanel";
 import { CompliancePanel } from "./components/CompliancePanel";
 import { NodeDetail } from "./components/NodeDetail";
 import { Legend } from "./components/Legend";
+import { QueryEditor } from "./components/QueryEditor";
 
 export function App() {
   const [view, setView] = useState<ViewId>("graph");
@@ -133,6 +134,8 @@ export function App() {
             )}
 
             {view === "cost" && <CostPanel cost={cost} />}
+
+            {view === "query" && <QueryEditor />}
 
             {view === "drift" && <DriftPanel drift={drift} />}
 

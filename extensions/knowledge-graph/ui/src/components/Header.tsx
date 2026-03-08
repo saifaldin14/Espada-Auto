@@ -3,6 +3,7 @@ import type { HealthResponse, ViewId } from "../types";
 const VIEWS: { id: ViewId; label: string; icon: string }[] = [
   { id: "graph", label: "Graph", icon: "⬡" },
   { id: "resources", label: "Resources", icon: "☰" },
+  { id: "query", label: "Query", icon: ">_" },
   { id: "cost", label: "Cost", icon: "$" },
   { id: "drift", label: "Drift", icon: "⚡" },
   { id: "compliance", label: "Compliance", icon: "✓" },

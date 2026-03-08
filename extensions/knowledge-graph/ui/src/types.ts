@@ -98,7 +98,7 @@ export interface ComplianceResult {
   }>;
 }
 
-export type ViewId = "graph" | "resources" | "cost" | "drift" | "compliance";
+export type ViewId = "graph" | "resources" | "query" | "cost" | "drift" | "compliance";
 
 export const RESOURCE_TYPE_COLORS: Record<string, string> = {
   vpc: "#238636",
